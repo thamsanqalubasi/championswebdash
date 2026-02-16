@@ -5,7 +5,7 @@ import { AuthProvider } from "@/lib/auth";
 import { AppRouter } from "@/router";
 import "./index.css";
 
-const basePath = import.meta.env.VITE_BASE_PATH || "/championswebdash";
+const basePath = import.meta.env.VITE_BASE_PATH || "/";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
