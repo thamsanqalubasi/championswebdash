@@ -18,22 +18,17 @@ import type {
 import { supabase } from "./supabase";
 
 const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 function hasApiBase() {
   return Boolean(apiBaseUrl);
 }
 
 function hasSupabaseConfig() {
-  return Boolean(supabaseUrl && supabaseAnonKey);
+  // supabase.ts has hardcoded fallbacks, so Supabase is always available
+  return true;
 }
 
 function getSupabaseClient() {
-  if (!hasSupabaseConfig()) {
-    return null;
-  }
-
   return supabase;
 }
 
