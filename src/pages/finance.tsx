@@ -2,15 +2,18 @@ import { Link } from "react-router-dom";
 import { ModulePage } from "@/components/module-page";
 
 export default function FinancePage() {
+  const NavCard = ({ to, title, description }: { to: string; title: string; description: string }) => (
+    <Link to={to} className="rounded-lg border border-border-color bg-surface p-6 hover:bg-surface-elevated transition-colors block">
+      <h3 className="text-lg font-semibold">{title}</h3>
+      <p className="text-sm text-muted mt-1">{description}</p>
+    </Link>
+  );
+
   return (
-    <ModulePage title="Finance" description="Use the quick links below for invoice and report modules.">
-      <div className="flex gap-3">
-        <Link to="/finance/invoices" className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm">
-          Invoices
-        </Link>
-        <Link to="/finance/reports" className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm">
-          Reports
-        </Link>
+    <ModulePage title="Finance" description="Financial operations and reporting.">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <NavCard to="/finance/invoices" title="Invoices" description="View, generate, and manage tenant invoices." />
+        <NavCard to="/finance/reports" title="Reports" description="Revenue summaries, collection rates, and analytics." />
       </div>
     </ModulePage>
   );

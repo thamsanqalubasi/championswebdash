@@ -1,75 +1,141 @@
 import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
+import { Modal, ConfirmDialog } from "@/components/modal";
 import { fetchWorkOrdersData } from "@/lib/data";
+import { supabase } from "@/lib/supabase";
 import type { WorkOrderRow } from "@/lib/types";
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(amount);
 }
 
+const emptyForm = { property_id: "", maintainer_id: "", category: "General", priority: "medium", status: "open", scheduled_date: "", estimated_cost: 0, actual_cost: 0 };
+
 export default function WorkOrdersPage() {
   const [workOrders, setWorkOrders] = useState<WorkOrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [activeFilter, setActiveFilter] = useState("all");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<WorkOrderRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
+  const [providers, setProviders] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
     let cancelled = false;
     async function loadData() {
       setLoading(true); setError(null);
-      try { const result = await fetchWorkOrdersData(); if (!cancelled) setWorkOrders(result); }
-      catch (loadError) { if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Could not load work orders."); }
+      try {
+        const result = await fetchWorkOrdersData();
+        if (!cancelled) setWorkOrders(result);
+        const [{ data: props }, { data: provs }] = await Promise.all([
+          supabase.from("properties").select("id, name").order("name"),
+          supabase.from("maintainers").select("id, name").order("name"),
+        ]);
+        if (!cancelled) {
+          if (props) setProperties(props.map((p) => ({ id: String(p.id), name: String(p.name) })));
+          if (provs) setProviders(provs.map((p) => ({ id: String(p.id), name: String(p.name) })));
+        }
+      } catch (e) { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load work orders."); }
       finally { if (!cancelled) setLoading(false); }
     }
     void loadData();
     return () => { cancelled = true; };
   }, [reloadKey]);
 
+  const reload = () => setReloadKey((v) => v + 1);
+
   const counts = useMemo(() => ({
     all: workOrders.length,
     open: workOrders.filter((i) => i.status === "open").length,
+    in_progress: workOrders.filter((i) => i.status === "in_progress").length,
     completed: workOrders.filter((i) => i.status === "completed").length,
     cancelled: workOrders.filter((i) => i.status === "cancelled").length,
   }), [workOrders]);
 
+  const filtered = useMemo(() => activeFilter === "all" ? workOrders : workOrders.filter((w) => w.status === activeFilter), [workOrders, activeFilter]);
+
+  const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
+
+  const onSave = async () => {
+    setSaving(true);
+    try {
+      const payload: Record<string, unknown> = { category: form.category, priority: form.priority, status: form.status, scheduled_date: form.scheduled_date || null, estimated_cost: form.estimated_cost, actual_cost: form.actual_cost };
+      if (form.property_id) payload.property_id = form.property_id;
+      if (form.maintainer_id) payload.maintainer_id = form.maintainer_id;
+      if (editingId) {
+        const { error: err } = await supabase.from("maintenance").update(payload).eq("id", editingId);
+        if (err) throw err;
+      } else {
+        const { error: err } = await supabase.from("maintenance").insert(payload);
+        if (err) throw err;
+      }
+      setModalOpen(false); reload();
+    } catch (e) { alert(e instanceof Error ? e.message : "Save failed"); }
+    finally { setSaving(false); }
+  };
+
+  const onStatusChange = async (id: string, newStatus: string) => {
+    const { error: err } = await supabase.from("maintenance").update({ status: newStatus }).eq("id", id);
+    if (err) { alert(err.message); return; }
+    reload();
+  };
+
+  const onDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const { error: err } = await supabase.from("maintenance").delete().eq("id", deleteTarget.id);
+      if (err) throw err;
+      setDeleteTarget(null); reload();
+    } catch (e) { alert(e instanceof Error ? e.message : "Delete failed"); }
+    finally { setDeleting(false); }
+  };
+
   return (
     <ModulePage title="Work Orders" description="Ticket table, filters, and status transitions.">
       {loading && <LoadingState label="Loading work orders..." />}
-      {!loading && error && <ErrorState message={error} onRetry={() => setReloadKey((v) => v + 1)} />}
+      {!loading && error && <ErrorState message={error} onRetry={reload} />}
       {!loading && !error && (
         <section className="space-y-4 rounded-lg border border-border-color bg-surface p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
-              <button type="button" className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm">All ({counts.all})</button>
-              <button type="button" className="rounded-md border border-border-color px-3 py-2 text-sm text-muted">Open ({counts.open})</button>
-              <button type="button" className="rounded-md border border-border-color px-3 py-2 text-sm text-muted">Completed ({counts.completed})</button>
-              <button type="button" className="rounded-md border border-border-color px-3 py-2 text-sm text-muted">Cancelled ({counts.cancelled})</button>
+              {(["all", "open", "in_progress", "completed", "cancelled"] as const).map((key) => (
+                <button key={key} type="button" onClick={() => setActiveFilter(key)}
+                  className={`rounded-md border border-border-color px-3 py-2 text-sm ${activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"}`}>
+                  {key === "all" ? `All (${counts.all})` : `${key.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())} (${counts[key]})`}
+                </button>
+              ))}
             </div>
-            <button type="button" className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium">Create Work Order</button>
+            <button type="button" onClick={openAdd} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium">Create Work Order</button>
           </div>
-          {workOrders.length === 0 ? (
-            <EmptyState title="No work orders found" description="Create a work order in mobile or backend first, then refresh this page." />
-          ) : (
+          {filtered.length === 0 ? <EmptyState title="No work orders found" description="Create a work order to get started." /> : (
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse text-sm">
                 <thead><tr className="border-b border-border-color text-left text-muted">
-                  <th className="px-3 py-2 font-medium">Property</th><th className="px-3 py-2 font-medium">Provider</th><th className="px-3 py-2 font-medium">Category</th><th className="px-3 py-2 font-medium">Priority</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Scheduled</th><th className="px-3 py-2 font-medium">Cost (Est/Actual)</th><th className="px-3 py-2 font-medium">Actions</th>
+                  <th className="px-3 py-2 font-medium">Property</th><th className="px-3 py-2 font-medium">Provider</th><th className="px-3 py-2 font-medium">Category</th><th className="px-3 py-2 font-medium">Priority</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Scheduled</th><th className="px-3 py-2 font-medium">Cost (Est/Act)</th><th className="px-3 py-2 font-medium">Actions</th>
                 </tr></thead>
-                <tbody>{workOrders.map((row) => (
+                <tbody>{filtered.map((row) => (
                   <tr key={row.id} className="border-b border-border-color/60">
                     <td className="px-3 py-3 font-medium">{row.propertyName}</td>
                     <td className="px-3 py-3 text-muted">{row.providerName}</td>
                     <td className="px-3 py-3 text-muted">{row.category}</td>
                     <td className="px-3 py-3 text-muted capitalize">{row.priority}</td>
-                    <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.status.replaceAll("_", " ")}</span></td>
+                    <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.status.replace(/_/g, " ")}</span></td>
                     <td className="px-3 py-3 text-muted">{row.scheduledDate}</td>
                     <td className="px-3 py-3 text-muted">{formatCurrency(row.estimatedCost)} / {formatCurrency(row.actualCost)}</td>
                     <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
-                      <button type="button" className="rounded-md border border-border-color px-2 py-1 text-xs text-muted">Start</button>
-                      <button type="button" className="rounded-md border border-border-color px-2 py-1 text-xs text-muted">Complete</button>
-                      <button type="button" className="rounded-md border border-border-color px-2 py-1 text-xs text-muted">Reopen</button>
-                      <button type="button" className="rounded-md border border-border-color px-2 py-1 text-xs text-muted">Cancel</button>
+                      {row.status === "open" && <button type="button" onClick={() => onStatusChange(row.id, "in_progress")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Start</button>}
+                      {(row.status === "open" || row.status === "in_progress") && <button type="button" onClick={() => onStatusChange(row.id, "completed")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Complete</button>}
+                      {(row.status === "completed" || row.status === "cancelled") && <button type="button" onClick={() => onStatusChange(row.id, "open")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reopen</button>}
+                      {row.status !== "cancelled" && row.status !== "completed" && <button type="button" onClick={() => onStatusChange(row.id, "cancelled")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Cancel</button>}
+                      <button type="button" onClick={() => setDeleteTarget(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
                     </div></td>
                   </tr>
                 ))}</tbody>
@@ -78,6 +144,34 @@ export default function WorkOrdersPage() {
           )}
         </section>
       )}
+
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? "Edit Work Order" : "Create Work Order"}>
+        <div className="space-y-3">
+          <div><label className="mb-1 block text-sm text-muted">Property</label><select value={form.property_id} onChange={(e) => setForm({ ...form, property_id: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
+            <option value="">Select property...</option>{properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select></div>
+          <div><label className="mb-1 block text-sm text-muted">Provider</label><select value={form.maintainer_id} onChange={(e) => setForm({ ...form, maintainer_id: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
+            <option value="">Select provider...</option>{providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="mb-1 block text-sm text-muted">Category</label><input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+            <div><label className="mb-1 block text-sm text-muted">Priority</label><select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
+              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
+            </select></div>
+          </div>
+          <div><label className="mb-1 block text-sm text-muted">Scheduled Date</label><input type="date" value={form.scheduled_date} onChange={(e) => setForm({ ...form, scheduled_date: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="mb-1 block text-sm text-muted">Estimated Cost</label><input type="number" value={form.estimated_cost} onChange={(e) => setForm({ ...form, estimated_cost: Number(e.target.value) })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+            <div><label className="mb-1 block text-sm text-muted">Actual Cost</label><input type="number" value={form.actual_cost} onChange={(e) => setForm({ ...form, actual_cost: Number(e.target.value) })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setModalOpen(false)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
+            <button type="button" onClick={onSave} disabled={saving} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Work Order" message={`Delete this work order at "${deleteTarget?.propertyName}"? This cannot be undone.`} confirmLabel="Delete" loading={deleting} />
     </ModulePage>
   );
 }
