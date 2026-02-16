@@ -6,7 +6,7 @@ import { fetchInspectionsData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { InspectionRow } from "@/lib/types";
 
-const emptyForm = { property_id: "", tenant_id: "", type: "General", inspector_name: "", scheduled_date: "", status: "scheduled" };
+const emptyForm = { property_id: "", tenant_id: "", type: "routine", inspector_name: "", scheduled_date: "", status: "scheduled" };
 
 export default function InspectionsPage() {
   const [inspections, setInspections] = useState<InspectionRow[]>([]);
@@ -50,8 +50,9 @@ export default function InspectionsPage() {
   const counts = useMemo(() => ({
     all: inspections.length,
     scheduled: inspections.filter((i) => i.status === "scheduled").length,
-    paused: inspections.filter((i) => i.status === "paused").length,
+    in_progress: inspections.filter((i) => i.status === "in_progress").length,
     completed: inspections.filter((i) => i.status === "completed").length,
+    cancelled: inspections.filter((i) => i.status === "cancelled").length,
   }), [inspections]);
 
   const filtered = useMemo(() => activeFilter === "all" ? inspections : inspections.filter((i) => i.status === activeFilter), [inspections, activeFilter]);
@@ -103,10 +104,10 @@ export default function InspectionsPage() {
         <section className="space-y-4 rounded-lg border border-border-color bg-surface p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
-              {(["all", "scheduled", "paused", "completed"] as const).map((key) => (
+              {(["all", "scheduled", "in_progress", "completed", "cancelled"] as const).map((key) => (
                 <button key={key} type="button" onClick={() => setActiveFilter(key)}
                   className={`rounded-md border border-border-color px-3 py-2 text-sm ${activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"}`}>
-                  {key === "all" ? `All (${counts.all})` : `${key.charAt(0).toUpperCase() + key.slice(1)} (${counts[key]})`}
+                  {key === "all" ? `All (${counts.all})` : `${key.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())} (${counts[key]})`}
                 </button>
               ))}
             </div>
@@ -128,9 +129,10 @@ export default function InspectionsPage() {
                     <td className="px-3 py-3 text-muted">{row.completedDate}</td>
                     <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.status}</span></td>
                     <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
-                      {row.status === "scheduled" && <button type="button" onClick={() => onStatusChange(row.id, "paused")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Pause</button>}
-                      {row.status === "paused" && <button type="button" onClick={() => onStatusChange(row.id, "scheduled")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Resume</button>}
-                      {row.status !== "completed" && <button type="button" onClick={() => onStatusChange(row.id, "completed", new Date().toISOString().slice(0, 10))} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Complete</button>}
+                      {row.status === "scheduled" && <button type="button" onClick={() => onStatusChange(row.id, "in_progress")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Start</button>}
+                      {row.status === "in_progress" && <button type="button" onClick={() => onStatusChange(row.id, "scheduled")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reschedule</button>}
+                      {row.status !== "completed" && row.status !== "cancelled" && <button type="button" onClick={() => onStatusChange(row.id, "completed", new Date().toISOString().slice(0, 10))} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Complete</button>}
+                      {row.status !== "cancelled" && row.status !== "completed" && <button type="button" onClick={() => onStatusChange(row.id, "cancelled")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Cancel</button>}
                       <button type="button" onClick={() => setDeleteTarget(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
                     </div></td>
                   </tr>
@@ -149,7 +151,9 @@ export default function InspectionsPage() {
           <div><label className="mb-1 block text-sm text-muted">Tenant</label><select value={form.tenant_id} onChange={(e) => setForm({ ...form, tenant_id: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
             <option value="">Select tenant...</option>{tenantsList.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select></div>
-          <div><label className="mb-1 block text-sm text-muted">Type</label><input value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+          <div><label className="mb-1 block text-sm text-muted">Type</label><select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
+            <option value="move_in">Move In</option><option value="move_out">Move Out</option><option value="routine">Routine</option><option value="annual">Annual</option><option value="emergency">Emergency</option>
+          </select></div>
           <div><label className="mb-1 block text-sm text-muted">Inspector Name</label><input value={form.inspector_name} onChange={(e) => setForm({ ...form, inspector_name: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div><label className="mb-1 block text-sm text-muted">Scheduled Date</label><input type="date" value={form.scheduled_date} onChange={(e) => setForm({ ...form, scheduled_date: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div className="flex justify-end gap-2 pt-2">

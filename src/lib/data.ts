@@ -81,7 +81,7 @@ function buildRentStatus(invoiceStatus?: string): TenantRow["rentStatus"] {
     return "paid";
   }
 
-  if (invoiceStatus === "partially_paid") {
+  if (invoiceStatus === "sent" || invoiceStatus === "draft") {
     return "partial";
   }
 
@@ -97,12 +97,13 @@ function normalizeInvoiceStatus(status?: string): InvoiceRow["status"] {
     return "draft";
   }
 
-  if (status === "partially_paid") {
-    return "partially_paid";
+  if (status === "paid" || status === "sent" || status === "overdue" || status === "draft") {
+    return status;
   }
 
-  if (status === "paid" || status === "unpaid" || status === "overdue" || status === "draft") {
-    return status;
+  // Map legacy values
+  if (status === "unpaid" || status === "partially_paid") {
+    return "draft";
   }
 
   return status;
@@ -222,19 +223,19 @@ function toContractRow(payload: Record<string, unknown>): ContractRow {
 
   return {
     id: String(payload.id ?? ""),
-    title: String(payload.title ?? payload.name ?? "Untitled Contract"),
     tenantName: String(tenant?.full_name ?? payload.tenant_name ?? "Unassigned"),
     propertyName: String(property?.name ?? payload.property_name ?? "Unassigned"),
     startDate: String(payload.start_date ?? "-"),
     endDate: String(payload.end_date ?? "-"),
-    amount: toNumber(payload.amount),
-    status: String(payload.status ?? "draft"),
+    monthlyRent: toNumber(payload.monthly_rent),
+    depositAmount: toNumber(payload.deposit_amount),
+    notes: String(payload.notes ?? ""),
+    status: String(payload.status ?? "pending"),
   };
 }
 
 function toAuditEventRow(payload: Record<string, unknown>): AuditEventRow {
-  const actor = asRelationObject(payload.users);
-  const metadataValue = payload.metadata;
+  const detailsValue = payload.details;
 
   return {
     id: String(payload.id ?? ""),
@@ -242,11 +243,11 @@ function toAuditEventRow(payload: Record<string, unknown>): AuditEventRow {
     action: String(payload.action ?? "unknown"),
     entityType: String(payload.entity_type ?? "-"),
     entityId: String(payload.entity_id ?? "-"),
-    actorName: String(actor?.full_name ?? payload.actor_name ?? "System"),
-    metadata:
-      typeof metadataValue === "string"
-        ? metadataValue
-        : JSON.stringify(metadataValue ?? {}),
+    actorName: String(payload.user_name ?? payload.actor_name ?? "System"),
+    details:
+      typeof detailsValue === "string"
+        ? detailsValue
+        : JSON.stringify(detailsValue ?? {}),
   };
 }
 
@@ -801,7 +802,7 @@ export async function fetchContractsData(): Promise<ContractRow[]> {
 
   const { data, error } = await supabase
     .from("contracts")
-    .select("id, title, start_date, end_date, amount, status, tenants(full_name), properties(name)")
+    .select("id, start_date, end_date, monthly_rent, deposit_amount, status, notes, tenants(full_name), properties(name)")
     .order("start_date", { ascending: false });
 
   if (error) {
@@ -818,7 +819,8 @@ export async function fetchSettingsData(): Promise<SettingsData> {
 
     return {
       adminProfile: {
-        fullName: String(data.admin_full_name ?? data.full_name ?? "Admin"),
+        firstName: String(data.first_name ?? ""),
+        lastName: String(data.last_name ?? ""),
         email: String(data.admin_email ?? data.email ?? "-"),
         signatureUrl: String(data.signature_url ?? ""),
       },
@@ -853,7 +855,7 @@ export async function fetchSettingsData(): Promise<SettingsData> {
         .limit(1),
       supabase
         .from("users")
-        .select("full_name, email, signature_url")
+        .select("first_name, last_name, email, signature_url")
         .limit(1),
       supabase
         .from("admin_signup_pincodes")
@@ -870,7 +872,8 @@ export async function fetchSettingsData(): Promise<SettingsData> {
 
   return {
     adminProfile: {
-      fullName: String(user?.full_name ?? "Admin"),
+      firstName: String(user?.first_name ?? ""),
+      lastName: String(user?.last_name ?? ""),
       email: String(user?.email ?? "-"),
       signatureUrl: String(user?.signature_url ?? ""),
     },
@@ -949,7 +952,7 @@ export async function fetchAuditTrailData(): Promise<AuditEventRow[]> {
 
   const { data, error } = await supabase
     .from("audit_log")
-    .select("id, created_at, action, entity_type, entity_id, metadata, users(full_name)")
+    .select("id, created_at, action, entity_type, entity_id, details, user_name")
     .order("created_at", { ascending: false })
     .limit(200);
 

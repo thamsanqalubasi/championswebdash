@@ -42,15 +42,15 @@ export default function AuditTrailPage() {
         e.action.toLowerCase().includes(q) ||
         e.entityType.toLowerCase().includes(q) ||
         e.actorName.toLowerCase().includes(q) ||
-        e.metadata.toLowerCase().includes(q)
+        e.details.toLowerCase().includes(q)
       );
     }
     return result;
   }, [events, entityFilter, search]);
 
   const exportCSV = () => {
-    const header = "Date,Action,Entity Type,Entity ID,Actor,Metadata";
-    const rows = filtered.map((e) => `"${e.createdAt}","${e.action}","${e.entityType}","${e.entityId}","${e.actorName}","${e.metadata.replace(/"/g, '""')}"`);
+    const header = "Date,Action,Entity Type,Entity ID,Actor,Details";
+    const rows = filtered.map((e) => `"${e.createdAt}","${e.action}","${e.entityType}","${e.entityId}","${e.actorName}","${e.details.replace(/"/g, '""')}"`);
     const csv = [header, ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -88,7 +88,7 @@ export default function AuditTrailPage() {
                     <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs capitalize">{row.action}</span></td>
                     <td className="px-3 py-3 text-muted"><span className="font-medium">{row.entityType}</span> <span className="text-xs">#{row.entityId}</span></td>
                     <td className="px-3 py-3 text-muted">{row.actorName}</td>
-                    <td className="px-3 py-3 text-muted text-xs max-w-xs truncate">{row.metadata}</td>
+                    <td className="px-3 py-3 text-muted text-xs max-w-xs truncate">{row.details}</td>
                   </tr>
                 ))}</tbody>
               </table>

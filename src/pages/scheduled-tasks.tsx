@@ -10,7 +10,7 @@ function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(amount);
 }
 
-const emptyForm = { title: "", property_id: "", maintainer_id: "", category: "General", frequency: "monthly", next_due: "", estimated_cost: 0, status: "scheduled" };
+const emptyForm = { title: "", property_id: "", maintainer_id: "", category: "general", frequency: "monthly", next_due: "", estimated_cost: 0, status: "active" };
 
 export default function ScheduledTasksPage() {
   const [tasks, setTasks] = useState<PreventiveTaskRow[]>([]);
@@ -53,7 +53,8 @@ export default function ScheduledTasksPage() {
 
   const counts = useMemo(() => ({
     all: tasks.length,
-    scheduled: tasks.filter((i) => i.status === "scheduled").length,
+    active: tasks.filter((i) => i.status === "active").length,
+    paused: tasks.filter((i) => i.status === "paused").length,
     overdue: tasks.filter((i) => i.status === "overdue").length,
     completed: tasks.filter((i) => i.status === "completed").length,
   }), [tasks]);
@@ -105,7 +106,7 @@ export default function ScheduledTasksPage() {
         <section className="space-y-4 rounded-lg border border-border-color bg-surface p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
-              {(["all", "scheduled", "overdue", "completed"] as const).map((key) => (
+              {(["all", "active", "paused", "overdue", "completed"] as const).map((key) => (
                 <button key={key} type="button" onClick={() => setActiveFilter(key)}
                   className={`rounded-md border border-border-color px-3 py-2 text-sm ${activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"}`}>
                   {key === "all" ? `All (${counts.all})` : `${key.charAt(0).toUpperCase() + key.slice(1)} (${counts[key]})`}
@@ -131,7 +132,9 @@ export default function ScheduledTasksPage() {
                     <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.status}</span></td>
                     <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
                       {row.status !== "completed" && <button type="button" onClick={() => onStatusChange(row.id, "completed")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Complete</button>}
-                      {row.status === "completed" && <button type="button" onClick={() => onStatusChange(row.id, "scheduled")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reschedule</button>}
+                      {row.status === "completed" && <button type="button" onClick={() => onStatusChange(row.id, "active")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reschedule</button>}
+                      {row.status === "active" && <button type="button" onClick={() => onStatusChange(row.id, "paused")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Pause</button>}
+                      {row.status === "paused" && <button type="button" onClick={() => onStatusChange(row.id, "active")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Resume</button>}
                       <button type="button" onClick={() => setDeleteTarget(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
                     </div></td>
                   </tr>
@@ -152,9 +155,11 @@ export default function ScheduledTasksPage() {
             <option value="">Select provider...</option>{providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-sm text-muted">Category</label><input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+            <div><label className="mb-1 block text-sm text-muted">Category</label><select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
+              <option value="plumbing">Plumbing</option><option value="electrical">Electrical</option><option value="structural">Structural</option><option value="appliance">Appliance</option><option value="hvac">HVAC</option><option value="pest_control">Pest Control</option><option value="painting">Painting</option><option value="landscaping">Landscaping</option><option value="fire_safety">Fire Safety</option><option value="general">General</option>
+            </select></div>
             <div><label className="mb-1 block text-sm text-muted">Frequency</label><select value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
-              <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annually">Annually</option>
+              <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="biannual">Biannual</option><option value="annual">Annual</option>
             </select></div>
           </div>
           <div className="grid grid-cols-2 gap-3">

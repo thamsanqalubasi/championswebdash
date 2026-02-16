@@ -10,7 +10,7 @@ function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(amount);
 }
 
-const emptyForm = { name: "", type: "residential", address: "", status: "vacant", monthlyRent: 0 };
+const emptyForm = { name: "", type: "house", address: "", status: "vacant", monthlyRent: 0 };
 
 export default function PropertiesPage() {
   const [properties, setProperties] = useState<PropertyRow[]>([]);
@@ -134,7 +134,7 @@ export default function PropertiesPage() {
         <div className="space-y-3">
           <div><label className="mb-1 block text-sm text-muted">Name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div><label className="mb-1 block text-sm text-muted">Type</label><select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
-            <option value="residential">Residential</option><option value="commercial">Commercial</option><option value="industrial">Industrial</option>
+            <option value="house">House</option><option value="storage">Storage</option>
           </select></div>
           <div><label className="mb-1 block text-sm text-muted">Address</label><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div><label className="mb-1 block text-sm text-muted">Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">

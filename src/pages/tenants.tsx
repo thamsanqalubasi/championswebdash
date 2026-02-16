@@ -6,7 +6,7 @@ import { fetchTenantsData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { TenantRow } from "@/lib/types";
 
-const emptyForm = { full_name: "", phone: "", email: "", tenure_status: "active", property_id: "" };
+const emptyForm = { full_name: "", id_number: "", phone: "", email: "", tenure_status: "active", property_id: "" };
 
 export default function TenantsPage() {
   const [tenants, setTenants] = useState<TenantRow[]>([]);
@@ -49,12 +49,12 @@ export default function TenantsPage() {
   const filtered = useMemo(() => activeFilter === "all" ? tenants : tenants.filter((t) => t.tenureStatus === activeFilter), [tenants, activeFilter]);
 
   const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
-  const openEdit = (row: TenantRow) => { setEditingId(row.id); setForm({ full_name: row.fullName, phone: row.phone, email: row.email, tenure_status: row.tenureStatus, property_id: "" }); setModalOpen(true); };
+  const openEdit = (row: TenantRow) => { setEditingId(row.id); setForm({ full_name: row.fullName, id_number: "", phone: row.phone, email: row.email, tenure_status: row.tenureStatus, property_id: "" }); setModalOpen(true); };
 
   const onSave = async () => {
     setSaving(true);
     try {
-      const payload: Record<string, unknown> = { full_name: form.full_name, phone: form.phone, email: form.email, tenure_status: form.tenure_status };
+      const payload: Record<string, unknown> = { full_name: form.full_name, id_number: form.id_number, phone: form.phone, email: form.email, tenure_status: form.tenure_status };
       if (form.property_id) payload.property_id = form.property_id;
       if (editingId) {
         const { error: err } = await supabase.from("tenants").update(payload).eq("id", editingId);
@@ -135,6 +135,7 @@ export default function TenantsPage() {
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? "Edit Tenant" : "Add Tenant"}>
         <div className="space-y-3">
           <div><label className="mb-1 block text-sm text-muted">Full Name</label><input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+          <div><label className="mb-1 block text-sm text-muted">ID Number</label><input value={form.id_number} onChange={(e) => setForm({ ...form, id_number: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div><label className="mb-1 block text-sm text-muted">Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div><label className="mb-1 block text-sm text-muted">Email</label><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div><label className="mb-1 block text-sm text-muted">Property</label><select value={form.property_id} onChange={(e) => setForm({ ...form, property_id: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">

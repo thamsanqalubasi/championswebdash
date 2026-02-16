@@ -10,7 +10,7 @@ function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(amount);
 }
 
-const emptyForm = { property_id: "", maintainer_id: "", category: "General", priority: "medium", status: "open", scheduled_date: "", estimated_cost: 0, actual_cost: 0 };
+const emptyForm = { property_id: "", maintainer_id: "", description: "", category: "general", priority: "medium", status: "open", scheduled_date: "", estimated_cost: 0, actual_cost: 0 };
 
 export default function WorkOrdersPage() {
   const [workOrders, setWorkOrders] = useState<WorkOrderRow[]>([]);
@@ -66,7 +66,7 @@ export default function WorkOrdersPage() {
   const onSave = async () => {
     setSaving(true);
     try {
-      const payload: Record<string, unknown> = { category: form.category, priority: form.priority, status: form.status, scheduled_date: form.scheduled_date || null, estimated_cost: form.estimated_cost, actual_cost: form.actual_cost };
+      const payload: Record<string, unknown> = { description: form.description, category: form.category, priority: form.priority, status: form.status, scheduled_date: form.scheduled_date || null, estimated_cost: form.estimated_cost, actual_cost: form.actual_cost };
       if (form.property_id) payload.property_id = form.property_id;
       if (form.maintainer_id) payload.maintainer_id = form.maintainer_id;
       if (editingId) {
@@ -153,8 +153,11 @@ export default function WorkOrdersPage() {
           <div><label className="mb-1 block text-sm text-muted">Provider</label><select value={form.maintainer_id} onChange={(e) => setForm({ ...form, maintainer_id: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
             <option value="">Select provider...</option>{providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select></div>
+          <div><label className="mb-1 block text-sm text-muted">Description</label><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-sm text-muted">Category</label><input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+            <div><label className="mb-1 block text-sm text-muted">Category</label><select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
+              <option value="plumbing">Plumbing</option><option value="electrical">Electrical</option><option value="structural">Structural</option><option value="appliance">Appliance</option><option value="hvac">HVAC</option><option value="pest_control">Pest Control</option><option value="painting">Painting</option><option value="landscaping">Landscaping</option><option value="general">General</option>
+            </select></div>
             <div><label className="mb-1 block text-sm text-muted">Priority</label><select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
               <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
             </select></div>

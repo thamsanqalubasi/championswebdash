@@ -10,7 +10,7 @@ function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(amount);
 }
 
-const emptyForm = { title: "", tenant_id: "", property_id: "", start_date: "", end_date: "", amount: 0, status: "active" };
+const emptyForm = { tenant_id: "", property_id: "", start_date: "", end_date: "", monthly_rent: 0, deposit_amount: 0, notes: "", status: "pending" };
 
 export default function ContractsPage() {
   const [contracts, setContracts] = useState<ContractRow[]>([]);
@@ -53,6 +53,7 @@ export default function ContractsPage() {
 
   const counts = useMemo(() => ({
     all: contracts.length,
+    pending: contracts.filter((c) => c.status === "pending").length,
     active: contracts.filter((c) => c.status === "active").length,
     expired: contracts.filter((c) => c.status === "expired").length,
     terminated: contracts.filter((c) => c.status === "terminated").length,
@@ -63,14 +64,14 @@ export default function ContractsPage() {
   const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
   const openEdit = (row: ContractRow) => {
     setEditingId(row.id);
-    setForm({ title: row.title, tenant_id: "", property_id: "", start_date: row.startDate, end_date: row.endDate, amount: row.amount, status: row.status });
+    setForm({ tenant_id: "", property_id: "", start_date: row.startDate, end_date: row.endDate, monthly_rent: row.monthlyRent, deposit_amount: row.depositAmount, notes: row.notes, status: row.status });
     setModalOpen(true);
   };
 
   const onSave = async () => {
     setSaving(true);
     try {
-      const payload: Record<string, unknown> = { title: form.title, start_date: form.start_date || null, end_date: form.end_date || null, amount: form.amount, status: form.status };
+      const payload: Record<string, unknown> = { start_date: form.start_date || null, end_date: form.end_date || null, monthly_rent: form.monthly_rent, deposit_amount: form.deposit_amount, notes: form.notes, status: form.status };
       if (form.tenant_id) payload.tenant_id = form.tenant_id;
       if (form.property_id) payload.property_id = form.property_id;
       if (editingId) {
@@ -110,7 +111,7 @@ export default function ContractsPage() {
         <section className="space-y-4 rounded-lg border border-border-color bg-surface p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
-              {(["all", "active", "expired", "terminated"] as const).map((key) => (
+              {(["all", "pending", "active", "expired", "terminated"] as const).map((key) => (
                 <button key={key} type="button" onClick={() => setActiveFilter(key)}
                   className={`rounded-md border border-border-color px-3 py-2 text-sm ${activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"}`}>
                   {key === "all" ? `All (${counts.all})` : `${key.charAt(0).toUpperCase() + key.slice(1)} (${counts[key]})`}
@@ -124,18 +125,19 @@ export default function ContractsPage() {
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse text-sm">
                 <thead><tr className="border-b border-border-color text-left text-muted">
-                  <th className="px-3 py-2 font-medium">Title</th><th className="px-3 py-2 font-medium">Tenant</th><th className="px-3 py-2 font-medium">Property</th><th className="px-3 py-2 font-medium">Start</th><th className="px-3 py-2 font-medium">End</th><th className="px-3 py-2 font-medium">Amount</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Actions</th>
+                  <th className="px-3 py-2 font-medium">Tenant</th><th className="px-3 py-2 font-medium">Property</th><th className="px-3 py-2 font-medium">Start</th><th className="px-3 py-2 font-medium">End</th><th className="px-3 py-2 font-medium">Monthly Rent</th><th className="px-3 py-2 font-medium">Deposit</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Actions</th>
                 </tr></thead>
                 <tbody>{filtered.map((row) => (
                   <tr key={row.id} className="border-b border-border-color/60">
-                    <td className="px-3 py-3 font-medium">{row.title}</td>
-                    <td className="px-3 py-3 text-muted">{row.tenantName}</td>
+                    <td className="px-3 py-3 font-medium">{row.tenantName}</td>
                     <td className="px-3 py-3 text-muted">{row.propertyName}</td>
                     <td className="px-3 py-3 text-muted">{row.startDate}</td>
                     <td className="px-3 py-3 text-muted">{row.endDate}</td>
-                    <td className="px-3 py-3 text-muted">{formatCurrency(row.amount)}</td>
+                    <td className="px-3 py-3 text-muted">{formatCurrency(row.monthlyRent)}</td>
+                    <td className="px-3 py-3 text-muted">{formatCurrency(row.depositAmount)}</td>
                     <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.status}</span></td>
                     <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
+                      {row.status === "pending" && <button type="button" onClick={() => onStatusChange(row.id, "active")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Activate</button>}
                       {row.status === "active" && <button type="button" onClick={() => onStatusChange(row.id, "terminated")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Terminate</button>}
                       {row.status === "expired" && <button type="button" onClick={() => onStatusChange(row.id, "active")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Renew</button>}
                       {row.status === "terminated" && <button type="button" onClick={() => onStatusChange(row.id, "active")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reactivate</button>}
@@ -152,7 +154,6 @@ export default function ContractsPage() {
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? "Edit Contract" : "Add Contract"}>
         <div className="space-y-3">
-          <div><label className="mb-1 block text-sm text-muted">Title</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="mb-1 block text-sm text-muted">Tenant</label><select value={form.tenant_id} onChange={(e) => setForm({ ...form, tenant_id: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
               <option value="">Select tenant...</option>{tenants.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
@@ -166,11 +167,13 @@ export default function ContractsPage() {
             <div><label className="mb-1 block text-sm text-muted">End Date</label><input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-sm text-muted">Amount</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: Number(e.target.value) })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
-            <div><label className="mb-1 block text-sm text-muted">Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
-              <option value="active">Active</option><option value="expired">Expired</option><option value="terminated">Terminated</option>
-            </select></div>
+            <div><label className="mb-1 block text-sm text-muted">Monthly Rent</label><input type="number" value={form.monthly_rent} onChange={(e) => setForm({ ...form, monthly_rent: Number(e.target.value) })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+            <div><label className="mb-1 block text-sm text-muted">Deposit Amount</label><input type="number" value={form.deposit_amount} onChange={(e) => setForm({ ...form, deposit_amount: Number(e.target.value) })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           </div>
+          <div><label className="mb-1 block text-sm text-muted">Notes</label><textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+          <div><label className="mb-1 block text-sm text-muted">Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
+            <option value="pending">Pending</option><option value="active">Active</option><option value="expired">Expired</option><option value="terminated">Terminated</option>
+          </select></div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setModalOpen(false)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
             <button type="button" onClick={onSave} disabled={saving} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
@@ -178,7 +181,7 @@ export default function ContractsPage() {
         </div>
       </Modal>
 
-      <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Contract" message={`Delete "${deleteTarget?.title}"?`} confirmLabel="Delete" loading={deleting} />
+      <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Contract" message={`Delete contract for ${deleteTarget?.tenantName}?`} confirmLabel="Delete" loading={deleting} />
     </ModulePage>
   );
 }

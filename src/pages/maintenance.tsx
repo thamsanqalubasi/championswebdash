@@ -14,7 +14,7 @@ export default function MaintenancePage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ property_id: "", category: "General", priority: "medium", description: "" });
+  const [form, setForm] = useState({ property_id: "", category: "general", priority: "medium", description: "" });
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
@@ -38,11 +38,11 @@ export default function MaintenancePage() {
   const onSubmitRequest = async () => {
     setSaving(true);
     try {
-      const payload: Record<string, unknown> = { category: form.category, priority: form.priority, status: "open" };
+      const payload: Record<string, unknown> = { description: form.description, category: form.category, priority: form.priority, status: "open" };
       if (form.property_id) payload.property_id = form.property_id;
       const { error: err } = await supabase.from("maintenance").insert(payload);
       if (err) throw err;
-      setModalOpen(false); setForm({ property_id: "", category: "General", priority: "medium", description: "" }); reload();
+      setModalOpen(false); setForm({ property_id: "", category: "general", priority: "medium", description: "" }); reload();
     } catch (e) { alert(e instanceof Error ? e.message : "Failed to create request"); }
     finally { setSaving(false); }
   };
@@ -104,7 +104,7 @@ export default function MaintenancePage() {
           <div className="grid grid-cols-2 gap-3">
             <div><label className="mb-1 block text-sm text-muted">Category</label>
               <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
-                <option>General</option><option>Plumbing</option><option>Electrical</option><option>HVAC</option><option>Structural</option><option>Painting</option><option>Cleaning</option>
+                <option value="plumbing">Plumbing</option><option value="electrical">Electrical</option><option value="structural">Structural</option><option value="appliance">Appliance</option><option value="hvac">HVAC</option><option value="pest_control">Pest Control</option><option value="painting">Painting</option><option value="landscaping">Landscaping</option><option value="general">General</option>
               </select>
             </div>
             <div><label className="mb-1 block text-sm text-muted">Priority</label>
@@ -113,6 +113,7 @@ export default function MaintenancePage() {
               </select>
             </div>
           </div>
+          <div><label className="mb-1 block text-sm text-muted">Description</label><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setModalOpen(false)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
             <button type="button" onClick={onSubmitRequest} disabled={saving} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Saving..." : "Submit"}</button>

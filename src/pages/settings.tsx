@@ -14,7 +14,7 @@ export default function SettingsPage() {
 
   // Edit states
   const [editSection, setEditSection] = useState<"admin" | "company" | "invoice" | null>(null);
-  const [adminForm, setAdminForm] = useState({ full_name: "", email: "", signature_url: "" });
+  const [adminForm, setAdminForm] = useState({ first_name: "", last_name: "", email: "", signature_url: "" });
   const [companyForm, setCompanyForm] = useState({ company_name: "", logo_url: "", address: "" });
   const [invoiceForm, setInvoiceForm] = useState({ tax_rate: 0, default_due_day: 1, payment_instructions: "" });
   const [saving, setSaving] = useState(false);
@@ -44,7 +44,7 @@ export default function SettingsPage() {
 
   const openEditAdmin = () => {
     if (!data) return;
-    setAdminForm({ full_name: data.adminProfile.fullName, email: data.adminProfile.email, signature_url: data.adminProfile.signatureUrl });
+    setAdminForm({ first_name: data.adminProfile.firstName, last_name: data.adminProfile.lastName, email: data.adminProfile.email, signature_url: data.adminProfile.signatureUrl });
     setEditSection("admin");
   };
   const openEditCompany = () => {
@@ -61,7 +61,7 @@ export default function SettingsPage() {
   const saveAdmin = async () => {
     setSaving(true);
     try {
-      const { error: err } = await supabase.from("users").update({ full_name: adminForm.full_name, email: adminForm.email, signature_url: adminForm.signature_url }).limit(1);
+      const { error: err } = await supabase.from("users").update({ first_name: adminForm.first_name, last_name: adminForm.last_name, email: adminForm.email, signature_url: adminForm.signature_url }).limit(1);
       if (err) throw err;
       setEditSection(null); reload();
     } catch (e) { alert(e instanceof Error ? e.message : "Save failed"); }
@@ -130,7 +130,8 @@ export default function SettingsPage() {
               <button type="button" onClick={openEditAdmin} className="rounded-md border border-border-color px-3 py-1 text-sm text-muted hover:bg-surface-elevated">Edit</button>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <LabelValue label="Full Name" value={data.adminProfile.fullName} />
+              <LabelValue label="First Name" value={data.adminProfile.firstName} />
+              <LabelValue label="Last Name" value={data.adminProfile.lastName} />
               <LabelValue label="Email" value={data.adminProfile.email} />
               <LabelValue label="Signature URL" value={data.adminProfile.signatureUrl} />
             </div>
@@ -176,7 +177,8 @@ export default function SettingsPage() {
       {/* Edit Admin Modal */}
       <Modal open={editSection === "admin"} onClose={() => setEditSection(null)} title="Edit Admin Profile">
         <div className="space-y-3">
-          <div><label className="mb-1 block text-sm text-muted">Full Name</label><input value={adminForm.full_name} onChange={(e) => setAdminForm({ ...adminForm, full_name: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+          <div><label className="mb-1 block text-sm text-muted">First Name</label><input value={adminForm.first_name} onChange={(e) => setAdminForm({ ...adminForm, first_name: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+          <div><label className="mb-1 block text-sm text-muted">Last Name</label><input value={adminForm.last_name} onChange={(e) => setAdminForm({ ...adminForm, last_name: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div><label className="mb-1 block text-sm text-muted">Email</label><input value={adminForm.email} onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div><label className="mb-1 block text-sm text-muted">Signature URL</label><input value={adminForm.signature_url} onChange={(e) => setAdminForm({ ...adminForm, signature_url: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div className="flex justify-end gap-2 pt-2">

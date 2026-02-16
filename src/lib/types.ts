@@ -48,11 +48,10 @@ export type DashboardData = {
 };
 
 export type InvoiceStatus =
-  | "paid"
-  | "unpaid"
-  | "partially_paid"
-  | "overdue"
   | "draft"
+  | "sent"
+  | "paid"
+  | "overdue"
   | string;
 
 export type InvoiceRow = {
@@ -154,12 +153,13 @@ export type MaintenanceOverviewData = {
 
 export type ContractRow = {
   id: string;
-  title: string;
   tenantName: string;
   propertyName: string;
   startDate: string;
   endDate: string;
-  amount: number;
+  monthlyRent: number;
+  depositAmount: number;
+  notes: string;
   status: string;
 };
 
@@ -170,12 +170,13 @@ export type AuditEventRow = {
   entityType: string;
   entityId: string;
   actorName: string;
-  metadata: string;
+  details: string;
 };
 
 export type SettingsData = {
   adminProfile: {
-    fullName: string;
+    firstName: string;
+    lastName: string;
     email: string;
     signatureUrl: string;
   };

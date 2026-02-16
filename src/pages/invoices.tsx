@@ -10,7 +10,7 @@ function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(amount);
 }
 
-const emptyForm = { tenant_id: "", property_id: "", month: "", due_date: "", total_amount: 0, status: "unpaid" };
+const emptyForm = { tenant_id: "", property_id: "", month: "", due_date: "", total_amount: 0, status: "draft" };
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
@@ -53,7 +53,7 @@ export default function InvoicesPage() {
   const counts = useMemo(() => ({
     all: invoices.length,
     paid: invoices.filter((i) => i.status === "paid").length,
-    unpaid: invoices.filter((i) => i.status === "unpaid").length,
+    sent: invoices.filter((i) => i.status === "sent").length,
     overdue: invoices.filter((i) => i.status === "overdue").length,
     draft: invoices.filter((i) => i.status === "draft").length,
   }), [invoices]);
@@ -122,7 +122,7 @@ export default function InvoicesPage() {
           <div className="rounded-lg border border-border-color bg-surface p-4 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap gap-2">
-                {(["all", "paid", "unpaid", "overdue", "draft"] as const).map((key) => (
+                {(["all", "paid", "sent", "overdue", "draft"] as const).map((key) => (
                   <button key={key} type="button" onClick={() => setActiveFilter(key)}
                     className={`rounded-md border border-border-color px-3 py-2 text-sm ${activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"}`}>
                     {key === "all" ? `All (${counts.all})` : `${key.charAt(0).toUpperCase() + key.slice(1)} (${counts[key]})`}
@@ -151,8 +151,9 @@ export default function InvoicesPage() {
                       <td className="px-3 py-3"><span className={`rounded-full border px-2 py-1 text-xs capitalize ${row.status === "paid" ? "border-green-500/30 bg-green-500/10 text-green-600" : row.status === "overdue" ? "border-red-500/30 bg-red-500/10 text-red-600" : "border-border-color bg-surface-elevated text-muted"}`}>{row.status}</span></td>
                       <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
                         {row.status !== "paid" && <button type="button" onClick={() => onStatusChange(row.id, "paid")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Mark Paid</button>}
-                        {row.status === "unpaid" && <button type="button" onClick={() => onStatusChange(row.id, "overdue")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Mark Overdue</button>}
-                        {row.status === "paid" && <button type="button" onClick={() => onStatusChange(row.id, "unpaid")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Revert</button>}
+                        {row.status === "sent" && <button type="button" onClick={() => onStatusChange(row.id, "overdue")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Mark Overdue</button>}
+                        {row.status === "draft" && <button type="button" onClick={() => onStatusChange(row.id, "sent")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Send</button>}
+                        {row.status === "paid" && <button type="button" onClick={() => onStatusChange(row.id, "sent")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Revert</button>}
                         <button type="button" onClick={() => setDeleteTarget(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
                       </div></td>
                     </tr>
@@ -181,7 +182,7 @@ export default function InvoicesPage() {
           <div className="grid grid-cols-2 gap-3">
             <div><label className="mb-1 block text-sm text-muted">Amount</label><input type="number" value={form.total_amount} onChange={(e) => setForm({ ...form, total_amount: Number(e.target.value) })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
             <div><label className="mb-1 block text-sm text-muted">Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
-              <option value="unpaid">Unpaid</option><option value="draft">Draft</option><option value="paid">Paid</option><option value="overdue">Overdue</option>
+              <option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option>
             </select></div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
