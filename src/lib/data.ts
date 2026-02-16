@@ -1,4 +1,3 @@
-import { createClient } from "@supabase/supabase-js";
 import type {
   AuditEventRow,
   ContractRow,
@@ -16,10 +15,11 @@ import type {
   TenantRow,
   WorkOrderRow,
 } from "./types";
+import { supabase } from "./supabase";
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 function hasApiBase() {
   return Boolean(apiBaseUrl);
@@ -34,9 +34,7 @@ function getSupabaseClient() {
     return null;
   }
 
-  return createClient(supabaseUrl as string, supabaseAnonKey as string, {
-    auth: { persistSession: false },
-  });
+  return supabase;
 }
 
 function toNumber(value: unknown) {
@@ -56,7 +54,7 @@ function titleFromMonth(month: string) {
 
 async function fetchApiJson<T>(path: string): Promise<T> {
   if (!hasApiBase()) {
-    throw new Error("NEXT_PUBLIC_API_URL is not configured.");
+    throw new Error("VITE_API_URL is not configured.");
   }
 
   const response = await fetch(`${apiBaseUrl}${path}`, {
@@ -360,7 +358,7 @@ export async function fetchDashboardData(): Promise<DashboardData> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
-      "Configure NEXT_PUBLIC_API_URL or Supabase env vars (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).",
+      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
     );
   }
 
@@ -457,7 +455,7 @@ export async function fetchPropertiesData(): Promise<PropertyRow[]> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
-      "Configure NEXT_PUBLIC_API_URL or Supabase env vars (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).",
+      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
     );
   }
 
@@ -524,7 +522,7 @@ export async function fetchTenantsData(): Promise<TenantRow[]> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
-      "Configure NEXT_PUBLIC_API_URL or Supabase env vars (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).",
+      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
     );
   }
 
@@ -576,7 +574,7 @@ export async function fetchInvoicesData(): Promise<InvoiceRow[]> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
-      "Configure NEXT_PUBLIC_API_URL or Supabase env vars (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).",
+      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
     );
   }
 
@@ -638,7 +636,7 @@ export async function fetchWorkOrdersData(): Promise<WorkOrderRow[]> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
-      "Configure NEXT_PUBLIC_API_URL or Supabase env vars (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).",
+      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
     );
   }
 
@@ -666,7 +664,7 @@ export async function fetchProvidersData(): Promise<ProviderRow[]> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
-      "Configure NEXT_PUBLIC_API_URL or Supabase env vars (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).",
+      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
     );
   }
 
@@ -694,7 +692,7 @@ export async function fetchInspectionsData(): Promise<InspectionRow[]> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
-      "Configure NEXT_PUBLIC_API_URL or Supabase env vars (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).",
+      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
     );
   }
 
@@ -724,7 +722,7 @@ export async function fetchPreventiveTasksData(): Promise<PreventiveTaskRow[]> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
-      "Configure NEXT_PUBLIC_API_URL or Supabase env vars (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).",
+      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
     );
   }
 
@@ -752,7 +750,7 @@ export async function fetchInventoryData(): Promise<InventoryItemRow[]> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
-      "Configure NEXT_PUBLIC_API_URL or Supabase env vars (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).",
+      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
     );
   }
 
@@ -802,7 +800,7 @@ export async function fetchContractsData(): Promise<ContractRow[]> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
-      "Configure NEXT_PUBLIC_API_URL or Supabase env vars (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).",
+      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
     );
   }
 
@@ -848,7 +846,7 @@ export async function fetchSettingsData(): Promise<SettingsData> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
-      "Configure NEXT_PUBLIC_API_URL or Supabase env vars (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).",
+      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
     );
   }
 
@@ -921,7 +919,7 @@ export async function verifyAdminPin(pin: string): Promise<boolean> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
-      "Configure NEXT_PUBLIC_API_URL or Supabase env vars (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).",
+      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
     );
   }
 
@@ -950,7 +948,7 @@ export async function fetchAuditTrailData(): Promise<AuditEventRow[]> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
-      "Configure NEXT_PUBLIC_API_URL or Supabase env vars (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).",
+      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
     );
   }
 

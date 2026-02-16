@@ -1,8 +1,6 @@
-"use client";
-
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { type ReactNode } from "react";
+import { useAuth } from "@/lib/auth";
 import { ThemeToggle } from "./theme-toggle";
 
 type NavItem = {
@@ -51,44 +49,15 @@ function isActive(pathname: string, href: string) {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  const [userEmail, setUserEmail] = useState<string>("Admin");
+  const { pathname } = useLocation();
+  const { user, signOut } = useAuth();
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadSession() {
-      try {
-        const response = await fetch("/api/auth/me", { cache: "no-store" });
-        if (!response.ok) {
-          return;
-        }
-
-        const payload = (await response.json()) as {
-          authenticated?: boolean;
-          user?: { email?: string };
-        };
-
-        if (!cancelled && payload.authenticated && payload.user?.email) {
-          setUserEmail(payload.user.email);
-        }
-      } catch {
-        if (!cancelled) {
-          setUserEmail("Admin");
-        }
-      }
-    }
-
-    void loadSession();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const userEmail = user?.email ?? "Admin";
 
   const onSignOut = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
+    await signOut();
+    window.location.href =
+      (import.meta.env.VITE_BASE_PATH || "/championswebdash") + "/login";
   };
 
   return (
@@ -118,7 +87,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   return (
                     <Link
                       key={item.href}
-                      href={item.href}
+                      to={item.href}
                       aria-current={active ? "page" : undefined}
                       className={`block rounded-md px-3 py-2 text-sm transition ${
                         active
