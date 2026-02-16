@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 type ModalProps = {
   open: boolean;
@@ -8,42 +8,48 @@ type ModalProps = {
 };
 
 export function Modal({ open, onClose, title, children }: ModalProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-
+  // Close on Escape key
   useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (open && !dialog.open) {
-      dialog.showModal();
-    } else if (!open && dialog.open) {
-      dialog.close();
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [open, onClose]);
+
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
     }
+    return () => { document.body.style.overflow = ""; };
   }, [open]);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const handler = () => onClose();
-    dialog.addEventListener("close", handler);
-    return () => dialog.removeEventListener("close", handler);
-  }, [onClose]);
 
   if (!open) return null;
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="w-full max-w-lg rounded-lg border border-border-color bg-surface p-0 text-foreground backdrop:bg-black/50"
-      onClick={(e) => { if (e.target === dialogRef.current) onClose(); }}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
     >
-      <div className="p-6">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/50"
+        onClick={onClose}
+      />
+      {/* Panel */}
+      <div className="relative z-10 w-full max-w-lg mx-4 rounded-lg border border-border-color bg-surface p-6 text-foreground shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-semibold">{title}</h3>
           <button type="button" onClick={onClose} className="text-muted hover:text-foreground text-xl leading-none">&times;</button>
         </div>
         {children}
       </div>
-    </dialog>
+    </div>
   );
 }
 
