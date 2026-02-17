@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
-import { Modal, ConfirmDialog } from "@/components/modal";
+import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { fetchTenantsData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { TenantRow } from "@/lib/types";
@@ -19,6 +19,7 @@ export default function TenantsPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<TenantRow | null>(null);
+  const [detailsRow, setDetailsRow] = useState<TenantRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
 
@@ -114,7 +115,7 @@ export default function TenantsPage() {
                   <th className="px-3 py-2 font-medium">Tenant</th><th className="px-3 py-2 font-medium">Property</th><th className="px-3 py-2 font-medium">Phone</th><th className="px-3 py-2 font-medium">Email</th><th className="px-3 py-2 font-medium">Tenure</th><th className="px-3 py-2 font-medium">Rent Status</th><th className="px-3 py-2 font-medium">Actions</th>
                 </tr></thead>
                 <tbody>{filtered.map((row) => (
-                  <tr key={row.id} className="border-b border-border-color/60">
+                  <tr key={row.id} onClick={() => setDetailsRow(row)} className="cursor-pointer border-b border-border-color/60 hover:bg-surface-elevated/40">
                     <td className="px-3 py-3 font-medium">{row.fullName}</td>
                     <td className="px-3 py-3 text-muted">{row.propertyName}</td>
                     <td className="px-3 py-3 text-muted">{row.phone}</td>
@@ -122,10 +123,10 @@ export default function TenantsPage() {
                     <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.tenureStatus}</span></td>
                     <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.rentStatus}</span></td>
                     <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={() => openEdit(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Edit</button>
-                      {row.tenureStatus === "active" && <button type="button" onClick={() => onStatusChange(row.id, "notice")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Give Notice</button>}
-                      {row.tenureStatus === "notice" && <button type="button" onClick={() => onStatusChange(row.id, "active")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reactivate</button>}
-                      <button type="button" onClick={() => setDeleteTarget(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
+                      <button type="button" onClick={(event) => { event.stopPropagation(); openEdit(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Edit</button>
+                      {row.tenureStatus === "active" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "notice"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Give Notice</button>}
+                      {row.tenureStatus === "notice" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "active"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reactivate</button>}
+                      <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteTarget(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
                     </div></td>
                   </tr>
                 ))}</tbody>
@@ -156,6 +157,24 @@ export default function TenantsPage() {
       </Modal>
 
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Tenant" message={`Delete "${deleteTarget?.fullName}"? This cannot be undone.`} confirmLabel="Delete" loading={deleting} />
+
+      <SideDrawer open={!!detailsRow} onClose={() => setDetailsRow(null)} title="Tenant Details">
+        {detailsRow && (
+          <div className="space-y-4">
+            <div className="text-sm text-muted">{detailsRow.fullName}</div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><p className="text-xs text-muted">Property</p><p>{detailsRow.propertyName}</p></div>
+              <div><p className="text-xs text-muted">Tenure</p><p>{detailsRow.tenureStatus}</p></div>
+              <div><p className="text-xs text-muted">Phone</p><p>{detailsRow.phone}</p></div>
+              <div><p className="text-xs text-muted">Email</p><p>{detailsRow.email}</p></div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button type="button" onClick={() => { setDetailsRow(null); openEdit(detailsRow); }} className="rounded-md border border-border-color px-3 py-2 text-sm">Edit</button>
+              <button type="button" onClick={() => { setDetailsRow(null); setDeleteTarget(detailsRow); }} className="rounded-md border border-border-color px-3 py-2 text-sm">Delete</button>
+            </div>
+          </div>
+        )}
+      </SideDrawer>
     </ModulePage>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
-import { Modal, ConfirmDialog } from "@/components/modal";
+import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { fetchInventoryData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { InventoryItemRow } from "@/lib/types";
@@ -23,6 +23,7 @@ export default function InventoryPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<InventoryItemRow | null>(null);
+  const [detailsRow, setDetailsRow] = useState<InventoryItemRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [restockTarget, setRestockTarget] = useState<InventoryItemRow | null>(null);
   const [restockQty, setRestockQty] = useState(0);
@@ -133,7 +134,7 @@ export default function InventoryPage() {
                   <tbody>{filtered.map((row) => {
                     const isLow = row.quantity <= row.minStockLevel;
                     return (
-                      <tr key={row.id} className="border-b border-border-color/60">
+                      <tr key={row.id} onClick={() => setDetailsRow(row)} className="cursor-pointer border-b border-border-color/60 hover:bg-surface-elevated/40">
                         <td className="px-3 py-3 font-medium">{row.name}</td>
                         <td className="px-3 py-3 text-muted">{row.category}</td>
                         <td className={`px-3 py-3 ${isLow ? "font-semibold text-red-500" : "text-muted"}`}>{row.quantity}</td>
@@ -143,9 +144,9 @@ export default function InventoryPage() {
                         <td className="px-3 py-3 text-muted">{formatCurrency(row.quantity * row.unitCost)}</td>
                         <td className="px-3 py-3 text-muted">{row.supplier}</td>
                         <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
-                          <button type="button" onClick={() => { setRestockTarget(row); setRestockQty(0); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Restock</button>
-                          <button type="button" onClick={() => openEdit(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Edit</button>
-                          <button type="button" onClick={() => setDeleteTarget(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
+                          <button type="button" onClick={(event) => { event.stopPropagation(); setRestockTarget(row); setRestockQty(0); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Restock</button>
+                          <button type="button" onClick={(event) => { event.stopPropagation(); openEdit(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Edit</button>
+                          <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteTarget(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
                         </div></td>
                       </tr>
                     );
@@ -194,6 +195,26 @@ export default function InventoryPage() {
       </Modal>
 
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Item" message={`Delete "${deleteTarget?.name}"?`} confirmLabel="Delete" loading={deleting} />
+
+      <SideDrawer open={!!detailsRow} onClose={() => setDetailsRow(null)} title="Inventory Item Details">
+        {detailsRow && (
+          <div className="space-y-4">
+            <div className="text-sm text-muted">{detailsRow.name}</div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><p className="text-xs text-muted">Category</p><p>{detailsRow.category}</p></div>
+              <div><p className="text-xs text-muted">Quantity</p><p>{detailsRow.quantity} {detailsRow.unit}</p></div>
+              <div><p className="text-xs text-muted">Min Stock</p><p>{detailsRow.minStockLevel}</p></div>
+              <div><p className="text-xs text-muted">Unit Cost</p><p>{formatCurrency(detailsRow.unitCost)}</p></div>
+              <div><p className="text-xs text-muted">Supplier</p><p>{detailsRow.supplier}</p></div>
+              <div><p className="text-xs text-muted">Location</p><p>{detailsRow.location}</p></div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button type="button" onClick={() => { setDetailsRow(null); openEdit(detailsRow); }} className="rounded-md border border-border-color px-3 py-2 text-sm">Edit</button>
+              <button type="button" onClick={() => { setDetailsRow(null); setDeleteTarget(detailsRow); }} className="rounded-md border border-border-color px-3 py-2 text-sm">Delete</button>
+            </div>
+          </div>
+        )}
+      </SideDrawer>
     </ModulePage>
   );
 }

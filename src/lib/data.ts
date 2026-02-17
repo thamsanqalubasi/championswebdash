@@ -802,14 +802,43 @@ export async function fetchContractsData(): Promise<ContractRow[]> {
 
   const { data, error } = await supabase
     .from("contracts")
-    .select("id, start_date, end_date, monthly_rent, deposit_amount, status, notes, tenants(full_name), properties(name)")
+    .select("id, tenant_id, property_id, start_date, end_date, monthly_rent, deposit_amount, status, notes")
     .order("start_date", { ascending: false });
 
   if (error) {
     throw error;
   }
 
-  return (data ?? []).map((row) => toContractRow(row as Record<string, unknown>));
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const tenantIds = Array.from(new Set(rows.map((row) => String(row.tenant_id ?? "")).filter(Boolean)));
+  const propertyIds = Array.from(new Set(rows.map((row) => String(row.property_id ?? "")).filter(Boolean)));
+
+  const [tenantsResult, propertiesResult] = await Promise.all([
+    tenantIds.length
+      ? supabase.from("tenants").select("id, full_name").in("id", tenantIds)
+      : Promise.resolve({ data: [], error: null }),
+    propertyIds.length
+      ? supabase.from("properties").select("id, name").in("id", propertyIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  if (tenantsResult.error) throw tenantsResult.error;
+  if (propertiesResult.error) throw propertiesResult.error;
+
+  const tenantNameById = new Map((tenantsResult.data ?? []).map((row) => [String(row.id), String(row.full_name ?? "Unassigned")]));
+  const propertyNameById = new Map((propertiesResult.data ?? []).map((row) => [String(row.id), String(row.name ?? "Unassigned")]));
+
+  return rows.map((row) => ({
+    id: String(row.id ?? ""),
+    tenantName: tenantNameById.get(String(row.tenant_id ?? "")) ?? "Unassigned",
+    propertyName: propertyNameById.get(String(row.property_id ?? "")) ?? "Unassigned",
+    startDate: String(row.start_date ?? "-"),
+    endDate: String(row.end_date ?? "-"),
+    monthlyRent: toNumber(row.monthly_rent),
+    depositAmount: toNumber(row.deposit_amount),
+    notes: String(row.notes ?? ""),
+    status: String(row.status ?? "pending"),
+  }));
 }
 
 export async function fetchSettingsData(): Promise<SettingsData> {

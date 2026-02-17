@@ -63,6 +63,13 @@ type ConfirmDialogProps = {
   loading?: boolean;
 };
 
+type SideDrawerProps = {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+};
+
 export function ConfirmDialog({ open, onClose, onConfirm, title, message, confirmLabel = "Confirm", loading = false }: ConfirmDialogProps) {
   return (
     <Modal open={open} onClose={onClose} title={title}>
@@ -74,5 +81,31 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, message, confir
         </button>
       </div>
     </Modal>
+  );
+}
+
+export function SideDrawer({ open, onClose, title, children }: SideDrawerProps) {
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button type="button" aria-label="Close details" className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <aside className="absolute right-0 top-0 h-full w-full max-w-md overflow-y-auto border-l border-border-color bg-surface p-4 shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-semibold">{title}</h3>
+          <button type="button" onClick={onClose} className="text-muted hover:text-foreground text-xl leading-none">&times;</button>
+        </div>
+        {children}
+      </aside>
+    </div>
   );
 }

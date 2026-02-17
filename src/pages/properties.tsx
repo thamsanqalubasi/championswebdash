@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
-import { Modal, ConfirmDialog } from "@/components/modal";
+import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { fetchPropertiesData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { PropertyRow } from "@/lib/types";
@@ -23,6 +23,7 @@ export default function PropertiesPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<PropertyRow | null>(null);
+  const [detailsRow, setDetailsRow] = useState<PropertyRow | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
@@ -112,15 +113,15 @@ export default function PropertiesPage() {
                   <th className="px-3 py-2 font-medium">Property</th><th className="px-3 py-2 font-medium">Type</th><th className="px-3 py-2 font-medium">Address</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Monthly Rent</th><th className="px-3 py-2 font-medium">Actions</th>
                 </tr></thead>
                 <tbody>{filtered.map((row) => (
-                  <tr key={row.id} className="border-b border-border-color/60">
+                  <tr key={row.id} onClick={() => setDetailsRow(row)} className="cursor-pointer border-b border-border-color/60 hover:bg-surface-elevated/40">
                     <td className="px-3 py-3 font-medium">{row.name}</td>
                     <td className="px-3 py-3 text-muted">{row.type}</td>
                     <td className="px-3 py-3 text-muted">{row.address}</td>
                     <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.status}</span></td>
                     <td className="px-3 py-3 text-muted">{formatCurrency(row.monthlyRent)}</td>
                     <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={() => openEdit(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Edit</button>
-                      <button type="button" onClick={() => setDeleteTarget(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
+                      <button type="button" onClick={(event) => { event.stopPropagation(); openEdit(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Edit</button>
+                      <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteTarget(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
                     </div></td>
                   </tr>
                 ))}</tbody>
@@ -149,6 +150,24 @@ export default function PropertiesPage() {
       </Modal>
 
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Property" message={`Delete "${deleteTarget?.name}"? This cannot be undone.`} confirmLabel="Delete" loading={deleting} />
+
+      <SideDrawer open={!!detailsRow} onClose={() => setDetailsRow(null)} title="Property Details">
+        {detailsRow && (
+          <div className="space-y-4">
+            <div className="text-sm text-muted">{detailsRow.name}</div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><p className="text-xs text-muted">Type</p><p>{detailsRow.type}</p></div>
+              <div><p className="text-xs text-muted">Status</p><p>{detailsRow.status}</p></div>
+              <div className="col-span-2"><p className="text-xs text-muted">Address</p><p>{detailsRow.address || "-"}</p></div>
+              <div><p className="text-xs text-muted">Monthly Rent</p><p>{formatCurrency(detailsRow.monthlyRent)}</p></div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button type="button" onClick={() => { setDetailsRow(null); openEdit(detailsRow); }} className="rounded-md border border-border-color px-3 py-2 text-sm">Edit</button>
+              <button type="button" onClick={() => { setDetailsRow(null); setDeleteTarget(detailsRow); }} className="rounded-md border border-border-color px-3 py-2 text-sm">Delete</button>
+            </div>
+          </div>
+        )}
+      </SideDrawer>
     </ModulePage>
   );
 }

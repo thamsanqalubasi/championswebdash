@@ -132,11 +132,11 @@ export default function InspectionsPage() {
                     <td className="px-3 py-3 text-muted">{row.completedDate}</td>
                     <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.status}</span></td>
                     <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
-                      {row.status === "scheduled" && <button type="button" onClick={() => onStatusChange(row.id, "in_progress")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Start</button>}
-                      {row.status === "in_progress" && <button type="button" onClick={() => onStatusChange(row.id, "scheduled")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reschedule</button>}
-                      {row.status !== "completed" && row.status !== "cancelled" && <button type="button" onClick={() => onStatusChange(row.id, "completed", new Date().toISOString().slice(0, 10))} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Complete</button>}
-                      {row.status !== "cancelled" && row.status !== "completed" && <button type="button" onClick={() => onStatusChange(row.id, "cancelled")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Cancel</button>}
-                      <button type="button" onClick={() => setDeleteTarget(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
+                      {row.status === "scheduled" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "in_progress"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Start</button>}
+                      {row.status === "in_progress" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "scheduled"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reschedule</button>}
+                      {row.status !== "completed" && row.status !== "cancelled" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "completed", new Date().toISOString().slice(0, 10)); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Complete</button>}
+                      {row.status !== "cancelled" && row.status !== "completed" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "cancelled"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Cancel</button>}
+                      <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteTarget(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
                     </div></td>
                   </tr>
                 ))}</tbody>

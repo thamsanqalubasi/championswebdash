@@ -133,11 +133,11 @@ export default function ScheduledTasksPage() {
                     <td className="px-3 py-3 text-muted">{formatCurrency(row.estimatedCost)}</td>
                     <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.status}</span></td>
                     <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
-                      {row.status !== "completed" && <button type="button" onClick={() => onStatusChange(row.id, "completed")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Complete</button>}
-                      {row.status === "completed" && <button type="button" onClick={() => onStatusChange(row.id, "active")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reschedule</button>}
-                      {row.status === "active" && <button type="button" onClick={() => onStatusChange(row.id, "paused")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Pause</button>}
-                      {row.status === "paused" && <button type="button" onClick={() => onStatusChange(row.id, "active")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Resume</button>}
-                      <button type="button" onClick={() => setDeleteTarget(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
+                      {row.status !== "completed" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "completed"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Complete</button>}
+                      {row.status === "completed" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "active"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reschedule</button>}
+                      {row.status === "active" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "paused"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Pause</button>}
+                      {row.status === "paused" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "active"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Resume</button>}
+                      <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteTarget(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
                     </div></td>
                   </tr>
                 ))}</tbody>

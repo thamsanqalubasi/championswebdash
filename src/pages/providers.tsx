@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
-import { Modal, ConfirmDialog } from "@/components/modal";
+import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { fetchProvidersData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { ProviderRow } from "@/lib/types";
@@ -22,6 +22,7 @@ export default function ProvidersPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ProviderRow | null>(null);
+  const [detailsRow, setDetailsRow] = useState<ProviderRow | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
@@ -98,7 +99,7 @@ export default function ProvidersPage() {
                   <th className="px-3 py-2 font-medium">Provider</th><th className="px-3 py-2 font-medium">Phone</th><th className="px-3 py-2 font-medium">Specialization</th><th className="px-3 py-2 font-medium">Rate</th><th className="px-3 py-2 font-medium">Jobs</th><th className="px-3 py-2 font-medium">Paid</th><th className="px-3 py-2 font-medium">Actions</th>
                 </tr></thead>
                 <tbody>{providers.map((row) => (
-                  <tr key={row.id} className="border-b border-border-color/60">
+                  <tr key={row.id} onClick={() => setDetailsRow(row)} className="cursor-pointer border-b border-border-color/60 hover:bg-surface-elevated/40">
                     <td className="px-3 py-3 font-medium">{row.name}</td>
                     <td className="px-3 py-3 text-muted">{row.phone}</td>
                     <td className="px-3 py-3 text-muted">{row.specialization}</td>
@@ -106,8 +107,8 @@ export default function ProvidersPage() {
                     <td className="px-3 py-3 text-muted">{row.totalJobs}</td>
                     <td className="px-3 py-3 text-muted">{formatCurrency(row.totalPaid)}</td>
                     <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={() => openEdit(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Edit</button>
-                      <button type="button" onClick={() => setDeleteTarget(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
+                      <button type="button" onClick={(event) => { event.stopPropagation(); openEdit(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Edit</button>
+                      <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteTarget(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
                     </div></td>
                   </tr>
                 ))}</tbody>
@@ -131,6 +132,25 @@ export default function ProvidersPage() {
       </Modal>
 
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Provider" message={`Delete "${deleteTarget?.name}"? This cannot be undone.`} confirmLabel="Delete" loading={deleting} />
+
+      <SideDrawer open={!!detailsRow} onClose={() => setDetailsRow(null)} title="Provider Details">
+        {detailsRow && (
+          <div className="space-y-4">
+            <div className="text-sm text-muted">{detailsRow.name}</div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><p className="text-xs text-muted">Phone</p><p>{detailsRow.phone}</p></div>
+              <div><p className="text-xs text-muted">Specialization</p><p>{detailsRow.specialization}</p></div>
+              <div><p className="text-xs text-muted">Rate</p><p>{formatCurrency(detailsRow.rate)}</p></div>
+              <div><p className="text-xs text-muted">Jobs</p><p>{detailsRow.totalJobs}</p></div>
+              <div><p className="text-xs text-muted">Paid</p><p>{formatCurrency(detailsRow.totalPaid)}</p></div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button type="button" onClick={() => { setDetailsRow(null); openEdit(detailsRow); }} className="rounded-md border border-border-color px-3 py-2 text-sm">Edit</button>
+              <button type="button" onClick={() => { setDetailsRow(null); setDeleteTarget(detailsRow); }} className="rounded-md border border-border-color px-3 py-2 text-sm">Delete</button>
+            </div>
+          </div>
+        )}
+      </SideDrawer>
     </ModulePage>
   );
 }

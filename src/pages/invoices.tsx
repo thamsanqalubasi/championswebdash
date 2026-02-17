@@ -152,11 +152,11 @@ export default function InvoicesPage() {
                       <td className="px-3 py-3 text-muted">{formatCurrency(row.totalAmount)}</td>
                       <td className="px-3 py-3"><span className={`rounded-full border px-2 py-1 text-xs capitalize ${row.status === "paid" ? "border-green-500/30 bg-green-500/10 text-green-600" : row.status === "overdue" ? "border-red-500/30 bg-red-500/10 text-red-600" : "border-border-color bg-surface-elevated text-muted"}`}>{row.status}</span></td>
                       <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
-                        {row.status !== "paid" && <button type="button" onClick={() => onStatusChange(row.id, "paid")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Mark Paid</button>}
-                        {row.status === "sent" && <button type="button" onClick={() => onStatusChange(row.id, "overdue")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Mark Overdue</button>}
-                        {row.status === "draft" && <button type="button" onClick={() => onStatusChange(row.id, "sent")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Send</button>}
-                        {row.status === "paid" && <button type="button" onClick={() => onStatusChange(row.id, "sent")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Revert</button>}
-                        <button type="button" onClick={() => setDeleteTarget(row)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
+                        {row.status !== "paid" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "paid"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Mark Paid</button>}
+                        {row.status === "sent" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "overdue"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Mark Overdue</button>}
+                        {row.status === "draft" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "sent"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Send</button>}
+                        {row.status === "paid" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "sent"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Revert</button>}
+                        <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteTarget(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
                       </div></td>
                     </tr>
                   ))}</tbody>
