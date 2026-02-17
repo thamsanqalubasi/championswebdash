@@ -1,12 +1,36 @@
 import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
-import { Modal, ConfirmDialog } from "@/components/modal";
+import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { fetchInspectionsData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { InspectionRow } from "@/lib/types";
 
 const emptyForm = { property_id: "", tenant_id: "", type: "routine", inspector_name: "", scheduled_date: "", status: "scheduled" };
+
+type InspectionDetail = {
+  id: string;
+  propertyName: string;
+  tenantName: string;
+  type: string;
+  inspectorName: string;
+  status: string;
+  scheduledDate: string;
+  completedDate: string;
+  overallCondition: string;
+  notes: string;
+  observations: string;
+  recommendations: string;
+  photos: string[];
+  createdAt: string;
+};
+
+function formatDate(value: string) {
+  if (!value || value === "-") return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-ZA", { year: "numeric", month: "short", day: "2-digit" });
+}
 
 export default function InspectionsPage() {
   const [inspections, setInspections] = useState<InspectionRow[]>([]);
@@ -22,6 +46,13 @@ export default function InspectionsPage() {
   const [deleting, setDeleting] = useState(false);
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
   const [tenantsList, setTenantsList] = useState<Array<{ id: string; name: string }>>([]);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [details, setDetails] = useState<InspectionDetail | null>(null);
+  const [detailsStatus, setDetailsStatus] = useState("scheduled");
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,6 +130,103 @@ export default function InspectionsPage() {
     finally { setDeleting(false); }
   };
 
+  const openInspectionDetails = async (inspectionId: string) => {
+    setDetailsOpen(true);
+    setDetailsLoading(true);
+    setDetailsError(null);
+
+    try {
+      const { data, error: detailError } = await supabase
+        .from("inspections")
+        .select(
+          "id, type, status, inspector_name, scheduled_date, completed_date, overall_condition, notes, observations, recommendations, photos, created_at, properties(name), tenants(full_name)",
+        )
+        .eq("id", inspectionId)
+        .single();
+
+      if (detailError) throw detailError;
+
+      const detailRow: InspectionDetail = {
+        id: String(data.id ?? ""),
+        propertyName: String((data.properties as { name?: string } | null)?.name ?? "Unassigned"),
+        tenantName: String((data.tenants as { full_name?: string } | null)?.full_name ?? "Unassigned"),
+        type: String(data.type ?? "-"),
+        inspectorName: String(data.inspector_name ?? "-"),
+        status: String(data.status ?? "scheduled"),
+        scheduledDate: String(data.scheduled_date ?? "-"),
+        completedDate: String(data.completed_date ?? "-"),
+        overallCondition: String(data.overall_condition ?? "-"),
+        notes: String(data.notes ?? ""),
+        observations: String(data.observations ?? ""),
+        recommendations: String(data.recommendations ?? ""),
+        photos: Array.isArray(data.photos) ? data.photos.map((item) => String(item)) : [],
+        createdAt: String(data.created_at ?? "-"),
+      };
+
+      setDetails(detailRow);
+      setDetailsStatus(detailRow.status);
+    } catch (loadError) {
+      setDetailsError(loadError instanceof Error ? loadError.message : "Could not load inspection details.");
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const saveDetailsStatus = async () => {
+    if (!details) return;
+
+    setStatusSaving(true);
+    try {
+      const payload: Record<string, unknown> = { status: detailsStatus };
+      if (detailsStatus === "completed" && (!details.completedDate || details.completedDate === "-")) {
+        payload.completed_date = new Date().toISOString().slice(0, 10);
+      }
+      if (detailsStatus !== "completed") {
+        payload.completed_date = null;
+      }
+
+      const { error: updateError } = await supabase.from("inspections").update(payload).eq("id", details.id);
+      if (updateError) throw updateError;
+
+      await openInspectionDetails(details.id);
+      reload();
+    } catch (saveError) {
+      alert(saveError instanceof Error ? saveError.message : "Could not update status.");
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
+  const uploadInspectionPhoto = async (file: File | null) => {
+    if (!file || !details) return;
+
+    setPhotoUploading(true);
+    try {
+      const extension = file.name.includes(".") ? file.name.split(".").pop() : "jpg";
+      const bucket = "inspection-photos";
+      const path = `${details.id}/${Date.now()}.${extension}`;
+
+      const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(path);
+      const photoUrl = publicUrlData.publicUrl;
+      const updatedPhotos = [...details.photos, photoUrl];
+
+      const { error: updateError } = await supabase
+        .from("inspections")
+        .update({ photos: updatedPhotos })
+        .eq("id", details.id);
+      if (updateError) throw updateError;
+
+      setDetails({ ...details, photos: updatedPhotos });
+    } catch (uploadError) {
+      alert(uploadError instanceof Error ? uploadError.message : "Could not upload photo.");
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
   return (
     <ModulePage title="Inspections" description="Inspection schedules, statuses, and checklist workflows.">
       {loading && <LoadingState label="Loading inspections..." />}
@@ -123,7 +251,7 @@ export default function InspectionsPage() {
                   <th className="px-3 py-2 font-medium">Property</th><th className="px-3 py-2 font-medium">Tenant</th><th className="px-3 py-2 font-medium">Type</th><th className="px-3 py-2 font-medium">Inspector</th><th className="px-3 py-2 font-medium">Scheduled</th><th className="px-3 py-2 font-medium">Completed</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Actions</th>
                 </tr></thead>
                 <tbody>{filtered.map((row) => (
-                  <tr key={row.id} className="border-b border-border-color/60">
+                  <tr key={row.id} onClick={() => void openInspectionDetails(row.id)} className="cursor-pointer border-b border-border-color/60 hover:bg-surface-elevated/40">
                     <td className="px-3 py-3 font-medium">{row.propertyName}</td>
                     <td className="px-3 py-3 text-muted">{row.tenantName}</td>
                     <td className="px-3 py-3 text-muted">{row.type}</td>
@@ -167,6 +295,96 @@ export default function InspectionsPage() {
       </Modal>
 
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Inspection" message={`Delete this inspection at "${deleteTarget?.propertyName}"?`} confirmLabel="Delete" loading={deleting} />
+
+      <SideDrawer open={detailsOpen} onClose={() => setDetailsOpen(false)} title="Inspection Details">
+        {detailsLoading && <LoadingState label="Loading inspection details..." />}
+
+        {!detailsLoading && detailsError && (
+          <ErrorState message={detailsError} onRetry={() => (details ? void openInspectionDetails(details.id) : undefined)} />
+        )}
+
+        {!detailsLoading && !detailsError && details && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><p className="text-xs text-muted">Property</p><p>{details.propertyName}</p></div>
+              <div><p className="text-xs text-muted">Tenant</p><p>{details.tenantName}</p></div>
+              <div><p className="text-xs text-muted">Type</p><p className="capitalize">{details.type.replace(/_/g, " ")}</p></div>
+              <div><p className="text-xs text-muted">Inspector</p><p>{details.inspectorName}</p></div>
+              <div><p className="text-xs text-muted">Scheduled</p><p>{formatDate(details.scheduledDate)}</p></div>
+              <div><p className="text-xs text-muted">Completed</p><p>{formatDate(details.completedDate)}</p></div>
+              <div><p className="text-xs text-muted">Overall Condition</p><p className="capitalize">{details.overallCondition.replace(/_/g, " ")}</p></div>
+              <div><p className="text-xs text-muted">Created</p><p>{formatDate(details.createdAt)}</p></div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm text-muted">Status</label>
+              <div className="flex gap-2">
+                <select
+                  value={detailsStatus}
+                  onChange={(event) => setDetailsStatus(event.target.value)}
+                  className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
+                >
+                  <option value="scheduled">Scheduled</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={saveDetailsStatus}
+                  disabled={statusSaving}
+                  className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50"
+                >
+                  {statusSaving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1 text-sm text-muted">Notes</p>
+              <p className="rounded-md border border-border-color bg-surface-elevated p-3 text-sm">{details.notes || "-"}</p>
+            </div>
+
+            <div>
+              <p className="mb-1 text-sm text-muted">Observations</p>
+              <p className="rounded-md border border-border-color bg-surface-elevated p-3 text-sm">{details.observations || "-"}</p>
+            </div>
+
+            <div>
+              <p className="mb-1 text-sm text-muted">Recommendations</p>
+              <p className="rounded-md border border-border-color bg-surface-elevated p-3 text-sm">{details.recommendations || "-"}</p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="text-sm font-medium">Pictures</h4>
+                <label className="cursor-pointer rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-xs text-muted">
+                  {photoUploading ? "Uploading..." : "Upload Picture"}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(event) => void uploadInspectionPhoto(event.target.files?.[0] ?? null)}
+                    className="hidden"
+                    disabled={photoUploading}
+                  />
+                </label>
+              </div>
+
+              {details.photos.length === 0 ? (
+                <EmptyState title="No pictures" description="Upload inspection pictures to track condition evidence." />
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {details.photos.map((photoUrl) => (
+                    <a key={photoUrl} href={photoUrl} target="_blank" rel="noreferrer" className="overflow-hidden rounded-md border border-border-color bg-surface-elevated">
+                      <img src={photoUrl} alt="Inspection" className="h-28 w-full object-cover" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </SideDrawer>
     </ModulePage>
   );
 }
