@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 
 export default function LoginPage() {
@@ -15,8 +15,7 @@ export default function LoginPage() {
   // Redirect if already logged in
   if (user) {
     const nextPath = searchParams.get("next") || "/dashboard";
-    navigate(nextPath, { replace: true });
-    return null;
+    return <Navigate to={nextPath} replace />;
   }
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {

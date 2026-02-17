@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { AppShell } from "@/components/app-shell";
 import LoginPage from "@/pages/login";
@@ -22,7 +22,7 @@ import AuditTrailPage from "@/pages/audit-trail";
 
 function ProtectedLayout() {
   const { user, loading } = useAuth();
-  const guardEnabled = import.meta.env.VITE_ROUTE_GUARD_ENABLED === "true";
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -32,8 +32,9 @@ function ProtectedLayout() {
     );
   }
 
-  if (guardEnabled && !user) {
-    return <Navigate to="/login" replace />;
+  if (!user) {
+    const nextPath = encodeURIComponent(`${location.pathname}${location.search}`);
+    return <Navigate to={`/login?next=${nextPath}`} replace />;
   }
 
   return (
