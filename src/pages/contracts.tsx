@@ -460,7 +460,14 @@ export default function ContractsPage() {
       }
 
       setTemplateModalOpen(false); reload();
-    } catch (e) { alert(e instanceof Error ? e.message : "Save template failed"); }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Save template failed";
+      if (msg.includes("relation") && msg.includes("does not exist")) {
+        alert("The contract_templates table doesn't exist yet. Please run the SQL schema from docs/contract-templates-schema.sql in your Supabase SQL Editor.");
+      } else {
+        alert(msg);
+      }
+    }
     finally { setSavingTemplate(false); }
   };
 

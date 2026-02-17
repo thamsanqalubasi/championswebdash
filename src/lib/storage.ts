@@ -8,6 +8,7 @@ import type { CompanyInfo, AdminInfo } from "@/lib/document-templates";
 /**
  * Upload a file to a Supabase Storage bucket.
  * Returns the public URL of the uploaded file.
+ * Falls back to a long-lived signed URL if the bucket is not public.
  */
 export async function uploadFileToBucket(
   bucket: string,
@@ -23,8 +24,29 @@ export async function uploadFileToBucket(
 
   if (uploadError) throw uploadError;
 
+  // Try public URL first
   const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(path);
-  return publicUrlData.publicUrl;
+  const publicUrl = publicUrlData.publicUrl;
+
+  // Verify the public URL works by sending a HEAD request
+  try {
+    const check = await fetch(publicUrl, { method: "HEAD" });
+    if (check.ok) return publicUrl;
+  } catch {
+    // Public URL not accessible — fall through to signed URL
+  }
+
+  // Fallback: create a signed URL valid for 10 years
+  const { data: signedData, error: signedError } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(path, 60 * 60 * 24 * 365 * 10);
+
+  if (signedError || !signedData?.signedUrl) {
+    // Return public URL anyway — admin can fix bucket policies later
+    return publicUrl;
+  }
+
+  return signedData.signedUrl;
 }
 
 /**

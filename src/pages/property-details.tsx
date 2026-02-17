@@ -3,6 +3,10 @@ import { Link, useParams } from "react-router-dom";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { supabase } from "@/lib/supabase";
+import { fetchCompanyInfo, fetchAdminInfo } from "@/lib/storage";
+import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
+import { useAuth } from "@/lib/auth";
+import { sendEmail, sendWhatsApp } from "@/lib/notifications";
 
 type PropertyDetails = {
   id: string;
@@ -60,6 +64,7 @@ function sanitizePhoneToWhatsApp(input: string) {
 
 export default function PropertyDetailsPage() {
   const { propertyId } = useParams<{ propertyId: string }>();
+  const { user } = useAuth();
 
   const [property, setProperty] = useState<PropertyDetails | null>(null);
   const [assignedTenants, setAssignedTenants] = useState<AssignedTenant[]>([]);
@@ -335,35 +340,81 @@ export default function PropertyDetailsPage() {
     }
   };
 
-  const sendInvoiceEmail = (invoice: PropertyInvoice) => {
-    const tenant = assignedTenants.find((item) => item.id === invoice.tenantId);
-    const subject = encodeURIComponent(`Invoice ${invoice.month} - ${property?.name ?? "Property"}`);
-    const body = encodeURIComponent(
-      `Hello ${tenant?.fullName ?? "Tenant"},\n\nYour invoice (${invoice.month}) amount is ${formatCurrency(invoice.amount)}.\nDue date: ${invoice.dueDate}.\n\nRegards`,
+  const buildInvoiceHtml = async (invoice: PropertyInvoice) => {
+    const [company, admin] = await Promise.all([
+      fetchCompanyInfo(),
+      fetchAdminInfo(user?.email ?? undefined),
+    ]);
+    return buildProfessionalInvoiceHtml(
+      {
+        invoiceId: invoice.id,
+        tenantName: invoice.tenantName,
+        propertyName: property?.name ?? "Property",
+        month: invoice.month,
+        dueDate: invoice.dueDate,
+        status: invoice.status,
+        lineItems: [{ description: `Rent for ${invoice.month}`, amount: invoice.amount }],
+      },
+      company,
+      admin,
     );
-
-    if (!tenant?.email) {
-      alert("No tenant email address available.");
-      return;
-    }
-
-    window.open(`mailto:${tenant.email}?subject=${subject}&body=${body}`, "_blank", "noopener,noreferrer");
   };
 
-  const sendInvoiceWhatsApp = (invoice: PropertyInvoice) => {
+  const viewInvoice = async (invoice: PropertyInvoice) => {
+    const previewWindow = window.open("about:blank", "_blank");
+    if (!previewWindow) { alert("Please allow popups to view the invoice."); return; }
+    try {
+      // If pdf_url is an HTTP link, redirect to it
+      if (invoice.pdfUrl && invoice.pdfUrl.startsWith("http")) {
+        previewWindow.location.href = invoice.pdfUrl;
+        return;
+      }
+      // If pdf_url contains stored HTML, render it
+      if (invoice.pdfUrl && invoice.pdfUrl.startsWith("<")) {
+        previewWindow.document.open();
+        previewWindow.document.write(invoice.pdfUrl);
+        previewWindow.document.close();
+        return;
+      }
+      // Otherwise generate professional invoice HTML on-the-fly
+      const html = await buildInvoiceHtml(invoice);
+      // Save it for future use
+      await supabase.from("invoices").update({ pdf_url: html }).eq("id", invoice.id);
+      previewWindow.document.open();
+      previewWindow.document.write(html);
+      previewWindow.document.close();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not view invoice.");
+      previewWindow.close();
+    }
+  };
+
+  const sendInvoiceEmail = async (invoice: PropertyInvoice) => {
+    const tenant = assignedTenants.find((item) => item.id === invoice.tenantId);
+    if (!tenant?.email) { alert("No tenant email address available."); return; }
+    try {
+      const html = await buildInvoiceHtml(invoice);
+      const company = await fetchCompanyInfo();
+      const subject = `Invoice ${invoice.month} - ${property?.name ?? "Property"}`;
+      const result = await sendEmail({
+        to: tenant.email,
+        recipientName: tenant.fullName,
+        subject,
+        bodyText: `Please find your invoice for <strong>${invoice.month}</strong> attached below. The total amount due is <strong>${formatCurrency(invoice.amount)}</strong>.`,
+        documentHtml: html,
+        companyName: company.companyName,
+      });
+      if (result.sent) { alert("Invoice sent via email successfully!"); }
+    } catch (e) { alert(e instanceof Error ? e.message : "Could not send email."); }
+  };
+
+  const sendInvoiceWhatsApp = async (invoice: PropertyInvoice) => {
     const tenant = assignedTenants.find((item) => item.id === invoice.tenantId);
     const phone = sanitizePhoneToWhatsApp(tenant?.whatsappNumber || tenant?.phone || "");
-
-    if (!phone) {
-      alert("No tenant WhatsApp number available.");
-      return;
-    }
-
-    const text = encodeURIComponent(
-      `Invoice ${invoice.month}: ${formatCurrency(invoice.amount)} due on ${invoice.dueDate}.`,
-    );
-
-    window.open(`https://wa.me/${phone}?text=${text}`, "_blank", "noopener,noreferrer");
+    if (!phone) { alert("No tenant WhatsApp number available."); return; }
+    const message = `Invoice ${invoice.month}: ${formatCurrency(invoice.amount)} due on ${invoice.dueDate}.`;
+    const result = await sendWhatsApp({ to: `+${phone}`, message });
+    if (result.sent) { alert("Invoice sent via WhatsApp successfully!"); }
   };
 
   return (
@@ -517,7 +568,7 @@ export default function PropertyDetailsPage() {
                     rel="noreferrer"
                     className="overflow-hidden rounded-md border border-border-color bg-surface-elevated"
                   >
-                    <img src={photoUrl} alt="Property" className="h-40 w-full object-cover" />
+                    <img src={photoUrl} alt="Property" className="h-40 w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='160' fill='%23ccc'%3E%3Crect width='200' height='160' fill='%23f0f0f0'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' font-size='14' fill='%23999'%3EImage unavailable%3C/text%3E%3C/svg%3E"; }} />
                   </a>
                 ))}
               </div>
@@ -581,30 +632,24 @@ export default function PropertyDetailsPage() {
                           <div className="flex flex-wrap gap-2">
                             <button
                               type="button"
-                              onClick={() => {
-                                if (!invoice.pdfUrl) {
-                                  alert("No PDF linked to this invoice yet.");
-                                  return;
-                                }
-                                window.open(invoice.pdfUrl, "_blank", "noopener,noreferrer");
-                              }}
+                              onClick={() => void viewInvoice(invoice)}
                               className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
                             >
-                              View PDF
+                              View
                             </button>
                             <button
                               type="button"
-                              onClick={() => sendInvoiceEmail(invoice)}
+                              onClick={() => void sendInvoiceEmail(invoice)}
                               className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
                             >
-                              Send Email
+                              Email
                             </button>
                             <button
                               type="button"
-                              onClick={() => sendInvoiceWhatsApp(invoice)}
+                              onClick={() => void sendInvoiceWhatsApp(invoice)}
                               className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
                             >
-                              Send WhatsApp
+                              WhatsApp
                             </button>
                           </div>
                         </td>

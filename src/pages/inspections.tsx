@@ -357,7 +357,7 @@ export default function InspectionsPage() {
                   {photoUploading ? "Uploading..." : "Upload Picture"}
                   <input
                     type="file"
-                    accept="image/png,image/jpeg,image/webp"
+                    accept="image/png,image/jpeg,image/webp,.jpg,.jpeg,.png,.webp"
                     onChange={(event) => void uploadInspectionPhoto(event.target.files?.[0] ?? null)}
                     className="hidden"
                     disabled={photoUploading}
@@ -371,7 +371,7 @@ export default function InspectionsPage() {
                 <div className="grid grid-cols-2 gap-2">
                   {details.photos.map((photoUrl, idx) => (
                     <button key={photoUrl} type="button" onClick={() => openGallery(idx)} className="overflow-hidden rounded-md border border-border-color bg-surface-elevated text-left">
-                      <img src={photoUrl} alt="Inspection" className="h-28 w-full object-cover" />
+                      <img src={photoUrl} alt="Inspection" className="h-28 w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='112' fill='%23ccc'%3E%3Crect width='200' height='112' fill='%23f0f0f0'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' font-size='14' fill='%23999'%3EImage unavailable%3C/text%3E%3C/svg%3E"; }} />
                     </button>
                   ))}
                 </div>

@@ -141,8 +141,16 @@ export default function SettingsPage() {
   const saveCompany = async () => {
     setSaving(true);
     try {
-      const { error: err } = await supabase.from("company_settings").update({ company_name: companyForm.company_name, logo_url: companyForm.logo_url, address: companyForm.address }).limit(1);
-      if (err) throw err;
+      // First try to get the existing row id
+      const { data: existing } = await supabase.from("company_settings").select("id").limit(1).maybeSingle();
+      if (existing?.id) {
+        const { error: err } = await supabase.from("company_settings").update({ company_name: companyForm.company_name, logo_url: companyForm.logo_url, address: companyForm.address }).eq("id", existing.id);
+        if (err) throw err;
+      } else {
+        // No row yet — insert one
+        const { error: err } = await supabase.from("company_settings").insert({ company_name: companyForm.company_name, logo_url: companyForm.logo_url, address: companyForm.address });
+        if (err) throw err;
+      }
       setEditSection(null); reload();
     } catch (e) { alert(e instanceof Error ? e.message : "Save failed"); }
     finally { setSaving(false); }
@@ -151,8 +159,14 @@ export default function SettingsPage() {
   const saveInvoice = async () => {
     setSaving(true);
     try {
-      const { error: err } = await supabase.from("company_settings").update({ tax_rate: invoiceForm.tax_rate, default_due_day: invoiceForm.default_due_day, payment_instructions: invoiceForm.payment_instructions }).limit(1);
-      if (err) throw err;
+      const { data: existing } = await supabase.from("company_settings").select("id").limit(1).maybeSingle();
+      if (existing?.id) {
+        const { error: err } = await supabase.from("company_settings").update({ tax_rate: invoiceForm.tax_rate, default_due_day: invoiceForm.default_due_day, payment_instructions: invoiceForm.payment_instructions }).eq("id", existing.id);
+        if (err) throw err;
+      } else {
+        const { error: err } = await supabase.from("company_settings").insert({ tax_rate: invoiceForm.tax_rate, default_due_day: invoiceForm.default_due_day, payment_instructions: invoiceForm.payment_instructions });
+        if (err) throw err;
+      }
       setEditSection(null); reload();
     } catch (e) { alert(e instanceof Error ? e.message : "Save failed"); }
     finally { setSaving(false); }
@@ -276,7 +290,7 @@ export default function SettingsPage() {
             <label className="mb-1 block text-sm text-muted">Signature Image</label>
             <label className="flex cursor-pointer items-center gap-2 rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted hover:bg-surface">
               {signatureUploading ? "Uploading..." : "Choose Signature Image"}
-              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void onUploadSignature(e.target.files?.[0] ?? null)} className="hidden" disabled={signatureUploading} />
+              <input type="file" accept="image/png,image/jpeg,image/webp,.jpg,.jpeg,.png,.webp" onChange={(e) => void onUploadSignature(e.target.files?.[0] ?? null)} className="hidden" disabled={signatureUploading} />
             </label>
             <p className="mt-1 text-xs text-muted">Select an image from your device. Click Save after uploading.</p>
           </div>
@@ -301,7 +315,7 @@ export default function SettingsPage() {
             <label className="mb-1 block text-sm text-muted">Company Logo</label>
             <label className="flex cursor-pointer items-center gap-2 rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted hover:bg-surface">
               {logoUploading ? "Uploading..." : "Choose Logo Image"}
-              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void onUploadLogo(e.target.files?.[0] ?? null)} className="hidden" disabled={logoUploading} />
+              <input type="file" accept="image/png,image/jpeg,image/webp,.jpg,.jpeg,.png,.webp" onChange={(e) => void onUploadLogo(e.target.files?.[0] ?? null)} className="hidden" disabled={logoUploading} />
             </label>
             {companyForm.logo_url && (
               <div className="mt-2 rounded-md border border-border-color bg-surface-elevated p-2">
