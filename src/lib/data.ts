@@ -17,10 +17,18 @@ import type {
 } from "./types";
 import { supabase } from "./supabase";
 
-const apiBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+const apiBaseUrl = (
+  import.meta.env.VITE_API_URL ??
+  import.meta.env.NEXT_PUBLIC_API_URL ??
+  ""
+).replace(/\/$/, "");
 
 function hasApiBase() {
   return Boolean(apiBaseUrl);
+}
+
+function logApiFallback(context: string, error: unknown) {
+  console.warn(`[data] API request failed for ${context}. Falling back to Supabase.`, error);
 }
 
 function hasSupabaseConfig() {
@@ -306,49 +314,56 @@ function computeCollectionRate(invoices: Array<{ month?: string; status?: string
 
 export async function fetchDashboardData(): Promise<DashboardData> {
   if (hasApiBase()) {
-    const [statsPayload, monthlyPayload, invoicesPayload] = await Promise.all([
-      fetchApiJson<unknown>("/api/dashboard/stats"),
-      fetchApiJson<unknown>("/api/dashboard/monthly"),
-      fetchApiJson<unknown>("/api/invoices"),
-    ]);
+    try {
+      const [statsPayload, monthlyPayload, invoicesPayload] = await Promise.all([
+        fetchApiJson<unknown>("/api/dashboard/stats"),
+        fetchApiJson<unknown>("/api/dashboard/monthly"),
+        fetchApiJson<unknown>("/api/invoices"),
+      ]);
 
-    const stats = unwrapData<{
-      total_properties?: number;
-      occupied_units?: number;
-      total_monthly_income?: number;
-      total_monthly_expenses?: number;
-      net_profit?: number;
-      pending_maintenance?: number;
-      overdue_payments?: number;
-    }>(statsPayload);
+      const stats = unwrapData<{
+        total_properties?: number;
+        occupied_units?: number;
+        total_monthly_income?: number;
+        total_monthly_expenses?: number;
+        net_profit?: number;
+        pending_maintenance?: number;
+        overdue_payments?: number;
+      }>(statsPayload);
 
-    const monthly = unwrapData<
-      Array<{ month: string; income: number; expenses: number; profit: number }>
-    >(monthlyPayload);
+      const monthly = unwrapData<
+        Array<{ month: string; income: number; expenses: number; profit: number }>
+      >(monthlyPayload);
 
-    const invoices = unwrapData<Array<{ month?: string; status?: string }>>(invoicesPayload);
+      const invoices = unwrapData<Array<{ month?: string; status?: string }>>(invoicesPayload);
 
-    const normalizedMonthly = (monthly ?? []).slice(-6).map((item) => ({
-      month: item.month,
-      label: titleFromMonth(item.month),
-      income: toNumber(item.income),
-      expenses: toNumber(item.expenses),
-      profit: toNumber(item.profit),
-    }));
+      const normalizedMonthly = (monthly ?? []).slice(-6).map((item) => ({
+        month: item.month,
+        label: titleFromMonth(item.month),
+        income: toNumber(item.income),
+        expenses: toNumber(item.expenses),
+        profit: toNumber(item.profit),
+      }));
 
-    return {
-      stats: buildStatsFromValues({
-        totalProperties: toNumber(stats?.total_properties),
-        occupiedUnits: toNumber(stats?.occupied_units),
-        totalMonthlyIncome: toNumber(stats?.total_monthly_income),
-        totalMonthlyExpenses: toNumber(stats?.total_monthly_expenses),
-        netProfit: toNumber(stats?.net_profit),
-        pendingMaintenance: toNumber(stats?.pending_maintenance),
-        overduePayments: toNumber(stats?.overdue_payments),
-        collectionRate: computeCollectionRate(invoices ?? []),
-      }),
-      cashflow: normalizedMonthly,
-    };
+      return {
+        stats: buildStatsFromValues({
+          totalProperties: toNumber(stats?.total_properties),
+          occupiedUnits: toNumber(stats?.occupied_units),
+          totalMonthlyIncome: toNumber(stats?.total_monthly_income),
+          totalMonthlyExpenses: toNumber(stats?.total_monthly_expenses),
+          netProfit: toNumber(stats?.net_profit),
+          pendingMaintenance: toNumber(stats?.pending_maintenance),
+          overduePayments: toNumber(stats?.overdue_payments),
+          collectionRate: computeCollectionRate(invoices ?? []),
+        }),
+        cashflow: normalizedMonthly,
+      };
+    } catch (apiError) {
+      logApiFallback("dashboard", apiError);
+      if (!hasSupabaseConfig()) {
+        throw apiError;
+      }
+    }
   }
 
   const supabase = getSupabaseClient();
@@ -435,17 +450,24 @@ export async function fetchDashboardData(): Promise<DashboardData> {
 
 export async function fetchPropertiesData(): Promise<PropertyRow[]> {
   if (hasApiBase()) {
-    const payload = await fetchApiJson<unknown>("/api/properties");
-    const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
+    try {
+      const payload = await fetchApiJson<unknown>("/api/properties");
+      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
 
-    return rows.map((row) => ({
-      id: String(row.id ?? ""),
-      name: String(row.name ?? "Unnamed"),
-      type: String(row.type ?? "Unknown"),
-      address: String(row.address ?? "Address not set"),
-      status: String(row.status ?? "vacant"),
-      monthlyRent: toNumber(row.monthly_rent),
-    }));
+      return rows.map((row) => ({
+        id: String(row.id ?? ""),
+        name: String(row.name ?? "Unnamed"),
+        type: String(row.type ?? "Unknown"),
+        address: String(row.address ?? "Address not set"),
+        status: String(row.status ?? "vacant"),
+        monthlyRent: toNumber(row.monthly_rent),
+      }));
+    } catch (apiError) {
+      logApiFallback("properties", apiError);
+      if (!hasSupabaseConfig()) {
+        throw apiError;
+      }
+    }
   }
 
   const supabase = getSupabaseClient();
@@ -476,43 +498,50 @@ export async function fetchPropertiesData(): Promise<PropertyRow[]> {
 
 export async function fetchTenantsData(): Promise<TenantRow[]> {
   if (hasApiBase()) {
-    const [tenantsPayload, invoicesPayload] = await Promise.all([
-      fetchApiJson<unknown>("/api/tenants"),
-      fetchApiJson<unknown>("/api/invoices"),
-    ]);
+    try {
+      const [tenantsPayload, invoicesPayload] = await Promise.all([
+        fetchApiJson<unknown>("/api/tenants"),
+        fetchApiJson<unknown>("/api/invoices"),
+      ]);
 
-    const tenants = unwrapData<Array<Record<string, unknown>>>(tenantsPayload) ?? [];
-    const invoices =
-      unwrapData<Array<{ tenant_id?: string; status?: string; due_date?: string }>>(invoicesPayload) ?? [];
+      const tenants = unwrapData<Array<Record<string, unknown>>>(tenantsPayload) ?? [];
+      const invoices =
+        unwrapData<Array<{ tenant_id?: string; status?: string; due_date?: string }>>(invoicesPayload) ?? [];
 
-    const latestStatusByTenant = new Map<string, string>();
-    invoices
-      .slice()
-      .sort((a, b) => String(b.due_date ?? "").localeCompare(String(a.due_date ?? "")))
-      .forEach((invoice) => {
-        const tenantId = invoice.tenant_id;
-        if (!tenantId || latestStatusByTenant.has(tenantId)) {
-          return;
-        }
+      const latestStatusByTenant = new Map<string, string>();
+      invoices
+        .slice()
+        .sort((a, b) => String(b.due_date ?? "").localeCompare(String(a.due_date ?? "")))
+        .forEach((invoice) => {
+          const tenantId = invoice.tenant_id;
+          if (!tenantId || latestStatusByTenant.has(tenantId)) {
+            return;
+          }
 
-        latestStatusByTenant.set(tenantId, String(invoice.status ?? ""));
+          latestStatusByTenant.set(tenantId, String(invoice.status ?? ""));
+        });
+
+      return tenants.map((tenant) => {
+        const tenantId = String(tenant.id ?? "");
+        const status = latestStatusByTenant.get(tenantId);
+        const propertyObj = tenant.properties as { name?: string } | undefined;
+
+        return {
+          id: tenantId,
+          fullName: String(tenant.full_name ?? "Unnamed Tenant"),
+          propertyName: String(propertyObj?.name ?? "Unassigned"),
+          phone: String(tenant.phone ?? tenant.whatsapp_number ?? "-"),
+          email: String(tenant.email ?? "-"),
+          tenureStatus: String(tenant.tenure_status ?? "active"),
+          rentStatus: buildRentStatus(status),
+        };
       });
-
-    return tenants.map((tenant) => {
-      const tenantId = String(tenant.id ?? "");
-      const status = latestStatusByTenant.get(tenantId);
-      const propertyObj = tenant.properties as { name?: string } | undefined;
-
-      return {
-        id: tenantId,
-        fullName: String(tenant.full_name ?? "Unnamed Tenant"),
-        propertyName: String(propertyObj?.name ?? "Unassigned"),
-        phone: String(tenant.phone ?? tenant.whatsapp_number ?? "-"),
-        email: String(tenant.email ?? "-"),
-        tenureStatus: String(tenant.tenure_status ?? "active"),
-        rentStatus: buildRentStatus(status),
-      };
-    });
+    } catch (apiError) {
+      logApiFallback("tenants", apiError);
+      if (!hasSupabaseConfig()) {
+        throw apiError;
+      }
+    }
   }
 
   const supabase = getSupabaseClient();
@@ -559,12 +588,19 @@ export async function fetchTenantsData(): Promise<TenantRow[]> {
 
 export async function fetchInvoicesData(): Promise<InvoiceRow[]> {
   if (hasApiBase()) {
-    const payload = await fetchApiJson<unknown>("/api/invoices");
-    const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
+    try {
+      const payload = await fetchApiJson<unknown>("/api/invoices");
+      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
 
-    return rows
-      .map(toInvoiceRow)
-      .sort((a, b) => String(b.dueDate).localeCompare(String(a.dueDate)));
+      return rows
+        .map(toInvoiceRow)
+        .sort((a, b) => String(b.dueDate).localeCompare(String(a.dueDate)));
+    } catch (apiError) {
+      logApiFallback("invoices", apiError);
+      if (!hasSupabaseConfig()) {
+        throw apiError;
+      }
+    }
   }
 
   const supabase = getSupabaseClient();
@@ -622,11 +658,18 @@ export async function fetchReportsData(): Promise<ReportsData> {
 
 export async function fetchWorkOrdersData(): Promise<WorkOrderRow[]> {
   if (hasApiBase()) {
-    const payload = await fetchApiJson<unknown>("/api/maintenance");
-    const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-    return rows
-      .map(toWorkOrderRow)
-      .sort((a, b) => String(b.scheduledDate).localeCompare(String(a.scheduledDate)));
+    try {
+      const payload = await fetchApiJson<unknown>("/api/maintenance");
+      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
+      return rows
+        .map(toWorkOrderRow)
+        .sort((a, b) => String(b.scheduledDate).localeCompare(String(a.scheduledDate)));
+    } catch (apiError) {
+      logApiFallback("maintenance", apiError);
+      if (!hasSupabaseConfig()) {
+        throw apiError;
+      }
+    }
   }
 
   const supabase = getSupabaseClient();
@@ -652,9 +695,16 @@ export async function fetchWorkOrdersData(): Promise<WorkOrderRow[]> {
 
 export async function fetchProvidersData(): Promise<ProviderRow[]> {
   if (hasApiBase()) {
-    const payload = await fetchApiJson<unknown>("/api/maintainers");
-    const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-    return rows.map(toProviderRow).sort((a, b) => b.totalJobs - a.totalJobs);
+    try {
+      const payload = await fetchApiJson<unknown>("/api/maintainers");
+      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
+      return rows.map(toProviderRow).sort((a, b) => b.totalJobs - a.totalJobs);
+    } catch (apiError) {
+      logApiFallback("maintainers", apiError);
+      if (!hasSupabaseConfig()) {
+        throw apiError;
+      }
+    }
   }
 
   const supabase = getSupabaseClient();
@@ -678,11 +728,18 @@ export async function fetchProvidersData(): Promise<ProviderRow[]> {
 
 export async function fetchInspectionsData(): Promise<InspectionRow[]> {
   if (hasApiBase()) {
-    const payload = await fetchApiJson<unknown>("/api/inspections");
-    const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-    return rows
-      .map(toInspectionRow)
-      .sort((a, b) => String(b.scheduledDate).localeCompare(String(a.scheduledDate)));
+    try {
+      const payload = await fetchApiJson<unknown>("/api/inspections");
+      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
+      return rows
+        .map(toInspectionRow)
+        .sort((a, b) => String(b.scheduledDate).localeCompare(String(a.scheduledDate)));
+    } catch (apiError) {
+      logApiFallback("inspections", apiError);
+      if (!hasSupabaseConfig()) {
+        throw apiError;
+      }
+    }
   }
 
   const supabase = getSupabaseClient();
@@ -708,11 +765,18 @@ export async function fetchInspectionsData(): Promise<InspectionRow[]> {
 
 export async function fetchPreventiveTasksData(): Promise<PreventiveTaskRow[]> {
   if (hasApiBase()) {
-    const payload = await fetchApiJson<unknown>("/api/preventive-maintenance");
-    const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-    return rows
-      .map(toPreventiveTaskRow)
-      .sort((a, b) => String(a.nextDue).localeCompare(String(b.nextDue)));
+    try {
+      const payload = await fetchApiJson<unknown>("/api/preventive-maintenance");
+      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
+      return rows
+        .map(toPreventiveTaskRow)
+        .sort((a, b) => String(a.nextDue).localeCompare(String(b.nextDue)));
+    } catch (apiError) {
+      logApiFallback("preventive-maintenance", apiError);
+      if (!hasSupabaseConfig()) {
+        throw apiError;
+      }
+    }
   }
 
   const supabase = getSupabaseClient();
@@ -738,9 +802,16 @@ export async function fetchPreventiveTasksData(): Promise<PreventiveTaskRow[]> {
 
 export async function fetchInventoryData(): Promise<InventoryItemRow[]> {
   if (hasApiBase()) {
-    const payload = await fetchApiJson<unknown>("/api/inventory");
-    const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-    return rows.map(toInventoryItemRow).sort((a, b) => a.quantity - b.quantity);
+    try {
+      const payload = await fetchApiJson<unknown>("/api/inventory");
+      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
+      return rows.map(toInventoryItemRow).sort((a, b) => a.quantity - b.quantity);
+    } catch (apiError) {
+      logApiFallback("inventory", apiError);
+      if (!hasSupabaseConfig()) {
+        throw apiError;
+      }
+    }
   }
 
   const supabase = getSupabaseClient();
@@ -786,11 +857,18 @@ export async function fetchMaintenanceOverviewData(): Promise<MaintenanceOvervie
 
 export async function fetchContractsData(): Promise<ContractRow[]> {
   if (hasApiBase()) {
-    const payload = await fetchApiJson<unknown>("/api/contracts");
-    const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-    return rows
-      .map(toContractRow)
-      .sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)));
+    try {
+      const payload = await fetchApiJson<unknown>("/api/contracts");
+      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
+      return rows
+        .map(toContractRow)
+        .sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)));
+    } catch (apiError) {
+      logApiFallback("contracts", apiError);
+      if (!hasSupabaseConfig()) {
+        throw apiError;
+      }
+    }
   }
 
   const supabase = getSupabaseClient();
@@ -843,30 +921,37 @@ export async function fetchContractsData(): Promise<ContractRow[]> {
 
 export async function fetchSettingsData(): Promise<SettingsData> {
   if (hasApiBase()) {
-    const payload = await fetchApiJson<unknown>("/api/settings");
-    const data = unwrapData<Record<string, unknown>>(payload) ?? {};
+    try {
+      const payload = await fetchApiJson<unknown>("/api/settings");
+      const data = unwrapData<Record<string, unknown>>(payload) ?? {};
 
-    return {
-      adminProfile: {
-        firstName: String(data.first_name ?? ""),
-        lastName: String(data.last_name ?? ""),
-        email: String(data.admin_email ?? data.email ?? "-"),
-        signatureUrl: String(data.signature_url ?? ""),
-      },
-      companyProfile: {
-        companyName: String(data.company_name ?? "Champions Court"),
-        logoUrl: String(data.logo_url ?? ""),
-        address: String(data.address ?? "-"),
-      },
-      invoiceSettings: {
-        taxRate: toNumber(data.tax_rate),
-        defaultDueDay: toNumber(data.default_due_day),
-        paymentInstructions: String(data.payment_instructions ?? "-"),
-      },
-      security: {
-        activePinExists: Boolean(data.active_pin_exists),
-      },
-    };
+      return {
+        adminProfile: {
+          firstName: String(data.first_name ?? ""),
+          lastName: String(data.last_name ?? ""),
+          email: String(data.admin_email ?? data.email ?? "-"),
+          signatureUrl: String(data.signature_url ?? ""),
+        },
+        companyProfile: {
+          companyName: String(data.company_name ?? "Champions Court"),
+          logoUrl: String(data.logo_url ?? ""),
+          address: String(data.address ?? "-"),
+        },
+        invoiceSettings: {
+          taxRate: toNumber(data.tax_rate),
+          defaultDueDay: toNumber(data.default_due_day),
+          paymentInstructions: String(data.payment_instructions ?? "-"),
+        },
+        security: {
+          activePinExists: Boolean(data.active_pin_exists),
+        },
+      };
+    } catch (apiError) {
+      logApiFallback("settings", apiError);
+      if (!hasSupabaseConfig()) {
+        throw apiError;
+      }
+    }
   }
 
   const supabase = getSupabaseClient();
@@ -929,18 +1014,25 @@ export async function verifyAdminPin(pin: string): Promise<boolean> {
   }
 
   if (hasApiBase()) {
-    const response = await fetch(`${apiBaseUrl}/api/admin-pin/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pin: normalizedPin }),
-    });
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/admin-pin/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: normalizedPin }),
+      });
 
-    if (!response.ok) {
-      throw new Error(`PIN verification request failed (${response.status}).`);
+      if (!response.ok) {
+        throw new Error(`PIN verification request failed (${response.status}).`);
+      }
+
+      const payload = (await response.json()) as { valid?: boolean };
+      return Boolean(payload.valid);
+    } catch (apiError) {
+      logApiFallback("admin-pin/verify", apiError);
+      if (!hasSupabaseConfig()) {
+        throw apiError;
+      }
     }
-
-    const payload = (await response.json()) as { valid?: boolean };
-    return Boolean(payload.valid);
   }
 
   const supabase = getSupabaseClient();
@@ -965,11 +1057,18 @@ export async function verifyAdminPin(pin: string): Promise<boolean> {
 
 export async function fetchAuditTrailData(): Promise<AuditEventRow[]> {
   if (hasApiBase()) {
-    const payload = await fetchApiJson<unknown>("/api/audit-log");
-    const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-    return rows
-      .map(toAuditEventRow)
-      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    try {
+      const payload = await fetchApiJson<unknown>("/api/audit-log");
+      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
+      return rows
+        .map(toAuditEventRow)
+        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    } catch (apiError) {
+      logApiFallback("audit-log", apiError);
+      if (!hasSupabaseConfig()) {
+        throw apiError;
+      }
+    }
   }
 
   const supabase = getSupabaseClient();
