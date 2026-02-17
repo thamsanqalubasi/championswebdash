@@ -7,6 +7,14 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import type { ContractRow } from "@/lib/types";
 
+type TenantContact = {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  whatsapp_number: string;
+};
+
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(amount);
 }
@@ -29,6 +37,8 @@ export default function ContractsPage() {
   const [deleting, setDeleting] = useState(false);
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
   const [tenants, setTenants] = useState<Array<{ id: string; full_name: string }>>([]);
+  const [tenantContacts, setTenantContacts] = useState<TenantContact[]>([]);
+  const [contractDocumentUrlById, setContractDocumentUrlById] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -37,13 +47,32 @@ export default function ContractsPage() {
       try {
         const result = await fetchContractsData();
         if (!cancelled) setContracts(result);
-        const [{ data: props }, { data: tens }] = await Promise.all([
+        const [{ data: props }, { data: tens }, { data: contractDocs }] = await Promise.all([
           supabase.from("properties").select("id, name").order("name"),
-          supabase.from("tenants").select("id, full_name").order("full_name"),
+          supabase.from("tenants").select("id, full_name, email, phone, whatsapp_number").order("full_name"),
+          supabase.from("contracts").select("id, document_url"),
         ]);
         if (!cancelled) {
           if (props) setProperties(props.map((p) => ({ id: String(p.id), name: String(p.name) })));
-          if (tens) setTenants(tens.map((t) => ({ id: String(t.id), full_name: String(t.full_name) })));
+          if (tens) {
+            setTenants(tens.map((t) => ({ id: String(t.id), full_name: String(t.full_name) })));
+            setTenantContacts(
+              tens.map((t) => ({
+                id: String(t.id),
+                full_name: String(t.full_name),
+                email: String((t as { email?: string }).email ?? ""),
+                phone: String((t as { phone?: string }).phone ?? ""),
+                whatsapp_number: String((t as { whatsapp_number?: string }).whatsapp_number ?? ""),
+              })),
+            );
+          }
+          if (contractDocs) {
+            const map: Record<string, string> = {};
+            contractDocs.forEach((row) => {
+              map[String(row.id)] = String(row.document_url ?? "");
+            });
+            setContractDocumentUrlById(map);
+          }
         }
       } catch (e) { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load contracts."); }
       finally { if (!cancelled) setLoading(false); }
@@ -108,34 +137,34 @@ export default function ContractsPage() {
     finally { setDeleting(false); }
   };
 
-  const onPrint = async (row: ContractRow) => {
-    setPrintingId(row.id);
-    try {
-      let adminName = user?.email ?? "Admin";
-      let signatureUrl = "";
+  const sanitizePhone = (value: string) => value.replace(/\D/g, "");
 
-      if (user?.email) {
-        const { data: adminRow } = await supabase
-          .from("users")
-          .select("first_name, last_name, signature_url")
-          .eq("email", user.email)
-          .limit(1)
-          .maybeSingle();
+  const getTenantContact = (row: ContractRow) =>
+    tenantContacts.find((tenant) => tenant.full_name === row.tenantName);
 
-        if (adminRow) {
-          const fullName = `${String(adminRow.first_name ?? "")} ${String(adminRow.last_name ?? "")}`.trim();
-          adminName = fullName || user.email;
-          signatureUrl = String(adminRow.signature_url ?? "");
-        }
+  const getAdminSignatureInfo = async () => {
+    let adminName = user?.email ?? "Admin";
+    let signatureUrl = "";
+
+    if (user?.email) {
+      const { data: adminRow } = await supabase
+        .from("users")
+        .select("first_name, last_name, signature_url")
+        .eq("email", user.email)
+        .limit(1)
+        .maybeSingle();
+
+      if (adminRow) {
+        const fullName = `${String(adminRow.first_name ?? "")} ${String(adminRow.last_name ?? "")}`.trim();
+        adminName = fullName || user.email;
+        signatureUrl = String(adminRow.signature_url ?? "");
       }
+    }
 
-      const printWindow = window.open("", "_blank", "width=900,height=700");
-      if (!printWindow) {
-        alert("Popup blocked. Please allow popups to print.");
-        return;
-      }
+    return { adminName, signatureUrl };
+  };
 
-      const html = `
+  const buildContractHtml = (row: ContractRow, adminName: string, signatureUrl: string) => `
 <!doctype html>
 <html>
   <head>
@@ -216,20 +245,107 @@ export default function ContractsPage() {
         <div>Date: ____________________</div>
       </div>
     </div>
-
-    <script>
-      window.onload = () => { window.print(); };
-    </script>
   </body>
 </html>`;
 
-      printWindow.document.open();
-      printWindow.document.write(html);
-      printWindow.document.close();
+  const ensureGeneratedDocument = async (row: ContractRow) => {
+    const existing = contractDocumentUrlById[row.id] ?? "";
+    if (existing) {
+      return existing;
+    }
+
+    const { adminName, signatureUrl } = await getAdminSignatureInfo();
+    const html = buildContractHtml(row, adminName, signatureUrl);
+    const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+
+    const { error: updateError } = await supabase
+      .from("contracts")
+      .update({ document_url: dataUrl })
+      .eq("id", row.id);
+    if (updateError) throw updateError;
+
+    setContractDocumentUrlById((previous) => ({ ...previous, [row.id]: dataUrl }));
+    return dataUrl;
+  };
+
+  const onGenerate = async (row: ContractRow) => {
+    setPrintingId(row.id);
+    try {
+      const documentUrl = await ensureGeneratedDocument(row);
+      window.open(documentUrl, "_blank", "noopener,noreferrer");
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Could not prepare contract print.");
+      alert(e instanceof Error ? e.message : "Could not generate contract document.");
     } finally {
       setPrintingId(null);
+    }
+  };
+
+  const onView = async (row: ContractRow) => {
+    setPrintingId(row.id);
+    try {
+      const documentUrl = await ensureGeneratedDocument(row);
+      window.open(documentUrl, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not view contract document.");
+    } finally {
+      setPrintingId(null);
+    }
+  };
+
+  const onDownload = async (row: ContractRow) => {
+    setPrintingId(row.id);
+    try {
+      const { adminName, signatureUrl } = await getAdminSignatureInfo();
+      const html = buildContractHtml(row, adminName, signatureUrl);
+      const blob = new Blob([html], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `contract-${row.tenantName.replace(/\s+/g, "-").toLowerCase()}.html`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not download contract document.");
+    } finally {
+      setPrintingId(null);
+    }
+  };
+
+  const onSendEmail = async (row: ContractRow) => {
+    try {
+      const tenant = getTenantContact(row);
+      if (!tenant?.email) {
+        alert("Tenant email is missing.");
+        return;
+      }
+      const documentUrl = await ensureGeneratedDocument(row);
+      const shareLink = documentUrl.startsWith("http") ? `\nDocument: ${documentUrl}` : "";
+      const subject = encodeURIComponent(`Lease Contract - ${row.propertyName}`);
+      const body = encodeURIComponent(
+        `Hello ${row.tenantName},\n\nYour contract for ${row.propertyName} is ready.${shareLink}\n\nIf no link is included, the admin will share the downloaded contract file directly.`,
+      );
+      window.open(`mailto:${tenant.email}?subject=${subject}&body=${body}`, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not prepare email share.");
+    }
+  };
+
+  const onSendWhatsApp = async (row: ContractRow) => {
+    try {
+      const tenant = getTenantContact(row);
+      const phone = sanitizePhone(tenant?.whatsapp_number || tenant?.phone || "");
+      if (!phone) {
+        alert("Tenant phone/WhatsApp number is missing.");
+        return;
+      }
+      const documentUrl = await ensureGeneratedDocument(row);
+      const shareLink = documentUrl.startsWith("http") ? ` Document: ${documentUrl}` : "";
+      const text = encodeURIComponent(
+        `Hello ${row.tenantName}, your contract for ${row.propertyName} is ready.${shareLink} If no link is shown, admin will share the downloaded file directly.`,
+      );
+      window.open(`https://wa.me/${phone}?text=${text}`, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not prepare WhatsApp share.");
     }
   };
 
@@ -267,8 +383,12 @@ export default function ContractsPage() {
                     <td className="px-3 py-3 text-muted">{formatCurrency(row.depositAmount)}</td>
                     <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.status}</span></td>
                     <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={(event) => { event.stopPropagation(); void onGenerate(row); }} disabled={printingId === row.id} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated disabled:opacity-50">{printingId === row.id ? "Preparing..." : "Generate"}</button>
+                      <button type="button" onClick={(event) => { event.stopPropagation(); void onView(row); }} disabled={printingId === row.id} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated disabled:opacity-50">View</button>
+                      <button type="button" onClick={(event) => { event.stopPropagation(); void onDownload(row); }} disabled={printingId === row.id} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated disabled:opacity-50">Download</button>
+                      <button type="button" onClick={(event) => { event.stopPropagation(); void onSendWhatsApp(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">WhatsApp</button>
+                      <button type="button" onClick={(event) => { event.stopPropagation(); void onSendEmail(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Email</button>
                       {row.status === "pending" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "active"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Activate</button>}
-                      {row.status === "active" && <button type="button" onClick={(event) => { event.stopPropagation(); onPrint(row); }} disabled={printingId === row.id} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated disabled:opacity-50">{printingId === row.id ? "Preparing..." : "Print"}</button>}
                       {row.status === "active" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "terminated"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Terminate</button>}
                       {row.status === "expired" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "active"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Renew</button>}
                       {row.status === "terminated" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "active"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reactivate</button>}
