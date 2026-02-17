@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -52,6 +52,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const userEmail = user?.email ?? "Admin";
 
@@ -108,6 +109,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 border-b border-border-color bg-surface px-4 py-3 lg:px-6" style={{ contain: "layout paint" }}>
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted lg:hidden"
+            >
+              Menu
+            </button>
             <label htmlFor="global-search" className="sr-only">
               Search module, tenant, property
             </label>
@@ -140,31 +148,58 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border-color bg-surface p-2 lg:hidden" aria-label="Mobile navigation" style={{ contain: "layout paint" }}>
-        {[
-          { label: "Home", href: "/dashboard" },
-          { label: "Props", href: "/properties" },
-          { label: "Tenants", href: "/tenants" },
-          { label: "Maint", href: "/maintenance" },
-          { label: "More", href: "/finance" },
-        ].map((item) => {
-          const active = isActive(pathname, item.href);
-          return (
-            <Link
-              key={item.href}
-              to={item.href}
-              aria-current={active ? "page" : undefined}
-              className={`rounded-md px-2 py-2 text-center text-xs ${
-                active
-                  ? "bg-surface-elevated font-medium"
-                  : "text-muted hover:bg-surface-elevated hover:text-foreground"
-              }`}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <button
+            type="button"
+            aria-label="Close menu"
+            onClick={() => setMobileMenuOpen(false)}
+            className="absolute inset-0 bg-black/40"
+          />
+          <div className="absolute left-0 top-0 h-full w-[86%] max-w-sm overflow-y-auto border-r border-border-color bg-surface p-4">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-semibold">Navigation</h2>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-md border border-border-color px-2 py-1 text-sm text-muted"
+              >
+                Close
+              </button>
+            </div>
+
+            <nav className="space-y-6" aria-label="Mobile primary navigation">
+              {navSections.map((section) => (
+                <div key={section.title}>
+                  <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                    {section.title}
+                  </p>
+                  <div className="space-y-1">
+                    {section.items.map((item) => {
+                      const active = isActive(pathname, item.href);
+                      return (
+                        <Link
+                          key={item.href}
+                          to={item.href}
+                          onClick={() => setMobileMenuOpen(false)}
+                          aria-current={active ? "page" : undefined}
+                          className={`block rounded-md px-3 py-2 text-sm ${
+                            active
+                              ? "bg-surface-elevated font-medium"
+                              : "text-muted hover:bg-surface-elevated hover:text-foreground"
+                          }`}
+                        >
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </nav>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

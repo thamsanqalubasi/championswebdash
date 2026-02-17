@@ -142,29 +142,67 @@ export default function ContractsPage() {
     <meta charset="utf-8" />
     <title>Contract - ${row.tenantName}</title>
     <style>
-      body { font-family: Arial, sans-serif; margin: 32px; color: #111; }
-      h1 { margin: 0 0 16px; }
-      .meta { margin: 8px 0; font-size: 14px; }
-      .section { margin-top: 24px; }
-      .sig-box { margin-top: 48px; display: flex; justify-content: space-between; gap: 24px; }
-      .sig { width: 45%; border-top: 1px solid #333; padding-top: 8px; font-size: 12px; }
+      body { font-family: Arial, sans-serif; margin: 32px; color: #111; line-height: 1.45; }
+      h1 { margin: 0 0 8px; }
+      h2 { margin: 20px 0 8px; font-size: 16px; }
+      p { margin: 8px 0; font-size: 14px; }
+      .muted { color: #555; font-size: 12px; }
+      .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; margin: 16px 0; }
+      .meta { font-size: 14px; }
+      .box { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-top: 12px; }
+      .section { margin-top: 16px; }
+      .sig-box { margin-top: 56px; display: flex; justify-content: space-between; gap: 24px; }
+      .sig { width: 45%; border-top: 1px solid #333; padding-top: 8px; font-size: 12px; min-height: 86px; }
       .sig img { max-height: 80px; display: block; margin-bottom: 8px; }
+      ol { padding-left: 20px; }
+      li { margin: 6px 0; font-size: 14px; }
       @media print { button { display: none; } }
     </style>
   </head>
   <body>
-    <h1>Lease Contract</h1>
-    <div class="meta"><strong>Tenant:</strong> ${row.tenantName}</div>
-    <div class="meta"><strong>Property:</strong> ${row.propertyName}</div>
-    <div class="meta"><strong>Status:</strong> ${row.status}</div>
-    <div class="meta"><strong>Start Date:</strong> ${row.startDate}</div>
-    <div class="meta"><strong>End Date:</strong> ${row.endDate}</div>
-    <div class="meta"><strong>Monthly Rent:</strong> ${formatCurrency(row.monthlyRent)}</div>
-    <div class="meta"><strong>Deposit Amount:</strong> ${formatCurrency(row.depositAmount)}</div>
+    <h1>Residential Lease Agreement</h1>
+    <div class="muted">Generated on ${new Date().toLocaleDateString("en-ZA")}</div>
+
+    <div class="meta-grid box">
+      <div class="meta"><strong>Tenant:</strong> ${row.tenantName}</div>
+      <div class="meta"><strong>Property:</strong> ${row.propertyName}</div>
+      <div class="meta"><strong>Contract Status:</strong> ${row.status}</div>
+      <div class="meta"><strong>Lease Period:</strong> ${row.startDate} to ${row.endDate}</div>
+      <div class="meta"><strong>Monthly Rent:</strong> ${formatCurrency(row.monthlyRent)}</div>
+      <div class="meta"><strong>Deposit:</strong> ${formatCurrency(row.depositAmount)}</div>
+    </div>
 
     <div class="section">
-      <strong>Notes</strong>
-      <p>${(row.notes || "-").replaceAll("\n", "<br />")}</p>
+      <h2>1. Parties</h2>
+      <p>This Lease Agreement is made between the Landlord/Administrator (<strong>${adminName}</strong>) and the Tenant (<strong>${row.tenantName}</strong>) for occupation of <strong>${row.propertyName}</strong>.</p>
+    </div>
+
+    <div class="section">
+      <h2>2. Core Terms</h2>
+      <ol>
+        <li>Lease commencement date: <strong>${row.startDate}</strong>.</li>
+        <li>Lease end date: <strong>${row.endDate}</strong>.</li>
+        <li>Monthly rent payable: <strong>${formatCurrency(row.monthlyRent)}</strong>.</li>
+        <li>Security deposit payable: <strong>${formatCurrency(row.depositAmount)}</strong>.</li>
+        <li>Rent is due in accordance with the company payment instructions and due-day settings.</li>
+      </ol>
+    </div>
+
+    <div class="section">
+      <h2>3. Obligations</h2>
+      <ol>
+        <li>The Tenant shall keep the property in reasonable condition and promptly report maintenance issues.</li>
+        <li>The Tenant shall not sublet the property without prior written approval.</li>
+        <li>The Landlord/Administrator shall maintain essential services and attend to qualifying maintenance requests.</li>
+        <li>Any damages beyond fair wear and tear may be recovered from the deposit as permitted by law.</li>
+      </ol>
+    </div>
+
+    <div class="section">
+      <h2>4. Additional Notes</h2>
+      <div class="box">
+        <p>${(row.notes || "No additional notes.").replaceAll("\n", "<br />")}</p>
+      </div>
     </div>
 
     <div class="sig-box">
