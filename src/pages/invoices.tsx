@@ -4,6 +4,9 @@ import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { fetchInvoicesData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
+import { fetchCompanyInfo, fetchAdminInfo } from "@/lib/storage";
+import { buildProfessionalInvoiceHtml, buildUnifiedInvoiceHtml } from "@/lib/document-templates";
 import type { InvoiceRow } from "@/lib/types";
 
 type PeriodFilter = "this_month" | "last_2_months" | "last_3_months";
@@ -36,58 +39,47 @@ function toMonthKey(dateString: string) {
   return String(dateString).slice(0, 7);
 }
 
-function openUnifiedInvoiceDocument(transactions: RentPaymentTransaction[]) {
-  const collector = transactions[0]?.collectorName ?? "Admin";
-  const total = transactions.reduce((sum, row) => sum + row.amountPaid, 0);
-  const today = new Date().toISOString().slice(0, 10);
-
-  const rows = transactions
-    .map(
-      (row) => `
-      <tr>
-        <td style="padding:8px;border:1px solid #ddd;">${row.paymentDate}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${row.tenantName}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${row.propertyName}</td>
-        <td style="padding:8px;border:1px solid #ddd;text-align:right;">${formatCurrency(row.amountPaid)}</td>
-      </tr>
-    `,
-    )
-    .join("");
-
-  const html = `
-    <html>
-      <head><title>Unified Invoice - ${collector}</title></head>
-      <body style="font-family: Arial, sans-serif; margin: 24px;">
-        <h2>Unified Rent Collection Invoice</h2>
-        <p><strong>Collector:</strong> ${collector}</p>
-        <p><strong>Date:</strong> ${today}</p>
-        <table style="border-collapse: collapse; width: 100%; margin-top: 16px;">
-          <thead>
-            <tr>
-              <th style="padding:8px;border:1px solid #ddd;text-align:left;">Payment Date</th>
-              <th style="padding:8px;border:1px solid #ddd;text-align:left;">Tenant</th>
-              <th style="padding:8px;border:1px solid #ddd;text-align:left;">Property</th>
-              <th style="padding:8px;border:1px solid #ddd;text-align:right;">Amount</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-        <p style="margin-top:16px;"><strong>Total:</strong> ${formatCurrency(total)}</p>
-      </body>
-    </html>
-  `;
-
-  const invoiceWindow = window.open("", "_blank", "noopener,noreferrer");
-  if (!invoiceWindow) {
+async function openUnifiedInvoiceDocument(
+  transactions: RentPaymentTransaction[],
+  userEmail?: string,
+) {
+  const previewWindow = window.open("about:blank", "_blank");
+  if (!previewWindow) {
     alert("Please allow popups to view unified invoice.");
     return;
   }
 
-  invoiceWindow.document.write(html);
-  invoiceWindow.document.close();
+  try {
+    const [company, admin] = await Promise.all([
+      fetchCompanyInfo(),
+      fetchAdminInfo(userEmail),
+    ]);
+
+    const html = buildUnifiedInvoiceHtml(
+      {
+        collectorName: transactions[0]?.collectorName ?? "Admin",
+        transactions: transactions.map((t) => ({
+          paymentDate: t.paymentDate,
+          tenantName: t.tenantName,
+          propertyName: t.propertyName,
+          amountPaid: t.amountPaid,
+        })),
+      },
+      company,
+      admin,
+    );
+
+    previewWindow.document.open();
+    previewWindow.document.write(html);
+    previewWindow.document.close();
+  } catch (e) {
+    alert(e instanceof Error ? e.message : "Could not generate unified invoice.");
+    previewWindow.close();
+  }
 }
 
 export default function InvoicesPage() {
+  const { user } = useAuth();
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -336,7 +328,7 @@ export default function InvoicesPage() {
         return;
       }
 
-      openUnifiedInvoiceDocument(selectedTransactions);
+      openUnifiedInvoiceDocument(selectedTransactions, user?.email ?? undefined);
 
       const totalAmountPaid = selectedTransactions.reduce((sum, row) => sum + row.amountPaid, 0);
 
@@ -385,6 +377,78 @@ export default function InvoicesPage() {
       alert(deleteError instanceof Error ? deleteError.message : "Delete failed");
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const viewInvoice = async (row: InvoiceRow) => {
+    const previewWindow = window.open("about:blank", "_blank");
+    if (!previewWindow) { alert("Please allow popups to view invoice."); return; }
+
+    try {
+      // Check for stored HTML in the DB
+      const { data: invoiceData } = await supabase
+        .from("invoices")
+        .select("pdf_url")
+        .eq("id", row.id)
+        .maybeSingle();
+
+      const pdfUrl = String(invoiceData?.pdf_url ?? "");
+
+      if (pdfUrl.startsWith("<")) {
+        previewWindow.document.open();
+        previewWindow.document.write(pdfUrl);
+        previewWindow.document.close();
+        return;
+      }
+
+      if (pdfUrl.startsWith("http")) {
+        previewWindow.location.href = pdfUrl;
+        return;
+      }
+
+      // Generate fresh professional invoice
+      const { data: items } = await supabase
+        .from("invoice_items")
+        .select("description, amount")
+        .eq("invoice_id", row.id);
+
+      const [company, admin] = await Promise.all([
+        fetchCompanyInfo(),
+        fetchAdminInfo(user?.email ?? undefined),
+      ]);
+
+      const lineItems = (items ?? []).map((item) => ({
+        description: String(item.description ?? ""),
+        amount: Number(item.amount ?? 0),
+      }));
+
+      if (lineItems.length === 0) {
+        lineItems.push({ description: `Rent payment for ${row.month}`, amount: row.totalAmount });
+      }
+
+      const html = buildProfessionalInvoiceHtml(
+        {
+          invoiceId: row.id,
+          tenantName: row.tenantName,
+          propertyName: row.propertyName,
+          month: row.month,
+          dueDate: row.dueDate,
+          status: row.status,
+          lineItems,
+        },
+        company,
+        admin,
+      );
+
+      // Save for future use
+      await supabase.from("invoices").update({ pdf_url: html }).eq("id", row.id);
+
+      previewWindow.document.open();
+      previewWindow.document.write(html);
+      previewWindow.document.close();
+    } catch (viewError) {
+      alert(viewError instanceof Error ? viewError.message : "Could not view invoice.");
+      previewWindow.close();
     }
   };
 
@@ -503,6 +567,13 @@ export default function InvoicesPage() {
                         </td>
                         <td className="px-3 py-3">
                           <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void viewInvoice(row)}
+                              className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                            >
+                              View
+                            </button>
                             {row.status !== "paid" && (
                               <button
                                 type="button"

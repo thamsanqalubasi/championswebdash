@@ -4,9 +4,12 @@ import { ModulePage } from "@/components/module-page";
 import { Modal } from "@/components/modal";
 import { fetchSettingsData, verifyAdminPin } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
+import { uploadFileToBucket } from "@/lib/storage";
 import type { SettingsData } from "@/lib/types";
 
 export default function SettingsPage() {
+  const { user } = useAuth();
   const [data, setData] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -18,6 +21,8 @@ export default function SettingsPage() {
   const [companyForm, setCompanyForm] = useState({ company_name: "", logo_url: "", address: "" });
   const [invoiceForm, setInvoiceForm] = useState({ tax_rate: 0, default_due_day: 1, payment_instructions: "" });
   const [saving, setSaving] = useState(false);
+  const [signatureUploading, setSignatureUploading] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
 
   // PIN states
   const [pinModalOpen, setPinModalOpen] = useState(false);
@@ -32,13 +37,43 @@ export default function SettingsPage() {
       setLoading(true); setError(null);
       try {
         const result = await fetchSettingsData();
-        if (!cancelled) setData(result);
+        if (!cancelled) {
+          setData(result);
+        }
+
+        if (user?.id) {
+          const { data: currentUser, error: currentUserError } = await supabase
+            .from("users")
+            .select("first_name, last_name, email, signature_url")
+            .eq("id", user.id)
+            .single();
+
+          if (currentUserError) throw currentUserError;
+
+          if (!cancelled && currentUser) {
+            setData((previous) => {
+              if (!previous) {
+                return previous;
+              }
+
+              return {
+                ...previous,
+                adminProfile: {
+                  firstName: String(currentUser.first_name ?? ""),
+                  lastName: String(currentUser.last_name ?? ""),
+                  email: String(currentUser.email ?? "-"),
+                  signatureUrl: String(currentUser.signature_url ?? ""),
+                },
+              };
+            });
+          }
+        }
       } catch (e) { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load settings."); }
       finally { if (!cancelled) setLoading(false); }
     }
     void load();
     return () => { cancelled = true; };
-  }, [reloadKey]);
+  }, [reloadKey, user?.id]);
 
   const reload = () => setReloadKey((v) => v + 1);
 
@@ -61,11 +96,46 @@ export default function SettingsPage() {
   const saveAdmin = async () => {
     setSaving(true);
     try {
-      const { error: err } = await supabase.from("users").update({ first_name: adminForm.first_name, last_name: adminForm.last_name, email: adminForm.email, signature_url: adminForm.signature_url }).limit(1);
+      if (!user?.id) {
+        throw new Error("No signed-in user found.");
+      }
+
+      const { error: err } = await supabase
+        .from("users")
+        .update({ first_name: adminForm.first_name, last_name: adminForm.last_name, email: adminForm.email, signature_url: adminForm.signature_url })
+        .eq("id", user.id);
       if (err) throw err;
       setEditSection(null); reload();
     } catch (e) { alert(e instanceof Error ? e.message : "Save failed"); }
     finally { setSaving(false); }
+  };
+
+  const onUploadSignature = async (file: File | null) => {
+    if (!file) return;
+    if (!user?.id) { alert("No signed-in user found."); return; }
+    setSignatureUploading(true);
+    try {
+      const bucketName = import.meta.env.VITE_SUPABASE_SIGNATURE_BUCKET || "signatures";
+      const url = await uploadFileToBucket(bucketName, user.id, file);
+      setAdminForm((previous) => ({ ...previous, signature_url: url }));
+    } catch (uploadError) {
+      alert(uploadError instanceof Error ? uploadError.message : "Could not upload signature.");
+    } finally {
+      setSignatureUploading(false);
+    }
+  };
+
+  const onUploadLogo = async (file: File | null) => {
+    if (!file) return;
+    setLogoUploading(true);
+    try {
+      const url = await uploadFileToBucket("company-logos", "logo", file);
+      setCompanyForm((previous) => ({ ...previous, logo_url: url }));
+    } catch (uploadError) {
+      alert(uploadError instanceof Error ? uploadError.message : "Could not upload logo.");
+    } finally {
+      setLogoUploading(false);
+    }
   };
 
   const saveCompany = async () => {
@@ -133,7 +203,20 @@ export default function SettingsPage() {
               <LabelValue label="First Name" value={data.adminProfile.firstName} />
               <LabelValue label="Last Name" value={data.adminProfile.lastName} />
               <LabelValue label="Email" value={data.adminProfile.email} />
-              <LabelValue label="Signature URL" value={data.adminProfile.signatureUrl} />
+            </div>
+            <div className="mt-4">
+              <p className="mb-2 text-xs text-muted">Uploaded Signature</p>
+              {data.adminProfile.signatureUrl ? (
+                <div className="w-full max-w-sm rounded-md border border-border-color bg-surface-elevated p-3">
+                  <img
+                    src={data.adminProfile.signatureUrl}
+                    alt="Admin signature"
+                    className="h-20 w-full object-contain"
+                  />
+                </div>
+              ) : (
+                <p className="text-sm text-muted">No signature uploaded yet.</p>
+              )}
             </div>
           </section>
 
@@ -145,8 +228,17 @@ export default function SettingsPage() {
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <LabelValue label="Company Name" value={data.companyProfile.companyName} />
-              <LabelValue label="Logo URL" value={data.companyProfile.logoUrl} />
               <LabelValue label="Address" value={data.companyProfile.address} />
+            </div>
+            <div className="mt-4">
+              <p className="mb-2 text-xs text-muted">Company Logo</p>
+              {data.companyProfile.logoUrl ? (
+                <div className="w-full max-w-sm rounded-md border border-border-color bg-surface-elevated p-3">
+                  <img src={data.companyProfile.logoUrl} alt="Company logo" className="h-16 w-full object-contain" />
+                </div>
+              ) : (
+                <p className="text-sm text-muted">No logo uploaded yet.</p>
+              )}
             </div>
           </section>
 
@@ -180,10 +272,23 @@ export default function SettingsPage() {
           <div><label className="mb-1 block text-sm text-muted">First Name</label><input value={adminForm.first_name} onChange={(e) => setAdminForm({ ...adminForm, first_name: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div><label className="mb-1 block text-sm text-muted">Last Name</label><input value={adminForm.last_name} onChange={(e) => setAdminForm({ ...adminForm, last_name: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div><label className="mb-1 block text-sm text-muted">Email</label><input value={adminForm.email} onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
-          <div><label className="mb-1 block text-sm text-muted">Signature URL</label><input value={adminForm.signature_url} onChange={(e) => setAdminForm({ ...adminForm, signature_url: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+          <div>
+            <label className="mb-1 block text-sm text-muted">Signature Image</label>
+            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted hover:bg-surface">
+              {signatureUploading ? "Uploading..." : "Choose Signature Image"}
+              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void onUploadSignature(e.target.files?.[0] ?? null)} className="hidden" disabled={signatureUploading} />
+            </label>
+            <p className="mt-1 text-xs text-muted">Select an image from your device. Click Save after uploading.</p>
+          </div>
+          {adminForm.signature_url ? (
+            <div className="rounded-md border border-border-color bg-surface-elevated p-3">
+              <p className="mb-2 text-xs text-muted">Signature Preview</p>
+              <img src={adminForm.signature_url} alt="Signature preview" className="h-20 w-full object-contain" />
+            </div>
+          ) : null}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setEditSection(null)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
-            <button type="button" onClick={saveAdmin} disabled={saving} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
+            <button type="button" onClick={saveAdmin} disabled={saving || signatureUploading} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Saving..." : signatureUploading ? "Uploading..." : "Save"}</button>
           </div>
         </div>
       </Modal>
@@ -192,11 +297,22 @@ export default function SettingsPage() {
       <Modal open={editSection === "company"} onClose={() => setEditSection(null)} title="Edit Company Profile">
         <div className="space-y-3">
           <div><label className="mb-1 block text-sm text-muted">Company Name</label><input value={companyForm.company_name} onChange={(e) => setCompanyForm({ ...companyForm, company_name: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
-          <div><label className="mb-1 block text-sm text-muted">Logo URL</label><input value={companyForm.logo_url} onChange={(e) => setCompanyForm({ ...companyForm, logo_url: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+          <div>
+            <label className="mb-1 block text-sm text-muted">Company Logo</label>
+            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted hover:bg-surface">
+              {logoUploading ? "Uploading..." : "Choose Logo Image"}
+              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void onUploadLogo(e.target.files?.[0] ?? null)} className="hidden" disabled={logoUploading} />
+            </label>
+            {companyForm.logo_url && (
+              <div className="mt-2 rounded-md border border-border-color bg-surface-elevated p-2">
+                <img src={companyForm.logo_url} alt="Logo preview" className="h-12 w-full object-contain" />
+              </div>
+            )}
+          </div>
           <div><label className="mb-1 block text-sm text-muted">Address</label><input value={companyForm.address} onChange={(e) => setCompanyForm({ ...companyForm, address: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setEditSection(null)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
-            <button type="button" onClick={saveCompany} disabled={saving} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
+            <button type="button" onClick={saveCompany} disabled={saving || logoUploading} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Saving..." : logoUploading ? "Uploading..." : "Save"}</button>
           </div>
         </div>
       </Modal>

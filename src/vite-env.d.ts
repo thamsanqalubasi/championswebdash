@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly NEXT_PUBLIC_SUPABASE_URL?: string;
   readonly NEXT_PUBLIC_SUPABASE_ANON_KEY?: string;
   readonly NEXT_PUBLIC_API_URL?: string;
+  readonly VITE_SUPABASE_SIGNATURE_BUCKET?: string;
+  readonly NEXT_PUBLIC_SUPABASE_SIGNATURE_BUCKET?: string;
   readonly VITE_BASE_PATH?: string;
   readonly VITE_ROUTE_GUARD_ENABLED?: string;
 }

@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
+import { ImageGallery } from "@/components/image-gallery";
 import { fetchInspectionsData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
+import { uploadFileToBucket } from "@/lib/storage";
 import type { InspectionRow } from "@/lib/types";
 
 const emptyForm = { property_id: "", tenant_id: "", type: "routine", inspector_name: "", scheduled_date: "", status: "scheduled" };
@@ -53,6 +55,8 @@ export default function InspectionsPage() {
   const [detailsStatus, setDetailsStatus] = useState("scheduled");
   const [statusSaving, setStatusSaving] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [galleryIndex, setGalleryIndex] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -199,32 +203,23 @@ export default function InspectionsPage() {
 
   const uploadInspectionPhoto = async (file: File | null) => {
     if (!file || !details) return;
-
     setPhotoUploading(true);
     try {
-      const extension = file.name.includes(".") ? file.name.split(".").pop() : "jpg";
-      const bucket = "inspection-photos";
-      const path = `${details.id}/${Date.now()}.${extension}`;
-
-      const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(path);
-      const photoUrl = publicUrlData.publicUrl;
+      const photoUrl = await uploadFileToBucket("inspection-photos", details.id, file);
       const updatedPhotos = [...details.photos, photoUrl];
-
-      const { error: updateError } = await supabase
-        .from("inspections")
-        .update({ photos: updatedPhotos })
-        .eq("id", details.id);
+      const { error: updateError } = await supabase.from("inspections").update({ photos: updatedPhotos }).eq("id", details.id);
       if (updateError) throw updateError;
-
       setDetails({ ...details, photos: updatedPhotos });
     } catch (uploadError) {
       alert(uploadError instanceof Error ? uploadError.message : "Could not upload photo.");
     } finally {
       setPhotoUploading(false);
     }
+  };
+
+  const openGallery = (index: number) => {
+    setGalleryIndex(index);
+    setGalleryOpen(true);
   };
 
   return (
@@ -374,13 +369,15 @@ export default function InspectionsPage() {
                 <EmptyState title="No pictures" description="Upload inspection pictures to track condition evidence." />
               ) : (
                 <div className="grid grid-cols-2 gap-2">
-                  {details.photos.map((photoUrl) => (
-                    <a key={photoUrl} href={photoUrl} target="_blank" rel="noreferrer" className="overflow-hidden rounded-md border border-border-color bg-surface-elevated">
+                  {details.photos.map((photoUrl, idx) => (
+                    <button key={photoUrl} type="button" onClick={() => openGallery(idx)} className="overflow-hidden rounded-md border border-border-color bg-surface-elevated text-left">
                       <img src={photoUrl} alt="Inspection" className="h-28 w-full object-cover" />
-                    </a>
+                    </button>
                   ))}
                 </div>
               )}
+
+              <ImageGallery images={details.photos} currentIndex={galleryIndex} open={galleryOpen} onClose={() => setGalleryOpen(false)} onNavigate={setGalleryIndex} />
             </div>
           </div>
         )}

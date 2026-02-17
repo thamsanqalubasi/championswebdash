@@ -4,6 +4,8 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
+import { fetchCompanyInfo, fetchAdminInfo } from "@/lib/storage";
+import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
 
 type RentTenantRow = {
   id: string;
@@ -350,34 +352,59 @@ export default function RentCollectionPage() {
     const invoiceId = payment.invoiceId;
     if (!invoiceId) return;
 
-    const invoice = invoiceById[invoiceId];
-    if (invoice?.pdfUrl) {
-      window.open(invoice.pdfUrl, "_blank", "noopener,noreferrer");
-      return;
-    }
-
-    const html = `
-      <html>
-        <head><title>Invoice ${invoice?.month ?? payment.paymentDate.slice(0, 7)}</title></head>
-        <body style="font-family: Arial, sans-serif; margin: 24px;">
-          <h2>Rent Invoice</h2>
-          <p><strong>Tenant:</strong> ${tenantName}</p>
-          <p><strong>Property:</strong> ${propertyName}</p>
-          <p><strong>Payment Date:</strong> ${payment.paymentDate}</p>
-          <p><strong>Amount:</strong> ${formatCurrency(payment.amountPaid)}</p>
-          <p><strong>Status:</strong> ${invoice?.status ?? "paid"}</p>
-        </body>
-      </html>
-    `;
-
-    const previewWindow = window.open("", "_blank", "noopener,noreferrer");
+    const previewWindow = window.open("about:blank", "_blank");
     if (!previewWindow) {
       alert("Please allow popups to view invoice.");
       return;
     }
 
-    previewWindow.document.write(html);
-    previewWindow.document.close();
+    try {
+      const invoice = invoiceById[invoiceId];
+
+      // If we have stored HTML in pdfUrl
+      if (invoice?.pdfUrl && invoice.pdfUrl.startsWith("<")) {
+        previewWindow.document.open();
+        previewWindow.document.write(invoice.pdfUrl);
+        previewWindow.document.close();
+        return;
+      }
+
+      // If we have an external URL
+      if (invoice?.pdfUrl && invoice.pdfUrl.startsWith("http")) {
+        previewWindow.location.href = invoice.pdfUrl;
+        return;
+      }
+
+      // Generate professional invoice
+      const [company, admin] = await Promise.all([
+        fetchCompanyInfo(),
+        fetchAdminInfo(user?.email ?? undefined),
+      ]);
+
+      const html = buildProfessionalInvoiceHtml(
+        {
+          invoiceId: invoiceId,
+          tenantName,
+          propertyName,
+          month: invoice?.month ?? payment.paymentDate.slice(0, 7),
+          dueDate: payment.paymentDate,
+          status: invoice?.status ?? "paid",
+          lineItems: [{ description: `Rent payment on ${payment.paymentDate}`, amount: payment.amountPaid }],
+        },
+        company,
+        admin,
+      );
+
+      // Save the generated HTML to DB
+      await supabase.from("invoices").update({ pdf_url: html }).eq("id", invoiceId);
+
+      previewWindow.document.open();
+      previewWindow.document.write(html);
+      previewWindow.document.close();
+    } catch (viewError) {
+      alert(viewError instanceof Error ? viewError.message : "Could not view invoice.");
+      previewWindow.close();
+    }
   };
 
   return (
