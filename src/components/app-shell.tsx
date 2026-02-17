@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { type ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { ThemeToggle } from "./theme-toggle";
@@ -50,14 +50,14 @@ function isActive(pathname: string, href: string) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const { user, signOut } = useAuth();
 
   const userEmail = user?.email ?? "Admin";
 
   const onSignOut = async () => {
     await signOut();
-    window.location.href =
-      (import.meta.env.VITE_BASE_PATH || "/championswebdash") + "/login";
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -69,7 +69,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         Skip to main content
       </a>
 
-      <aside className="hidden w-72 flex-col border-r border-border-color bg-surface p-4 lg:flex">
+      <aside className="hidden w-72 flex-col border-r border-border-color bg-surface p-4 lg:flex" style={{ contain: "layout paint" }}>
         <div className="mb-6 rounded-lg bg-surface-elevated p-4">
           <p className="text-sm text-muted">Champions Court</p>
           <h1 className="text-lg font-semibold">Desktop Dashboard</h1>
@@ -89,7 +89,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                       key={item.href}
                       to={item.href}
                       aria-current={active ? "page" : undefined}
-                      className={`block rounded-md px-3 py-2 text-sm transition ${
+                      className={`block rounded-md px-3 py-2 text-sm ${
                         active
                           ? "bg-surface-elevated font-medium"
                           : "text-muted hover:bg-surface-elevated hover:text-foreground"
@@ -106,7 +106,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 border-b border-border-color bg-surface/90 px-4 py-3 backdrop-blur lg:px-6">
+        <header className="sticky top-0 z-20 border-b border-border-color bg-surface px-4 py-3 lg:px-6" style={{ contain: "layout paint" }}>
           <div className="flex flex-wrap items-center gap-3">
             <label htmlFor="global-search" className="sr-only">
               Search module, tenant, property
@@ -121,7 +121,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
             <div className="flex w-full items-center gap-2 sm:w-auto">
               <ThemeToggle />
-              <div className="max-w-[220px] flex-1 truncate rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted sm:flex-none">
+              <div className="max-w-[220px] flex-1 truncate px-1 py-2 text-sm text-muted sm:flex-none" aria-label="Signed-in user">
                 {userEmail}
               </div>
               <button
@@ -140,7 +140,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border-color bg-surface/95 p-2 backdrop-blur lg:hidden" aria-label="Mobile navigation">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border-color bg-surface p-2 lg:hidden" aria-label="Mobile navigation" style={{ contain: "layout paint" }}>
         {[
           { label: "Home", href: "/dashboard" },
           { label: "Props", href: "/properties" },

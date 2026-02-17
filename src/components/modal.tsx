@@ -32,17 +32,17 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center"
       role="dialog"
       aria-modal="true"
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50"
-        onClick={onClose}
+        className="pointer-events-auto absolute inset-0 bg-black/50"
+        onMouseDown={onClose}
       />
       {/* Panel */}
-      <div className="relative z-10 w-full max-w-lg mx-4 rounded-lg border border-border-color bg-surface p-6 text-foreground shadow-xl">
+      <div className="pointer-events-auto relative z-10 mx-4 w-full max-w-lg rounded-lg border border-border-color bg-surface p-6 text-foreground shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-semibold">{title}</h3>
           <button type="button" onClick={onClose} className="text-muted hover:text-foreground text-xl leading-none">&times;</button>
