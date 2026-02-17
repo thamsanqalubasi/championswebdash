@@ -61,7 +61,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
+    <div className="flex min-h-screen bg-background pb-16 text-foreground lg:pb-0">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:border focus:border-border-color focus:bg-surface focus:px-3 focus:py-2"
@@ -105,29 +105,33 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
       </aside>
 
-      <div className="flex min-h-screen flex-1 flex-col">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 border-b border-border-color bg-surface/90 px-4 py-3 backdrop-blur lg:px-6">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <label htmlFor="global-search" className="sr-only">
               Search module, tenant, property
             </label>
-            <input
-              id="global-search"
-              type="search"
-              placeholder="Search module, tenant, property..."
-              className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-foreground"
-            />
-            <ThemeToggle />
-            <div className="max-w-[220px] truncate rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted">
-              {userEmail}
+            <div className="w-full min-w-0 lg:flex-1">
+              <input
+                id="global-search"
+                type="search"
+                placeholder="Search module, tenant, property..."
+                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-foreground"
+              />
             </div>
-            <button
-              type="button"
-              onClick={onSignOut}
-              className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted"
-            >
-              Sign out
-            </button>
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              <ThemeToggle />
+              <div className="max-w-[220px] flex-1 truncate rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted sm:flex-none">
+                {userEmail}
+              </div>
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted"
+              >
+                Sign out
+              </button>
+            </div>
           </div>
         </header>
 
@@ -135,6 +139,32 @@ export function AppShell({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
+
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border-color bg-surface/95 p-2 backdrop-blur lg:hidden" aria-label="Mobile navigation">
+        {[
+          { label: "Home", href: "/dashboard" },
+          { label: "Props", href: "/properties" },
+          { label: "Tenants", href: "/tenants" },
+          { label: "Maint", href: "/maintenance" },
+          { label: "More", href: "/finance" },
+        ].map((item) => {
+          const active = isActive(pathname, item.href);
+          return (
+            <Link
+              key={item.href}
+              to={item.href}
+              aria-current={active ? "page" : undefined}
+              className={`rounded-md px-2 py-2 text-center text-xs ${
+                active
+                  ? "bg-surface-elevated font-medium"
+                  : "text-muted hover:bg-surface-elevated hover:text-foreground"
+              }`}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }
