@@ -14,6 +14,25 @@ type RentTenantRow = {
   propertyName: string;
 };
 
+type TenantPaymentHistoryRow = {
+  id: string;
+  tenantId: string;
+  paymentDate: string;
+  amountPaid: number;
+  invoiceId: string | null;
+  invoicePdfUrl: string | null;
+};
+
+type InvoiceLite = {
+  id: string;
+  tenantId: string;
+  month: string;
+  amount: number;
+  dueDate: string;
+  status: string;
+  pdfUrl: string;
+};
+
 const emptyPaymentForm = {
   paymentDate: new Date().toISOString().slice(0, 10),
   amountPaid: 0,
@@ -31,6 +50,9 @@ function formatCurrency(amount: number) {
 export default function RentCollectionPage() {
   const { user } = useAuth();
   const [tenants, setTenants] = useState<RentTenantRow[]>([]);
+  const [paymentsByTenant, setPaymentsByTenant] = useState<Record<string, TenantPaymentHistoryRow[]>>({});
+  const [invoiceById, setInvoiceById] = useState<Record<string, InvoiceLite>>({});
+  const [expandedTenantId, setExpandedTenantId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -38,6 +60,7 @@ export default function RentCollectionPage() {
   const [selectedTenant, setSelectedTenant] = useState<RentTenantRow | null>(null);
   const [paymentForm, setPaymentForm] = useState(emptyPaymentForm);
   const [saving, setSaving] = useState(false);
+  const [invoiceActionPaymentId, setInvoiceActionPaymentId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,15 +70,69 @@ export default function RentCollectionPage() {
       setError(null);
 
       try {
-        const { data, error: tenantsError } = await supabase
+        const [{ data: tenantsData, error: tenantsError }, { data: paymentsData, error: paymentsError }, { data: invoicesData, error: invoicesError }] = await Promise.all([
+          supabase
           .from("tenants")
           .select("id, full_name, phone, email, property_id, properties(name)")
-          .order("full_name", { ascending: true });
+          .order("full_name", { ascending: true }),
+          supabase
+            .from("tenant_rent_payments")
+            .select("id, tenant_id, payment_date, amount_paid")
+            .order("payment_date", { ascending: false }),
+          supabase
+            .from("invoices")
+            .select("id, tenant_id, month, total_amount, due_date, status, pdf_url")
+            .order("created_at", { ascending: false }),
+        ]);
 
         if (tenantsError) throw tenantsError;
+        if (paymentsError) throw paymentsError;
+        if (invoicesError) throw invoicesError;
+
+        const invoices = (invoicesData ?? []).map((row) => ({
+          id: String(row.id ?? ""),
+          tenantId: String(row.tenant_id ?? ""),
+          month: String(row.month ?? ""),
+          amount: Number(row.total_amount ?? 0),
+          dueDate: String(row.due_date ?? ""),
+          status: String(row.status ?? "draft"),
+          pdfUrl: String(row.pdf_url ?? ""),
+        }));
+
+        const invoiceIds = invoices.map((invoice) => invoice.id).filter(Boolean);
+        let paymentInvoiceMap = new Map<string, string>();
+
+        if (invoiceIds.length > 0) {
+          const { data: invoiceItems, error: invoiceItemsError } = await supabase
+            .from("invoice_items")
+            .select("invoice_id, description")
+            .in("invoice_id", invoiceIds);
+
+          if (invoiceItemsError) throw invoiceItemsError;
+
+          paymentInvoiceMap = new Map<string, string>();
+          (invoiceItems ?? []).forEach((item) => {
+            const description = String(item.description ?? "");
+            const match = description.match(/Payment ID:\s*([a-f0-9-]+)/i);
+            if (!match?.[1]) return;
+
+            const paymentId = match[1];
+            if (!paymentInvoiceMap.has(paymentId)) {
+              paymentInvoiceMap.set(paymentId, String(item.invoice_id ?? ""));
+            }
+          });
+        }
+
+        const invoiceLookupByTenantMonthAmount = new Map<string, string>();
+        invoices.forEach((invoice) => {
+          const key = `${invoice.tenantId}|${invoice.month}|${invoice.amount}`;
+          if (!invoiceLookupByTenantMonthAmount.has(key)) {
+            invoiceLookupByTenantMonthAmount.set(key, invoice.id);
+          }
+        });
 
         if (!cancelled) {
-          const mapped = (data ?? []).map((row) => ({
+          const mapped = (tenantsData ?? []).map((row) => ({
             id: String(row.id ?? ""),
             fullName: String(row.full_name ?? "Unnamed Tenant"),
             phone: String(row.phone ?? "-"),
@@ -64,6 +141,47 @@ export default function RentCollectionPage() {
             propertyName: String((row.properties as { name?: string } | null)?.name ?? "Unassigned"),
           }));
           setTenants(mapped);
+
+          const invoiceByIdMap: Record<string, InvoiceLite> = {};
+          invoices.forEach((invoice) => {
+            invoiceByIdMap[invoice.id] = invoice;
+          });
+          setInvoiceById(invoiceByIdMap);
+
+          const paymentMap: Record<string, TenantPaymentHistoryRow[]> = {};
+          (paymentsData ?? []).forEach((payment) => {
+            const tenantId = String(payment.tenant_id ?? "");
+            if (!tenantId) return;
+
+            const paymentId = String(payment.id ?? "");
+            const amountPaid = Number(payment.amount_paid ?? 0);
+            const paymentDate = String(payment.payment_date ?? "");
+            const month = paymentDate.slice(0, 7);
+            const fallbackKey = `${tenantId}|${month}|${amountPaid}`;
+            const invoiceId =
+              paymentInvoiceMap.get(paymentId) ??
+              invoiceLookupByTenantMonthAmount.get(fallbackKey) ??
+              null;
+
+            if (!paymentMap[tenantId]) {
+              paymentMap[tenantId] = [];
+            }
+
+            paymentMap[tenantId].push({
+              id: paymentId,
+              tenantId,
+              paymentDate,
+              amountPaid,
+              invoiceId,
+              invoicePdfUrl: invoiceId ? (invoiceByIdMap[invoiceId]?.pdfUrl ?? null) : null,
+            });
+          });
+
+          Object.keys(paymentMap).forEach((key) => {
+            paymentMap[key].sort((a, b) => String(b.paymentDate).localeCompare(String(a.paymentDate)));
+          });
+
+          setPaymentsByTenant(paymentMap);
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -171,6 +289,97 @@ export default function RentCollectionPage() {
     }
   };
 
+  const generateInvoiceForPayment = async (tenant: RentTenantRow, payment: TenantPaymentHistoryRow) => {
+    if (!tenant.propertyId) {
+      alert("Assign tenant to property first.");
+      return;
+    }
+
+    setInvoiceActionPaymentId(payment.id);
+    try {
+      const month = payment.paymentDate.slice(0, 7);
+      const { data: existingInvoice, error: existingInvoiceError } = await supabase
+        .from("invoices")
+        .select("id")
+        .eq("tenant_id", tenant.id)
+        .eq("property_id", tenant.propertyId)
+        .eq("month", month)
+        .eq("total_amount", payment.amountPaid)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingInvoiceError) throw existingInvoiceError;
+
+      if (existingInvoice?.id) {
+        reload();
+        return;
+      }
+
+      const { data: createdInvoice, error: createInvoiceError } = await supabase
+        .from("invoices")
+        .insert({
+          tenant_id: tenant.id,
+          property_id: tenant.propertyId,
+          month,
+          due_date: payment.paymentDate,
+          total_amount: payment.amountPaid,
+          status: "paid",
+        })
+        .select("id")
+        .single();
+
+      if (createInvoiceError) throw createInvoiceError;
+
+      const { error: itemError } = await supabase.from("invoice_items").insert({
+        invoice_id: createdInvoice.id,
+        description: `Rent payment invoice. Payment ID: ${payment.id}`,
+        amount: payment.amountPaid,
+      });
+
+      if (itemError) throw itemError;
+
+      reload();
+    } catch (invoiceError) {
+      alert(invoiceError instanceof Error ? invoiceError.message : "Could not generate invoice.");
+    } finally {
+      setInvoiceActionPaymentId(null);
+    }
+  };
+
+  const viewInvoiceForPayment = async (payment: TenantPaymentHistoryRow, tenantName: string, propertyName: string) => {
+    const invoiceId = payment.invoiceId;
+    if (!invoiceId) return;
+
+    const invoice = invoiceById[invoiceId];
+    if (invoice?.pdfUrl) {
+      window.open(invoice.pdfUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    const html = `
+      <html>
+        <head><title>Invoice ${invoice?.month ?? payment.paymentDate.slice(0, 7)}</title></head>
+        <body style="font-family: Arial, sans-serif; margin: 24px;">
+          <h2>Rent Invoice</h2>
+          <p><strong>Tenant:</strong> ${tenantName}</p>
+          <p><strong>Property:</strong> ${propertyName}</p>
+          <p><strong>Payment Date:</strong> ${payment.paymentDate}</p>
+          <p><strong>Amount:</strong> ${formatCurrency(payment.amountPaid)}</p>
+          <p><strong>Status:</strong> ${invoice?.status ?? "paid"}</p>
+        </body>
+      </html>
+    `;
+
+    const previewWindow = window.open("", "_blank", "noopener,noreferrer");
+    if (!previewWindow) {
+      alert("Please allow popups to view invoice.");
+      return;
+    }
+
+    previewWindow.document.write(html);
+    previewWindow.document.close();
+  };
+
   return (
     <ModulePage
       title="Rent Collection"
@@ -222,19 +431,88 @@ export default function RentCollectionPage() {
                         <td className="px-3 py-3 text-muted">{tenant.propertyName}</td>
                         <td className="px-3 py-3 text-muted">{tenant.phone}</td>
                         <td className="px-3 py-3">
-                          {assigned ? (
+                          <div className="flex flex-wrap gap-2">
+                            {assigned ? (
+                              <button
+                                type="button"
+                                onClick={() => openRecordModal(tenant)}
+                                className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-xs font-medium"
+                              >
+                                Record Rent
+                              </button>
+                            ) : (
+                              <span className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-xs text-muted">
+                                Assign to property first
+                              </span>
+                            )}
                             <button
                               type="button"
-                              onClick={() => openRecordModal(tenant)}
-                              className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-xs font-medium"
+                              onClick={() =>
+                                setExpandedTenantId((current) => (current === tenant.id ? null : tenant.id))
+                              }
+                              className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-xs"
                             >
-                              Record Rent
+                              {expandedTenantId === tenant.id ? "Hide History" : "Show History"}
                             </button>
-                          ) : (
-                            <span className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-xs text-muted">
-                              Assign to property first
-                            </span>
-                          )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {tenants.map((tenant) => {
+                    if (expandedTenantId !== tenant.id) return null;
+                    const paymentHistory = paymentsByTenant[tenant.id] ?? [];
+
+                    return (
+                      <tr key={`${tenant.id}-history`} className="border-b border-border-color/60 bg-surface-elevated/30">
+                        <td colSpan={4} className="px-3 py-3">
+                          <div className="space-y-2">
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted">Rent Payment History</p>
+                            {paymentHistory.length === 0 ? (
+                              <p className="text-sm text-muted">No previous rent transactions for this tenant.</p>
+                            ) : (
+                              <div className="overflow-x-auto">
+                                <table className="min-w-full border-collapse text-xs">
+                                  <thead>
+                                    <tr className="border-b border-border-color text-left text-muted">
+                                      <th className="px-2 py-2 font-medium">Date</th>
+                                      <th className="px-2 py-2 font-medium">Amount</th>
+                                      <th className="px-2 py-2 font-medium">Invoice</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {paymentHistory.map((payment) => (
+                                      <tr key={payment.id} className="border-b border-border-color/60">
+                                        <td className="px-2 py-2 text-muted">{payment.paymentDate}</td>
+                                        <td className="px-2 py-2 text-muted">{formatCurrency(payment.amountPaid)}</td>
+                                        <td className="px-2 py-2">
+                                          {payment.invoiceId ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => void viewInvoiceForPayment(payment, tenant.fullName, tenant.propertyName)}
+                                              className="rounded-md border border-border-color bg-surface px-2 py-1 text-xs"
+                                            >
+                                              View
+                                            </button>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              onClick={() => void generateInvoiceForPayment(tenant, payment)}
+                                              disabled={invoiceActionPaymentId === payment.id}
+                                              className="rounded-md border border-border-color bg-surface px-2 py-1 text-xs disabled:opacity-50"
+                                            >
+                                              {invoiceActionPaymentId === payment.id ? "Generating..." : "Generate Invoice"}
+                                            </button>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
