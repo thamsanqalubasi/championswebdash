@@ -6,160 +6,551 @@ import { fetchInvoicesData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { InvoiceRow } from "@/lib/types";
 
+type PeriodFilter = "this_month" | "last_2_months" | "last_3_months";
+
+type RentPaymentTransaction = {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  propertyId: string;
+  propertyName: string;
+  paymentDate: string;
+  amountPaid: number;
+  collectorName: string;
+};
+
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(amount);
+  return new Intl.NumberFormat("en-ZA", {
+    style: "currency",
+    currency: "ZAR",
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
-const emptyForm = { tenant_id: "", property_id: "", month: "", due_date: "", total_amount: 0, status: "draft" };
+function monthStartOffset(monthOffset: number) {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+}
+
+function toMonthKey(dateString: string) {
+  return String(dateString).slice(0, 7);
+}
+
+function openUnifiedInvoiceDocument(transactions: RentPaymentTransaction[]) {
+  const collector = transactions[0]?.collectorName ?? "Admin";
+  const total = transactions.reduce((sum, row) => sum + row.amountPaid, 0);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const rows = transactions
+    .map(
+      (row) => `
+      <tr>
+        <td style="padding:8px;border:1px solid #ddd;">${row.paymentDate}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${row.tenantName}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${row.propertyName}</td>
+        <td style="padding:8px;border:1px solid #ddd;text-align:right;">${formatCurrency(row.amountPaid)}</td>
+      </tr>
+    `,
+    )
+    .join("");
+
+  const html = `
+    <html>
+      <head><title>Unified Invoice - ${collector}</title></head>
+      <body style="font-family: Arial, sans-serif; margin: 24px;">
+        <h2>Unified Rent Collection Invoice</h2>
+        <p><strong>Collector:</strong> ${collector}</p>
+        <p><strong>Date:</strong> ${today}</p>
+        <table style="border-collapse: collapse; width: 100%; margin-top: 16px;">
+          <thead>
+            <tr>
+              <th style="padding:8px;border:1px solid #ddd;text-align:left;">Payment Date</th>
+              <th style="padding:8px;border:1px solid #ddd;text-align:left;">Tenant</th>
+              <th style="padding:8px;border:1px solid #ddd;text-align:left;">Property</th>
+              <th style="padding:8px;border:1px solid #ddd;text-align:right;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <p style="margin-top:16px;"><strong>Total:</strong> ${formatCurrency(total)}</p>
+      </body>
+    </html>
+  `;
+
+  const invoiceWindow = window.open("", "_blank", "noopener,noreferrer");
+  if (!invoiceWindow) {
+    alert("Please allow popups to view unified invoice.");
+    return;
+  }
+
+  invoiceWindow.document.write(html);
+  invoiceWindow.document.close();
+}
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+
   const [activeFilter, setActiveFilter] = useState("all");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<InvoiceRow | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [tenants, setTenants] = useState<Array<{ id: string; full_name: string }>>([]);
-  const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("this_month");
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [transactions, setTransactions] = useState<RentPaymentTransaction[]>([]);
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+
     async function load() {
-      setLoading(true); setError(null);
+      setLoading(true);
+      setError(null);
+
       try {
         const result = await fetchInvoicesData();
-        if (!cancelled) setInvoices(result);
-        const [{ data: tens }, { data: props }] = await Promise.all([
-          supabase.from("tenants").select("id, full_name").order("full_name"),
-          supabase.from("properties").select("id, name").order("name"),
-        ]);
         if (!cancelled) {
-          if (tens) setTenants(tens.map((t) => ({ id: String(t.id), full_name: String(t.full_name) })));
-          if (props) setProperties(props.map((p) => ({ id: String(p.id), name: String(p.name) })));
+          setInvoices(result);
         }
-      } catch (e) { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load invoices."); }
-      finally { if (!cancelled) setLoading(false); }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "Could not load invoices.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
     }
+
     void load();
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, [reloadKey]);
 
-  const reload = () => setReloadKey((v) => v + 1);
+  useEffect(() => {
+    if (!modalOpen) {
+      return;
+    }
 
-  const counts = useMemo(() => ({
-    all: invoices.length,
-    paid: invoices.filter((i) => i.status === "paid").length,
-    sent: invoices.filter((i) => i.status === "sent").length,
-    overdue: invoices.filter((i) => i.status === "overdue").length,
-    draft: invoices.filter((i) => i.status === "draft").length,
-  }), [invoices]);
+    let cancelled = false;
 
-  const totalAmount = useMemo(() => invoices.reduce((sum, i) => sum + i.totalAmount, 0), [invoices]);
-  const totalPaid = useMemo(() => invoices.filter((i) => i.status === "paid").reduce((sum, i) => sum + i.totalAmount, 0), [invoices]);
+    async function loadTransactions() {
+      setTransactionsLoading(true);
+
+      try {
+        const offset = periodFilter === "this_month" ? 0 : periodFilter === "last_2_months" ? 1 : 2;
+        const fromDate = monthStartOffset(offset).toISOString().slice(0, 10);
+        const toDate = new Date().toISOString().slice(0, 10);
+
+        const { data: payments, error: paymentsError } = await supabase
+          .from("tenant_rent_payments")
+          .select("id, tenant_id, payment_date, amount_paid, tenants(full_name, property_id, properties(name))")
+          .gte("payment_date", fromDate)
+          .lte("payment_date", toDate)
+          .order("payment_date", { ascending: false });
+
+        if (paymentsError) throw paymentsError;
+
+        const paymentIds = (payments ?? []).map((row) => String(row.id ?? "")).filter(Boolean);
+
+        let collectorNameByPaymentId = new Map<string, string>();
+
+        if (paymentIds.length) {
+          const { data: auditRows, error: auditError } = await supabase
+            .from("audit_log")
+            .select("entity_id, user_name, user_email, created_at")
+            .eq("entity_type", "tenant_rent_payment")
+            .eq("action", "rent_payment_recorded")
+            .in("entity_id", paymentIds)
+            .order("created_at", { ascending: false });
+
+          if (auditError) throw auditError;
+
+          collectorNameByPaymentId = new Map<string, string>();
+          (auditRows ?? []).forEach((row) => {
+            const entityId = String(row.entity_id ?? "");
+            if (!entityId || collectorNameByPaymentId.has(entityId)) {
+              return;
+            }
+
+            collectorNameByPaymentId.set(
+              entityId,
+              String(row.user_name ?? row.user_email ?? "Admin"),
+            );
+          });
+        }
+
+        if (!cancelled) {
+          const mappedRows: RentPaymentTransaction[] = (payments ?? [])
+            .map((row) => {
+              const tenant = row.tenants as
+                | { full_name?: string; property_id?: string; properties?: { name?: string } | null }
+                | null;
+
+              const propertyId = tenant?.property_id ? String(tenant.property_id) : "";
+
+              return {
+                id: String(row.id ?? ""),
+                tenantId: String(row.tenant_id ?? ""),
+                tenantName: String(tenant?.full_name ?? "Unknown Tenant"),
+                propertyId,
+                propertyName: String(tenant?.properties?.name ?? "Unassigned"),
+                paymentDate: String(row.payment_date ?? "-"),
+                amountPaid: Number(row.amount_paid ?? 0),
+                collectorName: collectorNameByPaymentId.get(String(row.id ?? "")) ?? "Admin",
+              };
+            })
+            .filter((row) => Boolean(row.id) && Boolean(row.tenantId) && Boolean(row.propertyId));
+
+          setTransactions(mappedRows);
+          setSelectedTransactionIds([]);
+        }
+      } catch (transactionError) {
+        if (!cancelled) {
+          alert(transactionError instanceof Error ? transactionError.message : "Could not load rent payment transactions.");
+          setTransactions([]);
+          setSelectedTransactionIds([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setTransactionsLoading(false);
+        }
+      }
+    }
+
+    void loadTransactions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [modalOpen, periodFilter]);
+
+  const reload = () => setReloadKey((value) => value + 1);
+
+  const counts = useMemo(
+    () => ({
+      all: invoices.length,
+      paid: invoices.filter((item) => item.status === "paid").length,
+      sent: invoices.filter((item) => item.status === "sent").length,
+      overdue: invoices.filter((item) => item.status === "overdue").length,
+      draft: invoices.filter((item) => item.status === "draft").length,
+    }),
+    [invoices],
+  );
+
+  const totalAmount = useMemo(() => invoices.reduce((sum, item) => sum + item.totalAmount, 0), [invoices]);
+  const totalPaid = useMemo(
+    () => invoices.filter((item) => item.status === "paid").reduce((sum, item) => sum + item.totalAmount, 0),
+    [invoices],
+  );
   const totalOutstanding = totalAmount - totalPaid;
 
-  const filtered = useMemo(() => activeFilter === "all" ? invoices : invoices.filter((i) => i.status === activeFilter), [invoices, activeFilter]);
+  const filtered = useMemo(
+    () => (activeFilter === "all" ? invoices : invoices.filter((item) => item.status === activeFilter)),
+    [invoices, activeFilter],
+  );
 
-  const openAdd = () => { setForm(emptyForm); setModalOpen(true); };
+  const selectedTransactions = useMemo(
+    () => transactions.filter((row) => selectedTransactionIds.includes(row.id)),
+    [transactions, selectedTransactionIds],
+  );
 
-  const onSave = async () => {
-    if (!form.tenant_id || !form.property_id) { alert("Please select tenant and property."); return; }
-    if (!form.month || !form.due_date) { alert("Please select month and due date."); return; }
-    setSaving(true);
+  const selectedCollector = useMemo(
+    () => selectedTransactions[0]?.collectorName ?? "",
+    [selectedTransactions],
+  );
+
+  const toggleTransaction = (transaction: RentPaymentTransaction) => {
+    const alreadySelected = selectedTransactionIds.includes(transaction.id);
+
+    if (alreadySelected) {
+      setSelectedTransactionIds((prev) => prev.filter((id) => id !== transaction.id));
+      return;
+    }
+
+    if (selectedTransactions.length > 0) {
+      const activeCollector = selectedTransactions[0].collectorName;
+      if (activeCollector !== transaction.collectorName) {
+        alert("You can select multiple transactions only when they were collected by the same admin.");
+        return;
+      }
+    }
+
+    setSelectedTransactionIds((prev) => [...prev, transaction.id]);
+  };
+
+  const openGenerateModal = () => {
+    setPeriodFilter("this_month");
+    setModalOpen(true);
+  };
+
+  const onGenerateFromSelection = async () => {
+    if (selectedTransactions.length === 0) {
+      alert("Select at least one transaction.");
+      return;
+    }
+
+    setGenerating(true);
+
     try {
-      const payload: Record<string, unknown> = { month: form.month || null, due_date: form.due_date || null, total_amount: form.total_amount, status: form.status };
-      if (form.tenant_id) payload.tenant_id = form.tenant_id;
-      if (form.property_id) payload.property_id = form.property_id;
-      const { error: err } = await supabase.from("invoices").insert(payload);
-      if (err) throw err;
-      setModalOpen(false); reload();
-    } catch (e) { alert(e instanceof Error ? e.message : "Save failed"); }
-    finally { setSaving(false); }
+      if (selectedTransactions.length === 1) {
+        const transaction = selectedTransactions[0];
+        const month = toMonthKey(transaction.paymentDate);
+
+        const { data: existingInvoice, error: existingError } = await supabase
+          .from("invoices")
+          .select("id")
+          .eq("tenant_id", transaction.tenantId)
+          .eq("property_id", transaction.propertyId)
+          .eq("month", month)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingError) throw existingError;
+
+        if (existingInvoice?.id) {
+          alert("Invoice already exists for this tenant and month. Duplicate generation blocked.");
+          return;
+        }
+
+        const { error: createError } = await supabase.from("invoices").insert({
+          tenant_id: transaction.tenantId,
+          property_id: transaction.propertyId,
+          month,
+          due_date: transaction.paymentDate,
+          total_amount: transaction.amountPaid,
+          status: "paid",
+        });
+
+        if (createError) throw createError;
+
+        setModalOpen(false);
+        reload();
+        return;
+      }
+
+      openUnifiedInvoiceDocument(selectedTransactions);
+
+      const totalAmountPaid = selectedTransactions.reduce((sum, row) => sum + row.amountPaid, 0);
+
+      const { error: auditError } = await supabase.from("audit_log").insert({
+        action: "unified_invoice_generated",
+        entity_type: "tenant_rent_payment",
+        entity_name: selectedCollector,
+        details: {
+          transaction_ids: selectedTransactions.map((row) => row.id),
+          collector_name: selectedCollector,
+          total_amount_paid: totalAmountPaid,
+          period_filter: periodFilter,
+        },
+      });
+
+      if (auditError) throw auditError;
+    } catch (generateError) {
+      alert(generateError instanceof Error ? generateError.message : "Could not generate invoice from selection.");
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const onStatusChange = async (id: string, status: string) => {
-    const { error: err } = await supabase.from("invoices").update({ status }).eq("id", id);
-    if (err) { alert(err.message); return; }
+    const { error: updateError } = await supabase.from("invoices").update({ status }).eq("id", id);
+    if (updateError) {
+      alert(updateError.message);
+      return;
+    }
     reload();
   };
 
   const onDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget) {
+      return;
+    }
+
     setDeleting(true);
+
     try {
-      const { error: err } = await supabase.from("invoices").delete().eq("id", deleteTarget.id);
-      if (err) throw err;
-      setDeleteTarget(null); reload();
-    } catch (e) { alert(e instanceof Error ? e.message : "Delete failed"); }
-    finally { setDeleting(false); }
+      const { error: deleteError } = await supabase.from("invoices").delete().eq("id", deleteTarget.id);
+      if (deleteError) throw deleteError;
+      setDeleteTarget(null);
+      reload();
+    } catch (deleteError) {
+      alert(deleteError instanceof Error ? deleteError.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const exportCSV = () => {
     const header = "Tenant,Property,Month,Due Date,Amount,Status";
-    const rows = filtered.map((i) => `"${i.tenantName}","${i.propertyName}","${i.month}","${i.dueDate}","${i.totalAmount}","${i.status}"`);
+    const rows = filtered.map(
+      (item) =>
+        `"${item.tenantName}","${item.propertyName}","${item.month}","${item.dueDate}","${item.totalAmount}","${item.status}"`,
+    );
     const csv = [header, ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "invoices.csv"; a.click();
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "invoices.csv";
+    anchor.click();
     URL.revokeObjectURL(url);
   };
 
   return (
-    <ModulePage title="Invoices" description="Manage tenant invoices and payment tracking.">
+    <ModulePage
+      title="Invoices"
+      description="Generate invoices from rent collections, filter by period, and review collector-based transactions."
+    >
       {loading && <LoadingState label="Loading invoices..." />}
       {!loading && error && <ErrorState message={error} onRetry={reload} />}
+
       {!loading && !error && (
         <section className="space-y-4">
-          {/* Summary cards */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="rounded-lg border border-border-color bg-surface p-4"><p className="text-sm text-muted">Total Invoiced</p><p className="text-2xl font-bold">{formatCurrency(totalAmount)}</p></div>
-            <div className="rounded-lg border border-border-color bg-surface p-4"><p className="text-sm text-muted">Total Paid</p><p className="text-2xl font-bold text-green-600">{formatCurrency(totalPaid)}</p></div>
-            <div className="rounded-lg border border-border-color bg-surface p-4"><p className="text-sm text-muted">Outstanding</p><p className="text-2xl font-bold text-red-500">{formatCurrency(totalOutstanding)}</p></div>
+            <div className="rounded-lg border border-border-color bg-surface p-4">
+              <p className="text-sm text-muted">Total Invoiced</p>
+              <p className="text-2xl font-bold">{formatCurrency(totalAmount)}</p>
+            </div>
+            <div className="rounded-lg border border-border-color bg-surface p-4">
+              <p className="text-sm text-muted">Total Paid</p>
+              <p className="text-2xl font-bold text-green-600">{formatCurrency(totalPaid)}</p>
+            </div>
+            <div className="rounded-lg border border-border-color bg-surface p-4">
+              <p className="text-sm text-muted">Outstanding</p>
+              <p className="text-2xl font-bold text-red-500">{formatCurrency(totalOutstanding)}</p>
+            </div>
           </div>
 
-          <div className="rounded-lg border border-border-color bg-surface p-4 space-y-4">
+          <div className="space-y-4 rounded-lg border border-border-color bg-surface p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap gap-2">
                 {(["all", "paid", "sent", "overdue", "draft"] as const).map((key) => (
-                  <button key={key} type="button" onClick={() => setActiveFilter(key)}
-                    className={`rounded-md border border-border-color px-3 py-2 text-sm ${activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"}`}>
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setActiveFilter(key)}
+                    className={`rounded-md border border-border-color px-3 py-2 text-sm ${
+                      activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"
+                    }`}
+                  >
                     {key === "all" ? `All (${counts.all})` : `${key.charAt(0).toUpperCase() + key.slice(1)} (${counts[key]})`}
                   </button>
                 ))}
               </div>
+
               <div className="flex gap-2">
-                <button type="button" onClick={exportCSV} className="rounded-md border border-border-color px-3 py-2 text-sm text-muted hover:bg-surface-elevated">Export CSV</button>
-                <button type="button" onClick={openAdd} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium">Generate Invoice</button>
+                <button
+                  type="button"
+                  onClick={exportCSV}
+                  className="rounded-md border border-border-color px-3 py-2 text-sm text-muted hover:bg-surface-elevated"
+                >
+                  Export CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={openGenerateModal}
+                  className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium"
+                >
+                  Generate Invoice
+                </button>
               </div>
             </div>
 
-            {filtered.length === 0 ? <EmptyState title="No invoices found" description="Generate an invoice to get started." /> : (
+            {filtered.length === 0 ? (
+              <EmptyState title="No invoices found" description="Generate invoices from rent payments to get started." />
+            ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full border-collapse text-sm">
-                  <thead><tr className="border-b border-border-color text-left text-muted">
-                    <th className="px-3 py-2 font-medium">Tenant</th><th className="px-3 py-2 font-medium">Property</th><th className="px-3 py-2 font-medium">Month</th><th className="px-3 py-2 font-medium">Due Date</th><th className="px-3 py-2 font-medium">Amount</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Actions</th>
-                  </tr></thead>
-                  <tbody>{filtered.map((row) => (
-                    <tr key={row.id} className="border-b border-border-color/60">
-                      <td className="px-3 py-3 font-medium">{row.tenantName}</td>
-                      <td className="px-3 py-3 text-muted">{row.propertyName}</td>
-                      <td className="px-3 py-3 text-muted">{row.month}</td>
-                      <td className="px-3 py-3 text-muted">{row.dueDate}</td>
-                      <td className="px-3 py-3 text-muted">{formatCurrency(row.totalAmount)}</td>
-                      <td className="px-3 py-3"><span className={`rounded-full border px-2 py-1 text-xs capitalize ${row.status === "paid" ? "border-green-500/30 bg-green-500/10 text-green-600" : row.status === "overdue" ? "border-red-500/30 bg-red-500/10 text-red-600" : "border-border-color bg-surface-elevated text-muted"}`}>{row.status}</span></td>
-                      <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
-                        {row.status !== "paid" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "paid"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Mark Paid</button>}
-                        {row.status === "sent" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "overdue"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Mark Overdue</button>}
-                        {row.status === "draft" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "sent"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Send</button>}
-                        {row.status === "paid" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "sent"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Revert</button>}
-                        <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteTarget(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
-                      </div></td>
+                  <thead>
+                    <tr className="border-b border-border-color text-left text-muted">
+                      <th className="px-3 py-2 font-medium">Tenant</th>
+                      <th className="px-3 py-2 font-medium">Property</th>
+                      <th className="px-3 py-2 font-medium">Month</th>
+                      <th className="px-3 py-2 font-medium">Due Date</th>
+                      <th className="px-3 py-2 font-medium">Amount</th>
+                      <th className="px-3 py-2 font-medium">Status</th>
+                      <th className="px-3 py-2 font-medium">Actions</th>
                     </tr>
-                  ))}</tbody>
+                  </thead>
+                  <tbody>
+                    {filtered.map((row) => (
+                      <tr key={row.id} className="border-b border-border-color/60">
+                        <td className="px-3 py-3 font-medium">{row.tenantName}</td>
+                        <td className="px-3 py-3 text-muted">{row.propertyName}</td>
+                        <td className="px-3 py-3 text-muted">{row.month}</td>
+                        <td className="px-3 py-3 text-muted">{row.dueDate}</td>
+                        <td className="px-3 py-3 text-muted">{formatCurrency(row.totalAmount)}</td>
+                        <td className="px-3 py-3">
+                          <span
+                            className={`rounded-full border px-2 py-1 text-xs capitalize ${
+                              row.status === "paid"
+                                ? "border-green-500/30 bg-green-500/10 text-green-600"
+                                : row.status === "overdue"
+                                  ? "border-red-500/30 bg-red-500/10 text-red-600"
+                                  : "border-border-color bg-surface-elevated text-muted"
+                            }`}
+                          >
+                            {row.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            {row.status !== "paid" && (
+                              <button
+                                type="button"
+                                onClick={() => onStatusChange(row.id, "paid")}
+                                className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                              >
+                                Mark Paid
+                              </button>
+                            )}
+                            {row.status === "sent" && (
+                              <button
+                                type="button"
+                                onClick={() => onStatusChange(row.id, "overdue")}
+                                className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                              >
+                                Mark Overdue
+                              </button>
+                            )}
+                            {row.status === "draft" && (
+                              <button
+                                type="button"
+                                onClick={() => onStatusChange(row.id, "sent")}
+                                className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                              >
+                                Send
+                              </button>
+                            )}
+                            {row.status === "paid" && (
+                              <button
+                                type="button"
+                                onClick={() => onStatusChange(row.id, "sent")}
+                                className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                              >
+                                Revert
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setDeleteTarget(row)}
+                              className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
                 </table>
               </div>
             )}
@@ -167,34 +558,99 @@ export default function InvoicesPage() {
         </section>
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Generate Invoice">
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Generate Invoice from Rent Payments">
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-sm text-muted">Tenant</label><select value={form.tenant_id} onChange={(e) => setForm({ ...form, tenant_id: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
-              <option value="">Select tenant...</option>{tenants.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-            </select></div>
-            <div><label className="mb-1 block text-sm text-muted">Property</label><select value={form.property_id} onChange={(e) => setForm({ ...form, property_id: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
-              <option value="">Select property...</option>{properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select></div>
+          <div>
+            <label className="mb-1 block text-sm text-muted">Payment Period</label>
+            <select
+              value={periodFilter}
+              onChange={(event) => setPeriodFilter(event.target.value as PeriodFilter)}
+              className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm"
+            >
+              <option value="this_month">This month</option>
+              <option value="last_2_months">Last 2 months</option>
+              <option value="last_3_months">Last 3 months</option>
+            </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-sm text-muted">Month</label><input type="month" value={form.month} onChange={(e) => setForm({ ...form, month: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
-            <div><label className="mb-1 block text-sm text-muted">Due Date</label><input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+
+          {transactionsLoading ? (
+            <LoadingState label="Loading payment transactions..." />
+          ) : transactions.length === 0 ? (
+            <EmptyState title="No transactions found" description="No rent payments in the selected period." />
+          ) : (
+            <div className="max-h-80 overflow-y-auto rounded-md border border-border-color">
+              <table className="min-w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-border-color text-left text-muted">
+                    <th className="px-3 py-2 font-medium">Select</th>
+                    <th className="px-3 py-2 font-medium">Date</th>
+                    <th className="px-3 py-2 font-medium">Tenant</th>
+                    <th className="px-3 py-2 font-medium">Amount</th>
+                    <th className="px-3 py-2 font-medium">Collected By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transactions.map((transaction) => {
+                    const checked = selectedTransactionIds.includes(transaction.id);
+
+                    return (
+                      <tr key={transaction.id} className="border-b border-border-color/60">
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleTransaction(transaction)}
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-muted">{transaction.paymentDate}</td>
+                        <td className="px-3 py-2">
+                          <p className="font-medium">{transaction.tenantName}</p>
+                          <p className="text-xs text-muted">{transaction.propertyName}</p>
+                        </td>
+                        <td className="px-3 py-2 text-muted">{formatCurrency(transaction.amountPaid)}</td>
+                        <td className="px-3 py-2 text-muted">{transaction.collectorName}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="rounded-md border border-border-color bg-surface-elevated p-3 text-sm">
+            <p className="text-muted">Selected: {selectedTransactions.length} transaction(s)</p>
+            {selectedCollector ? <p className="text-muted">Collector: {selectedCollector}</p> : null}
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-sm text-muted">Amount</label><input type="number" value={form.total_amount} onChange={(e) => setForm({ ...form, total_amount: Number(e.target.value) })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
-            <div><label className="mb-1 block text-sm text-muted">Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
-              <option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option>
-            </select></div>
-          </div>
+
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setModalOpen(false)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
-            <button type="button" onClick={onSave} disabled={saving} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Saving..." : "Generate"}</button>
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              className="rounded-md border border-border-color px-3 py-2 text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onGenerateFromSelection}
+              disabled={generating || selectedTransactions.length === 0}
+              className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50"
+            >
+              {generating ? "Generating..." : selectedTransactions.length > 1 ? "Generate Unified Invoice" : "Generate Invoice"}
+            </button>
           </div>
         </div>
       </Modal>
 
-      <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Invoice" message={`Delete invoice for ${deleteTarget?.tenantName}?`} confirmLabel="Delete" loading={deleting} />
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={onDelete}
+        title="Delete Invoice"
+        message={`Delete invoice for ${deleteTarget?.tenantName}?`}
+        confirmLabel="Delete"
+        loading={deleting}
+      />
     </ModulePage>
   );
 }

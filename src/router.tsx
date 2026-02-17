@@ -4,9 +4,11 @@ import { AppShell } from "@/components/app-shell";
 import LoginPage from "@/pages/login";
 import DashboardPage from "@/pages/dashboard";
 import PropertiesPage from "@/pages/properties";
+import PropertyDetailsPage from "@/pages/property-details";
 import TenantsPage from "@/pages/tenants";
 import FinancePage from "@/pages/finance";
 import InvoicesPage from "@/pages/invoices";
+import RentCollectionPage from "@/pages/rent-collection";
 import ReportsPage from "@/pages/reports";
 import MaintenancePage from "@/pages/maintenance";
 import WorkOrdersPage from "@/pages/work-orders";
@@ -48,7 +50,9 @@ export function AppRouter() {
 
       <Route element={<ProtectedLayout />}>
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/rent-collection" element={<RentCollectionPage />} />
         <Route path="/properties" element={<PropertiesPage />} />
+        <Route path="/properties/:propertyId" element={<PropertyDetailsPage />} />
         <Route path="/tenants" element={<TenantsPage />} />
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/finance/invoices" element={<InvoicesPage />} />

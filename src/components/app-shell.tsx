@@ -128,6 +128,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               />
             </div>
             <div className="flex w-full items-center gap-2 sm:w-auto">
+              <Link
+                to="/rent-collection"
+                className="rounded-md border border-green-600 bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
+              >
+                Rent Collection
+              </Link>
               <ThemeToggle />
               <div className="max-w-[220px] flex-1 truncate px-1 py-2 text-sm text-muted sm:flex-none" aria-label="Signed-in user">
                 {userEmail}
