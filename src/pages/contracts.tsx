@@ -4,6 +4,7 @@ import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { fetchContractsData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
 import type { ContractRow } from "@/lib/types";
 
 function formatCurrency(amount: number) {
@@ -13,6 +14,7 @@ function formatCurrency(amount: number) {
 const emptyForm = { tenant_id: "", property_id: "", start_date: "", end_date: "", monthly_rent: 0, deposit_amount: 0, notes: "", status: "pending" };
 
 export default function ContractsPage() {
+  const { user } = useAuth();
   const [contracts, setContracts] = useState<ContractRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +24,7 @@ export default function ContractsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [printingId, setPrintingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ContractRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
@@ -105,6 +108,93 @@ export default function ContractsPage() {
     finally { setDeleting(false); }
   };
 
+  const onPrint = async (row: ContractRow) => {
+    setPrintingId(row.id);
+    try {
+      let adminName = user?.email ?? "Admin";
+      let signatureUrl = "";
+
+      if (user?.email) {
+        const { data: adminRow } = await supabase
+          .from("users")
+          .select("first_name, last_name, signature_url")
+          .eq("email", user.email)
+          .limit(1)
+          .maybeSingle();
+
+        if (adminRow) {
+          const fullName = `${String(adminRow.first_name ?? "")} ${String(adminRow.last_name ?? "")}`.trim();
+          adminName = fullName || user.email;
+          signatureUrl = String(adminRow.signature_url ?? "");
+        }
+      }
+
+      const printWindow = window.open("", "_blank", "width=900,height=700");
+      if (!printWindow) {
+        alert("Popup blocked. Please allow popups to print.");
+        return;
+      }
+
+      const html = `
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Contract - ${row.tenantName}</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 32px; color: #111; }
+      h1 { margin: 0 0 16px; }
+      .meta { margin: 8px 0; font-size: 14px; }
+      .section { margin-top: 24px; }
+      .sig-box { margin-top: 48px; display: flex; justify-content: space-between; gap: 24px; }
+      .sig { width: 45%; border-top: 1px solid #333; padding-top: 8px; font-size: 12px; }
+      .sig img { max-height: 80px; display: block; margin-bottom: 8px; }
+      @media print { button { display: none; } }
+    </style>
+  </head>
+  <body>
+    <h1>Lease Contract</h1>
+    <div class="meta"><strong>Tenant:</strong> ${row.tenantName}</div>
+    <div class="meta"><strong>Property:</strong> ${row.propertyName}</div>
+    <div class="meta"><strong>Status:</strong> ${row.status}</div>
+    <div class="meta"><strong>Start Date:</strong> ${row.startDate}</div>
+    <div class="meta"><strong>End Date:</strong> ${row.endDate}</div>
+    <div class="meta"><strong>Monthly Rent:</strong> ${formatCurrency(row.monthlyRent)}</div>
+    <div class="meta"><strong>Deposit Amount:</strong> ${formatCurrency(row.depositAmount)}</div>
+
+    <div class="section">
+      <strong>Notes</strong>
+      <p>${(row.notes || "-").replaceAll("\n", "<br />")}</p>
+    </div>
+
+    <div class="sig-box">
+      <div class="sig">
+        ${signatureUrl ? `<img src="${signatureUrl}" alt="Admin signature" />` : ""}
+        <div><strong>Admin:</strong> ${adminName}</div>
+        <div>Date: ${new Date().toLocaleDateString("en-ZA")}</div>
+      </div>
+      <div class="sig">
+        <div><strong>Tenant:</strong> ${row.tenantName}</div>
+        <div>Date: ____________________</div>
+      </div>
+    </div>
+
+    <script>
+      window.onload = () => { window.print(); };
+    </script>
+  </body>
+</html>`;
+
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not prepare contract print.");
+    } finally {
+      setPrintingId(null);
+    }
+  };
+
   return (
     <ModulePage title="Contracts" description="Manage lease agreements and contract lifecycle.">
       {loading && <LoadingState label="Loading contracts..." />}
@@ -140,6 +230,7 @@ export default function ContractsPage() {
                     <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.status}</span></td>
                     <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
                       {row.status === "pending" && <button type="button" onClick={() => onStatusChange(row.id, "active")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Activate</button>}
+                      {row.status === "active" && <button type="button" onClick={() => onPrint(row)} disabled={printingId === row.id} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated disabled:opacity-50">{printingId === row.id ? "Preparing..." : "Print"}</button>}
                       {row.status === "active" && <button type="button" onClick={() => onStatusChange(row.id, "terminated")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Terminate</button>}
                       {row.status === "expired" && <button type="button" onClick={() => onStatusChange(row.id, "active")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Renew</button>}
                       {row.status === "terminated" && <button type="button" onClick={() => onStatusChange(row.id, "active")} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reactivate</button>}
