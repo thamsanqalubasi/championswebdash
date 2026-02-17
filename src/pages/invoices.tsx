@@ -67,6 +67,8 @@ export default function InvoicesPage() {
   const openAdd = () => { setForm(emptyForm); setModalOpen(true); };
 
   const onSave = async () => {
+    if (!form.tenant_id || !form.property_id) { alert("Please select tenant and property."); return; }
+    if (!form.month || !form.due_date) { alert("Please select month and due date."); return; }
     setSaving(true);
     try {
       const payload: Record<string, unknown> = { month: form.month || null, due_date: form.due_date || null, total_amount: form.total_amount, status: form.status };

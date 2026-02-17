@@ -64,6 +64,8 @@ export default function WorkOrdersPage() {
   const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
 
   const onSave = async () => {
+    if (!form.description.trim()) { alert("Please enter a description."); return; }
+    if (!editingId && !form.property_id) { alert("Please select a property."); return; }
     setSaving(true);
     try {
       const payload: Record<string, unknown> = { description: form.description, category: form.category, priority: form.priority, status: form.status, scheduled_date: form.scheduled_date || null, estimated_cost: form.estimated_cost, actual_cost: form.actual_cost };

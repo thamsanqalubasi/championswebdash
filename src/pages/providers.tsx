@@ -47,6 +47,10 @@ export default function ProvidersPage() {
   const openEdit = (row: ProviderRow) => { setEditingId(row.id); setForm({ name: row.name, phone: row.phone, specialization: row.specialization, rate: row.rate }); setModalOpen(true); };
 
   const onSave = async () => {
+    if (!form.name.trim() || !form.phone.trim() || !form.specialization.trim()) {
+      alert("Please enter name, phone, and specialization.");
+      return;
+    }
     setSaving(true);
     try {
       const payload = { name: form.name, phone: form.phone, specialization: form.specialization, rate: form.rate };

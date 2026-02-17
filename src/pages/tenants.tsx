@@ -52,6 +52,9 @@ export default function TenantsPage() {
   const openEdit = (row: TenantRow) => { setEditingId(row.id); setForm({ full_name: row.fullName, id_number: "", phone: row.phone, email: row.email, tenure_status: row.tenureStatus, property_id: "" }); setModalOpen(true); };
 
   const onSave = async () => {
+    if (!form.full_name.trim()) { alert("Please enter full name."); return; }
+    if (!form.id_number.trim()) { alert("Please enter ID number."); return; }
+    if (!form.phone.trim() || !form.email.trim()) { alert("Please enter phone and email."); return; }
     setSaving(true);
     try {
       const payload: Record<string, unknown> = { full_name: form.full_name, id_number: form.id_number, phone: form.phone, email: form.email, tenure_status: form.tenure_status };

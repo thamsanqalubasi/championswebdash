@@ -69,6 +69,8 @@ export default function ContractsPage() {
   };
 
   const onSave = async () => {
+    if (!form.start_date || !form.end_date) { alert("Please select start and end dates."); return; }
+    if (!editingId && (!form.tenant_id || !form.property_id)) { alert("Please select tenant and property."); return; }
     setSaving(true);
     try {
       const payload: Record<string, unknown> = { start_date: form.start_date || null, end_date: form.end_date || null, monthly_rent: form.monthly_rent, deposit_amount: form.deposit_amount, notes: form.notes, status: form.status };

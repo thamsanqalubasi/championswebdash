@@ -36,6 +36,8 @@ export default function MaintenancePage() {
   const reload = () => setReloadKey((v) => v + 1);
 
   const onSubmitRequest = async () => {
+    if (!form.property_id) { alert("Please select a property."); return; }
+    if (!form.description.trim()) { alert("Please enter a description."); return; }
     setSaving(true);
     try {
       const payload: Record<string, unknown> = { description: form.description, category: form.category, priority: form.priority, status: "open" };

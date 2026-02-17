@@ -64,6 +64,8 @@ export default function ScheduledTasksPage() {
   const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
 
   const onSave = async () => {
+    if (!form.title.trim()) { alert("Please enter a task title."); return; }
+    if (!form.next_due) { alert("Please select a next due date."); return; }
     setSaving(true);
     try {
       const payload: Record<string, unknown> = { title: form.title, category: form.category, frequency: form.frequency, next_due: form.next_due || null, estimated_cost: form.estimated_cost, status: form.status };

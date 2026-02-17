@@ -60,6 +60,9 @@ export default function InspectionsPage() {
   const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
 
   const onSave = async () => {
+    if (!form.inspector_name.trim()) { alert("Please enter inspector name."); return; }
+    if (!form.scheduled_date) { alert("Please select scheduled date."); return; }
+    if (!editingId && !form.property_id) { alert("Please select a property."); return; }
     setSaving(true);
     try {
       const payload: Record<string, unknown> = { type: form.type, inspector_name: form.inspector_name, scheduled_date: form.scheduled_date || null, status: form.status };
