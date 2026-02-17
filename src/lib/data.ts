@@ -231,6 +231,7 @@ function toContractRow(payload: Record<string, unknown>): ContractRow {
 
   return {
     id: String(payload.id ?? ""),
+    title: String(payload.title ?? "Lease Agreement"),
     tenantName: String(tenant?.full_name ?? payload.tenant_name ?? "Unassigned"),
     propertyName: String(property?.name ?? payload.property_name ?? "Unassigned"),
     startDate: String(payload.start_date ?? "-"),
@@ -880,7 +881,7 @@ export async function fetchContractsData(): Promise<ContractRow[]> {
 
   const { data, error } = await supabase
     .from("contracts")
-    .select("id, tenant_id, property_id, start_date, end_date, monthly_rent, deposit_amount, status, notes")
+    .select("id, title, tenant_id, property_id, start_date, end_date, monthly_rent, deposit_amount, status, notes")
     .order("start_date", { ascending: false });
 
   if (error) {
@@ -908,6 +909,7 @@ export async function fetchContractsData(): Promise<ContractRow[]> {
 
   return rows.map((row) => ({
     id: String(row.id ?? ""),
+    title: String(row.title ?? "Lease Agreement"),
     tenantName: tenantNameById.get(String(row.tenant_id ?? "")) ?? "Unassigned",
     propertyName: propertyNameById.get(String(row.property_id ?? "")) ?? "Unassigned",
     startDate: String(row.start_date ?? "-"),

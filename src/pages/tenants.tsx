@@ -6,7 +6,9 @@ import { fetchTenantsData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { fetchCompanyInfo, fetchAdminInfo, downloadHtmlDocument } from "@/lib/storage";
-import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
+import { buildProfessionalInvoiceHtml, buildProfessionalContractHtml } from "@/lib/document-templates";
+import type { ContractSection } from "@/lib/document-templates";
+import { sendEmail, sendWhatsApp } from "@/lib/notifications";
 import type { TenantRow } from "@/lib/types";
 
 type TenantPaymentRow = {
@@ -31,6 +33,20 @@ type InvoiceShareReportRow = {
   channel: "email" | "whatsapp";
   paymentDates: string[];
   sharedAt: string;
+};
+
+type TenantContractRow = {
+  id: string;
+  title: string;
+  propertyName: string;
+  startDate: string;
+  endDate: string;
+  monthlyRent: number;
+  depositAmount: number;
+  status: string;
+  notes: string;
+  documentUrl: string;
+  sections: ContractSection[];
 };
 
 const emptyForm = {
@@ -146,6 +162,8 @@ export default function TenantsPage() {
 
   const [generatingInvoice, setGeneratingInvoice] = useState(false);
   const [sharingInvoiceId, setSharingInvoiceId] = useState<string | null>(null);
+  const [tenantContracts, setTenantContracts] = useState<TenantContractRow[]>([]);
+  const [contractActionId, setContractActionId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -311,7 +329,7 @@ export default function TenantsPage() {
     setDetailsError(null);
 
     try {
-      const [tenantResult, paymentsResult, invoicesResult, sharesResult] = await Promise.all([
+      const [tenantResult, paymentsResult, invoicesResult, sharesResult, contractsResult] = await Promise.all([
         supabase
           .from("tenants")
           .select("id, property_id, tenure_start_date, created_at, properties(name)")
@@ -334,12 +352,53 @@ export default function TenantsPage() {
           .eq("entity_id", tenantId)
           .order("created_at", { ascending: false })
           .limit(100),
+        supabase
+          .from("contracts")
+          .select("id, title, start_date, end_date, monthly_rent, deposit_amount, status, notes, document_url, properties(name)")
+          .eq("tenant_id", tenantId)
+          .order("created_at", { ascending: false }),
       ]);
 
       if (tenantResult.error) throw tenantResult.error;
       if (paymentsResult.error) throw paymentsResult.error;
       if (invoicesResult.error) throw invoicesResult.error;
       if (sharesResult.error) throw sharesResult.error;
+      if (contractsResult.error) throw contractsResult.error;
+
+      // Load contract sections
+      const contractIds = (contractsResult.data ?? []).map((c) => String(c.id));
+      let contractSectionsMap: Record<string, ContractSection[]> = {};
+      if (contractIds.length > 0) {
+        const { data: cs } = await supabase
+          .from("contract_sections")
+          .select("contract_id, sort_order, title, content")
+          .in("contract_id", contractIds)
+          .order("sort_order");
+        if (cs) {
+          contractSectionsMap = {};
+          cs.forEach((s) => {
+            const cid = String((s as Record<string, unknown>).contract_id ?? "");
+            if (!contractSectionsMap[cid]) contractSectionsMap[cid] = [];
+            contractSectionsMap[cid].push({ title: String(s.title), content: String(s.content) });
+          });
+        }
+      }
+
+      setTenantContracts(
+        (contractsResult.data ?? []).map((c) => ({
+          id: String(c.id),
+          title: String(c.title ?? "Lease Agreement"),
+          propertyName: String((c.properties as { name?: string } | null)?.name ?? "-"),
+          startDate: String(c.start_date ?? ""),
+          endDate: String(c.end_date ?? ""),
+          monthlyRent: Number(c.monthly_rent ?? 0),
+          depositAmount: Number(c.deposit_amount ?? 0),
+          status: String(c.status ?? "pending"),
+          notes: String(c.notes ?? ""),
+          documentUrl: String(c.document_url ?? ""),
+          sections: contractSectionsMap[String(c.id)] ?? [],
+        })),
+      );
 
       const paymentRows = paymentsResult.data ?? [];
       const paymentIds = paymentRows.map((item) => String(item.id ?? "")).filter(Boolean);
@@ -654,7 +713,17 @@ export default function TenantsPage() {
     try {
       const paymentDates = await getInvoicePaymentDates(invoice.id);
       const paymentsLabel = paymentDates.length ? paymentDates.join(", ") : "linked dates unavailable";
-      const message = `Invoice ${invoice.month} (${formatCurrency(invoice.amount)}), payments made on ${paymentsLabel}.`;
+      const messageText = `Invoice ${invoice.month} (${formatCurrency(invoice.amount)}), payments made on ${paymentsLabel}.`;
+
+      // Build professional invoice HTML for email attachment
+      const invoiceHtml = await buildInvoiceHtmlProfessional(
+        invoice,
+        detailsRow.fullName,
+        detailsPropertyName,
+        paymentDates,
+        user?.email ?? undefined,
+      );
+      const company = await fetchCompanyInfo();
 
       if (channel === "email") {
         if (!detailsRow.email) {
@@ -662,9 +731,21 @@ export default function TenantsPage() {
           return;
         }
 
-        const subject = encodeURIComponent(`Invoice ${invoice.month} - ${detailsRow.fullName}`);
-        const body = encodeURIComponent(message);
-        window.open(`mailto:${detailsRow.email}?subject=${subject}&body=${body}`, "_blank", "noopener,noreferrer");
+        const subject = `Invoice ${invoice.month} - ${detailsRow.fullName}`;
+        const result = await sendEmail({
+          to: detailsRow.email,
+          recipientName: detailsRow.fullName,
+          subject,
+          bodyText: `Please find your invoice for <strong>${invoice.month}</strong> attached below. The total amount due is <strong>${formatCurrency(invoice.amount)}</strong>. Payments recorded on ${paymentsLabel}.`,
+          documentHtml: invoiceHtml,
+          companyName: company?.companyName,
+        });
+
+        if (result.sent) {
+          alert("Invoice sent via email successfully!");
+        } else if (result.fallback) {
+          // Fallback mailto was opened
+        }
       } else {
         const phone = sanitizePhoneToWhatsApp(detailsRow.phone ?? "");
         if (!phone) {
@@ -672,11 +753,14 @@ export default function TenantsPage() {
           return;
         }
 
-        window.open(
-          `https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
-          "_blank",
-          "noopener,noreferrer",
-        );
+        const result = await sendWhatsApp({
+          to: `+${phone}`,
+          message: messageText,
+        });
+
+        if (result.sent) {
+          alert("Invoice sent via WhatsApp successfully!");
+        }
       }
 
       await logShareReport(detailsRow.id, invoice.id, channel, paymentDates);
@@ -685,6 +769,106 @@ export default function TenantsPage() {
       alert(shareError instanceof Error ? shareError.message : "Could not share invoice.");
     } finally {
       setSharingInvoiceId(null);
+    }
+  };
+
+  /* ---- Contract preview / download / share helpers ---- */
+
+  const buildContractHtmlForTenant = async (contract: TenantContractRow) => {
+    if (!detailsRow) throw new Error("No tenant selected");
+    const [company, admin] = await Promise.all([
+      fetchCompanyInfo(),
+      fetchAdminInfo(user?.email ?? undefined),
+    ]);
+    return buildProfessionalContractHtml(
+      {
+        contractTitle: contract.title,
+        tenantName: detailsRow.fullName,
+        propertyName: contract.propertyName,
+        startDate: contract.startDate,
+        endDate: contract.endDate,
+        monthlyRent: contract.monthlyRent,
+        depositAmount: contract.depositAmount,
+        status: contract.status,
+        notes: contract.notes,
+        sections: contract.sections,
+      },
+      company,
+      admin,
+    );
+  };
+
+  const openContractPreview = async (contract: TenantContractRow) => {
+    const previewWindow = window.open("about:blank", "_blank");
+    if (!previewWindow) { alert("Please allow popups to preview contract."); return; }
+    try {
+      if (contract.documentUrl && contract.documentUrl.startsWith("http")) {
+        previewWindow.location.href = contract.documentUrl;
+        return;
+      }
+      const html = await buildContractHtmlForTenant(contract);
+      previewWindow.document.open();
+      previewWindow.document.write(html);
+      previewWindow.document.close();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not preview contract.");
+      previewWindow.close();
+    }
+  };
+
+  const downloadContract = async (contract: TenantContractRow) => {
+    try {
+      if (contract.documentUrl && contract.documentUrl.startsWith("http")) {
+        const link = document.createElement("a");
+        link.href = contract.documentUrl;
+        link.download = `contract-${contract.id}.pdf`;
+        link.click();
+        return;
+      }
+      const html = await buildContractHtmlForTenant(contract);
+      downloadHtmlDocument(html, `contract-${contract.title.replace(/\s+/g, "-")}.html`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not download contract.");
+    }
+  };
+
+  const shareContract = async (contract: TenantContractRow, channel: "email" | "whatsapp") => {
+    if (!detailsRow) return;
+    setContractActionId(contract.id);
+    try {
+      const messageText = `${contract.title} for ${contract.propertyName}: ${formatDate(contract.startDate)} – ${formatDate(contract.endDate)}, Monthly rent ${formatCurrency(contract.monthlyRent)}.`;
+      const contractHtml = await buildContractHtmlForTenant(contract);
+      const company = await fetchCompanyInfo();
+
+      if (channel === "email") {
+        if (!detailsRow.email) { alert("Tenant email is missing."); return; }
+        const subject = `${contract.title} - ${detailsRow.fullName}`;
+        const result = await sendEmail({
+          to: detailsRow.email,
+          recipientName: detailsRow.fullName,
+          subject,
+          bodyText: `Please find your lease agreement <strong>"${contract.title}"</strong> for <strong>${contract.propertyName}</strong> attached below. The contract period is ${formatDate(contract.startDate)} to ${formatDate(contract.endDate)} with a monthly rent of <strong>${formatCurrency(contract.monthlyRent)}</strong>.`,
+          documentHtml: contractHtml,
+          companyName: company?.companyName,
+        });
+        if (result.sent) {
+          alert("Contract sent via email successfully!");
+        }
+      } else {
+        const phone = sanitizePhoneToWhatsApp(detailsRow.phone ?? "");
+        if (!phone) { alert("Tenant phone is missing."); return; }
+        const result = await sendWhatsApp({
+          to: `+${phone}`,
+          message: messageText,
+        });
+        if (result.sent) {
+          alert("Contract sent via WhatsApp successfully!");
+        }
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not share contract.");
+    } finally {
+      setContractActionId(null);
     }
   };
 
@@ -1060,6 +1244,56 @@ export default function TenantsPage() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+            </section>
+
+            <section className="space-y-2">
+              <h4 className="text-sm font-semibold">Contracts</h4>
+
+              {tenantContracts.length === 0 ? (
+                <EmptyState title="No contracts yet" description="Contracts generated for this tenant will appear here." />
+              ) : (
+                <div className="space-y-3">
+                  {tenantContracts.map((contract) => (
+                    <div key={contract.id} className="rounded-md border border-border-color bg-surface-elevated p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium">{contract.title}</p>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          contract.status === "active" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                          : contract.status === "expired" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                          : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                        }`}>{contract.status}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs text-muted">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider">Property</p>
+                          <p>{contract.propertyName}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider">Rent</p>
+                          <p>{formatCurrency(contract.monthlyRent)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider">Start</p>
+                          <p>{formatDate(contract.startDate)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider">End</p>
+                          <p>{formatDate(contract.endDate)}</p>
+                        </div>
+                      </div>
+                      {contract.sections.length > 0 && (
+                        <p className="text-[10px] text-muted">{contract.sections.length} section{contract.sections.length !== 1 ? "s" : ""}: {contract.sections.map((s) => s.title).join(", ")}</p>
+                      )}
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        <button type="button" onClick={() => void openContractPreview(contract)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface">View</button>
+                        <button type="button" onClick={() => void downloadContract(contract)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface">Download</button>
+                        <button type="button" onClick={() => void shareContract(contract, "whatsapp")} disabled={contractActionId === contract.id} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface disabled:opacity-50">WhatsApp</button>
+                        <button type="button" onClick={() => void shareContract(contract, "email")} disabled={contractActionId === contract.id} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface disabled:opacity-50">Email</button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </section>

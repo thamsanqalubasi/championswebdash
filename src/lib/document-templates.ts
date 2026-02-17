@@ -45,7 +45,13 @@ export type InvoiceDocData = {
   lineItems: { description: string; amount: number }[];
 };
 
+export type ContractSection = {
+  title: string;
+  content: string;
+};
+
 export type ContractDocData = {
+  contractTitle: string;
   tenantName: string;
   propertyName: string;
   startDate: string;
@@ -54,6 +60,7 @@ export type ContractDocData = {
   depositAmount: number;
   status: string;
   notes: string;
+  sections: ContractSection[];
 };
 
 /* ---------- shared CSS ---------- */
@@ -275,64 +282,18 @@ export function buildProfessionalContractHtml(
     ? `<img src="${esc(admin.signatureUrl)}" alt="Admin signature" />`
     : "";
 
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>Lease Agreement - ${esc(doc.tenantName)}</title>
-  <style>${sharedCss}</style>
-</head>
-<body>
-  <div class="page">
-    <div class="header">
-      <div>
-        <div class="header-left">
-          ${logoHtml}
-          <div>
-            <div class="company-name">${esc(company.companyName)}</div>
-            <div class="company-address">${esc(company.address)}</div>
-          </div>
-        </div>
-      </div>
-      <div>
-        <div class="doc-badge">LEASE AGREEMENT</div>
-        <div class="doc-meta">
-          <p><strong>Date:</strong> ${fmtDate(new Date().toISOString().slice(0, 10))}</p>
-          <p><strong>Status:</strong> <span class="status-badge ${statusClass}">${esc(doc.status)}</span></p>
-        </div>
-      </div>
-    </div>
+  const docTitle = doc.contractTitle || "LEASE AGREEMENT";
 
+  // Build custom sections HTML
+  const customSectionsHtml = doc.sections.length > 0
+    ? doc.sections.map((section, i) => `
     <div class="section">
-      <div class="section-title">Contract Details</div>
-      <div class="info-grid">
-        <div class="info-item">
-          <label>Tenant</label>
-          <p>${esc(doc.tenantName)}</p>
-        </div>
-        <div class="info-item">
-          <label>Property</label>
-          <p>${esc(doc.propertyName)}</p>
-        </div>
-        <div class="info-item">
-          <label>Lease Start</label>
-          <p>${fmtDate(doc.startDate)}</p>
-        </div>
-        <div class="info-item">
-          <label>Lease End</label>
-          <p>${fmtDate(doc.endDate)}</p>
-        </div>
-        <div class="info-item">
-          <label>Monthly Rent</label>
-          <p>${formatZAR(doc.monthlyRent)}</p>
-        </div>
-        <div class="info-item">
-          <label>Security Deposit</label>
-          <p>${formatZAR(doc.depositAmount)}</p>
-        </div>
+      <div class="section-title">${i + 1}. ${esc(section.title)}</div>
+      <div class="parties-section">
+        <p>${esc(section.content).replace(/\n/g, "<br/>")}</p>
       </div>
-    </div>
-
+    </div>`).join("")
+    : `
     <div class="section">
       <div class="section-title">1. Parties</div>
       <div class="parties-section">
@@ -385,11 +346,71 @@ export function buildProfessionalContractHtml(
         <li>In the event of a material breach by either party, the non-breaching party may terminate this Agreement after providing written notice and a reasonable period to cure the breach.</li>
         <li>The Landlord may terminate the Agreement immediately for non-payment of rent exceeding 30 days, illegal activities, or willful destruction of property.</li>
       </ol>
+    </div>`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>${esc(docTitle)} - ${esc(doc.tenantName)}</title>
+  <style>${sharedCss}</style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div>
+        <div class="header-left">
+          ${logoHtml}
+          <div>
+            <div class="company-name">${esc(company.companyName)}</div>
+            <div class="company-address">${esc(company.address)}</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="doc-badge">${esc(docTitle.toUpperCase())}</div>
+        <div class="doc-meta">
+          <p><strong>Date:</strong> ${fmtDate(new Date().toISOString().slice(0, 10))}</p>
+          <p><strong>Status:</strong> <span class="status-badge ${statusClass}">${esc(doc.status)}</span></p>
+        </div>
+      </div>
     </div>
+
+    <div class="section">
+      <div class="section-title">Contract Details</div>
+      <div class="info-grid">
+        <div class="info-item">
+          <label>Tenant</label>
+          <p>${esc(doc.tenantName)}</p>
+        </div>
+        <div class="info-item">
+          <label>Property</label>
+          <p>${esc(doc.propertyName)}</p>
+        </div>
+        <div class="info-item">
+          <label>Lease Start</label>
+          <p>${fmtDate(doc.startDate)}</p>
+        </div>
+        <div class="info-item">
+          <label>Lease End</label>
+          <p>${fmtDate(doc.endDate)}</p>
+        </div>
+        <div class="info-item">
+          <label>Monthly Rent</label>
+          <p>${formatZAR(doc.monthlyRent)}</p>
+        </div>
+        <div class="info-item">
+          <label>Security Deposit</label>
+          <p>${formatZAR(doc.depositAmount)}</p>
+        </div>
+      </div>
+    </div>
+
+    ${customSectionsHtml}
 
     ${doc.notes ? `
     <div class="section">
-      <div class="section-title">7. Additional Notes &amp; Special Conditions</div>
+      <div class="section-title">Additional Notes &amp; Special Conditions</div>
       <div class="notes-box">${esc(doc.notes)}</div>
     </div>` : ""}
 

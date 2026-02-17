@@ -153,6 +153,7 @@ export type MaintenanceOverviewData = {
 
 export type ContractRow = {
   id: string;
+  title: string;
   tenantName: string;
   propertyName: string;
   startDate: string;
