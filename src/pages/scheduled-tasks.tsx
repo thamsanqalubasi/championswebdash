@@ -63,6 +63,31 @@ export default function ScheduledTasksPage() {
 
   const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
 
+  const openEdit = async (taskId: string) => {
+    try {
+      const { data, error: fetchError } = await supabase
+        .from("preventive_maintenance")
+        .select("id, title, property_id, maintainer_id, category, frequency, next_due, estimated_cost, status")
+        .eq("id", taskId)
+        .single();
+      if (fetchError) throw fetchError;
+      setEditingId(taskId);
+      setForm({
+        title: String(data.title ?? ""),
+        property_id: String(data.property_id ?? ""),
+        maintainer_id: String(data.maintainer_id ?? ""),
+        category: String(data.category ?? "general"),
+        frequency: String(data.frequency ?? "monthly"),
+        next_due: String(data.next_due ?? ""),
+        estimated_cost: Number(data.estimated_cost ?? 0),
+        status: String(data.status ?? "active"),
+      });
+      setModalOpen(true);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not load task for editing.");
+    }
+  };
+
   const onSave = async () => {
     if (!form.title.trim()) { alert("Please enter a task title."); return; }
     if (!form.next_due) { alert("Please select a next due date."); return; }
@@ -133,6 +158,7 @@ export default function ScheduledTasksPage() {
                     <td className="px-3 py-3 text-muted">{formatCurrency(row.estimatedCost)}</td>
                     <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.status}</span></td>
                     <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={(event) => { event.stopPropagation(); void openEdit(row.id); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Edit</button>
                       {row.status !== "completed" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "completed"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Complete</button>}
                       {row.status === "completed" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "active"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reschedule</button>}
                       {row.status === "active" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "paused"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Pause</button>}
@@ -168,6 +194,11 @@ export default function ScheduledTasksPage() {
             <div><label className="mb-1 block text-sm text-muted">Next Due</label><input type="date" value={form.next_due} onChange={(e) => setForm({ ...form, next_due: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
             <div><label className="mb-1 block text-sm text-muted">Est. Cost</label><input type="number" value={form.estimated_cost} onChange={(e) => setForm({ ...form, estimated_cost: Number(e.target.value) })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           </div>
+          {editingId && (
+            <div><label className="mb-1 block text-sm text-muted">Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
+              <option value="active">Active</option><option value="paused">Paused</option><option value="overdue">Overdue</option><option value="completed">Completed</option>
+            </select></div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setModalOpen(false)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
             <button type="button" onClick={onSave} disabled={saving} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>

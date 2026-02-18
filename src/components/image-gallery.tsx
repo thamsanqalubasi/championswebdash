@@ -6,9 +6,11 @@ type ImageGalleryProps = {
   open: boolean;
   onClose: () => void;
   onNavigate: (index: number) => void;
+  onDelete?: (index: number) => void;
+  deleting?: boolean;
 };
 
-export function ImageGallery({ images, currentIndex, open, onClose, onNavigate }: ImageGalleryProps) {
+export function ImageGallery({ images, currentIndex, open, onClose, onNavigate, onDelete, deleting }: ImageGalleryProps) {
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < images.length - 1;
 
@@ -57,6 +59,23 @@ export function ImageGallery({ images, currentIndex, open, onClose, onNavigate }
       >
         &times;
       </button>
+
+      {/* Delete button */}
+      {onDelete && (
+        <button
+          type="button"
+          disabled={deleting}
+          onClick={() => {
+            if (confirm("Are you sure you want to delete this image?")) {
+              onDelete(currentIndex);
+            }
+          }}
+          className="absolute left-4 top-4 z-10 flex h-10 items-center gap-1.5 rounded-full bg-red-600/80 px-4 text-white text-sm hover:bg-red-600 transition-colors disabled:opacity-50"
+          aria-label="Delete image"
+        >
+          {deleting ? "Deleting..." : "🗑 Delete"}
+        </button>
+      )}
 
       {/* Counter */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-4 py-1.5 text-sm text-white/90">

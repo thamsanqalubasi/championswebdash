@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
+import { ImageGallery } from "@/components/image-gallery";
 import { supabase } from "@/lib/supabase";
 import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, downloadHtmlDocument } from "@/lib/storage";
 import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
@@ -94,6 +95,11 @@ export default function PropertyDetailsPage() {
 
   // Regenerating / downloading invoice
   const [regeneratingInvoiceId, setRegeneratingInvoiceId] = useState<string | null>(null);
+
+  // Photo gallery + delete
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  const [deletingPhoto, setDeletingPhoto] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -301,6 +307,31 @@ export default function PropertyDetailsPage() {
       alert(saveError instanceof Error ? saveError.message : "Could not add property photo.");
     } finally {
       setSavingPhoto(false);
+    }
+  };
+
+  const deletePhoto = async (index: number) => {
+    if (!propertyId || !property) return;
+    setDeletingPhoto(true);
+    try {
+      const updatedPhotos = property.photos.filter((_, i) => i !== index);
+      const { error: updateError } = await supabase
+        .from("properties")
+        .update({ photos: updatedPhotos })
+        .eq("id", propertyId);
+      if (updateError) throw updateError;
+      // Adjust gallery index if needed
+      if (index >= updatedPhotos.length && updatedPhotos.length > 0) {
+        setGalleryIndex(updatedPhotos.length - 1);
+      }
+      if (updatedPhotos.length === 0) {
+        setGalleryOpen(false);
+      }
+      reload();
+    } catch (deleteError) {
+      alert(deleteError instanceof Error ? deleteError.message : "Could not delete photo.");
+    } finally {
+      setDeletingPhoto(false);
     }
   };
 
@@ -648,18 +679,18 @@ export default function PropertyDetailsPage() {
             ) : (
               <>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {property.photos.slice(0, photosLimit).map((photoUrl) => (
-                  <a
+                {property.photos.slice(0, photosLimit).map((photoUrl, idx) => (
+                  <button
                     key={photoUrl}
-                    href={photoUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="overflow-hidden rounded-md border border-border-color bg-surface-elevated"
+                    type="button"
+                    onClick={() => { setGalleryIndex(idx); setGalleryOpen(true); }}
+                    className="overflow-hidden rounded-md border border-border-color bg-surface-elevated text-left"
                   >
                     <img src={photoUrl} alt="Property" className="h-40 w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='160' fill='%23ccc'%3E%3Crect width='200' height='160' fill='%23f0f0f0'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' font-size='14' fill='%23999'%3EImage unavailable%3C/text%3E%3C/svg%3E"; }} />
-                  </a>
+                  </button>
                 ))}
               </div>
+              <ImageGallery images={property.photos} currentIndex={galleryIndex} open={galleryOpen} onClose={() => setGalleryOpen(false)} onNavigate={setGalleryIndex} onDelete={deletePhoto} deleting={deletingPhoto} />
               {property.photos.length > photosLimit && (
                 <button type="button" onClick={() => setPhotosLimit((v) => v + PAGE_SIZE)} className="mt-2 w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted hover:bg-surface">
                   Load More ({property.photos.length - photosLimit} remaining)

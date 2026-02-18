@@ -18,11 +18,21 @@ export async function uploadFileToBucket(
   const extension = file.name.includes(".") ? file.name.split(".").pop() : "bin";
   const path = `${folder}/${Date.now()}.${extension}`;
 
-  const { error: uploadError } = await supabase.storage
+  // Attempt upload; if bucket doesn't exist, create it and retry once
+  let uploadResult = await supabase.storage
     .from(bucket)
     .upload(path, file, { upsert: true });
 
-  if (uploadError) throw uploadError;
+  if (uploadResult.error && /bucket.*not found/i.test(uploadResult.error.message)) {
+    // Auto-create the bucket as public
+    await supabase.storage.createBucket(bucket, { public: true });
+    // Retry the upload
+    uploadResult = await supabase.storage
+      .from(bucket)
+      .upload(path, file, { upsert: true });
+  }
+
+  if (uploadResult.error) throw uploadResult.error;
 
   // Try public URL first
   const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(path);

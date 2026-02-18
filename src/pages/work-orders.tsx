@@ -208,6 +208,29 @@ export default function WorkOrdersPage() {
     }
   };
 
+  const [deletingPhoto, setDeletingPhoto] = useState(false);
+
+  const deleteWorkOrderPhoto = async (index: number) => {
+    if (!details) return;
+    setDeletingPhoto(true);
+    try {
+      const updatedPhotos = details.photos.filter((_, i) => i !== index);
+      const { error: updateError } = await supabase.from("maintenance").update({ photos: updatedPhotos }).eq("id", details.id);
+      if (updateError) throw updateError;
+      setDetails({ ...details, photos: updatedPhotos });
+      if (index >= updatedPhotos.length && updatedPhotos.length > 0) {
+        setGalleryIndex(updatedPhotos.length - 1);
+      }
+      if (updatedPhotos.length === 0) {
+        setGalleryOpen(false);
+      }
+    } catch (deleteError) {
+      alert(deleteError instanceof Error ? deleteError.message : "Could not delete photo.");
+    } finally {
+      setDeletingPhoto(false);
+    }
+  };
+
   const openGallery = (index: number) => {
     setGalleryIndex(index);
     setGalleryOpen(true);
@@ -367,7 +390,7 @@ export default function WorkOrdersPage() {
                 </div>
               )}
 
-              <ImageGallery images={details.photos} currentIndex={galleryIndex} open={galleryOpen} onClose={() => setGalleryOpen(false)} onNavigate={setGalleryIndex} />
+              <ImageGallery images={details.photos} currentIndex={galleryIndex} open={galleryOpen} onClose={() => setGalleryOpen(false)} onNavigate={setGalleryIndex} onDelete={deleteWorkOrderPhoto} deleting={deletingPhoto} />
             </div>
           </div>
         )}

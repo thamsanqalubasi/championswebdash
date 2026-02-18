@@ -270,14 +270,6 @@ export default function InvoicesPage() {
       return;
     }
 
-    if (selectedTransactions.length > 0) {
-      const activeCollector = selectedTransactions[0].collectorName;
-      if (activeCollector !== transaction.collectorName) {
-        alert("You can select multiple transactions only when they were collected by the same admin.");
-        return;
-      }
-    }
-
     setSelectedTransactionIds((prev) => [...prev, transaction.id]);
   };
 
