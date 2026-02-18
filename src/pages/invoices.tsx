@@ -96,6 +96,9 @@ export default function InvoicesPage() {
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
 
+  const INVOICES_PAGE_SIZE = 8;
+  const [invoicesLimit, setInvoicesLimit] = useState(INVOICES_PAGE_SIZE);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -545,7 +548,7 @@ export default function InvoicesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map((row) => (
+                    {filtered.slice(0, invoicesLimit).map((row) => (
                       <tr key={row.id} className="border-b border-border-color/60">
                         <td className="px-3 py-3 font-medium">{row.tenantName}</td>
                         <td className="px-3 py-3 text-muted">{row.propertyName}</td>
@@ -623,6 +626,11 @@ export default function InvoicesPage() {
                     ))}
                   </tbody>
                 </table>
+                {filtered.length > invoicesLimit && (
+                  <button type="button" onClick={() => setInvoicesLimit((v) => v + INVOICES_PAGE_SIZE)} className="mt-2 w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted hover:bg-surface">
+                    Load More ({filtered.length - invoicesLimit} remaining)
+                  </button>
+                )}
               </div>
             )}
           </div>

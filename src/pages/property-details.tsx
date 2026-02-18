@@ -3,10 +3,12 @@ import { Link, useParams } from "react-router-dom";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { supabase } from "@/lib/supabase";
-import { fetchCompanyInfo, fetchAdminInfo } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, downloadHtmlDocument } from "@/lib/storage";
 import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
 import { useAuth } from "@/lib/auth";
 import { sendEmail, sendWhatsApp } from "@/lib/notifications";
+
+const PAGE_SIZE = 8;
 
 type PropertyDetails = {
   id: string;
@@ -82,6 +84,16 @@ export default function PropertyDetailsPage() {
 
   const [photoUrlInput, setPhotoUrlInput] = useState("");
   const [savingPhoto, setSavingPhoto] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  // "Load more" state for sections
+  const [tenantsLimit, setTenantsLimit] = useState(PAGE_SIZE);
+  const [invoicesLimit, setInvoicesLimit] = useState(PAGE_SIZE);
+  const [maintenanceLimit, setMaintenanceLimit] = useState(PAGE_SIZE);
+  const [photosLimit, setPhotosLimit] = useState(PAGE_SIZE);
+
+  // Regenerating / downloading invoice
+  const [regeneratingInvoiceId, setRegeneratingInvoiceId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -292,6 +304,25 @@ export default function PropertyDetailsPage() {
     }
   };
 
+  const uploadPhotoFile = async (file: File | null) => {
+    if (!file || !propertyId || !property) return;
+    setUploadingPhoto(true);
+    try {
+      const url = await uploadFileToBucket("property-photos", propertyId, file);
+      const updatedPhotos = [...property.photos, url];
+      const { error: updateError } = await supabase
+        .from("properties")
+        .update({ photos: updatedPhotos })
+        .eq("id", propertyId);
+      if (updateError) throw updateError;
+      reload();
+    } catch (uploadError) {
+      alert(uploadError instanceof Error ? uploadError.message : "Could not upload photo.");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
   const generateInvoiceForTenant = async (tenant: AssignedTenant) => {
     if (!propertyId || !property) {
       return;
@@ -417,6 +448,47 @@ export default function PropertyDetailsPage() {
     if (result.sent) { alert("Invoice sent via WhatsApp successfully!"); }
   };
 
+  const regenerateInvoice = async (invoice: PropertyInvoice) => {
+    if (!property) return;
+    setRegeneratingInvoiceId(invoice.id);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const month = currentMonthKey();
+      const html = await buildInvoiceHtml({ ...invoice, month, dueDate: today });
+      const { error: updateError } = await supabase
+        .from("invoices")
+        .update({ pdf_url: html, due_date: today, month, updated_at: new Date().toISOString() })
+        .eq("id", invoice.id);
+      if (updateError) throw updateError;
+      reload();
+      alert("Invoice regenerated with today's date.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not regenerate invoice.");
+    } finally {
+      setRegeneratingInvoiceId(null);
+    }
+  };
+
+  const downloadInvoice = async (invoice: PropertyInvoice) => {
+    try {
+      if (invoice.pdfUrl && invoice.pdfUrl.startsWith("http")) {
+        const link = document.createElement("a");
+        link.href = invoice.pdfUrl;
+        link.download = `invoice-${invoice.id}.pdf`;
+        link.click();
+        return;
+      }
+      if (invoice.pdfUrl && invoice.pdfUrl.startsWith("<")) {
+        downloadHtmlDocument(invoice.pdfUrl, `invoice-${invoice.id}.html`);
+        return;
+      }
+      const html = await buildInvoiceHtml(invoice);
+      downloadHtmlDocument(html, `invoice-${invoice.id}.html`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not download invoice.");
+    }
+  };
+
   return (
     <ModulePage
       title={property ? `Property Details: ${property.name}` : "Property Details"}
@@ -514,7 +586,7 @@ export default function PropertyDetailsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {assignedTenants.map((tenant) => (
+                    {assignedTenants.slice(0, tenantsLimit).map((tenant) => (
                       <tr key={tenant.id} className="border-b border-border-color/60">
                         <td className="px-3 py-3 font-medium">{tenant.fullName}</td>
                         <td className="px-3 py-3 text-muted">{tenant.phone || "-"}</td>
@@ -532,19 +604,24 @@ export default function PropertyDetailsPage() {
                     ))}
                   </tbody>
                 </table>
+                {assignedTenants.length > tenantsLimit && (
+                  <button type="button" onClick={() => setTenantsLimit((v) => v + PAGE_SIZE)} className="mt-2 w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted hover:bg-surface">
+                    Load More ({assignedTenants.length - tenantsLimit} remaining)
+                  </button>
+                )}
               </div>
             )}
           </article>
 
           <article className="rounded-lg border border-border-color bg-surface p-4">
             <h3 className="mb-3 text-base font-semibold">Property Pictures</h3>
-            <div className="mb-3 flex gap-2">
+            <div className="mb-3 flex flex-wrap gap-2">
               <input
                 type="url"
                 value={photoUrlInput}
                 onChange={(event) => setPhotoUrlInput(event.target.value)}
                 placeholder="Paste picture URL"
-                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm"
+                className="flex-1 min-w-[200px] rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm"
               />
               <button
                 type="button"
@@ -552,15 +629,26 @@ export default function PropertyDetailsPage() {
                 disabled={savingPhoto}
                 className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50"
               >
-                {savingPhoto ? "Uploading..." : "Upload Picture"}
+                {savingPhoto ? "Adding..." : "Add URL"}
               </button>
+              <label className="cursor-pointer rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium hover:bg-surface disabled:opacity-50">
+                {uploadingPhoto ? "Uploading..." : "Upload Picture"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,.jpg,.jpeg,.png,.webp"
+                  onChange={(event) => void uploadPhotoFile(event.target.files?.[0] ?? null)}
+                  className="hidden"
+                  disabled={uploadingPhoto}
+                />
+              </label>
             </div>
 
             {property.photos.length === 0 ? (
               <EmptyState title="No pictures" description="Upload property pictures to keep visual records." />
             ) : (
+              <>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {property.photos.map((photoUrl) => (
+                {property.photos.slice(0, photosLimit).map((photoUrl) => (
                   <a
                     key={photoUrl}
                     href={photoUrl}
@@ -572,6 +660,12 @@ export default function PropertyDetailsPage() {
                   </a>
                 ))}
               </div>
+              {property.photos.length > photosLimit && (
+                <button type="button" onClick={() => setPhotosLimit((v) => v + PAGE_SIZE)} className="mt-2 w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted hover:bg-surface">
+                  Load More ({property.photos.length - photosLimit} remaining)
+                </button>
+              )}
+              </>
             )}
           </article>
 
@@ -591,7 +685,7 @@ export default function PropertyDetailsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {maintenance.map((item) => (
+                    {maintenance.slice(0, maintenanceLimit).map((item) => (
                       <tr key={item.id} className="border-b border-border-color/60">
                         <td className="px-3 py-3 text-muted capitalize">{item.category}</td>
                         <td className="px-3 py-3 text-muted capitalize">{item.status}</td>
@@ -601,6 +695,11 @@ export default function PropertyDetailsPage() {
                     ))}
                   </tbody>
                 </table>
+                {maintenance.length > maintenanceLimit && (
+                  <button type="button" onClick={() => setMaintenanceLimit((v) => v + PAGE_SIZE)} className="mt-2 w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted hover:bg-surface">
+                    Load More ({maintenance.length - maintenanceLimit} remaining)
+                  </button>
+                )}
               </div>
             )}
           </article>
@@ -622,7 +721,7 @@ export default function PropertyDetailsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {invoices.map((invoice) => (
+                    {invoices.slice(0, invoicesLimit).map((invoice) => (
                       <tr key={invoice.id} className="border-b border-border-color/60">
                         <td className="px-3 py-3 font-medium">{invoice.tenantName}</td>
                         <td className="px-3 py-3 text-muted">{invoice.month}</td>
@@ -636,6 +735,21 @@ export default function PropertyDetailsPage() {
                               className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
                             >
                               View
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void downloadInvoice(invoice)}
+                              className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                            >
+                              Download
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void regenerateInvoice(invoice)}
+                              disabled={regeneratingInvoiceId === invoice.id}
+                              className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated disabled:opacity-50"
+                            >
+                              {regeneratingInvoiceId === invoice.id ? "Regenerating..." : "Regenerate"}
                             </button>
                             <button
                               type="button"
@@ -657,6 +771,11 @@ export default function PropertyDetailsPage() {
                     ))}
                   </tbody>
                 </table>
+                {invoices.length > invoicesLimit && (
+                  <button type="button" onClick={() => setInvoicesLimit((v) => v + PAGE_SIZE)} className="mt-2 w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted hover:bg-surface">
+                    Load More ({invoices.length - invoicesLimit} remaining)
+                  </button>
+                )}
               </div>
             )}
           </article>

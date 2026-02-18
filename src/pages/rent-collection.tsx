@@ -4,8 +4,9 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
-import { fetchCompanyInfo, fetchAdminInfo } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, downloadHtmlDocument } from "@/lib/storage";
 import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
+import { sendEmail, sendWhatsApp } from "@/lib/notifications";
 
 type RentTenantRow = {
   id: string;
@@ -63,6 +64,12 @@ export default function RentCollectionPage() {
   const [paymentForm, setPaymentForm] = useState(emptyPaymentForm);
   const [saving, setSaving] = useState(false);
   const [invoiceActionPaymentId, setInvoiceActionPaymentId] = useState<string | null>(null);
+  const [regeneratingPaymentId, setRegeneratingPaymentId] = useState<string | null>(null);
+  const [sendingPaymentId, setSendingPaymentId] = useState<string | null>(null);
+
+  const PAGE_SIZE = 8;
+  const [tenantsLimit, setTenantsLimit] = useState(PAGE_SIZE);
+  const [historyLimits, setHistoryLimits] = useState<Record<string, number>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -407,6 +414,132 @@ export default function RentCollectionPage() {
     }
   };
 
+  const regenerateInvoiceForPayment = async (tenant: RentTenantRow, payment: TenantPaymentHistoryRow) => {
+    const invoiceId = payment.invoiceId;
+    if (!invoiceId) {
+      await generateInvoiceForPayment(tenant, payment);
+      return;
+    }
+    setRegeneratingPaymentId(payment.id);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const month = today.slice(0, 7);
+      const [company, admin] = await Promise.all([fetchCompanyInfo(), fetchAdminInfo(user?.email ?? undefined)]);
+      const html = buildProfessionalInvoiceHtml(
+        {
+          invoiceId,
+          tenantName: tenant.fullName,
+          propertyName: tenant.propertyName,
+          month,
+          dueDate: today,
+          status: "paid",
+          lineItems: [{ description: `Rent payment on ${payment.paymentDate}`, amount: payment.amountPaid }],
+        },
+        company,
+        admin,
+      );
+      const { error: updateError } = await supabase
+        .from("invoices")
+        .update({ pdf_url: html, due_date: today, month, updated_at: new Date().toISOString() })
+        .eq("id", invoiceId);
+      if (updateError) throw updateError;
+      reload();
+      alert("Invoice regenerated with today's date.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not regenerate invoice.");
+    } finally {
+      setRegeneratingPaymentId(null);
+    }
+  };
+
+  const downloadInvoiceForPayment = async (payment: TenantPaymentHistoryRow, tenantName: string, propertyName: string) => {
+    const invoiceId = payment.invoiceId;
+    if (!invoiceId) return;
+    try {
+      const invoice = invoiceById[invoiceId];
+      if (invoice?.pdfUrl && invoice.pdfUrl.startsWith("http")) {
+        const link = document.createElement("a");
+        link.href = invoice.pdfUrl;
+        link.download = `invoice-${invoiceId}.pdf`;
+        link.click();
+        return;
+      }
+      if (invoice?.pdfUrl && invoice.pdfUrl.startsWith("<")) {
+        downloadHtmlDocument(invoice.pdfUrl, `invoice-${invoiceId}.html`);
+        return;
+      }
+      const [company, admin] = await Promise.all([fetchCompanyInfo(), fetchAdminInfo(user?.email ?? undefined)]);
+      const html = buildProfessionalInvoiceHtml(
+        {
+          invoiceId,
+          tenantName,
+          propertyName,
+          month: invoice?.month ?? payment.paymentDate.slice(0, 7),
+          dueDate: payment.paymentDate,
+          status: invoice?.status ?? "paid",
+          lineItems: [{ description: `Rent payment on ${payment.paymentDate}`, amount: payment.amountPaid }],
+        },
+        company,
+        admin,
+      );
+      downloadHtmlDocument(html, `invoice-${invoiceId}.html`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not download invoice.");
+    }
+  };
+
+  const sendInvoiceForPayment = async (
+    tenant: RentTenantRow,
+    payment: TenantPaymentHistoryRow,
+    channel: "email" | "whatsapp",
+  ) => {
+    const invoiceId = payment.invoiceId;
+    if (!invoiceId) { alert("Generate invoice first."); return; }
+    setSendingPaymentId(payment.id);
+    try {
+      const invoice = invoiceById[invoiceId];
+      const [company, admin] = await Promise.all([fetchCompanyInfo(), fetchAdminInfo(user?.email ?? undefined)]);
+      const html = invoice?.pdfUrl && invoice.pdfUrl.startsWith("<")
+        ? invoice.pdfUrl
+        : buildProfessionalInvoiceHtml(
+            {
+              invoiceId,
+              tenantName: tenant.fullName,
+              propertyName: tenant.propertyName,
+              month: invoice?.month ?? payment.paymentDate.slice(0, 7),
+              dueDate: payment.paymentDate,
+              status: invoice?.status ?? "paid",
+              lineItems: [{ description: `Rent payment on ${payment.paymentDate}`, amount: payment.amountPaid }],
+            },
+            company,
+            admin,
+          );
+      if (channel === "email") {
+        if (!tenant.email || tenant.email === "-") { alert("No tenant email address available."); return; }
+        const subject = `Invoice for ${payment.paymentDate} - ${tenant.fullName}`;
+        const result = await sendEmail({
+          to: tenant.email,
+          recipientName: tenant.fullName,
+          subject,
+          bodyText: `Please find your invoice attached. Total amount: <strong>${formatCurrency(payment.amountPaid)}</strong>.`,
+          documentHtml: html,
+          companyName: company?.companyName,
+        });
+        if (result.sent) alert("Invoice sent via email successfully!");
+      } else {
+        const phone = tenant.phone.replace(/\D/g, "");
+        if (!phone) { alert("No tenant phone number available."); return; }
+        const message = `Invoice for ${formatCurrency(payment.amountPaid)} - Payment on ${payment.paymentDate}.`;
+        const result = await sendWhatsApp({ to: `+${phone}`, message });
+        if (result.sent) alert("Invoice sent via WhatsApp successfully!");
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not send invoice.");
+    } finally {
+      setSendingPaymentId(null);
+    }
+  };
+
   return (
     <ModulePage
       title="Rent Collection"
@@ -450,7 +583,7 @@ export default function RentCollectionPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {tenants.map((tenant) => {
+                  {tenants.slice(0, tenantsLimit).map((tenant) => {
                     const assigned = Boolean(tenant.propertyId);
                     return (
                       <tr key={tenant.id} className="border-b border-border-color/60">
@@ -487,10 +620,10 @@ export default function RentCollectionPage() {
                     );
                   })}
 
-                  {tenants.map((tenant) => {
+                  {tenants.slice(0, tenantsLimit).map((tenant) => {
                     if (expandedTenantId !== tenant.id) return null;
                     const paymentHistory = paymentsByTenant[tenant.id] ?? [];
-
+                    const historyLimit = historyLimits[tenant.id] ?? PAGE_SIZE;
                     return (
                       <tr key={`${tenant.id}-history`} className="border-b border-border-color/60 bg-surface-elevated/30">
                         <td colSpan={4} className="px-3 py-3">
@@ -509,19 +642,52 @@ export default function RentCollectionPage() {
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {paymentHistory.map((payment) => (
+                                    {paymentHistory.slice(0, historyLimit).map((payment) => (
                                       <tr key={payment.id} className="border-b border-border-color/60">
                                         <td className="px-2 py-2 text-muted">{payment.paymentDate}</td>
                                         <td className="px-2 py-2 text-muted">{formatCurrency(payment.amountPaid)}</td>
                                         <td className="px-2 py-2">
                                           {payment.invoiceId ? (
-                                            <button
-                                              type="button"
-                                              onClick={() => void viewInvoiceForPayment(payment, tenant.fullName, tenant.propertyName)}
-                                              className="rounded-md border border-border-color bg-surface px-2 py-1 text-xs"
-                                            >
-                                              View
-                                            </button>
+                                            <div className="flex flex-wrap gap-1">
+                                              <button
+                                                type="button"
+                                                onClick={() => void viewInvoiceForPayment(payment, tenant.fullName, tenant.propertyName)}
+                                                className="rounded-md border border-border-color bg-surface px-2 py-1 text-xs"
+                                              >
+                                                View
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => void downloadInvoiceForPayment(payment, tenant.fullName, tenant.propertyName)}
+                                                className="rounded-md border border-border-color bg-surface px-2 py-1 text-xs"
+                                              >
+                                                Download
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => void regenerateInvoiceForPayment(tenant, payment)}
+                                                disabled={regeneratingPaymentId === payment.id}
+                                                className="rounded-md border border-border-color bg-surface px-2 py-1 text-xs disabled:opacity-50"
+                                              >
+                                                {regeneratingPaymentId === payment.id ? "..." : "Regenerate"}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => void sendInvoiceForPayment(tenant, payment, "email")}
+                                                disabled={sendingPaymentId === payment.id}
+                                                className="rounded-md border border-border-color bg-surface px-2 py-1 text-xs disabled:opacity-50"
+                                              >
+                                                Email
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => void sendInvoiceForPayment(tenant, payment, "whatsapp")}
+                                                disabled={sendingPaymentId === payment.id}
+                                                className="rounded-md border border-border-color bg-surface px-2 py-1 text-xs disabled:opacity-50"
+                                              >
+                                                WhatsApp
+                                              </button>
+                                            </div>
                                           ) : (
                                             <button
                                               type="button"
@@ -537,6 +703,15 @@ export default function RentCollectionPage() {
                                     ))}
                                   </tbody>
                                 </table>
+                                {paymentHistory.length > historyLimit && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setHistoryLimits((prev) => ({ ...prev, [tenant.id]: (prev[tenant.id] ?? PAGE_SIZE) + PAGE_SIZE }))}
+                                    className="mt-2 w-full rounded-md border border-border-color bg-surface px-3 py-2 text-xs text-muted hover:bg-surface-elevated"
+                                  >
+                                    Load More ({paymentHistory.length - historyLimit} remaining)
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>
@@ -546,6 +721,11 @@ export default function RentCollectionPage() {
                   })}
                 </tbody>
               </table>
+              {tenants.length > tenantsLimit && (
+                <button type="button" onClick={() => setTenantsLimit((v) => v + PAGE_SIZE)} className="mt-2 w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted hover:bg-surface">
+                  Load More Tenants ({tenants.length - tenantsLimit} remaining)
+                </button>
+              )}
             </div>
           )}
         </section>
