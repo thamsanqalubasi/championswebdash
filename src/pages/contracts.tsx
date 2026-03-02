@@ -84,6 +84,7 @@ function RichTextEditor({
   placeholder?: string;
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const selectionRef = useRef<Range | null>(null);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -98,6 +99,11 @@ function RichTextEditor({
     const editor = editorRef.current;
     if (!editor) return;
     editor.focus();
+    const selection = window.getSelection();
+    if (selection && selectionRef.current) {
+      selection.removeAllRanges();
+      selection.addRange(selectionRef.current);
+    }
     if (command.type === "cmd") {
       document.execCommand(command.value);
     } else {
@@ -106,30 +112,56 @@ function RichTextEditor({
     onChange(editor.innerHTML);
   };
 
+  const captureSelection = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (editor.contains(range.commonAncestorContainer)) {
+      selectionRef.current = range.cloneRange();
+    }
+  };
+
+  const keepEditorSelection = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const selection = window.getSelection();
+    if (selection && selectionRef.current) {
+      selection.removeAllRanges();
+      selection.addRange(selectionRef.current);
+    }
+  };
+
   const plainText = value.replace(/<[^>]*>/g, "").trim();
 
   return (
     <div className="rounded-md border border-border-color bg-surface-elevated">
       <div className="flex flex-wrap gap-1 border-b border-border-color p-2">
-        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "bold" })} className="rounded border border-border-color px-2 py-1 text-xs">B</button>
-        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "italic" })} className="rounded border border-border-color px-2 py-1 text-xs italic">I</button>
-        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "underline" })} className="rounded border border-border-color px-2 py-1 text-xs underline">U</button>
-        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "insertUnorderedList" })} className="rounded border border-border-color px-2 py-1 text-xs">• List</button>
-        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "insertOrderedList" })} className="rounded border border-border-color px-2 py-1 text-xs">1. List</button>
-        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "outdent" })} className="rounded border border-border-color px-2 py-1 text-xs">Outdent</button>
-        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "indent" })} className="rounded border border-border-color px-2 py-1 text-xs">Indent</button>
-        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "justifyLeft" })} className="rounded border border-border-color px-2 py-1 text-xs">Left</button>
-        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "justifyCenter" })} className="rounded border border-border-color px-2 py-1 text-xs">Center</button>
-        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "justifyRight" })} className="rounded border border-border-color px-2 py-1 text-xs">Right</button>
-        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "justifyFull" })} className="rounded border border-border-color px-2 py-1 text-xs">Justify</button>
+        <button type="button" onMouseDown={keepEditorSelection} onClick={() => applyCommand({ type: "cmd", value: "bold" })} className="rounded border border-border-color px-2 py-1 text-xs">B</button>
+        <button type="button" onMouseDown={keepEditorSelection} onClick={() => applyCommand({ type: "cmd", value: "italic" })} className="rounded border border-border-color px-2 py-1 text-xs italic">I</button>
+        <button type="button" onMouseDown={keepEditorSelection} onClick={() => applyCommand({ type: "cmd", value: "underline" })} className="rounded border border-border-color px-2 py-1 text-xs underline">U</button>
+        <button type="button" onMouseDown={keepEditorSelection} onClick={() => applyCommand({ type: "cmd", value: "insertUnorderedList" })} className="rounded border border-border-color px-2 py-1 text-xs">• List</button>
+        <button type="button" onMouseDown={keepEditorSelection} onClick={() => applyCommand({ type: "cmd", value: "insertOrderedList" })} className="rounded border border-border-color px-2 py-1 text-xs">1. List</button>
+        <button type="button" onMouseDown={keepEditorSelection} onClick={() => applyCommand({ type: "cmd", value: "outdent" })} className="rounded border border-border-color px-2 py-1 text-xs">Outdent</button>
+        <button type="button" onMouseDown={keepEditorSelection} onClick={() => applyCommand({ type: "cmd", value: "indent" })} className="rounded border border-border-color px-2 py-1 text-xs">Indent</button>
+        <button type="button" onMouseDown={keepEditorSelection} onClick={() => applyCommand({ type: "cmd", value: "justifyLeft" })} className="rounded border border-border-color px-2 py-1 text-xs">Left</button>
+        <button type="button" onMouseDown={keepEditorSelection} onClick={() => applyCommand({ type: "cmd", value: "justifyCenter" })} className="rounded border border-border-color px-2 py-1 text-xs">Center</button>
+        <button type="button" onMouseDown={keepEditorSelection} onClick={() => applyCommand({ type: "cmd", value: "justifyRight" })} className="rounded border border-border-color px-2 py-1 text-xs">Right</button>
+        <button type="button" onMouseDown={keepEditorSelection} onClick={() => applyCommand({ type: "cmd", value: "justifyFull" })} className="rounded border border-border-color px-2 py-1 text-xs">Justify</button>
       </div>
 
       <div
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
-        className="min-h-[120px] p-3 text-sm outline-none"
+        className="min-h-[120px] p-3 text-sm outline-none [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1"
         data-placeholder={placeholder || "Type section content..."}
+        onKeyUp={captureSelection}
+        onMouseUp={captureSelection}
+        onBlur={captureSelection}
         onInput={(event) => onChange((event.currentTarget as HTMLDivElement).innerHTML)}
       />
 

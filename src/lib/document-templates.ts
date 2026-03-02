@@ -134,6 +134,9 @@ const sharedCss = `
   ol.terms { padding-left: 20px; counter-reset: item; }
   ol.terms li { margin: 8px 0; font-size: 13px; line-height: 1.6; }
   .parties-section p { font-size: 13px; line-height: 1.7; }
+  .parties-section ul { list-style: disc; padding-left: 24px; margin: 8px 0; }
+  .parties-section ol { list-style: decimal; padding-left: 24px; margin: 8px 0; }
+  .parties-section li { margin: 4px 0; font-size: 13px; line-height: 1.6; }
   @media print { 
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .page { padding: 20px; }
