@@ -264,11 +264,15 @@ function buildStatsFromValues(values: {
   totalProperties: number;
   occupiedUnits: number;
   totalMonthlyIncome: number;
+  totalMonthlyInvoiced: number;
   totalMonthlyExpenses: number;
   netProfit: number;
   pendingMaintenance: number;
   overduePayments: number;
   collectionRate: number;
+  maintenanceByStatus: Array<{ status: string; count: number }>;
+  maintenanceByCategory: Array<{ category: string; count: number }>;
+  propertyStatus: Array<{ status: string; count: number }>;
 }): DashboardStats {
   const vacantUnits = Math.max(0, values.totalProperties - values.occupiedUnits);
   const occupancyRate =
@@ -282,91 +286,19 @@ function buildStatsFromValues(values: {
     vacantUnits,
     occupancyRate,
     totalMonthlyIncome: values.totalMonthlyIncome,
+    totalMonthlyInvoiced: values.totalMonthlyInvoiced,
     totalMonthlyExpenses: values.totalMonthlyExpenses,
     netProfit: values.netProfit,
     pendingMaintenance: values.pendingMaintenance,
     overduePayments: values.overduePayments,
     collectionRate: values.collectionRate,
+    maintenanceByStatus: values.maintenanceByStatus,
+    maintenanceByCategory: values.maintenanceByCategory,
+    propertyStatus: values.propertyStatus,
   };
 }
 
-function mostRecentMonth(invoices: Array<{ month?: string }>) {
-  return invoices
-    .map((item) => item.month)
-    .filter((month): month is string => Boolean(month))
-    .sort()
-    .at(-1);
-}
-
-function computeCollectionRate(invoices: Array<{ month?: string; status?: string }>) {
-  const latestMonth = mostRecentMonth(invoices);
-  if (!latestMonth) {
-    return 0;
-  }
-
-  const currentMonthInvoices = invoices.filter((invoice) => invoice.month === latestMonth);
-  if (currentMonthInvoices.length === 0) {
-    return 0;
-  }
-
-  const paidCount = currentMonthInvoices.filter((invoice) => invoice.status === "paid").length;
-  return (paidCount / currentMonthInvoices.length) * 100;
-}
-
 export async function fetchDashboardData(): Promise<DashboardData> {
-  if (hasApiBase()) {
-    try {
-      const [statsPayload, monthlyPayload, invoicesPayload] = await Promise.all([
-        fetchApiJson<unknown>("/api/dashboard/stats"),
-        fetchApiJson<unknown>("/api/dashboard/monthly"),
-        fetchApiJson<unknown>("/api/invoices"),
-      ]);
-
-      const stats = unwrapData<{
-        total_properties?: number;
-        occupied_units?: number;
-        total_monthly_income?: number;
-        total_monthly_expenses?: number;
-        net_profit?: number;
-        pending_maintenance?: number;
-        overdue_payments?: number;
-      }>(statsPayload);
-
-      const monthly = unwrapData<
-        Array<{ month: string; income: number; expenses: number; profit: number }>
-      >(monthlyPayload);
-
-      const invoices = unwrapData<Array<{ month?: string; status?: string }>>(invoicesPayload);
-
-      const normalizedMonthly = (monthly ?? []).slice(-6).map((item) => ({
-        month: item.month,
-        label: titleFromMonth(item.month),
-        income: toNumber(item.income),
-        expenses: toNumber(item.expenses),
-        profit: toNumber(item.profit),
-      }));
-
-      return {
-        stats: buildStatsFromValues({
-          totalProperties: toNumber(stats?.total_properties),
-          occupiedUnits: toNumber(stats?.occupied_units),
-          totalMonthlyIncome: toNumber(stats?.total_monthly_income),
-          totalMonthlyExpenses: toNumber(stats?.total_monthly_expenses),
-          netProfit: toNumber(stats?.net_profit),
-          pendingMaintenance: toNumber(stats?.pending_maintenance),
-          overduePayments: toNumber(stats?.overdue_payments),
-          collectionRate: computeCollectionRate(invoices ?? []),
-        }),
-        cashflow: normalizedMonthly,
-      };
-    } catch (apiError) {
-      logApiFallback("dashboard", apiError);
-      if (!hasSupabaseConfig()) {
-        throw apiError;
-      }
-    }
-  }
-
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error(
@@ -374,26 +306,36 @@ export async function fetchDashboardData(): Promise<DashboardData> {
     );
   }
 
-  const [{ data: properties, error: propertiesError }, { data: maintenance, error: maintenanceError }, { data: invoices, error: invoicesError }] =
+  const [{ data: properties, error: propertiesError }, { data: maintenance, error: maintenanceError }, { data: invoices, error: invoicesError }, { data: payments, error: paymentsError }] =
     await Promise.all([
       supabase.from("properties").select("id, status, monthly_rent"),
-      supabase.from("maintenance").select("cost, status, created_at"),
+      supabase.from("maintenance").select("cost, status, category, created_at"),
       supabase.from("invoices").select("month, total_amount, status, due_date"),
+      supabase.from("tenant_rent_payments").select("payment_date, amount_paid"),
     ]);
 
   if (propertiesError) throw propertiesError;
   if (maintenanceError) throw maintenanceError;
   if (invoicesError) throw invoicesError;
+  if (paymentsError) throw paymentsError;
 
   const propertyRows = properties ?? [];
   const occupiedUnits = propertyRows.filter((row) => row.status === "occupied").length;
-  const totalMonthlyIncome = propertyRows
+  const expectedMonthlyRent = propertyRows
     .filter((row) => row.status === "occupied")
     .reduce((sum, row) => sum + toNumber(row.monthly_rent), 0);
 
+  // Property distribution by status
+  const propertyStatusMap = new Map<string, number>();
+  propertyRows.forEach((row) => {
+    const s = row.status || "vacant";
+    propertyStatusMap.set(s, (propertyStatusMap.get(s) ?? 0) + 1);
+  });
+
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const monthlyMaintenance = (maintenance ?? []).filter((row) =>
+  const maintenanceRows = maintenance ?? [];
+  const monthlyMaintenance = maintenanceRows.filter((row) =>
     String(row.created_at ?? "").startsWith(monthKey),
   );
 
@@ -402,18 +344,39 @@ export async function fetchDashboardData(): Promise<DashboardData> {
     0,
   );
 
+  // Maintenance by status
+  const mStatusMap = new Map<string, number>();
+  maintenanceRows.forEach((row) => {
+    const s = row.status || "open";
+    mStatusMap.set(s, (mStatusMap.get(s) ?? 0) + 1);
+  });
+
+  // Maintenance by category
+  const mCategoryMap = new Map<string, number>();
+  maintenanceRows.forEach((row) => {
+    const c = row.category || "general";
+    mCategoryMap.set(c, (mCategoryMap.get(c) ?? 0) + 1);
+  });
+
+  const paymentRows = payments ?? [];
+  const totalMonthlyIncome = paymentRows
+    .filter((row) => String(row.payment_date ?? "").startsWith(monthKey))
+    .reduce((sum, row) => sum + toNumber(row.amount_paid), 0);
+
+  const totalMonthlyInvoiced = (invoices ?? [])
+    .filter((row) => String(row.month ?? "").startsWith(monthKey))
+    .reduce((sum, row) => sum + toNumber(row.total_amount), 0);
+
   const normalizedMonthlyMap = new Map<string, { income: number; expenses: number; profit: number }>();
 
-  (invoices ?? [])
-    .filter((invoice) => invoice.status === "paid")
-    .forEach((invoice) => {
-      const key = String(invoice.month ?? "").slice(0, 7);
+  paymentRows.forEach((payment) => {
+      const key = String(payment.payment_date ?? "").slice(0, 7);
       const current = normalizedMonthlyMap.get(key) ?? { income: 0, expenses: 0, profit: 0 };
-      current.income += toNumber(invoice.total_amount);
+      current.income += toNumber(payment.amount_paid);
       normalizedMonthlyMap.set(key, current);
     });
 
-  (maintenance ?? []).forEach((row) => {
+  maintenanceRows.forEach((row) => {
     const key = String(row.created_at ?? "").slice(0, 7);
     const current = normalizedMonthlyMap.get(key) ?? { income: 0, expenses: 0, profit: 0 };
     current.expenses += toNumber(row.cost);
@@ -432,18 +395,24 @@ export async function fetchDashboardData(): Promise<DashboardData> {
     }));
 
   const overduePayments = (invoices ?? []).filter((row) => row.status === "overdue").length;
-  const collectionRate = computeCollectionRate((invoices ?? []) as Array<{ month?: string; status?: string }>);
+  const collectionRate = expectedMonthlyRent > 0
+    ? (totalMonthlyIncome / expectedMonthlyRent) * 100
+    : 0;
 
   return {
     stats: buildStatsFromValues({
       totalProperties: propertyRows.length,
       occupiedUnits,
       totalMonthlyIncome,
+      totalMonthlyInvoiced,
       totalMonthlyExpenses,
       netProfit: totalMonthlyIncome - totalMonthlyExpenses,
       pendingMaintenance: monthlyMaintenance.filter((row) => row.status !== "completed").length,
       overduePayments,
       collectionRate,
+      maintenanceByStatus: Array.from(mStatusMap.entries()).map(([status, count]) => ({ status, count })),
+      maintenanceByCategory: Array.from(mCategoryMap.entries()).map(([category, count]) => ({ category, count })),
+      propertyStatus: Array.from(propertyStatusMap.entries()).map(([status, count]) => ({ status, count })),
     }),
     cashflow,
   };

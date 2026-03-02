@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
+import { Plus, Search, User, Building, Calendar, Clock, CheckSquare, Eye, Upload, Save, FileText, Activity, ClipboardList, ShieldCheck } from "lucide-react";
+import { StatusBadge } from "@/components/data-table";
 import { ImageGallery } from "@/components/image-gallery";
 import { fetchInspectionsData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
@@ -314,73 +316,161 @@ export default function InspectionsPage() {
 
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Inspection" message={`Delete this inspection at "${deleteTarget?.propertyName}"?`} confirmLabel="Delete" loading={deleting} />
 
-      <SideDrawer open={detailsOpen} onClose={() => setDetailsOpen(false)} title="Inspection Details">
-        {detailsLoading && <LoadingState label="Loading inspection details..." />}
+      <SideDrawer open={detailsOpen} onClose={() => setDetailsOpen(false)} title="Property Inspection Detail">
+        {detailsLoading && (
+          <div className="flex flex-col items-center justify-center py-20">
+            <LoadingState label="Retreiving inspection protocol..." />
+          </div>
+        )}
 
         {!detailsLoading && detailsError && (
           <ErrorState message={detailsError} onRetry={() => (details ? void openInspectionDetails(details.id) : undefined)} />
         )}
 
         {!detailsLoading && !detailsError && details && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div><p className="text-xs text-muted">Property</p><p>{details.propertyName}</p></div>
-              <div><p className="text-xs text-muted">Tenant</p><p>{details.tenantName}</p></div>
-              <div><p className="text-xs text-muted">Type</p><p className="capitalize">{details.type.replace(/_/g, " ")}</p></div>
-              <div><p className="text-xs text-muted">Inspector</p><p>{details.inspectorName}</p></div>
-              <div><p className="text-xs text-muted">Scheduled</p><p>{formatDate(details.scheduledDate)}</p></div>
-              <div><p className="text-xs text-muted">Completed</p><p>{formatDate(details.completedDate)}</p></div>
-              <div><p className="text-xs text-muted">Overall Condition</p><p className="capitalize">{details.overallCondition.replace(/_/g, " ")}</p></div>
-              <div><p className="text-xs text-muted">Created</p><p>{formatDate(details.createdAt)}</p></div>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm text-muted">Status</label>
-              <div className="flex gap-2">
-                <select
-                  value={detailsStatus}
-                  onChange={(event) => setDetailsStatus(event.target.value)}
-                  className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
-                >
-                  <option value="scheduled">Scheduled</option>
-                  <option value="in_progress">In progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={saveDetailsStatus}
-                  disabled={statusSaving}
-                  className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50"
-                >
-                  {statusSaving ? "Saving..." : "Save"}
-                </button>
+          <div className="space-y-8 pb-10">
+            {/* Inspection Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 bg-surface-elevated/50 p-6 rounded-2xl ring-1 ring-border-color/50 shadow-sm">
+              <div className="flex items-center gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-foreground text-surface shadow-lg">
+                  <Search size={28} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xl font-bold tracking-tight text-foreground capitalize">{details.type.replace(/_/g, " ")} Inspection</h4>
+                    <span className="inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-widest bg-muted/10 text-muted">
+                      ID: {details.id.slice(0, 8)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 mt-1">
+                    <StatusBadge status={details.status} />
+                    <div className="flex items-center gap-1.5 text-xs text-muted font-medium">
+                      <ShieldCheck size={14} className="text-green-600" />
+                      <span>{details.overallCondition || "Condition Pending"}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div>
-              <p className="mb-1 text-sm text-muted">Notes</p>
-              <p className="rounded-md border border-border-color bg-surface-elevated p-3 text-sm">{details.notes || "-"}</p>
+            {/* Info Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-6">
+                <section className="space-y-4">
+                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Assignment Data</h5>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 flex items-center gap-3">
+                      <Building size={16} className="text-muted/40" />
+                      <div>
+                        <p className="text-[10px] font-bold text-muted/60 uppercase">Unit</p>
+                        <p className="font-bold text-foreground">{details.propertyName}</p>
+                      </div>
+                    </div>
+                    <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 flex items-center gap-3">
+                      <User size={16} className="text-muted/40" />
+                      <div>
+                        <p className="text-[10px] font-bold text-muted/60 uppercase">Tenant</p>
+                        <p className="font-bold text-foreground">{details.tenantName}</p>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="space-y-4">
+                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Personnel</h5>
+                  <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 flex items-center gap-3">
+                    <User size={16} className="text-muted/40" />
+                    <div>
+                      <p className="text-[10px] font-bold text-muted/60 uppercase">Assigned Inspector</p>
+                      <p className="font-bold text-foreground">{details.inspectorName}</p>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <div className="space-y-6">
+                <section className="space-y-4">
+                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Timestamps</h5>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 flex items-center gap-4">
+                      <div className="flex-1">
+                        <p className="text-[10px] font-bold text-muted/60 uppercase mb-1">Scheduled</p>
+                        <div className="flex items-center gap-1.5 font-bold text-foreground">
+                          <Calendar size={14} className="text-muted/40" />
+                          <span>{formatDate(details.scheduledDate)}</span>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-[10px] font-bold text-muted/60 uppercase mb-1">Completed</p>
+                        <div className="flex items-center gap-1.5 font-bold text-foreground">
+                          <CheckSquare size={14} className="text-muted/40" />
+                          <span>{formatDate(details.completedDate)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="space-y-4">
+                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Status Protocol</h5>
+                  <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 space-y-3">
+                    <label className="text-[10px] font-bold text-muted/60 uppercase">Current Workflow State</label>
+                    <div className="flex gap-2">
+                      <select
+                        value={detailsStatus}
+                        onChange={(event) => setDetailsStatus(event.target.value)}
+                        className="flex-1 rounded-lg border border-border-color bg-surface px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-foreground/5"
+                      >
+                        <option value="scheduled">Scheduled</option>
+                        <option value="in_progress">In progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={saveDetailsStatus}
+                        disabled={statusSaving}
+                        className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50 shadow-md"
+                      >
+                        <Save size={16} />
+                        <span>Save</span>
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              </div>
             </div>
 
-            <div>
-              <p className="mb-1 text-sm text-muted">Observations</p>
-              <p className="rounded-md border border-border-color bg-surface-elevated p-3 text-sm">{details.observations || "-"}</p>
+            {/* Qualitative Sections */}
+            <div className="space-y-6">
+              <section className="space-y-3">
+                <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Inspector Observations</h5>
+                <div className="p-6 rounded-2xl border border-border-color bg-surface-elevated/20 text-foreground text-sm leading-relaxed">
+                  {details.observations || "No qualitative observations recorded."}
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Strategic Recommendations</h5>
+                <div className="p-6 rounded-2xl border border-border-color bg-sky-50/20 text-foreground text-sm leading-relaxed border-l-4 border-l-sky-500">
+                  {details.recommendations || "No recommendations issued for this cycle."}
+                </div>
+              </section>
             </div>
 
-            <div>
-              <p className="mb-1 text-sm text-muted">Recommendations</p>
-              <p className="rounded-md border border-border-color bg-surface-elevated p-3 text-sm">{details.recommendations || "-"}</p>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="text-sm font-medium">Pictures</h4>
-                <label className="cursor-pointer rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-xs text-muted">
-                  {photoUploading ? "Uploading..." : "Upload Picture"}
+            {/* visual evidence */}
+            <section className="space-y-4">
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                  <ClipboardList size={16} className="text-muted/40" />
+                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40">Inspection Images</h5>
+                </div>
+                <label className="cursor-pointer flex items-center gap-2 rounded-lg bg-surface-elevated border border-border-color px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted hover:text-foreground transition-all">
+                  <Upload size={12} />
+                  <span>{photoUploading ? "Uploading..." : "Add Evidence"}</span>
                   <input
                     type="file"
-                    accept="image/png,image/jpeg,image/webp,.jpg,.jpeg,.png,.webp"
+                    accept="image/*"
                     onChange={(event) => void uploadInspectionPhoto(event.target.files?.[0] ?? null)}
                     className="hidden"
                     disabled={photoUploading}
@@ -389,21 +479,25 @@ export default function InspectionsPage() {
               </div>
 
               {details.photos.length === 0 ? (
-                <EmptyState title="No pictures" description="Upload inspection pictures to track condition evidence." />
+                <div className="p-12 border-2 border-dashed border-border-color rounded-2xl text-center">
+                  <p className="text-xs text-muted">No site images captured for this session.</p>
+                </div>
               ) : (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                   {details.photos.map((photoUrl, idx) => (
-                    <button key={photoUrl} type="button" onClick={() => openGallery(idx)} className="overflow-hidden rounded-md border border-border-color bg-surface-elevated text-left">
-                      <img src={photoUrl} alt="Inspection" className="h-28 w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='112' fill='%23ccc'%3E%3Crect width='200' height='112' fill='%23f0f0f0'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' font-size='14' fill='%23999'%3EImage unavailable%3C/text%3E%3C/svg%3E"; }} />
+                    <button key={photoUrl} type="button" onClick={() => openGallery(idx)} className="aspect-square overflow-hidden rounded-xl border border-border-color bg-surface-elevated group relative shadow-sm">
+                      <img src={photoUrl} alt="Inspection" className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                      <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Eye size={20} className="text-white" />
+                      </div>
                     </button>
                   ))}
                 </div>
               )}
-
-              <ImageGallery images={details.photos} currentIndex={galleryIndex} open={galleryOpen} onClose={() => setGalleryOpen(false)} onNavigate={setGalleryIndex} onDelete={deleteInspectionPhoto} deleting={deletingPhoto} />
-            </div>
+            </section>
           </div>
         )}
+        <ImageGallery images={details?.photos ?? []} currentIndex={galleryIndex} open={galleryOpen} onClose={() => setGalleryOpen(false)} onNavigate={setGalleryIndex} onDelete={deleteInspectionPhoto} deleting={deletingPhoto} />
       </SideDrawer>
     </ModulePage>
   );

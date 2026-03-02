@@ -4,7 +4,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
-import { fetchCompanyInfo, fetchAdminInfo, downloadHtmlDocument } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, downloadHtmlDocument } from "@/lib/storage";
 import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
 import { sendEmail, sendWhatsApp } from "@/lib/notifications";
 
@@ -45,9 +45,18 @@ const emptyPaymentForm = {
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-ZA", {
     style: "currency",
-    currency: "ZAR",
+    currency: "NAD",
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+async function ensureShareableDocumentUrl(existingUrl: string, html: string, filename: string) {
+  if (existingUrl && existingUrl.startsWith("http")) {
+    return existingUrl;
+  }
+
+  const file = new File([html], filename, { type: "text/html" });
+  return uploadFileToBucket("documents", "shared", file);
 }
 
 export default function RentCollectionPage() {
@@ -81,9 +90,9 @@ export default function RentCollectionPage() {
       try {
         const [{ data: tenantsData, error: tenantsError }, { data: paymentsData, error: paymentsError }, { data: invoicesData, error: invoicesError }] = await Promise.all([
           supabase
-          .from("tenants")
-          .select("id, full_name, phone, email, property_id, properties(name)")
-          .order("full_name", { ascending: true }),
+            .from("tenants")
+            .select("id, full_name, phone, email, property_id, properties(name)")
+            .order("full_name", { ascending: true }),
           supabase
             .from("tenant_rent_payments")
             .select("id, tenant_id, payment_date, amount_paid")
@@ -502,18 +511,18 @@ export default function RentCollectionPage() {
       const html = invoice?.pdfUrl && invoice.pdfUrl.startsWith("<")
         ? invoice.pdfUrl
         : buildProfessionalInvoiceHtml(
-            {
-              invoiceId,
-              tenantName: tenant.fullName,
-              propertyName: tenant.propertyName,
-              month: invoice?.month ?? payment.paymentDate.slice(0, 7),
-              dueDate: payment.paymentDate,
-              status: invoice?.status ?? "paid",
-              lineItems: [{ description: `Rent payment on ${payment.paymentDate}`, amount: payment.amountPaid }],
-            },
-            company,
-            admin,
-          );
+          {
+            invoiceId,
+            tenantName: tenant.fullName,
+            propertyName: tenant.propertyName,
+            month: invoice?.month ?? payment.paymentDate.slice(0, 7),
+            dueDate: payment.paymentDate,
+            status: invoice?.status ?? "paid",
+            lineItems: [{ description: `Rent payment on ${payment.paymentDate}`, amount: payment.amountPaid }],
+          },
+          company,
+          admin,
+        );
       if (channel === "email") {
         if (!tenant.email || tenant.email === "-") { alert("No tenant email address available."); return; }
         const subject = `Invoice for ${payment.paymentDate} - ${tenant.fullName}`;
@@ -523,6 +532,7 @@ export default function RentCollectionPage() {
           subject,
           bodyText: `Please find your invoice attached. Total amount: <strong>${formatCurrency(payment.amountPaid)}</strong>.`,
           documentHtml: html,
+          attachmentFilename: `invoice-${invoiceId}.html`,
           companyName: company?.companyName,
         });
         if (result.sent) alert("Invoice sent via email successfully!");
@@ -530,7 +540,8 @@ export default function RentCollectionPage() {
         const phone = tenant.phone.replace(/\D/g, "");
         if (!phone) { alert("No tenant phone number available."); return; }
         const message = `Invoice for ${formatCurrency(payment.amountPaid)} - Payment on ${payment.paymentDate}.`;
-        const result = await sendWhatsApp({ to: `+${phone}`, message });
+        const mediaUrl = await ensureShareableDocumentUrl(invoice?.pdfUrl ?? "", html, `invoice-${invoiceId}.html`);
+        const result = await sendWhatsApp({ to: `+${phone}`, message, mediaUrl });
         if (result.sent) alert("Invoice sent via WhatsApp successfully!");
       }
     } catch (e) {
@@ -763,7 +774,7 @@ export default function RentCollectionPage() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm text-muted">Amount (ZAR)</label>
+            <label className="mb-1 block text-sm text-muted">Amount (NAD)</label>
             <input
               type="number"
               min={0}

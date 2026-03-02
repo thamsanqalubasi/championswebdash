@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { fetchContractsData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
-import { fetchCompanyInfo, fetchAdminInfo, downloadHtmlDocument } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, downloadHtmlDocument } from "@/lib/storage";
 import { buildProfessionalContractHtml } from "@/lib/document-templates";
 import type { ContractSection } from "@/lib/document-templates";
 import { sendEmail, sendWhatsApp } from "@/lib/notifications";
@@ -34,7 +34,16 @@ type TemplateRow = {
 /* ── helpers ── */
 
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(amount);
+  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "NAD", maximumFractionDigits: 0 }).format(amount);
+}
+
+async function ensureShareableDocumentUrl(existingUrl: string, html: string, filename: string) {
+  if (existingUrl && existingUrl.startsWith("http")) {
+    return existingUrl;
+  }
+
+  const file = new File([html], filename, { type: "text/html" });
+  return uploadFileToBucket("documents", "shared", file);
 }
 
 const emptySection: ContractSection = { title: "", content: "" };
@@ -60,6 +69,76 @@ const emptyTemplateForm = {
   deposit_amount: 0,
   sections: [{ ...emptySection }] as ContractSection[],
 };
+
+type RichCommand =
+  | { type: "cmd"; value: string }
+  | { type: "formatBlock"; value: string };
+
+function RichTextEditor({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  const editorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (document.activeElement === editor) return;
+    if (editor.innerHTML !== value) {
+      editor.innerHTML = value;
+    }
+  }, [value]);
+
+  const applyCommand = (command: RichCommand) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    if (command.type === "cmd") {
+      document.execCommand(command.value);
+    } else {
+      document.execCommand("formatBlock", false, command.value);
+    }
+    onChange(editor.innerHTML);
+  };
+
+  const plainText = value.replace(/<[^>]*>/g, "").trim();
+
+  return (
+    <div className="rounded-md border border-border-color bg-surface-elevated">
+      <div className="flex flex-wrap gap-1 border-b border-border-color p-2">
+        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "bold" })} className="rounded border border-border-color px-2 py-1 text-xs">B</button>
+        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "italic" })} className="rounded border border-border-color px-2 py-1 text-xs italic">I</button>
+        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "underline" })} className="rounded border border-border-color px-2 py-1 text-xs underline">U</button>
+        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "insertUnorderedList" })} className="rounded border border-border-color px-2 py-1 text-xs">• List</button>
+        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "insertOrderedList" })} className="rounded border border-border-color px-2 py-1 text-xs">1. List</button>
+        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "outdent" })} className="rounded border border-border-color px-2 py-1 text-xs">Outdent</button>
+        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "indent" })} className="rounded border border-border-color px-2 py-1 text-xs">Indent</button>
+        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "justifyLeft" })} className="rounded border border-border-color px-2 py-1 text-xs">Left</button>
+        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "justifyCenter" })} className="rounded border border-border-color px-2 py-1 text-xs">Center</button>
+        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "justifyRight" })} className="rounded border border-border-color px-2 py-1 text-xs">Right</button>
+        <button type="button" onClick={() => applyCommand({ type: "cmd", value: "justifyFull" })} className="rounded border border-border-color px-2 py-1 text-xs">Justify</button>
+      </div>
+
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        className="min-h-[120px] p-3 text-sm outline-none"
+        data-placeholder={placeholder || "Type section content..."}
+        onInput={(event) => onChange((event.currentTarget as HTMLDivElement).innerHTML)}
+      />
+
+      {!plainText && (
+        <div className="pointer-events-none -mt-[108px] px-3 text-sm text-muted">{placeholder || "Type section content..."}</div>
+      )}
+    </div>
+  );
+}
 
 /* ── component ── */
 
@@ -378,8 +457,9 @@ export default function ContractsPage() {
         to: tenant.email,
         recipientName: row.tenantName,
         subject,
-        bodyText: `Please find your lease contract for <strong>${row.propertyName}</strong> attached below. The contract period is ${row.startDate} to ${row.endDate} with a monthly rent of <strong>R${Number(row.monthlyRent).toLocaleString()}</strong>.`,
+        bodyText: `Please find your lease contract for <strong>${row.propertyName}</strong> attached below. The contract period is ${row.startDate} to ${row.endDate} with a monthly rent of <strong>${formatCurrency(row.monthlyRent)}</strong>.`,
         documentHtml,
+        attachmentFilename: `contract-${row.id}.html`,
         companyName: company?.companyName,
       });
       if (result.sent) { alert("Contract sent via email successfully!"); }
@@ -391,8 +471,10 @@ export default function ContractsPage() {
       const tenant = getTenantContact(row);
       const phone = sanitizePhone(tenant?.whatsapp_number || tenant?.phone || "");
       if (!phone) { alert("Tenant phone/WhatsApp number is missing."); return; }
-      const message = `Hello ${row.tenantName}, your contract for ${row.propertyName} is ready. Period: ${row.startDate} to ${row.endDate}. Monthly rent: R${Number(row.monthlyRent).toLocaleString()}.`;
-      const result = await sendWhatsApp({ to: `+${phone}`, message });
+      const documentHtml = await ensureGeneratedDocument(row);
+      const message = `Hello ${row.tenantName}, your contract for ${row.propertyName} is ready. Period: ${row.startDate} to ${row.endDate}. Monthly rent: ${formatCurrency(row.monthlyRent)}.`;
+      const mediaUrl = await ensureShareableDocumentUrl(contractDocumentUrlById[row.id] ?? "", documentHtml, `contract-${row.id}.html`);
+      const result = await sendWhatsApp({ to: `+${phone}`, message, mediaUrl });
       if (result.sent) { alert("Contract sent via WhatsApp successfully!"); }
     } catch (e) { alert(e instanceof Error ? e.message : "Could not send WhatsApp."); }
   };
@@ -663,7 +745,11 @@ export default function ContractsPage() {
                   )}
                 </div>
                 <input placeholder="Section Title (e.g. Property Damage)" value={section.title} onChange={(e) => updateSection(idx, "title", e.target.value)} className={inputClass} />
-                <textarea placeholder="Section content..." value={section.content} onChange={(e) => updateSection(idx, "content", e.target.value)} rows={3} className={inputClass} />
+                <RichTextEditor
+                  value={section.content}
+                  onChange={(value) => updateSection(idx, "content", value)}
+                  placeholder="Section content..."
+                />
               </div>
             ))}
           </div>
@@ -709,7 +795,11 @@ export default function ContractsPage() {
                   )}
                 </div>
                 <input placeholder="Section Title" value={section.title} onChange={(e) => updateTemplateSection(idx, "title", e.target.value)} className={inputClass} />
-                <textarea placeholder="Section content..." value={section.content} onChange={(e) => updateTemplateSection(idx, "content", e.target.value)} rows={3} className={inputClass} />
+                <RichTextEditor
+                  value={section.content}
+                  onChange={(value) => updateTemplateSection(idx, "content", value)}
+                  placeholder="Section content..."
+                />
               </div>
             ))}
           </div>

@@ -25,7 +25,7 @@ type RentPaymentTransaction = {
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-ZA", {
     style: "currency",
-    currency: "ZAR",
+    currency: "NAD",
     maximumFractionDigits: 0,
   }).format(amount);
 }
@@ -496,9 +496,8 @@ export default function InvoicesPage() {
                     key={key}
                     type="button"
                     onClick={() => setActiveFilter(key)}
-                    className={`rounded-md border border-border-color px-3 py-2 text-sm ${
-                      activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"
-                    }`}
+                    className={`rounded-md border border-border-color px-3 py-2 text-sm ${activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"
+                      }`}
                   >
                     {key === "all" ? `All (${counts.all})` : `${key.charAt(0).toUpperCase() + key.slice(1)} (${counts[key]})`}
                   </button>
@@ -549,13 +548,12 @@ export default function InvoicesPage() {
                         <td className="px-3 py-3 text-muted">{formatCurrency(row.totalAmount)}</td>
                         <td className="px-3 py-3">
                           <span
-                            className={`rounded-full border px-2 py-1 text-xs capitalize ${
-                              row.status === "paid"
+                            className={`rounded-full border px-2 py-1 text-xs capitalize ${row.status === "paid"
                                 ? "border-green-500/30 bg-green-500/10 text-green-600"
                                 : row.status === "overdue"
                                   ? "border-red-500/30 bg-red-500/10 text-red-600"
                                   : "border-border-color bg-surface-elevated text-muted"
-                            }`}
+                              }`}
                           >
                             {row.status}
                           </span>

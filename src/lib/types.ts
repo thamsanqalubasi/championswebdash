@@ -27,11 +27,15 @@ export type DashboardStats = {
   vacantUnits: number;
   occupancyRate: number;
   totalMonthlyIncome: number;
+  totalMonthlyInvoiced: number;
   totalMonthlyExpenses: number;
   netProfit: number;
   pendingMaintenance: number;
   overduePayments: number;
   collectionRate: number;
+  maintenanceByStatus: Array<{ status: string; count: number }>;
+  maintenanceByCategory: Array<{ category: string; count: number }>;
+  propertyStatus: Array<{ status: string; count: number }>;
 };
 
 export type CashflowPoint = {

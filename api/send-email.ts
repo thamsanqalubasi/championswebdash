@@ -7,6 +7,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
  * - to: string (recipient email)
  * - subject: string
  * - html: string (the full HTML email body)
+ * - attachments?: Array<{ filename: string; content: string; contentType?: string }>
  * - from?: string (optional sender, default from env)
  *
  * Env vars required:
@@ -23,13 +24,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: "RESEND_API_KEY not configured" });
   }
 
-  const { to, subject, html, from } = req.body ?? {};
+  const { to, subject, html, attachments, from } = req.body ?? {};
 
   if (!to || !subject || !html) {
     return res.status(400).json({ error: "Missing required fields: to, subject, html" });
   }
 
   const sender = from || process.env.EMAIL_FROM || "Champions Court <onboarding@resend.dev>";
+
+  const normalizedAttachments = Array.isArray(attachments)
+    ? attachments
+      .filter((item) => item && typeof item.filename === "string" && typeof item.content === "string")
+      .map((item) => {
+        const attachment = item as { filename: string; content: string; contentType?: string };
+        return {
+          filename: attachment.filename,
+          content: Buffer.from(attachment.content, "utf-8").toString("base64"),
+          ...(attachment.contentType ? { content_type: attachment.contentType } : {}),
+        };
+      })
+    : [];
 
   try {
     const response = await fetch("https://api.resend.com/emails", {
@@ -43,6 +57,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         to: [to],
         subject,
         html,
+        ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
       }),
     });
 

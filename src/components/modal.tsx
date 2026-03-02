@@ -94,17 +94,42 @@ export function SideDrawer({ open, onClose, title, children }: SideDrawerProps) 
     return () => document.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
+  // Prevent body scroll when drawer is open
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [open]);
+
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50">
-      <button type="button" aria-label="Close details" className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <aside className="absolute right-0 top-0 h-full w-full max-w-md overflow-y-auto border-l border-border-color bg-surface p-4 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">{title}</h3>
-          <button type="button" onClick={onClose} className="text-muted hover:text-foreground text-xl leading-none">&times;</button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+      {/* Backdrop with blur */}
+      <button
+        type="button"
+        aria-label="Close details"
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
+        onClick={onClose}
+      />
+      {/* Centered Panel - Wider than before */}
+      <aside className="relative z-10 flex h-full max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border-color bg-surface text-foreground shadow-2xl transition-all">
+        <header className="flex shrink-0 items-center justify-between border-b border-border-color/50 bg-surface-elevated/50 px-6 py-4">
+          <h3 className="text-lg font-bold tracking-tight">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-muted/10 hover:text-foreground"
+          >
+            <span className="text-2xl leading-none">&times;</span>
+          </button>
+        </header>
+        <div className="flex-1 overflow-y-auto p-6 no-scrollbar">
+          {children}
         </div>
-        {children}
       </aside>
     </div>
   );

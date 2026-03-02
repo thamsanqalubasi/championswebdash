@@ -9,8 +9,30 @@ function esc(text: string) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function formatZAR(amount: number) {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 2 }).format(amount);
+function sanitizeRichTextHtml(raw: string) {
+  const withoutScripts = raw
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
+    .replace(/\son\w+=("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/javascript:/gi, "");
+
+  return withoutScripts;
+}
+
+function formatSectionContent(content: string) {
+  const trimmed = content.trim();
+  if (!trimmed) return "";
+
+  const hasHtml = /<[^>]+>/.test(trimmed);
+  if (!hasHtml) {
+    return `<p>${esc(trimmed).replace(/\n/g, "<br/>")}</p>`;
+  }
+
+  return sanitizeRichTextHtml(trimmed);
+}
+
+function formatNAD(amount: number) {
+  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "NAD", minimumFractionDigits: 2 }).format(amount);
 }
 
 function fmtDate(value: string) {
@@ -149,7 +171,7 @@ export function buildProfessionalInvoiceHtml(
     <tr>
       <td>${i + 1}</td>
       <td>${esc(item.description)}</td>
-      <td class="amount">${formatZAR(item.amount)}</td>
+      <td class="amount">${formatNAD(item.amount)}</td>
     </tr>`
   ).join("");
 
@@ -220,15 +242,15 @@ export function buildProfessionalInvoiceHtml(
         <div class="totals-table">
           <div class="totals-row subtotal">
             <span>Subtotal</span>
-            <span>${formatZAR(subtotal)}</span>
+            <span>${formatNAD(subtotal)}</span>
           </div>
           ${company.taxRate > 0 ? `<div class="totals-row">
             <span>VAT (${company.taxRate}%)</span>
-            <span>${formatZAR(taxAmount)}</span>
+            <span>${formatNAD(taxAmount)}</span>
           </div>` : ""}
           <div class="totals-row total">
             <span>Total Due</span>
-            <span>${formatZAR(total)}</span>
+            <span>${formatNAD(total)}</span>
           </div>
         </div>
       </div>
@@ -290,7 +312,7 @@ export function buildProfessionalContractHtml(
     <div class="section">
       <div class="section-title">${i + 1}. ${esc(section.title)}</div>
       <div class="parties-section">
-        <p>${esc(section.content).replace(/\n/g, "<br/>")}</p>
+        ${formatSectionContent(section.content)}
       </div>
     </div>`).join("")
     : `
@@ -314,8 +336,8 @@ export function buildProfessionalContractHtml(
     <div class="section">
       <div class="section-title">3. Financial Terms</div>
       <ol class="terms">
-        <li><strong>Monthly Rent:</strong> The Tenant shall pay <strong>${formatZAR(doc.monthlyRent)}</strong> per month, due in accordance with the company&rsquo;s payment schedule and instructions.</li>
-        <li><strong>Security Deposit:</strong> A refundable deposit of <strong>${formatZAR(doc.depositAmount)}</strong> is payable upon signing and shall be held for the duration of the tenancy.</li>
+        <li><strong>Monthly Rent:</strong> The Tenant shall pay <strong>${formatNAD(doc.monthlyRent)}</strong> per month, due in accordance with the company&rsquo;s payment schedule and instructions.</li>
+        <li><strong>Security Deposit:</strong> A refundable deposit of <strong>${formatNAD(doc.depositAmount)}</strong> is payable upon signing and shall be held for the duration of the tenancy.</li>
         <li>Late payments may incur penalties as determined by the Landlord&rsquo;s policies. The Tenant is responsible for ensuring timely payment.</li>
       </ol>
     </div>
@@ -397,11 +419,11 @@ export function buildProfessionalContractHtml(
         </div>
         <div class="info-item">
           <label>Monthly Rent</label>
-          <p>${formatZAR(doc.monthlyRent)}</p>
+          <p>${formatNAD(doc.monthlyRent)}</p>
         </div>
         <div class="info-item">
           <label>Security Deposit</label>
-          <p>${formatZAR(doc.depositAmount)}</p>
+          <p>${formatNAD(doc.depositAmount)}</p>
         </div>
       </div>
     </div>
@@ -477,7 +499,7 @@ export function buildUnifiedInvoiceHtml(
       <td>${esc(t.paymentDate)}</td>
       <td>${esc(t.tenantName)}</td>
       <td>${esc(t.propertyName)}</td>
-      <td class="amount">${formatZAR(t.amountPaid)}</td>
+      <td class="amount">${formatNAD(t.amountPaid)}</td>
     </tr>`
   ).join("");
 
@@ -528,7 +550,7 @@ export function buildUnifiedInvoiceHtml(
         <div class="totals-table">
           <div class="totals-row total">
             <span>Total Collected</span>
-            <span>${formatZAR(total)}</span>
+            <span>${formatNAD(total)}</span>
           </div>
         </div>
       </div>
@@ -544,6 +566,161 @@ export function buildUnifiedInvoiceHtml(
       <div class="sig-block">
         <div class="sig-line">${esc(doc.collectorName)}</div>
         <div class="sig-label">Rent Collector</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      ${esc(company.companyName)} &middot; ${esc(company.address)} &middot; Generated on ${fmtDate(new Date().toISOString().slice(0, 10))}
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/* ---------- balance sheet builder ---------- */
+
+export type BalanceSheetMonthlyRow = {
+  month: string;
+  rentCollected: number;
+  maintenance: number;
+  bills: number;
+  renovations: number;
+  tax: number;
+  totalExpenses: number;
+  netProfit: number;
+};
+
+export type BalanceSheetDocData = {
+  scopeLabel: string;
+  startDate: string;
+  endDate: string;
+  presentation: "summary" | "expanded";
+  includeSignature: boolean;
+  includeAdminName: boolean;
+  summary: {
+    rentCollected: number;
+    maintenance: number;
+    bills: number;
+    renovations: number;
+    tax: number;
+    totalExpenses: number;
+    netProfit: number;
+  };
+  monthlyRows: BalanceSheetMonthlyRow[];
+};
+
+export function buildBalanceSheetHtml(
+  doc: BalanceSheetDocData,
+  company: CompanyInfo,
+  admin: AdminInfo,
+): string {
+  const logoHtml = company.logoUrl
+    ? `<img src="${esc(company.logoUrl)}" alt="Company logo" class="company-logo" />`
+    : "";
+
+  const signatureHtml = doc.includeSignature && admin.signatureUrl
+    ? `<img src="${esc(admin.signatureUrl)}" alt="Admin signature" />`
+    : "";
+
+  const adminName = doc.includeAdminName ? admin.fullName : "________________________";
+
+  const monthlyRowsHtml = doc.monthlyRows.map((row, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${esc(row.month)}</td>
+      <td class="amount">${formatNAD(row.rentCollected)}</td>
+      <td class="amount">${formatNAD(row.maintenance)}</td>
+      <td class="amount">${formatNAD(row.bills)}</td>
+      <td class="amount">${formatNAD(row.renovations)}</td>
+      <td class="amount">${formatNAD(row.tax)}</td>
+      <td class="amount">${formatNAD(row.totalExpenses)}</td>
+      <td class="amount">${formatNAD(row.netProfit)}</td>
+    </tr>`).join("");
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Balance Sheet - ${esc(doc.scopeLabel)}</title>
+  <style>${sharedCss}</style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div>
+        <div class="header-left">
+          ${logoHtml}
+          <div>
+            <div class="company-name">${esc(company.companyName)}</div>
+            <div class="company-address">${esc(company.address)}</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="doc-badge">BALANCE SHEET</div>
+        <div class="doc-meta">
+          <p><strong>Scope:</strong> ${esc(doc.scopeLabel)}</p>
+          <p><strong>From:</strong> ${fmtDate(doc.startDate)}</p>
+          <p><strong>To:</strong> ${fmtDate(doc.endDate)}</p>
+          <p><strong>Presentation:</strong> ${esc(doc.presentation)}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Summary</div>
+      <table class="items">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th class="amount" style="width:220px">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Rent Collected</td><td class="amount">${formatNAD(doc.summary.rentCollected)}</td></tr>
+          <tr><td>Maintenance</td><td class="amount">${formatNAD(doc.summary.maintenance)}</td></tr>
+          <tr><td>Bills</td><td class="amount">${formatNAD(doc.summary.bills)}</td></tr>
+          <tr><td>Renovations</td><td class="amount">${formatNAD(doc.summary.renovations)}</td></tr>
+          <tr><td>Tax</td><td class="amount">${formatNAD(doc.summary.tax)}</td></tr>
+          <tr><td><strong>Total Expenses</strong></td><td class="amount"><strong>${formatNAD(doc.summary.totalExpenses)}</strong></td></tr>
+          <tr><td><strong>Net Profit</strong></td><td class="amount"><strong>${formatNAD(doc.summary.netProfit)}</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    ${doc.presentation === "expanded" ? `
+    <div class="section">
+      <div class="section-title">Monthly Breakdown</div>
+      <table class="items">
+        <thead>
+          <tr>
+            <th style="width:40px">#</th>
+            <th>Month</th>
+            <th class="amount">Rent</th>
+            <th class="amount">Maintenance</th>
+            <th class="amount">Bills</th>
+            <th class="amount">Renovations</th>
+            <th class="amount">Tax</th>
+            <th class="amount">Expenses</th>
+            <th class="amount">Net</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${monthlyRowsHtml || '<tr><td colspan="9" style="text-align:center;color:#888;">No monthly rows in selected range</td></tr>'}
+        </tbody>
+      </table>
+    </div>` : ""}
+
+    <div class="signature-area">
+      <div class="sig-block">
+        ${signatureHtml}
+        <div class="sig-line">${esc(adminName)}</div>
+        <div class="sig-label">Administrator</div>
+        <div class="sig-label">Date: ${fmtDate(new Date().toISOString().slice(0, 10))}</div>
+      </div>
+      <div class="sig-block">
+        <div class="sig-line">${esc(company.companyName)}</div>
+        <div class="sig-label">Company</div>
       </div>
     </div>
 

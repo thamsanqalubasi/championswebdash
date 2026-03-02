@@ -3,6 +3,79 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { fetchAuditTrailData } from "@/lib/data";
 import type { AuditEventRow } from "@/lib/types";
+import { 
+  History, 
+  Search, 
+  Download, 
+  RefreshCw, 
+  User, 
+  Clock, 
+  FileText, 
+  Home, 
+  Users, 
+  CreditCard, 
+  Wrench, 
+  Shield, 
+  CheckCircle2, 
+  Mail, 
+  Send 
+} from "lucide-react";
+import { DataTableHeader } from "@/components/data-table";
+
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("en-ZA", {
+    style: "currency",
+    currency: "NAD",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function formatAuditAction(row: AuditEventRow): string {
+  try {
+    const details = JSON.parse(row.details);
+    const action = row.action.toLowerCase();
+    const entity = row.entityType.toLowerCase();
+
+    switch (action) {
+      case "create":
+        return `Created a new ${entity}`;
+      case "update":
+        if (details.changes) {
+          const changedKeys = Object.keys(details.changes).join(", ");
+          return `Updated ${entity} details (${changedKeys})`;
+        }
+        return `Modified ${entity} information`;
+      case "delete":
+        return `Removed ${entity} record`;
+      case "payment_recorded":
+      case "rent_payment_recorded":
+        return `Recorded payment of ${formatCurrency(details.amount_paid || 0)} for ${details.paid_month || details.payment_date || "this period"}`;
+      case "invoice_generated":
+      case "unified_invoice_generated":
+        return `Generated invoice for ${details.month || "billing period"} total ${formatCurrency(details.total_amount || details.total_amount_paid || 0)}`;
+      case "invoice_shared":
+        return `Shared invoice via ${details.channel || "external channel"}`;
+      case "status_change":
+        return `Changed status to ${details.new_status || "updated state"}`;
+      default:
+        // Handle underscore separated actions
+        return action.replace(/_/g, " ");
+    }
+  } catch (e) {
+    return row.action.replace(/_/g, " ");
+  }
+}
+
+function getEventIcon(type: string) {
+  const t = type.toLowerCase();
+  if (t.includes("property")) return <Home size={16} className="text-sky-600" />;
+  if (t.includes("tenant")) return <Users size={16} className="text-emerald-600" />;
+  if (t.includes("payment") || t.includes("invoice")) return <CreditCard size={16} className="text-amber-600" />;
+  if (t.includes("maintenance") || t.includes("work_order")) return <Wrench size={16} className="text-orange-600" />;
+  if (t.includes("contract")) return <FileText size={16} className="text-indigo-600" />;
+  if (t.includes("user") || t.includes("admin")) return <Shield size={16} className="text-purple-600" />;
+  return <History size={16} className="text-muted" />;
+}
 
 export default function AuditTrailPage() {
   const [events, setEvents] = useState<AuditEventRow[]>([]);
@@ -49,8 +122,8 @@ export default function AuditTrailPage() {
   }, [events, entityFilter, search]);
 
   const exportCSV = () => {
-    const header = "Date,Action,Entity Type,Entity ID,Actor,Details";
-    const rows = filtered.map((e) => `"${e.createdAt}","${e.action}","${e.entityType}","${e.entityId}","${e.actorName}","${e.details.replace(/"/g, '""')}"`);
+    const header = "Date,Action,Entity,Actor,Friendly Description";
+    const rows = filtered.map((e) => `"${new Date(e.createdAt).toLocaleString()}","${e.action}","${e.entityType}","${e.actorName}","${formatAuditAction(e)}"`);
     const csv = [header, ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -58,42 +131,105 @@ export default function AuditTrailPage() {
     URL.revokeObjectURL(url);
   };
 
+  const filterTabs = [
+    { key: "all", label: "All Events", count: events.length },
+    ...entityTypes.map(t => ({ key: t, label: t.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase()) }))
+  ];
+
   return (
-    <ModulePage title="Audit Trail" description="Activity log and change history.">
-      {loading && <LoadingState label="Loading audit trail..." />}
+    <ModulePage title="Audit Trail" description="Activity log and historical operational records.">
+      {loading && <LoadingState label="Retreiving security logs..." />}
       {!loading && error && <ErrorState message={error} onRetry={reload} />}
       {!loading && !error && (
-        <section className="space-y-4 rounded-lg border border-border-color bg-surface p-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search events..." className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none flex-1 min-w-[200px]" />
-            <select value={entityFilter} onChange={(e) => setEntityFilter(e.target.value)} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
-              <option value="all">All Types</option>
-              {entityTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <button type="button" onClick={exportCSV} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium">Export CSV</button>
-            <button type="button" onClick={reload} className="rounded-md border border-border-color px-3 py-2 text-sm text-muted hover:bg-surface-elevated">Refresh</button>
+        <section className="rounded-xl border border-border-color bg-surface p-1">
+          <div className="p-4">
+            <DataTableHeader
+              searchValue={search}
+              onSearchChange={setSearch}
+              searchPlaceholder="Search events by actor or action..."
+              filters={filterTabs}
+              activeFilter={entityFilter}
+              onFilterChange={setEntityFilter}
+              actions={
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={reload}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-border-color bg-surface-elevated text-muted hover:text-foreground transition-all"
+                    title="Refresh"
+                  >
+                    <RefreshCw size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exportCSV}
+                    className="flex items-center gap-2 rounded-lg border border-border-color bg-surface-elevated px-4 py-2 text-sm font-bold text-muted hover:text-foreground transition-all"
+                  >
+                    <Download size={16} />
+                    <span>Export</span>
+                  </button>
+                </div>
+              }
+            />
           </div>
 
-          <p className="text-sm text-muted">{filtered.length} event{filtered.length !== 1 ? "s" : ""}</p>
-
-          {filtered.length === 0 ? <EmptyState title="No audit events" description="No matching events found." /> : (
+          {filtered.length === 0 ? (
+            <div className="p-12">
+              <EmptyState title="No events recorded" description={search ? "No events match your criteria." : "Logs will appear as system actions occur."} />
+            </div>
+          ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse text-sm">
-                <thead><tr className="border-b border-border-color text-left text-muted">
-                  <th className="px-3 py-2 font-medium">Date</th><th className="px-3 py-2 font-medium">Action</th><th className="px-3 py-2 font-medium">Entity</th><th className="px-3 py-2 font-medium">Actor</th><th className="px-3 py-2 font-medium">Details</th>
-                </tr></thead>
-                <tbody>{filtered.map((row) => (
-                  <tr key={row.id} className="border-b border-border-color/60">
-                    <td className="px-3 py-3 text-muted whitespace-nowrap">{new Date(row.createdAt).toLocaleString()}</td>
-                    <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs capitalize">{row.action}</span></td>
-                    <td className="px-3 py-3 text-muted"><span className="font-medium">{row.entityType}</span> <span className="text-xs">#{row.entityId}</span></td>
-                    <td className="px-3 py-3 text-muted">{row.actorName}</td>
-                    <td className="px-3 py-3 text-muted text-xs max-w-xs truncate">{row.details}</td>
+                <thead>
+                  <tr className="border-b border-border-color text-left text-muted/60 uppercase text-[10px] font-bold tracking-wider">
+                    <th className="px-6 py-4 font-bold">Activity Time</th>
+                    <th className="px-6 py-4 font-bold">Category</th>
+                    <th className="px-6 py-4 font-bold">Administrator</th>
+                    <th className="px-6 py-4 font-bold">Record Description</th>
                   </tr>
-                ))}</tbody>
+                </thead>
+                <tbody className="divide-y divide-border-color/40">
+                  {filtered.map((row) => (
+                    <tr key={row.id} className="group hover:bg-surface-elevated/40 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-foreground">{new Date(row.createdAt).toLocaleDateString("en-ZA", { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                          <span className="text-[10px] font-medium text-muted uppercase tracking-tighter">{new Date(row.createdAt).toLocaleTimeString("en-ZA", { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted/5 group-hover:bg-foreground group-hover:text-surface transition-all">
+                            {getEventIcon(row.entityType)}
+                          </div>
+                          <span className="text-xs font-bold text-muted/80 capitalize tracking-tight">{row.entityType.replace(/_/g, " ")}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2 text-foreground font-bold">
+                          <User size={14} className="text-muted/40" />
+                          <span>{row.actorName}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <p className="text-sm font-medium text-foreground leading-relaxed">
+                          {formatAuditAction(row)}
+                        </p>
+                        <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-0.5 opacity-60">
+                          Ref: #{row.entityId.slice(0, 8)}
+                        </p>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
               </table>
             </div>
           )}
+          <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted/40">
+              Showing {filtered.length} recent operations
+            </p>
+          </div>
         </section>
       )}
     </ModulePage>

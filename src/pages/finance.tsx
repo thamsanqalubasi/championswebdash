@@ -14,6 +14,8 @@ export default function FinancePage() {
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         <NavCard to="/finance/invoices" title="Invoices" description="View, generate, and manage tenant invoices." />
         <NavCard to="/finance/reports" title="Reports" description="Revenue summaries, collection rates, and analytics." />
+        <NavCard to="/finance/accounts" title="Accounts" description="Generate balance sheets for system-wide or property-level periods." />
+        <NavCard to="/finance/bills" title="Bills" description="Create recurring property bills and track due/payment status." />
       </div>
     </ModulePage>
   );

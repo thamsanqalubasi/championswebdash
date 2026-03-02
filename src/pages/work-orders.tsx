@@ -7,9 +7,11 @@ import { fetchWorkOrdersData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { uploadFileToBucket } from "@/lib/storage";
 import type { WorkOrderRow } from "@/lib/types";
+import { Plus, Wrench, ClipboardList, Clock, Play, CheckCircle2, XCircle, RotateCcw, Trash, ChevronRight, AlertTriangle, User, Building, Calendar, DollarSign, Image as ImageIcon, Save, Upload, Eye } from "lucide-react";
+import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(amount);
+  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "NAD", maximumFractionDigits: 0 }).format(amount);
 }
 
 const emptyForm = { property_id: "", maintainer_id: "", description: "", category: "general", priority: "medium", status: "open", scheduled_date: "", estimated_cost: 0, actual_cost: 0 };
@@ -42,6 +44,7 @@ export default function WorkOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [activeFilter, setActiveFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -92,7 +95,18 @@ export default function WorkOrdersPage() {
     cancelled: workOrders.filter((i) => i.status === "cancelled").length,
   }), [workOrders]);
 
-  const filtered = useMemo(() => activeFilter === "all" ? workOrders : workOrders.filter((w) => w.status === activeFilter), [workOrders, activeFilter]);
+  const filtered = useMemo(() => {
+    let result = activeFilter === "all" ? workOrders : workOrders.filter((w) => w.status === activeFilter);
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((w) =>
+        w.propertyName.toLowerCase().includes(q) ||
+        w.providerName.toLowerCase().includes(q) ||
+        w.category.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [workOrders, activeFilter, searchQuery]);
 
   const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
 
@@ -236,50 +250,169 @@ export default function WorkOrdersPage() {
     setGalleryOpen(true);
   };
 
+  const filterTabs = [
+    { key: "all", label: "All", count: counts.all },
+    { key: "open", label: "Open", count: counts.open },
+    { key: "in_progress", label: "In Progress", count: counts.in_progress },
+    { key: "completed", label: "Completed", count: counts.completed },
+    { key: "cancelled", label: "Cancelled", count: counts.cancelled },
+  ];
+
+  const getPriorityColor = (p: string) => {
+    switch (p.toLowerCase()) {
+      case "urgent": return "text-red-600";
+      case "high": return "text-amber-600";
+      case "medium": return "text-foreground";
+      case "low": return "text-muted";
+      default: return "text-muted";
+    }
+  };
+
   return (
-    <ModulePage title="Work Orders" description="Ticket table, filters, and status transitions.">
+    <ModulePage title="Work Orders" description="Track and manage maintenance requests and ticket statuses.">
       {loading && <LoadingState label="Loading work orders..." />}
       {!loading && error && <ErrorState message={error} onRetry={reload} />}
       {!loading && !error && (
-        <section className="space-y-4 rounded-lg border border-border-color bg-surface p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-2">
-              {(["all", "open", "in_progress", "completed", "cancelled"] as const).map((key) => (
-                <button key={key} type="button" onClick={() => setActiveFilter(key)}
-                  className={`rounded-md border border-border-color px-3 py-2 text-sm ${activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"}`}>
-                  {key === "all" ? `All (${counts.all})` : `${key.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())} (${counts[key]})`}
+        <section className="rounded-xl border border-border-color bg-surface p-1">
+          <div className="p-4">
+            <DataTableHeader
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search work orders by property, provider, or category..."
+              filters={filterTabs}
+              activeFilter={activeFilter}
+              onFilterChange={setActiveFilter}
+              actions={
+                <button
+                  type="button"
+                  onClick={openAdd}
+                  className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-surface hover:opacity-90 transition-all"
+                >
+                  <Plus size={16} />
+                  <span>Create Work Order</span>
                 </button>
-              ))}
-            </div>
-            <button type="button" onClick={openAdd} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium">Create Work Order</button>
+              }
+            />
           </div>
-          {filtered.length === 0 ? <EmptyState title="No work orders found" description="Create a work order to get started." /> : (
+
+          {filtered.length === 0 ? (
+            <div className="p-12">
+              <EmptyState title="No work orders found" description={searchQuery ? "Try a different search term or filter." : "Create a work order to get started."} />
+            </div>
+          ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse text-sm">
-                <thead><tr className="border-b border-border-color text-left text-muted">
-                  <th className="px-3 py-2 font-medium">Property</th><th className="px-3 py-2 font-medium">Provider</th><th className="px-3 py-2 font-medium">Category</th><th className="px-3 py-2 font-medium">Priority</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Scheduled</th><th className="px-3 py-2 font-medium">Cost (Est/Act)</th><th className="px-3 py-2 font-medium">Actions</th>
-                </tr></thead>
-                <tbody>{filtered.map((row) => (
-                  <tr key={row.id} onClick={() => void openWorkOrderDetails(row.id)} className="cursor-pointer border-b border-border-color/60 hover:bg-surface-elevated/40">
-                    <td className="px-3 py-3 font-medium">{row.propertyName}</td>
-                    <td className="px-3 py-3 text-muted">{row.providerName}</td>
-                    <td className="px-3 py-3 text-muted">{row.category}</td>
-                    <td className="px-3 py-3 text-muted capitalize">{row.priority}</td>
-                    <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.status.replace(/_/g, " ")}</span></td>
-                    <td className="px-3 py-3 text-muted">{row.scheduledDate}</td>
-                    <td className="px-3 py-3 text-muted">{formatCurrency(row.estimatedCost)} / {formatCurrency(row.actualCost)}</td>
-                    <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
-                      {row.status === "open" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "in_progress"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Start</button>}
-                      {(row.status === "open" || row.status === "in_progress") && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "completed"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Complete</button>}
-                      {(row.status === "completed" || row.status === "cancelled") && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "open"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reopen</button>}
-                      {row.status !== "cancelled" && row.status !== "completed" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "cancelled"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Cancel</button>}
-                      <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteTarget(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
-                    </div></td>
+                <thead>
+                  <tr className="border-b border-border-color text-left text-muted/60 uppercase text-[10px] font-bold tracking-wider">
+                    <th className="px-6 py-4 font-bold">Ticket Details</th>
+                    <th className="px-6 py-4 font-bold">Category</th>
+                    <th className="px-6 py-4 font-bold text-center">Priority</th>
+                    <th className="px-6 py-4 font-bold text-center">Status</th>
+                    <th className="px-6 py-4 font-bold">Scheduled</th>
+                    <th className="px-6 py-4 font-bold text-right">Cost (Est/Act)</th>
+                    <th className="px-6 py-4 font-bold text-right">Actions</th>
                   </tr>
-                ))}</tbody>
+                </thead>
+                <tbody className="divide-y divide-border-color/40">
+                  {filtered.map((row) => (
+                    <tr
+                      key={row.id}
+                      onClick={() => void openWorkOrderDetails(row.id)}
+                      className="group cursor-pointer hover:bg-surface-elevated/40 transition-colors"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted/5 group-hover:bg-foreground group-hover:text-surface transition-all">
+                            <Wrench size={20} className="text-muted/60 group-hover:text-current" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold tracking-tight text-foreground truncate">{row.propertyName}</p>
+                            <p className="text-xs text-muted truncate">{row.providerName}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2 text-muted/80">
+                          <ClipboardList size={14} />
+                          <span className="capitalize">{row.category}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <div className={`flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wider ${getPriorityColor(row.priority)}`}>
+                          {row.priority === "urgent" && <AlertTriangle size={12} />}
+                          <span>{row.priority}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <StatusBadge status={row.status} />
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-1.5 text-xs text-muted">
+                          <Clock size={14} />
+                          <span>{row.scheduledDate}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="space-y-0.5">
+                          <p className="text-xs text-muted font-medium">Est: {formatCurrency(row.estimatedCost)}</p>
+                          <p className="text-sm font-bold text-foreground">Act: {formatCurrency(row.actualCost)}</p>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <TableRowActions>
+                          {row.status === "open" && (
+                            <TableActionButton
+                              icon={Play}
+                              label="Start"
+                              onClick={(e) => { e.stopPropagation(); onStatusChange(row.id, "in_progress"); }}
+                              variant="success"
+                            />
+                          )}
+                          {(row.status === "open" || row.status === "in_progress") && (
+                            <TableActionButton
+                              icon={CheckCircle2}
+                              label="Complete"
+                              onClick={(e) => { e.stopPropagation(); onStatusChange(row.id, "completed"); }}
+                              variant="success"
+                            />
+                          )}
+                          {(row.status === "completed" || row.status === "cancelled") && (
+                            <TableActionButton
+                              icon={RotateCcw}
+                              label="Reopen"
+                              onClick={(e) => { e.stopPropagation(); onStatusChange(row.id, "open"); }}
+                            />
+                          )}
+                          {row.status !== "cancelled" && row.status !== "completed" && (
+                            <TableActionButton
+                              icon={XCircle}
+                              label="Cancel"
+                              onClick={(e) => { e.stopPropagation(); onStatusChange(row.id, "cancelled"); }}
+                              variant="danger"
+                            />
+                          )}
+                          <TableActionButton
+                            icon={Trash}
+                            label="Delete"
+                            variant="danger"
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(row); }}
+                          />
+                          <div className="ml-2 pl-2 border-l border-border-color/40">
+                            <ChevronRight size={18} className="text-muted/40 group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
+                          </div>
+                        </TableRowActions>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
               </table>
             </div>
           )}
+          <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted/40">
+              Showing {filtered.length} of {counts.all} tickets
+            </p>
+          </div>
         </section>
       )}
 
@@ -314,63 +447,163 @@ export default function WorkOrdersPage() {
 
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Work Order" message={`Delete this work order at "${deleteTarget?.propertyName}"? This cannot be undone.`} confirmLabel="Delete" loading={deleting} />
 
-      <SideDrawer open={detailsOpen} onClose={() => setDetailsOpen(false)} title="Work Order Details">
-        {detailsLoading && <LoadingState label="Loading work order details..." />}
+      <SideDrawer open={detailsOpen} onClose={() => setDetailsOpen(false)} title="Maintenance Work Order Details">
+        {detailsLoading && (
+          <div className="flex flex-col items-center justify-center py-20">
+            <LoadingState label="Retreiving ticket details..." />
+          </div>
+        )}
 
         {!detailsLoading && detailsError && (
           <ErrorState message={detailsError} onRetry={() => (details ? void openWorkOrderDetails(details.id) : undefined)} />
         )}
 
         {!detailsLoading && !detailsError && details && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div><p className="text-xs text-muted">Property</p><p>{details.propertyName}</p></div>
-              <div><p className="text-xs text-muted">Provider</p><p>{details.providerName}</p></div>
-              <div><p className="text-xs text-muted">Category</p><p className="capitalize">{details.category}</p></div>
-              <div><p className="text-xs text-muted">Priority</p><p className="capitalize">{details.priority}</p></div>
-              <div><p className="text-xs text-muted">Scheduled</p><p>{formatDate(details.scheduledDate)}</p></div>
-              <div><p className="text-xs text-muted">Created</p><p>{formatDate(details.createdAt)}</p></div>
-              <div><p className="text-xs text-muted">Estimated Cost</p><p>{formatCurrency(details.estimatedCost)}</p></div>
-              <div><p className="text-xs text-muted">Actual Cost</p><p>{formatCurrency(details.actualCost)}</p></div>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm text-muted">Status</label>
-              <div className="flex gap-2">
-                <select
-                  value={detailsStatus}
-                  onChange={(event) => setDetailsStatus(event.target.value)}
-                  className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
-                >
-                  <option value="open">Open</option>
-                  <option value="in_progress">In progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={saveDetailsStatus}
-                  disabled={statusSaving}
-                  className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50"
-                >
-                  {statusSaving ? "Saving..." : "Save"}
-                </button>
+          <div className="space-y-8 pb-10">
+            {/* Ticket Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 bg-surface-elevated/50 p-6 rounded-2xl ring-1 ring-border-color/50 shadow-sm">
+              <div className="flex items-center gap-4">
+                <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl shadow-lg ${
+                  details.priority === "urgent" ? "bg-red-600 text-white" : "bg-foreground text-surface"
+                }`}>
+                  <Wrench size={28} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xl font-bold tracking-tight text-foreground capitalize">{details.category} Ticket</h4>
+                    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-widest ${
+                      details.priority === "urgent" ? "bg-red-100 text-red-700" : "bg-muted/10 text-muted"
+                    }`}>
+                      {details.priority}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 mt-1">
+                    <StatusBadge status={details.status} />
+                    <span className="text-xs text-muted font-medium">#{details.id.slice(0, 8)}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60">Actual Cost</p>
+                <p className="text-2xl font-black text-foreground">{formatCurrency(details.actualCost)}</p>
               </div>
             </div>
 
-            <div>
-              <p className="mb-1 text-sm text-muted">Description</p>
-              <p className="rounded-md border border-border-color bg-surface-elevated p-3 text-sm">{details.description || "-"}</p>
+            {/* Main Info Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-6">
+                <section className="space-y-4">
+                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Location & Provider</h5>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30">
+                      <div className="flex items-center gap-3">
+                        <Building size={16} className="text-muted/40" />
+                        <div>
+                          <p className="text-[10px] font-bold text-muted/60 uppercase">Property</p>
+                          <p className="font-bold text-foreground">{details.propertyName}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30">
+                      <div className="flex items-center gap-3">
+                        <User size={16} className="text-muted/40" />
+                        <div>
+                          <p className="text-[10px] font-bold text-muted/60 uppercase">Maintainer</p>
+                          <p className="font-bold text-foreground">{details.providerName}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="space-y-4">
+                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Timestamps</h5>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30">
+                      <Calendar size={16} className="text-muted/40 mb-2" />
+                      <p className="text-[10px] font-bold text-muted/60 uppercase">Scheduled</p>
+                      <p className="font-bold text-foreground">{formatDate(details.scheduledDate)}</p>
+                    </div>
+                    <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30">
+                      <Clock size={16} className="text-muted/40 mb-2" />
+                      <p className="text-[10px] font-bold text-muted/60 uppercase">Created</p>
+                      <p className="font-bold text-foreground">{formatDate(details.createdAt)}</p>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <div className="space-y-6">
+                <section className="space-y-4">
+                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Financial Data</h5>
+                  <div className="p-6 rounded-2xl bg-foreground text-surface shadow-lg relative overflow-hidden group">
+                    <DollarSign size={64} className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform" />
+                    <div className="relative z-10">
+                      <p className="text-xs font-bold uppercase tracking-wider text-surface/60">Estimated Budget</p>
+                      <p className="text-3xl font-black mt-1">{formatCurrency(details.estimatedCost)}</p>
+                      <div className="mt-6 pt-6 border-t border-surface/20">
+                        <div className="flex justify-between items-center text-xs font-bold">
+                          <span className="text-surface/60 uppercase">Variance</span>
+                          <span className={details.actualCost > details.estimatedCost ? "text-red-400" : "text-green-400"}>
+                            {formatCurrency(details.estimatedCost - details.actualCost)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="space-y-4">
+                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Ticket Workflow</h5>
+                  <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 space-y-3">
+                    <label className="text-[10px] font-bold text-muted/60 uppercase">Current Status</label>
+                    <div className="flex gap-2">
+                      <select
+                        value={detailsStatus}
+                        onChange={(event) => setDetailsStatus(event.target.value)}
+                        className="flex-1 rounded-lg border border-border-color bg-surface px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-foreground/5"
+                      >
+                        <option value="open">Open</option>
+                        <option value="in_progress">In progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={saveDetailsStatus}
+                        disabled={statusSaving}
+                        className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50 shadow-md"
+                      >
+                        <Save size={16} />
+                        <span>Update</span>
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="text-sm font-medium">Pictures</h4>
-                <label className="cursor-pointer rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-xs text-muted">
-                  {photoUploading ? "Uploading..." : "Upload Picture"}
+            {/* Description Section */}
+            <section className="space-y-3">
+              <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Problem Description</h5>
+              <div className="p-6 rounded-2xl border border-border-color bg-surface-elevated/20 italic text-foreground leading-relaxed">
+                "{details.description || "No detailed description provided."}"
+              </div>
+            </section>
+
+            {/* Evidence Gallery */}
+            <section className="space-y-4">
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                  <ImageIcon size={16} className="text-muted/40" />
+                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40">Evidence Gallery</h5>
+                </div>
+                <label className="cursor-pointer flex items-center gap-2 rounded-lg bg-surface-elevated border border-border-color px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted hover:text-foreground transition-all">
+                  <Upload size={12} />
+                  <span>{photoUploading ? "Uploading..." : "Add Picture"}</span>
                   <input
                     type="file"
-                    accept="image/png,image/jpeg,image/webp,.jpg,.jpeg,.png,.webp"
+                    accept="image/*"
                     onChange={(event) => void uploadWorkOrderPhoto(event.target.files?.[0] ?? null)}
                     className="hidden"
                     disabled={photoUploading}
@@ -379,21 +612,25 @@ export default function WorkOrdersPage() {
               </div>
 
               {details.photos.length === 0 ? (
-                <EmptyState title="No pictures" description="Upload work order pictures for evidence." />
+                <div className="p-12 border-2 border-dashed border-border-color rounded-2xl text-center">
+                  <p className="text-xs text-muted">No visual evidence attached yet.</p>
+                </div>
               ) : (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                   {details.photos.map((photoUrl, idx) => (
-                    <button key={photoUrl} type="button" onClick={() => openGallery(idx)} className="overflow-hidden rounded-md border border-border-color bg-surface-elevated text-left">
-                      <img src={photoUrl} alt="Work order" className="h-28 w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='112' fill='%23ccc'%3E%3Crect width='200' height='112' fill='%23f0f0f0'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' font-size='14' fill='%23999'%3EImage unavailable%3C/text%3E%3C/svg%3E"; }} />
+                    <button key={photoUrl} type="button" onClick={() => openGallery(idx)} className="aspect-video overflow-hidden rounded-xl border border-border-color bg-surface-elevated group relative shadow-sm">
+                      <img src={photoUrl} alt="Evidence" className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                      <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Eye size={20} className="text-white" />
+                      </div>
                     </button>
                   ))}
                 </div>
               )}
-
-              <ImageGallery images={details.photos} currentIndex={galleryIndex} open={galleryOpen} onClose={() => setGalleryOpen(false)} onNavigate={setGalleryIndex} onDelete={deleteWorkOrderPhoto} deleting={deletingPhoto} />
-            </div>
+            </section>
           </div>
         )}
+        <ImageGallery images={details?.photos ?? []} currentIndex={galleryIndex} open={galleryOpen} onClose={() => setGalleryOpen(false)} onNavigate={setGalleryIndex} onDelete={deleteWorkOrderPhoto} deleting={deletingPhoto} />
       </SideDrawer>
     </ModulePage>
   );

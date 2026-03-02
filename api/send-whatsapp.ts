@@ -6,6 +6,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
  * Body JSON:
  * - to: string (recipient phone in E.164 format, e.g. "+27612345678")
  * - message: string (body text)
+ * - mediaUrl?: string (optional public URL for attachment/media)
  *
  * Env vars required:
  * - TWILIO_ACCOUNT_SID
@@ -25,7 +26,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: "Twilio environment variables not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM)" });
   }
 
-  const { to, message } = req.body ?? {};
+  const { to, message, mediaUrl } = req.body ?? {};
 
   if (!to || !message) {
     return res.status(400).json({ error: "Missing required fields: to, message" });
@@ -43,6 +44,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       To: whatsappTo,
       Body: message,
     });
+
+    if (typeof mediaUrl === "string" && mediaUrl.trim()) {
+      body.append("MediaUrl", mediaUrl.trim());
+    }
 
     const response = await fetch(twilioUrl, {
       method: "POST",

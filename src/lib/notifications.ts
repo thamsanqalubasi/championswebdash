@@ -82,6 +82,11 @@ export async function sendEmailViaApi(opts: {
   to: string;
   subject: string;
   html: string;
+  attachments?: Array<{
+    filename: string;
+    content: string;
+    contentType?: string;
+  }>;
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const response = await fetch("/api/send-email", {
@@ -105,6 +110,7 @@ export async function sendEmailViaApi(opts: {
 export async function sendWhatsAppViaApi(opts: {
   to: string;
   message: string;
+  mediaUrl?: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const response = await fetch("/api/send-whatsapp", {
@@ -139,12 +145,17 @@ export async function sendEmail(opts: {
   subject: string;
   bodyText: string;
   documentHtml: string;
+  attachmentFilename?: string;
   companyName?: string;
   companyEmail?: string;
 }): Promise<{ sent: boolean; fallback: boolean }> {
   const emailHtml = wrapDocumentInEmailHtml(opts);
 
-  const result = await sendEmailViaApi({ to: opts.to, subject: opts.subject, html: emailHtml });
+  const attachments = opts.attachmentFilename
+    ? [{ filename: opts.attachmentFilename, content: opts.documentHtml, contentType: "text/html" }]
+    : undefined;
+
+  const result = await sendEmailViaApi({ to: opts.to, subject: opts.subject, html: emailHtml, attachments });
 
   if (result.success) {
     return { sent: true, fallback: false };
@@ -164,6 +175,7 @@ export async function sendEmail(opts: {
 export async function sendWhatsApp(opts: {
   to: string; // E.164 format phone, e.g. "+27612345678"
   message: string;
+  mediaUrl?: string;
 }): Promise<{ sent: boolean; fallback: boolean }> {
   const result = await sendWhatsAppViaApi(opts);
 
@@ -173,6 +185,9 @@ export async function sendWhatsApp(opts: {
 
   // Fallback to wa.me link
   const phone = opts.to.replace(/^\+/, "");
-  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(opts.message)}`, "_blank", "noopener,noreferrer");
+  const fallbackMessage = opts.mediaUrl
+    ? `${opts.message}\n\nDocument: ${opts.mediaUrl}`
+    : opts.message;
+  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(fallbackMessage)}`, "_blank", "noopener,noreferrer");
   return { sent: false, fallback: true };
 }

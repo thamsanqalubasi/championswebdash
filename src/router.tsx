@@ -7,6 +7,8 @@ import PropertiesPage from "@/pages/properties";
 import PropertyDetailsPage from "@/pages/property-details";
 import TenantsPage from "@/pages/tenants";
 import FinancePage from "@/pages/finance";
+import FinanceAccountsPage from "@/pages/finance-accounts";
+import BillsPage from "@/pages/bills";
 import InvoicesPage from "@/pages/invoices";
 import RentCollectionPage from "@/pages/rent-collection";
 import ReportsPage from "@/pages/reports";
@@ -56,6 +58,8 @@ export function AppRouter() {
         <Route path="/properties/:propertyId" element={<PropertyDetailsPage />} />
         <Route path="/tenants" element={<TenantsPage />} />
         <Route path="/finance" element={<FinancePage />} />
+        <Route path="/finance/accounts" element={<FinanceAccountsPage />} />
+        <Route path="/finance/bills" element={<BillsPage />} />
         <Route path="/finance/invoices" element={<InvoicesPage />} />
         <Route path="/finance/reports" element={<ReportsPage />} />
         <Route path="/maintenance" element={<MaintenancePage />} />

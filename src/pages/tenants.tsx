@@ -5,11 +5,13 @@ import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { fetchTenantsData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
-import { fetchCompanyInfo, fetchAdminInfo, downloadHtmlDocument } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, downloadHtmlDocument } from "@/lib/storage";
 import { buildProfessionalInvoiceHtml, buildProfessionalContractHtml } from "@/lib/document-templates";
 import type { ContractSection } from "@/lib/document-templates";
 import { sendEmail, sendWhatsApp } from "@/lib/notifications";
 import type { TenantRow } from "@/lib/types";
+import { Plus, User, Phone, Mail, Pencil, Trash, UserX, UserCheck, ChevronRight, MapPin, Calendar, CreditCard, Receipt, FileSignature, Activity, Send, Eye, Download } from "lucide-react";
+import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 
 type TenantPaymentRow = {
   id: string;
@@ -61,7 +63,7 @@ const emptyForm = {
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-ZA", {
     style: "currency",
-    currency: "ZAR",
+    currency: "NAD",
     maximumFractionDigits: 0,
   }).format(amount);
 }
@@ -94,6 +96,15 @@ function extractDatesFromText(text: string) {
 
 function sanitizePhoneToWhatsApp(value: string) {
   return value.replace(/\D/g, "");
+}
+
+async function ensureShareableDocumentUrl(existingUrl: string, html: string, filename: string) {
+  if (existingUrl && existingUrl.startsWith("http")) {
+    return existingUrl;
+  }
+
+  const file = new File([html], filename, { type: "text/html" });
+  return uploadFileToBucket("documents", "shared", file);
 }
 
 async function buildInvoiceHtmlProfessional(
@@ -136,6 +147,7 @@ export default function TenantsPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   const [activeFilter, setActiveFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -217,10 +229,19 @@ export default function TenantsPage() {
     [tenants],
   );
 
-  const filtered = useMemo(
-    () => (activeFilter === "all" ? tenants : tenants.filter((tenant) => tenant.tenureStatus === activeFilter)),
-    [tenants, activeFilter],
-  );
+  const filtered = useMemo(() => {
+    let result = activeFilter === "all" ? tenants : tenants.filter((tenant) => tenant.tenureStatus === activeFilter);
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((t) =>
+        t.fullName.toLowerCase().includes(q) ||
+        t.email.toLowerCase().includes(q) ||
+        t.phone.toLowerCase().includes(q) ||
+        t.propertyName.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [tenants, activeFilter, searchQuery]);
 
   const openAdd = () => {
     setEditingId(null);
@@ -738,6 +759,7 @@ export default function TenantsPage() {
           subject,
           bodyText: `Please find your invoice for <strong>${invoice.month}</strong> attached below. The total amount due is <strong>${formatCurrency(invoice.amount)}</strong>. Payments recorded on ${paymentsLabel}.`,
           documentHtml: invoiceHtml,
+          attachmentFilename: `invoice-${invoice.id}.html`,
           companyName: company?.companyName,
         });
 
@@ -756,6 +778,7 @@ export default function TenantsPage() {
         const result = await sendWhatsApp({
           to: `+${phone}`,
           message: messageText,
+          mediaUrl: await ensureShareableDocumentUrl(invoice.pdfUrl, invoiceHtml, `invoice-${invoice.id}.html`),
         });
 
         if (result.sent) {
@@ -849,6 +872,7 @@ export default function TenantsPage() {
           subject,
           bodyText: `Please find your lease agreement <strong>"${contract.title}"</strong> for <strong>${contract.propertyName}</strong> attached below. The contract period is ${formatDate(contract.startDate)} to ${formatDate(contract.endDate)} with a monthly rent of <strong>${formatCurrency(contract.monthlyRent)}</strong>.`,
           documentHtml: contractHtml,
+          attachmentFilename: `contract-${contract.id}.html`,
           companyName: company?.companyName,
         });
         if (result.sent) {
@@ -860,6 +884,7 @@ export default function TenantsPage() {
         const result = await sendWhatsApp({
           to: `+${phone}`,
           message: messageText,
+          mediaUrl: await ensureShareableDocumentUrl(contract.documentUrl, contractHtml, `contract-${contract.id}.html`),
         });
         if (result.sent) {
           alert("Contract sent via WhatsApp successfully!");
@@ -872,116 +897,122 @@ export default function TenantsPage() {
     }
   };
 
+  const filterTabs = [
+    { key: "all", label: "All Tenants", count: statusCounts.all },
+    { key: "active", label: "Active", count: statusCounts.active },
+    { key: "notice", label: "Notice", count: statusCounts.notice },
+  ];
+
   return (
-    <ModulePage title="Tenants" description="Tenant management, assignment flows, payment actions, and invoice audit trail.">
+    <ModulePage title="Tenants" description="Manage tenant records, property assignments, and payment history.">
       {loading && <LoadingState label="Loading tenants..." />}
       {!loading && error && <ErrorState message={error} onRetry={reload} />}
 
       {!loading && !error && (
-        <section className="space-y-4 rounded-lg border border-border-color bg-surface p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex gap-2">
-              {(["all", "active", "notice"] as const).map((key) => (
+        <section className="rounded-xl border border-border-color bg-surface p-1">
+          <div className="p-4">
+            <DataTableHeader
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search tenants by name, email, or property..."
+              filters={filterTabs}
+              activeFilter={activeFilter}
+              onFilterChange={setActiveFilter}
+              actions={
                 <button
-                  key={key}
                   type="button"
-                  onClick={() => setActiveFilter(key)}
-                  className={`rounded-md border border-border-color px-3 py-2 text-sm ${
-                    activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"
-                  }`}
+                  onClick={openAdd}
+                  className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-surface hover:opacity-90 transition-all"
                 >
-                  {key === "all"
-                    ? `All Tenants (${statusCounts.all})`
-                    : `${key.charAt(0).toUpperCase() + key.slice(1)} (${statusCounts[key]})`}
+                  <Plus size={16} />
+                  <span>Add Tenant</span>
                 </button>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              onClick={openAdd}
-              className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium"
-            >
-              Add Tenant
-            </button>
+              }
+            />
           </div>
 
           {filtered.length === 0 ? (
-            <EmptyState title="No tenants found" description="Add a tenant to get started." />
+            <div className="p-12">
+              <EmptyState title="No tenants found" description={searchQuery ? "Try a different search term or filter." : "Add a tenant to get started."} />
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse text-sm">
                 <thead>
-                  <tr className="border-b border-border-color text-left text-muted">
-                    <th className="px-3 py-2 font-medium">Tenant</th>
-                    <th className="px-3 py-2 font-medium">Property</th>
-                    <th className="px-3 py-2 font-medium">Phone</th>
-                    <th className="px-3 py-2 font-medium">Email</th>
-                    <th className="px-3 py-2 font-medium">Tenure</th>
-                    <th className="px-3 py-2 font-medium">Rent Status</th>
-                    <th className="px-3 py-2 font-medium">Actions</th>
+                  <tr className="border-b border-border-color text-left text-muted/60 uppercase text-[10px] font-bold tracking-wider">
+                    <th className="px-6 py-4 font-bold">Tenant</th>
+                    <th className="px-6 py-4 font-bold">Property</th>
+                    <th className="px-6 py-4 font-bold">Contact</th>
+                    <th className="px-6 py-4 font-bold text-center">Tenure</th>
+                    <th className="px-6 py-4 font-bold text-center">Rent Status</th>
+                    <th className="px-6 py-4 font-bold text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-border-color/40">
                   {filtered.map((row) => (
-                    <tr key={row.id} className="border-b border-border-color/60">
-                      <td className="px-3 py-3 font-medium">
-                        <button
-                          type="button"
-                          onClick={() => openTenantDetails(row)}
-                          className="text-left underline"
-                        >
-                          {row.fullName}
-                        </button>
-                      </td>
-                      <td className="px-3 py-3 text-muted">{row.propertyName}</td>
-                      <td className="px-3 py-3 text-muted">{row.phone}</td>
-                      <td className="px-3 py-3 text-muted">{row.email}</td>
-                      <td className="px-3 py-3">
-                        <span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">
-                          {row.tenureStatus}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">
-                          {row.rentStatus}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex flex-wrap gap-2">
+                    <tr key={row.id} className="group hover:bg-surface-elevated/40 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted/5 group-hover:bg-foreground group-hover:text-surface transition-all">
+                            <User size={20} className="text-muted/60 group-hover:text-current" />
+                          </div>
                           <button
                             type="button"
-                            onClick={() => openEdit(row)}
-                            className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                            onClick={() => openTenantDetails(row)}
+                            className="text-left font-bold tracking-tight text-foreground hover:underline decoration-foreground/30 underline-offset-4"
                           >
-                            Edit
-                          </button>
-                          {row.tenureStatus === "active" && (
-                            <button
-                              type="button"
-                              onClick={() => onStatusChange(row.id, "notice")}
-                              className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
-                            >
-                              Give Notice
-                            </button>
-                          )}
-                          {row.tenureStatus === "notice" && (
-                            <button
-                              type="button"
-                              onClick={() => onStatusChange(row.id, "active")}
-                              className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
-                            >
-                              Reactivate
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => setDeleteTarget(row)}
-                            className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
-                          >
-                            Delete
+                            {row.fullName}
                           </button>
                         </div>
+                      </td>
+                      <td className="px-6 py-4 text-muted/80">{row.propertyName}</td>
+                      <td className="px-6 py-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 text-xs text-muted">
+                            <Phone size={12} />
+                            <span>{row.phone}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-muted">
+                            <Mail size={12} />
+                            <span>{row.email}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <StatusBadge status={row.tenureStatus} />
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <StatusBadge status={row.rentStatus} />
+                      </td>
+                      <td className="px-6 py-4">
+                        <TableRowActions>
+                          <TableActionButton
+                            icon={Pencil}
+                            label="Edit"
+                            onClick={() => openEdit(row)}
+                          />
+                          {row.tenureStatus === "active" && (
+                            <TableActionButton
+                              icon={UserX}
+                              label="Give Notice"
+                              onClick={() => onStatusChange(row.id, "notice")}
+                            />
+                          )}
+                          {row.tenureStatus === "notice" && (
+                            <TableActionButton
+                              icon={UserCheck}
+                              label="Reactivate"
+                              onClick={() => onStatusChange(row.id, "active")}
+                              variant="success"
+                            />
+                          )}
+                          <TableActionButton
+                            icon={Trash}
+                            label="Delete"
+                            variant="danger"
+                            onClick={() => setDeleteTarget(row)}
+                          />
+                        </TableRowActions>
                       </td>
                     </tr>
                   ))}
@@ -989,6 +1020,11 @@ export default function TenantsPage() {
               </table>
             </div>
           )}
+          <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted/40">
+              Showing {filtered.length} of {statusCounts.all} tenants
+            </p>
+          </div>
         </section>
       )}
 
@@ -1084,233 +1120,236 @@ export default function TenantsPage() {
         loading={deleting}
       />
 
-      <SideDrawer open={Boolean(detailsRow)} onClose={() => setDetailsRow(null)} title="Tenant Details">
+      <SideDrawer open={Boolean(detailsRow)} onClose={() => setDetailsRow(null)} title="Tenant Account Overview">
         {!detailsRow && null}
 
-        {detailsRow && detailsLoading && <LoadingState label="Loading tenant detail audit trail..." />}
+        {detailsRow && detailsLoading && (
+          <div className="flex flex-col items-center justify-center py-20">
+            <LoadingState label="Retreiving comprehensive audit trail..." />
+          </div>
+        )}
 
         {detailsRow && !detailsLoading && detailsError && (
           <ErrorState message={detailsError} onRetry={() => void loadTenantDetails(detailsRow.id)} />
         )}
 
         {detailsRow && !detailsLoading && !detailsError && (
-          <div className="space-y-5">
-            <section className="space-y-3 rounded-md border border-border-color bg-surface-elevated p-3">
-              <p className="text-sm font-medium">{detailsRow.fullName}</p>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-xs text-muted">Assigned Property</p>
-                  <p>{detailsPropertyName || "Unassigned"}</p>
+          <div className="space-y-8 pb-10">
+            {/* Header Section */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 bg-surface-elevated/50 p-6 rounded-2xl ring-1 ring-border-color/50 shadow-sm">
+              <div className="flex items-center gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-foreground text-surface shadow-lg">
+                  <User size={28} />
                 </div>
                 <div>
-                  <p className="text-xs text-muted">Assignment Date</p>
-                  <p>{formatDate(assignmentDate)}</p>
+                  <h4 className="text-xl font-bold tracking-tight text-foreground">{detailsRow.fullName}</h4>
+                  <div className="flex items-center gap-3 mt-1">
+                    <StatusBadge status={detailsRow.tenureStatus} />
+                    <StatusBadge status={detailsRow.rentStatus} />
+                  </div>
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60">Assigned Property</p>
+                  <div className="flex items-center gap-1.5 font-bold text-foreground">
+                    <MapPin size={14} className="text-muted/40" />
+                    <span>{detailsPropertyName || "Unassigned"}</span>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60">Joined Since</p>
+                  <div className="flex items-center gap-1.5 font-bold text-foreground">
+                    <Calendar size={14} className="text-muted/40" />
+                    <span>{formatDate(assignmentDate)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-              <div className="flex items-center gap-2 pt-1">
-                <select
-                  value={detailsPropertyId}
-                  onChange={(event) => setDetailsPropertyId(event.target.value)}
-                  className="w-full rounded-md border border-border-color bg-surface px-3 py-2 text-sm"
-                >
-                  <option value="">Unassign tenant</option>
-                  {properties.map((property) => (
-                    <option key={property.id} value={property.id}>
-                      {property.name}
-                    </option>
-                  ))}
-                </select>
+            {/* Quick Actions / Assignment */}
+            <section className="space-y-3">
+              <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Assignment Controls</h5>
+              <div className="flex items-center gap-3 p-4 bg-surface-elevated/30 rounded-xl border border-border-color/40">
+                <div className="flex-1">
+                  <select
+                    value={detailsPropertyId}
+                    onChange={(event) => setDetailsPropertyId(event.target.value)}
+                    className="w-full rounded-lg border border-border-color bg-surface px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5 transition-all"
+                  >
+                    <option value="">Unassign tenant (Available Units)</option>
+                    {properties.map((property) => (
+                      <option key={property.id} value={property.id}>{property.name}</option>
+                    ))}
+                  </select>
+                </div>
                 <button
                   type="button"
                   onClick={assignTenantToProperty}
                   disabled={assigningProperty}
-                  className="rounded-md border border-border-color bg-surface px-3 py-2 text-sm disabled:opacity-50"
+                  className="rounded-lg bg-foreground px-6 py-2 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50"
                 >
-                  {assigningProperty ? "Saving..." : "Assign"}
+                  {assigningProperty ? "Saving..." : "Update Unit"}
                 </button>
               </div>
             </section>
 
-            <section className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold">Payments</h4>
-                <span className="text-xs text-muted">Select payments to generate invoice</span>
+            {/* Payments Section */}
+            <section className="space-y-4">
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                  <CreditCard size={16} className="text-muted/40" />
+                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40">Recent Transactions</h5>
+                </div>
+                <p className="text-[10px] text-muted italic">Select items to batch into invoice</p>
               </div>
 
               {payments.length === 0 ? (
-                <EmptyState title="No payments yet" description="Recorded rent payments will appear here." />
+                <EmptyState title="No transactions" description="Tenant has no recorded payments yet." />
               ) : (
-                <div className="overflow-x-auto rounded-md border border-border-color">
-                  <table className="min-w-full border-collapse text-xs">
+                <div className="overflow-hidden rounded-xl border border-border-color bg-surface">
+                  <table className="min-w-full border-collapse text-sm">
                     <thead>
-                      <tr className="border-b border-border-color text-left text-muted">
-                        <th className="px-2 py-2 font-medium">Select</th>
-                        <th className="px-2 py-2 font-medium">Date</th>
-                        <th className="px-2 py-2 font-medium">Amount</th>
-                        <th className="px-2 py-2 font-medium">Recorded By</th>
+                      <tr className="border-b border-border-color/50 bg-surface-elevated/30 text-left text-muted/50 uppercase text-[9px] font-bold tracking-wider">
+                        <th className="px-4 py-3 text-center">Batch</th>
+                        <th className="px-4 py-3">Date</th>
+                        <th className="px-4 py-3">Amount</th>
+                        <th className="px-4 py-3">Verified By</th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {payments.map((payment) => {
-                        const checked = selectedPaymentIds.includes(payment.id);
-                        return (
-                          <tr key={payment.id} className="border-b border-border-color/60">
-                            <td className="px-2 py-2">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => togglePaymentSelection(payment.id)}
-                              />
-                            </td>
-                            <td className="px-2 py-2 text-muted">{payment.paymentDate}</td>
-                            <td className="px-2 py-2 text-muted">{formatCurrency(payment.amountPaid)}</td>
-                            <td className="px-2 py-2 text-muted">{payment.recordedBy}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={generateInvoiceFromSelectedPayments}
-                disabled={generatingInvoice || selectedPaymentIds.length === 0}
-                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50"
-              >
-                {generatingInvoice ? "Generating..." : "Generate Invoice from Selected Payments"}
-              </button>
-            </section>
-
-            <section className="space-y-2">
-              <h4 className="text-sm font-semibold">Invoices</h4>
-
-              {invoices.length === 0 ? (
-                <EmptyState title="No invoices yet" description="Generated invoices will appear here." />
-              ) : (
-                <div className="overflow-x-auto rounded-md border border-border-color">
-                  <table className="min-w-full border-collapse text-xs">
-                    <thead>
-                      <tr className="border-b border-border-color text-left text-muted">
-                        <th className="px-2 py-2 font-medium">Month</th>
-                        <th className="px-2 py-2 font-medium">Amount</th>
-                        <th className="px-2 py-2 font-medium">Status</th>
-                        <th className="px-2 py-2 font-medium">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {invoices.map((invoice) => (
-                        <tr key={invoice.id} className="border-b border-border-color/60">
-                          <td className="px-2 py-2 text-muted">{invoice.month}</td>
-                          <td className="px-2 py-2 text-muted">{formatCurrency(invoice.amount)}</td>
-                          <td className="px-2 py-2 text-muted capitalize">{invoice.status}</td>
-                          <td className="px-2 py-2">
-                            <div className="flex flex-wrap gap-1">
-                              <button
-                                type="button"
-                                onClick={() => void openInvoicePreview(invoice)}
-                                className="rounded-md border border-border-color px-2 py-1 text-xs text-muted"
-                              >
-                                View
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void downloadInvoice(invoice)}
-                                className="rounded-md border border-border-color px-2 py-1 text-xs text-muted"
-                              >
-                                Download
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void shareInvoice(invoice, "whatsapp")}
-                                disabled={sharingInvoiceId === invoice.id}
-                                className="rounded-md border border-border-color px-2 py-1 text-xs text-muted disabled:opacity-50"
-                              >
-                                WhatsApp
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void shareInvoice(invoice, "email")}
-                                disabled={sharingInvoiceId === invoice.id}
-                                className="rounded-md border border-border-color px-2 py-1 text-xs text-muted disabled:opacity-50"
-                              >
-                                Email
-                              </button>
-                            </div>
+                    <tbody className="divide-y divide-border-color/30">
+                      {payments.map((payment) => (
+                        <tr key={payment.id} className={`group hover:bg-surface-elevated/20 transition-colors ${selectedPaymentIds.includes(payment.id) ? "bg-foreground/[0.02]" : ""}`}>
+                          <td className="px-4 py-4 text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedPaymentIds.includes(payment.id)}
+                              onChange={() => togglePaymentSelection(payment.id)}
+                              className="h-4 w-4 rounded border-border-color accent-foreground"
+                            />
                           </td>
+                          <td className="px-4 py-4 font-medium text-foreground">{payment.paymentDate}</td>
+                          <td className="px-4 py-4 font-bold text-foreground">{formatCurrency(payment.amountPaid)}</td>
+                          <td className="px-4 py-4 text-muted/80">{payment.recordedBy}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                  <div className="p-4 border-t border-border-color/50 bg-surface-elevated/20">
+                    <button
+                      type="button"
+                      onClick={generateInvoiceFromSelectedPayments}
+                      disabled={generatingInvoice || selectedPaymentIds.length === 0}
+                      className="w-full flex items-center justify-center gap-2 rounded-xl bg-foreground py-3 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50 shadow-md"
+                    >
+                      <Receipt size={18} />
+                      <span>{generatingInvoice ? "Generating..." : `Generate Invoice from ${selectedPaymentIds.length} Selected`}</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </section>
 
-            <section className="space-y-2">
-              <h4 className="text-sm font-semibold">Contracts</h4>
+            {/* Invoices & Contracts Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Invoices Sub-section */}
+              <section className="space-y-4">
+                <div className="flex items-center gap-2 px-1">
+                  <Receipt size={16} className="text-muted/40" />
+                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40">Invoices</h5>
+                </div>
 
-              {tenantContracts.length === 0 ? (
-                <EmptyState title="No contracts yet" description="Contracts generated for this tenant will appear here." />
+                {invoices.length === 0 ? (
+                  <div className="py-10 border border-dashed border-border-color rounded-xl"><EmptyState title="No invoices" description="" /></div>
+                ) : (
+                  <div className="space-y-3">
+                    {invoices.map((invoice) => (
+                      <div key={invoice.id} className="p-4 rounded-xl border border-border-color bg-surface-elevated/40 hover:bg-surface-elevated transition-colors group">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-sm font-bold text-foreground">{invoice.month}</p>
+                          <StatusBadge status={invoice.status} />
+                        </div>
+                        <p className="text-lg font-bold text-foreground">{formatCurrency(invoice.amount)}</p>
+                        <div className="flex items-center gap-1.5 mt-4 pt-4 border-t border-border-color/40 opacity-60 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => void openInvoicePreview(invoice)} className="p-1.5 rounded-lg border border-border-color hover:bg-foreground hover:text-surface transition-all" title="View"><Eye size={14} /></button>
+                          <button onClick={() => void downloadInvoice(invoice)} className="p-1.5 rounded-lg border border-border-color hover:bg-foreground hover:text-surface transition-all" title="Download"><Download size={14} /></button>
+                          <button onClick={() => void shareInvoice(invoice, "whatsapp")} disabled={sharingInvoiceId === invoice.id} className="p-1.5 rounded-lg border border-border-color hover:bg-green-600 hover:text-white transition-all" title="WhatsApp"><Send size={14} /></button>
+                          <button onClick={() => void shareInvoice(invoice, "email")} disabled={sharingInvoiceId === invoice.id} className="p-1.5 rounded-lg border border-border-color hover:bg-sky-600 hover:text-white transition-all" title="Email"><Mail size={14} /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* Contracts Sub-section */}
+              <section className="space-y-4">
+                <div className="flex items-center gap-2 px-1">
+                  <FileSignature size={16} className="text-muted/40" />
+                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40">Contracts</h5>
+                </div>
+
+                {tenantContracts.length === 0 ? (
+                  <div className="py-10 border border-dashed border-border-color rounded-xl"><EmptyState title="No active contracts" description="" /></div>
+                ) : (
+                  <div className="space-y-4">
+                    {tenantContracts.map((contract) => (
+                      <div key={contract.id} className="p-5 rounded-2xl border-2 border-border-color bg-surface group relative overflow-hidden">
+                        <div className="flex items-center justify-between mb-4">
+                          <p className="text-sm font-black tracking-tight text-foreground uppercase">{contract.title}</p>
+                          <StatusBadge status={contract.status} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-y-4 text-xs">
+                          <div>
+                            <p className="text-[9px] font-bold text-muted/50 uppercase mb-1">Rental Period</p>
+                            <p className="font-bold">{formatDate(contract.startDate)} - {formatDate(contract.endDate)}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[9px] font-bold text-muted/50 uppercase mb-1">Monthly Cost</p>
+                            <p className="font-bold text-foreground text-sm">{formatCurrency(contract.monthlyRent)}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-1.5 mt-6">
+                          <button onClick={() => void openContractPreview(contract)} className="p-2 rounded-xl bg-surface-elevated border border-border-color hover:border-foreground/20 transition-all shadow-sm"><Eye size={16} className="text-muted" /></button>
+                          <button onClick={() => void downloadContract(contract)} className="p-2 rounded-xl bg-surface-elevated border border-border-color hover:border-foreground/20 transition-all shadow-sm"><Download size={16} className="text-muted" /></button>
+                          <button onClick={() => void shareContract(contract, "whatsapp")} className="p-2 rounded-xl bg-green-50 text-green-600 border border-green-100 hover:bg-green-600 hover:text-white transition-all shadow-sm"><Send size={16} /></button>
+                        </div>
+                        <div className={`absolute bottom-0 left-0 h-1.5 w-full bg-current opacity-5 ${contract.status === "active" ? "text-green-500" : "text-amber-500"}`} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+
+            {/* Activity Log / Share Report */}
+            <section className="space-y-4">
+              <div className="flex items-center gap-2 px-1">
+                <Activity size={16} className="text-muted/40" />
+                <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40">Communication Audit</h5>
+              </div>
+
+              {shareReports.length === 0 ? (
+                <div className="p-6 rounded-xl bg-surface-elevated/30 text-center border border-border-color/40">
+                  <p className="text-xs text-muted">No external communication recorded yet.</p>
+                </div>
               ) : (
-                <div className="space-y-3">
-                  {tenantContracts.map((contract) => (
-                    <div key={contract.id} className="rounded-md border border-border-color bg-surface-elevated p-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium">{contract.title}</p>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                          contract.status === "active" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                          : contract.status === "expired" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                          : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                        }`}>{contract.status}</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs text-muted">
-                        <div>
-                          <p className="text-[10px] uppercase tracking-wider">Property</p>
-                          <p>{contract.propertyName}</p>
+                <div className="space-y-2">
+                  {shareReports.map((report) => (
+                    <div key={report.id} className="flex items-center justify-between p-4 rounded-xl border border-border-color/30 bg-surface text-xs hover:bg-surface-elevated/40 transition-all">
+                      <div className="flex items-center gap-3">
+                        <div className={`h-8 w-8 flex items-center justify-center rounded-lg ${report.channel === "whatsapp" ? "bg-green-50 text-green-600" : "bg-sky-50 text-sky-600"}`}>
+                          {report.channel === "whatsapp" ? <Send size={14} /> : <Mail size={14} />}
                         </div>
                         <div>
-                          <p className="text-[10px] uppercase tracking-wider">Rent</p>
-                          <p>{formatCurrency(contract.monthlyRent)}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] uppercase tracking-wider">Start</p>
-                          <p>{formatDate(contract.startDate)}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] uppercase tracking-wider">End</p>
-                          <p>{formatDate(contract.endDate)}</p>
+                          <p className="font-bold text-foreground capitalize">Invoice {report.channel} distribution</p>
+                          <p className="text-[10px] text-muted">Payload: {report.paymentDates.length ? report.paymentDates.join(", ") : "Manual share"}</p>
                         </div>
                       </div>
-                      {contract.sections.length > 0 && (
-                        <p className="text-[10px] text-muted">{contract.sections.length} section{contract.sections.length !== 1 ? "s" : ""}: {contract.sections.map((s) => s.title).join(", ")}</p>
-                      )}
-                      <div className="flex flex-wrap gap-1 pt-1">
-                        <button type="button" onClick={() => void openContractPreview(contract)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface">View</button>
-                        <button type="button" onClick={() => void downloadContract(contract)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface">Download</button>
-                        <button type="button" onClick={() => void shareContract(contract, "whatsapp")} disabled={contractActionId === contract.id} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface disabled:opacity-50">WhatsApp</button>
-                        <button type="button" onClick={() => void shareContract(contract, "email")} disabled={contractActionId === contract.id} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface disabled:opacity-50">Email</button>
-                      </div>
+                      <p className="font-medium text-muted/60">{formatDate(report.sharedAt)}</p>
                     </div>
                   ))}
                 </div>
-              )}
-            </section>
-
-            <section className="space-y-2">
-              <h4 className="text-sm font-semibold">Share Report</h4>
-
-              {shareReports.length === 0 ? (
-                <EmptyState title="No share activity" description="Invoice sharing events will appear here." />
-              ) : (
-                <ul className="space-y-2">
-                  {shareReports.map((report) => (
-                    <li key={report.id} className="rounded-md border border-border-color bg-surface-elevated p-3 text-xs text-muted">
-                      Sent for payments made on {report.paymentDates.length ? report.paymentDates.join(", ") : "-"} via {report.channel} on {formatDate(report.sharedAt)}
-                    </li>
-                  ))}
-                </ul>
               )}
             </section>
           </div>
