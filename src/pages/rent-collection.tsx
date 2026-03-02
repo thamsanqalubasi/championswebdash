@@ -4,9 +4,9 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
-import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, downloadHtmlDocument } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, downloadHtmlDocument } from "@/lib/storage";
 import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
-import { sendEmail, sendWhatsApp } from "@/lib/notifications";
+import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
 
 type RentTenantRow = {
   id: string;
@@ -48,15 +48,6 @@ function formatCurrency(amount: number) {
     currency: "NAD",
     maximumFractionDigits: 0,
   }).format(amount);
-}
-
-async function ensureShareableDocumentUrl(existingUrl: string, html: string, filename: string) {
-  if (existingUrl && existingUrl.startsWith("http")) {
-    return existingUrl;
-  }
-
-  const file = new File([html], filename, { type: "text/html" });
-  return uploadFileToBucket("documents", "shared", file);
 }
 
 export default function RentCollectionPage() {
@@ -529,23 +520,34 @@ export default function RentCollectionPage() {
       if (channel === "email") {
         if (!tenant.email || tenant.email === "-") { alert("No tenant email address available."); return; }
         const subject = `Invoice for ${payment.paymentDate} - ${tenant.fullName}`;
-        const result = await sendEmail({
-          to: tenant.email,
+        const bodyText = `Please find your invoice attached. Total amount: ${formatCurrency(payment.amountPaid)}.`;
+        const emailHtml = wrapDocumentInEmailHtml({
           recipientName: tenant.fullName,
           subject,
-          bodyText: `Please find your invoice attached. Total amount: <strong>${formatCurrency(payment.amountPaid)}</strong>.`,
+          bodyText,
           documentHtml: html,
-          attachmentFilename: `invoice-${invoiceId}.html`,
           companyName: company?.companyName,
         });
-        if (result.sent) alert("Invoice sent via email successfully!");
+        const result = await sendEmailViaApi({
+          to: tenant.email,
+          subject,
+          html: emailHtml,
+          attachments: [{
+            filename: `invoice-${invoiceId}.html`,
+            content: html,
+            contentType: "text/html",
+          }],
+        });
+        if (!result.success) throw new Error(result.error || "Email API request failed.");
+        alert("Invoice sent via email successfully!");
       } else {
         const phone = tenant.phone.replace(/\D/g, "");
         if (!phone) { alert("No tenant phone number available."); return; }
         const message = `Invoice for ${formatCurrency(payment.amountPaid)} - Payment on ${payment.paymentDate}.`;
-        const mediaUrl = await ensureShareableDocumentUrl(invoice?.pdfUrl ?? "", html, `invoice-${invoiceId}.html`);
-        const result = await sendWhatsApp({ to: `+${phone}`, message, mediaUrl });
-        if (result.sent) alert("Invoice sent via WhatsApp successfully!");
+        const mediaUrl = invoice?.pdfUrl && invoice.pdfUrl.startsWith("http") ? invoice.pdfUrl : undefined;
+        const result = await sendWhatsAppViaApi({ to: `+${phone}`, message, ...(mediaUrl ? { mediaUrl } : {}) });
+        if (!result.success) throw new Error(result.error || "WhatsApp API request failed.");
+        alert("Invoice sent via WhatsApp successfully!");
       }
     } catch (e) {
       alert(e instanceof Error ? e.message : "Could not send invoice.");

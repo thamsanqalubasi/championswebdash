@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, downloadHtmlDocument } from "@/lib/storage";
 import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
 import { useAuth } from "@/lib/auth";
-import { sendEmail, sendWhatsApp } from "@/lib/notifications";
+import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
 import { verifyAdminPin } from "@/lib/data";
 import { billStatusMeta, frequencyLabel, type BillFrequency, type BillRow } from "@/lib/bills";
 import {
@@ -117,8 +117,12 @@ async function ensureShareableDocumentUrl(existingUrl: string, html: string, fil
     return existingUrl;
   }
 
-  const file = new File([html], filename, { type: "text/html" });
-  return uploadFileToBucket("documents", "shared", file);
+  try {
+    const file = new File([html], filename, { type: "text/html" });
+    return await uploadFileToBucket("invoice-pdfs", "shared", file);
+  } catch {
+    return "";
+  }
 }
 
 function DetailStat({ label, value, icon: Icon, colorClass = "text-foreground" }: { label: string; value: string; icon: any; colorClass?: string }) {
@@ -623,16 +627,26 @@ export default function PropertyDetailsPage() {
       const html = await buildInvoiceHtml(invoice);
       const company = await fetchCompanyInfo();
       const subject = `Invoice ${invoice.month} - ${property?.name ?? "Property"}`;
-      const result = await sendEmail({
-        to: tenant.email,
+      const bodyText = `Please find your invoice for ${invoice.month} attached below. The total amount due is ${formatCurrency(invoice.amount)}.`;
+      const emailHtml = wrapDocumentInEmailHtml({
         recipientName: tenant.fullName,
         subject,
-        bodyText: `Please find your invoice for <strong>${invoice.month}</strong> attached below. The total amount due is <strong>${formatCurrency(invoice.amount)}</strong>.`,
+        bodyText,
         documentHtml: html,
-        attachmentFilename: `invoice-${invoice.id}.html`,
         companyName: company.companyName,
       });
-      if (result.sent) { alert("Invoice sent via email successfully!"); }
+      const result = await sendEmailViaApi({
+        to: tenant.email,
+        subject,
+        html: emailHtml,
+        attachments: [{
+          filename: `invoice-${invoice.id}.html`,
+          content: html,
+          contentType: "text/html",
+        }],
+      });
+      if (!result.success) throw new Error(result.error || "Email API request failed.");
+      alert("Invoice sent via email successfully!");
     } catch (e) { alert(e instanceof Error ? e.message : "Could not send email."); }
   };
 
@@ -644,8 +658,9 @@ export default function PropertyDetailsPage() {
       const message = `Invoice ${invoice.month}: ${formatCurrency(invoice.amount)} due on ${invoice.dueDate}.`;
       const html = await buildInvoiceHtml(invoice);
       const mediaUrl = await ensureShareableDocumentUrl(invoice.pdfUrl, html, `invoice-${invoice.id}.html`);
-      const result = await sendWhatsApp({ to: `+${phone}`, message, mediaUrl });
-      if (result.sent) { alert("Invoice sent via WhatsApp successfully!"); }
+      const result = await sendWhatsAppViaApi({ to: `+${phone}`, message, ...(mediaUrl ? { mediaUrl } : {}) });
+      if (!result.success) throw new Error(result.error || "WhatsApp API request failed.");
+      alert("Invoice sent via WhatsApp successfully!");
     } catch (e) {
       alert(e instanceof Error ? e.message : "Could not send WhatsApp.");
     }
