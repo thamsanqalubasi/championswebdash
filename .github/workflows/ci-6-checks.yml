@@ -1,0 +1,78 @@
+name: CI 6 Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-1-repo-sanity:
+    name: 1) Repo Sanity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate key files
+        run: |
+          test -f package.json
+          test -f package-lock.json
+          test -f tsconfig.json
+          test -f vite.config.ts
+
+  check-2-vercel-config:
+    name: 2) Vercel Config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate vercel.json exists
+        run: test -f vercel.json
+
+  check-3-install:
+    name: 3) Install Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install
+        run: npm ci --legacy-peer-deps
+
+  check-4-typecheck:
+    name: 4) Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install
+        run: npm ci --legacy-peer-deps
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+  check-5-build:
+    name: 5) Production Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install
+        run: npm ci --legacy-peer-deps
+      - name: Build
+        run: npm run build
+
+  check-6-api-presence:
+    name: 6) API Routes Presence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate API route files
+        run: |
+          test -f api/send-email.ts
+          test -f api/send-whatsapp.ts
