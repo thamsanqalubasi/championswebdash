@@ -58,6 +58,15 @@ function formatAuditAction(row: AuditEventRow): string {
         return `Shared invoice with ${row.entityName || "tenant"} via ${details.channel || "external channel"}`;
       case "status_change":
         return `Changed status of ${entity}${entityName} to ${details.new_status || "updated state"}`;
+      case "bill_payment_updated": {
+        const fromAmount = Number(details.previous_amount ?? 0);
+        const toAmount = Number(details.new_amount ?? 0);
+        const fromStatus = String(details.previous_status ?? "pending");
+        const toStatus = String(details.new_status ?? "pending");
+        return `Updated bill payment for ${row.entityName || "bill"}: ${formatCurrency(fromAmount)} (${fromStatus}) → ${formatCurrency(toAmount)} (${toStatus})`;
+      }
+      case "invoice_status_updated":
+        return `Updated invoice status for ${row.entityName || "tenant"}: ${details.previous_status || "draft"} → ${details.new_status || details.stored_status || "updated"}`;
       default:
         // Handle underscore separated actions
         return `${action.replace(/_/g, " ")}${entityName}`;

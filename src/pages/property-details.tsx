@@ -112,6 +112,12 @@ function isFrequencyColumnMissing(error: unknown) {
   return lowered.includes("frequency") && lowered.includes("does not exist");
 }
 
+function isExecutedByNameColumnMissing(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const lowered = message.toLowerCase();
+  return lowered.includes("executed_by_name") && lowered.includes("does not exist");
+}
+
 async function ensureShareableDocumentUrl(existingUrl: string, html: string, filename: string) {
   if (existingUrl && existingUrl.startsWith("http")) {
     return existingUrl;
@@ -687,6 +693,40 @@ export default function PropertyDetailsPage() {
     }
   };
 
+  const setInvoiceProcessed = async (invoice: PropertyInvoice) => {
+    const targetStatus = "sent";
+    try {
+      const { error: updateError } = await supabase
+        .from("invoices")
+        .update({ status: targetStatus })
+        .eq("id", invoice.id);
+      if (updateError) throw updateError;
+
+      const actorName = user?.email ?? "Admin";
+      await supabase.from("audit_log").insert({
+        user_email: user?.email ?? null,
+        user_name: actorName,
+        action: "invoice_status_updated",
+        entity_type: "invoice",
+        entity_id: invoice.id,
+        entity_name: invoice.tenantName,
+        details: {
+          previous_status: invoice.status,
+          new_status: "processed",
+          stored_status: targetStatus,
+          month: invoice.month,
+          amount: invoice.amount,
+          property_id: propertyId,
+        },
+      });
+
+      reload();
+      alert("Invoice marked as processed.");
+    } catch (updateError) {
+      alert(updateError instanceof Error ? updateError.message : "Could not update invoice status.");
+    }
+  };
+
   const downloadInvoice = async (invoice: PropertyInvoice) => {
     try {
       if (invoice.pdfUrl && invoice.pdfUrl.startsWith("http")) {
@@ -737,30 +777,88 @@ export default function PropertyDetailsPage() {
 
       const { data: existingMonthly, error: existingMonthlyError } = await supabase
         .from("property_monthly_bills")
-        .select("id")
+        .select("id, amount, status")
         .eq("schedule_id", billPaymentTarget.id)
         .eq("month", monthKey)
         .maybeSingle();
       if (existingMonthlyError) throw existingMonthlyError;
+
+      const previousAmount = Number(existingMonthly?.amount ?? billPaymentTarget.lastPaidAmount ?? billPaymentTarget.amount);
+      const previousStatus = String(existingMonthly?.status ?? billPaymentTarget.status ?? "pending");
+      const newAmount = Number(billPaymentStatus === "paid" ? billPaidAmount : billPaymentTarget.amount);
 
       const monthlyPayload = {
         schedule_id: billPaymentTarget.id,
         property_id: billPaymentTarget.propertyId,
         month: monthKey,
         due_date: dueDate,
-        amount: billPaymentStatus === "paid" ? billPaidAmount : billPaymentTarget.amount,
+        amount: newAmount,
         status: billPaymentStatus,
         paid_at: billPaymentStatus === "paid" ? `${billPaidDate}T12:00:00.000Z` : null,
         executed_by_name: executorName,
       };
 
+      const monthlyPayloadFallback = {
+        schedule_id: billPaymentTarget.id,
+        property_id: billPaymentTarget.propertyId,
+        month: monthKey,
+        due_date: dueDate,
+        amount: newAmount,
+        status: billPaymentStatus,
+        paid_at: billPaymentStatus === "paid" ? `${billPaidDate}T12:00:00.000Z` : null,
+      };
+
       if (existingMonthly?.id) {
-        const { error: updateError } = await supabase.from("property_monthly_bills").update(monthlyPayload).eq("id", existingMonthly.id);
-        if (updateError) throw updateError;
+        const { error: updateError } = await supabase
+          .from("property_monthly_bills")
+          .update(monthlyPayload)
+          .eq("id", existingMonthly.id);
+        if (updateError) {
+          if (isExecutedByNameColumnMissing(updateError)) {
+            const { error: fallbackError } = await supabase
+              .from("property_monthly_bills")
+              .update(monthlyPayloadFallback)
+              .eq("id", existingMonthly.id);
+            if (fallbackError) throw fallbackError;
+          } else {
+            throw updateError;
+          }
+        }
       } else {
-        const { error: insertError } = await supabase.from("property_monthly_bills").insert(monthlyPayload);
-        if (insertError) throw insertError;
+        const { error: insertError } = await supabase
+          .from("property_monthly_bills")
+          .insert(monthlyPayload);
+        if (insertError) {
+          if (isExecutedByNameColumnMissing(insertError)) {
+            const { error: fallbackError } = await supabase
+              .from("property_monthly_bills")
+              .insert(monthlyPayloadFallback);
+            if (fallbackError) throw fallbackError;
+          } else {
+            throw insertError;
+          }
+        }
       }
+
+      const actorName = user?.email ?? "Admin";
+      await supabase.from("audit_log").insert({
+        user_email: user?.email ?? null,
+        user_name: actorName,
+        action: "bill_payment_updated",
+        entity_type: "property_monthly_bill",
+        entity_id: existingMonthly?.id ?? null,
+        entity_name: billPaymentTarget.name,
+        details: {
+          property_id: billPaymentTarget.propertyId,
+          schedule_id: billPaymentTarget.id,
+          month: monthKey,
+          previous_amount: previousAmount,
+          new_amount: newAmount,
+          previous_status: previousStatus,
+          new_status: billPaymentStatus,
+          paid_date: billPaymentStatus === "paid" ? billPaidDate : null,
+        },
+      });
 
       setBillPaymentTarget(null);
       reload();
@@ -1115,6 +1213,9 @@ export default function PropertyDetailsPage() {
                               <button onClick={() => void downloadInvoice(invoice)} title="Download" className="p-1.5 rounded-lg border border-border-color hover:bg-foreground hover:text-surface transition-all"><Download size={14} /></button>
                               <button onClick={() => void sendInvoiceWhatsApp(invoice)} title="WhatsApp" className="p-1.5 rounded-lg border border-border-color hover:bg-green-600 hover:text-white hover:border-green-600 transition-all"><Send size={14} /></button>
                               <button onClick={() => void sendInvoiceEmail(invoice)} title="Email" className="p-1.5 rounded-lg border border-border-color hover:bg-sky-600 hover:text-white hover:border-sky-600 transition-all"><Mail size={14} /></button>
+                              {invoice.status === "draft" && (
+                                <button onClick={() => void setInvoiceProcessed(invoice)} title="Set Processed" className="p-1.5 rounded-lg border border-border-color hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all"><CheckCircle2 size={14} /></button>
+                              )}
                               <button onClick={() => void regenerateInvoice(invoice)} disabled={regeneratingInvoiceId === invoice.id} title="Regenerate" className="p-1.5 rounded-lg border border-border-color hover:bg-foreground hover:text-surface transition-all"><RefreshCw size={14} className={regeneratingInvoiceId === invoice.id ? "animate-spin" : ""} /></button>
                             </div>
                           </td>
