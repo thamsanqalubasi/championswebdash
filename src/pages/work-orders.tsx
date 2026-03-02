@@ -7,7 +7,7 @@ import { fetchWorkOrdersData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { uploadFileToBucket } from "@/lib/storage";
 import type { WorkOrderRow } from "@/lib/types";
-import { Plus, Wrench, ClipboardList, Clock, Play, CheckCircle2, XCircle, RotateCcw, Trash, ChevronRight, AlertTriangle, User, Building, Calendar, DollarSign, Image as ImageIcon, Save, Upload, Eye } from "lucide-react";
+import { Plus, Wrench, ClipboardList, Clock, Play, CheckCircle2, XCircle, RotateCcw, Trash, ChevronRight, AlertTriangle, User, Building, Calendar, DollarSign, Image as ImageIcon, Save, Upload, Eye, Pencil } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 
 function formatCurrency(amount: number) {
@@ -109,6 +109,34 @@ export default function WorkOrdersPage() {
   }, [workOrders, activeFilter, searchQuery]);
 
   const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
+
+  const openEdit = async (workOrderId: string) => {
+    try {
+      const { data, error: detailError } = await supabase
+        .from("maintenance")
+        .select("id, property_id, maintainer_id, description, category, priority, status, scheduled_date, estimated_cost, actual_cost")
+        .eq("id", workOrderId)
+        .single();
+
+      if (detailError) throw detailError;
+
+      setEditingId(String(data.id));
+      setForm({
+        property_id: String(data.property_id ?? ""),
+        maintainer_id: String(data.maintainer_id ?? ""),
+        description: String(data.description ?? ""),
+        category: String(data.category ?? "general"),
+        priority: String(data.priority ?? "medium"),
+        status: String(data.status ?? "open"),
+        scheduled_date: String(data.scheduled_date ?? ""),
+        estimated_cost: Number(data.estimated_cost ?? 0),
+        actual_cost: Number(data.actual_cost ?? 0),
+      });
+      setModalOpen(true);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not load work order for editing.");
+    }
+  };
 
   const onSave = async () => {
     if (!form.description.trim()) { alert("Please enter a description."); return; }
@@ -360,6 +388,11 @@ export default function WorkOrdersPage() {
                       </td>
                       <td className="px-6 py-4">
                         <TableRowActions>
+                          <TableActionButton
+                            icon={Pencil}
+                            label="Edit"
+                            onClick={(e) => { e.stopPropagation(); void openEdit(row.id); }}
+                          />
                           {row.status === "open" && (
                             <TableActionButton
                               icon={Play}
@@ -435,8 +468,8 @@ export default function WorkOrdersPage() {
           </div>
           <div><label className="mb-1 block text-sm text-muted">Scheduled Date</label><input type="date" value={form.scheduled_date} onChange={(e) => setForm({ ...form, scheduled_date: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-sm text-muted">Estimated Cost</label><input type="number" value={form.estimated_cost} onChange={(e) => setForm({ ...form, estimated_cost: Number(e.target.value) })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
-            <div><label className="mb-1 block text-sm text-muted">Actual Cost</label><input type="number" value={form.actual_cost} onChange={(e) => setForm({ ...form, actual_cost: Number(e.target.value) })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+            <div><label className="mb-1 block text-sm text-muted">Estimated Cost (NAD)</label><input type="number" value={form.estimated_cost} onChange={(e) => setForm({ ...form, estimated_cost: Number(e.target.value) })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+            <div><label className="mb-1 block text-sm text-muted">Actual Cost (NAD)</label><input type="number" value={form.actual_cost} onChange={(e) => setForm({ ...form, actual_cost: Number(e.target.value) })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setModalOpen(false)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
