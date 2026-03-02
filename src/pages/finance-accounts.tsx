@@ -8,6 +8,7 @@ import {
   buildBalanceSheetHtml,
   type AdminInfo,
   type BalanceSheetMonthlyRow,
+  type BalanceSheetTransactionRow,
   type CompanyInfo,
 } from "@/lib/document-templates";
 
@@ -24,6 +25,8 @@ type BalanceSheetSummary = {
   totalExpenses: number;
   netProfit: number;
 };
+
+type BalanceSheetTransaction = BalanceSheetTransactionRow;
 
 const presetLabels: Record<TimePreset, string> = {
   this_month: "This month",
@@ -61,6 +64,14 @@ function toIsoDate(date: Date) {
 
 function toMonthKey(value: string) {
   return String(value).slice(0, 7);
+}
+
+function humanize(value: string) {
+  return String(value || "general")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\w/, (char) => char.toUpperCase());
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -127,16 +138,51 @@ type PaymentProjection = {
   payment_date?: string;
   amount_paid?: number;
   tenant_id?: string;
-  tenants?: { property_id?: string } | null;
+  created_by?: string;
+  recorded_by?: string;
+  collected_by?: string;
+  tenants?: { property_id?: string; full_name?: string } | null;
 };
 
 type PaymentWithProperty = {
   paymentDate: string;
   amountPaid: number;
   tenantPropertyId: string;
+  tenantName: string;
+  executor: string;
 };
 
+function pickExecutor(record: Record<string, unknown>) {
+  const candidates = ["executed_by", "recorded_by", "collected_by", "created_by", "updated_by", "executor", "actor"];
+  for (const key of candidates) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "-";
+}
+
 async function fetchPaymentsWithProperty(startDate: string, endDate: string): Promise<PaymentWithProperty[]> {
+  const richJoin = await supabase
+    .from("tenant_rent_payments")
+    .select("payment_date, amount_paid, tenant_id, created_by, recorded_by, collected_by, tenants(property_id, full_name)")
+    .gte("payment_date", startDate)
+    .lte("payment_date", endDate)
+    .order("payment_date");
+
+  if (!richJoin.error) {
+    return ((richJoin.data ?? []) as PaymentProjection[]).map((row) => ({
+      paymentDate: String(row.payment_date ?? ""),
+      amountPaid: Number(row.amount_paid ?? 0),
+      tenantPropertyId: String((row.tenants as { property_id?: string } | null)?.property_id ?? ""),
+      tenantName: String((row.tenants as { full_name?: string } | null)?.full_name ?? "Tenant"),
+      executor: pickExecutor(row as Record<string, unknown>),
+    }));
+  }
+
+  if (!isMissingDbObjectError(richJoin.error)) {
+    throw richJoin.error;
+  }
+
   const withJoin = await supabase
     .from("tenant_rent_payments")
     .select("payment_date, amount_paid, tenant_id, tenants(property_id)")
@@ -149,6 +195,8 @@ async function fetchPaymentsWithProperty(startDate: string, endDate: string): Pr
       paymentDate: String(row.payment_date ?? ""),
       amountPaid: Number(row.amount_paid ?? 0),
       tenantPropertyId: String((row.tenants as { property_id?: string } | null)?.property_id ?? ""),
+      tenantName: String((row.tenants as { full_name?: string } | null)?.full_name ?? "Tenant"),
+      executor: "-",
     }));
   }
 
@@ -172,11 +220,24 @@ async function fetchPaymentsWithProperty(startDate: string, endDate: string): Pr
   if (tenantIds.length > 0) {
     const tenantsResult = await supabase
       .from("tenants")
-      .select("id, property_id")
+      .select("id, property_id, full_name")
       .in("id", tenantIds);
     if (!tenantsResult.error) {
       tenantPropertyMap = new Map(
         (tenantsResult.data ?? []).map((row) => [String(row.id ?? ""), String(row.property_id ?? "")]),
+      );
+    }
+  }
+
+  let tenantNameMap = new Map<string, string>();
+  if (tenantIds.length > 0) {
+    const namesResult = await supabase
+      .from("tenants")
+      .select("id, full_name")
+      .in("id", tenantIds);
+    if (!namesResult.error) {
+      tenantNameMap = new Map(
+        (namesResult.data ?? []).map((row) => [String(row.id ?? ""), String(row.full_name ?? "Tenant")]),
       );
     }
   }
@@ -187,6 +248,8 @@ async function fetchPaymentsWithProperty(startDate: string, endDate: string): Pr
       paymentDate: String(row.payment_date ?? ""),
       amountPaid: Number(row.amount_paid ?? 0),
       tenantPropertyId: tenantPropertyMap.get(tenantId) ?? "",
+      tenantName: tenantNameMap.get(tenantId) ?? "Tenant",
+      executor: "-",
     };
   });
 }
@@ -196,13 +259,32 @@ type MaintenanceProjection = {
   cost?: number;
   actual_cost?: number;
   category?: string;
+  description?: string;
   property_id?: string;
+  maintainers?: { name?: string } | null;
+  created_by?: string;
+  updated_by?: string;
+  executed_by?: string;
 };
 
 async function fetchMaintenanceRows(startDate: string, endDate: string): Promise<MaintenanceProjection[]> {
+  const rich = await supabase
+    .from("maintenance")
+    .select("created_at, cost, actual_cost, category, description, property_id, created_by, updated_by, executed_by, maintainers(name)")
+    .gte("created_at", `${startDate}T00:00:00.000Z`)
+    .lte("created_at", `${endDate}T23:59:59.999Z`);
+
+  if (!rich.error) {
+    return (rich.data ?? []) as MaintenanceProjection[];
+  }
+
+  if (!isMissingDbObjectError(rich.error)) {
+    throw rich.error;
+  }
+
   const withProperty = await supabase
     .from("maintenance")
-    .select("created_at, cost, actual_cost, category, property_id")
+    .select("created_at, cost, actual_cost, category, description, property_id")
     .gte("created_at", `${startDate}T00:00:00.000Z`)
     .lte("created_at", `${endDate}T23:59:59.999Z`);
 
@@ -216,7 +298,7 @@ async function fetchMaintenanceRows(startDate: string, endDate: string): Promise
 
   const fallback = await supabase
     .from("maintenance")
-    .select("created_at, cost, actual_cost, category")
+    .select("created_at, cost, actual_cost, category, description")
     .gte("created_at", `${startDate}T00:00:00.000Z`)
     .lte("created_at", `${endDate}T23:59:59.999Z`);
 
@@ -241,9 +323,11 @@ export default function FinanceAccountsPage() {
   const [presentation, setPresentation] = useState<PresentationMode>("summary");
   const [showSignature, setShowSignature] = useState(true);
   const [showAdminName, setShowAdminName] = useState(true);
+  const [showExecutor, setShowExecutor] = useState(true);
 
   const [summary, setSummary] = useState<BalanceSheetSummary | null>(null);
   const [monthlyRows, setMonthlyRows] = useState<BalanceSheetMonthlyRow[]>([]);
+  const [transactionRows, setTransactionRows] = useState<BalanceSheetTransaction[]>([]);
   const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null);
   const [adminInfo, setAdminInfo] = useState<AdminInfo | null>(null);
 
@@ -333,6 +417,7 @@ export default function FinanceAccountsPage() {
 
       const monthKeys = buildMonthRange(startDate, endDate);
       const monthMap = new Map<string, BalanceSheetMonthlyRow>();
+      const transactions: BalanceSheetTransaction[] = [];
       monthKeys.forEach((month) => {
         monthMap.set(month, {
           month,
@@ -352,6 +437,17 @@ export default function FinanceAccountsPage() {
         const month = toMonthKey(row.paymentDate);
         if (!monthMap.has(month)) return;
         monthMap.get(month)!.rentCollected += Number(row.amountPaid ?? 0);
+        transactions.push({
+          date: row.paymentDate,
+          month,
+          entryType: "income",
+          category: "Rent Collected",
+          details: `Rent payment accepted: ${row.tenantName}`,
+          executor: row.executor,
+          amount: Number(row.amountPaid ?? 0),
+          tax: 0,
+          net: Number(row.amountPaid ?? 0),
+        });
       });
 
       maintenanceRows.forEach((row) => {
@@ -359,10 +455,37 @@ export default function FinanceAccountsPage() {
         const month = toMonthKey(String(row.created_at ?? ""));
         if (!monthMap.has(month)) return;
         const amount = Number(row.actual_cost ?? row.cost ?? 0);
+        const categoryLabel = humanize(String(row.category ?? "general"));
+        const description = String(row.description ?? "").trim();
+        const executor = pickExecutor(row as Record<string, unknown>) !== "-"
+          ? pickExecutor(row as Record<string, unknown>)
+          : String((row.maintainers as { name?: string } | null)?.name ?? "-");
         if (classifyMaintenanceCategory(String(row.category ?? "")) === "bills") {
           monthMap.get(month)!.bills += amount;
+          transactions.push({
+            date: String(row.created_at ?? `${month}-01`),
+            month,
+            entryType: "expense",
+            category: "Bill Payment",
+            details: `Bill payment: ${categoryLabel}${description ? ` - ${description}` : ""}`,
+            executor,
+            amount,
+            tax: 0,
+            net: -amount,
+          });
         } else {
           monthMap.get(month)!.maintenance += amount;
+          transactions.push({
+            date: String(row.created_at ?? `${month}-01`),
+            month,
+            entryType: "expense",
+            category: "Work Order Fee",
+            details: `Work order fee: ${categoryLabel}${description ? ` - ${description}` : ""}`,
+            executor,
+            amount,
+            tax: 0,
+            net: -amount,
+          });
         }
       });
 
@@ -370,20 +493,59 @@ export default function FinanceAccountsPage() {
         if (scope === "property" && String(row.property_id ?? "") !== propertyId) return;
         const month = toMonthKey(String(row.created_at ?? ""));
         if (!monthMap.has(month)) return;
-        monthMap.get(month)!.renovations += Number(row.actual_cost ?? row.cost ?? 0);
+        const amount = Number(row.actual_cost ?? row.cost ?? 0);
+        monthMap.get(month)!.renovations += amount;
+        transactions.push({
+          date: String(row.created_at ?? `${month}-01`),
+          month,
+          entryType: "expense",
+          category: "Renovation",
+          details: `Renovation expense entry`,
+          executor: pickExecutor(row as Record<string, unknown>),
+          amount,
+          tax: 0,
+          net: -amount,
+        });
       });
 
       bills.forEach((row) => {
         if (scope === "property" && String(row.property_id ?? "") !== propertyId) return;
         const month = toMonthKey(String(row.created_at ?? ""));
         if (!monthMap.has(month)) return;
-        monthMap.get(month)!.bills += Number(row.amount ?? 0);
+        const amount = Number(row.amount ?? 0);
+        monthMap.get(month)!.bills += amount;
+        const rowRecord = row as Record<string, unknown>;
+        const billHint = humanize(String(rowRecord.title ?? rowRecord.name ?? rowRecord.category ?? "general bill"));
+        transactions.push({
+          date: String(row.created_at ?? `${month}-01`),
+          month,
+          entryType: "expense",
+          category: "Bill Payment",
+          details: `Bill payment: ${billHint}`,
+          executor: pickExecutor(row as Record<string, unknown>),
+          amount,
+          tax: 0,
+          net: -amount,
+        });
       });
 
       monthMap.forEach((value) => {
         value.tax = value.rentCollected * ((company.taxRate ?? 0) / 100);
         value.totalExpenses = value.maintenance + value.bills + value.renovations;
         value.netProfit = value.rentCollected - value.totalExpenses - value.tax;
+        if (value.tax > 0) {
+          transactions.push({
+            date: `${value.month}-28`,
+            month: value.month,
+            entryType: "tax",
+            category: "Tax",
+            details: `Tax accrued for ${value.month}`,
+            executor: "System",
+            amount: value.tax,
+            tax: value.tax,
+            net: -value.tax,
+          });
+        }
       });
 
       const monthly = Array.from(monthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
@@ -398,6 +560,11 @@ export default function FinanceAccountsPage() {
       };
 
       setMonthlyRows(monthly);
+      setTransactionRows(
+        transactions
+          .filter((row) => row.month && row.date)
+          .sort((a, b) => `${a.date}-${a.category}`.localeCompare(`${b.date}-${b.category}`)),
+      );
       setSummary(reportSummary);
     } catch (loadError) {
       setError(getErrorMessage(loadError, "Could not generate balance sheet."));
@@ -420,8 +587,10 @@ export default function FinanceAccountsPage() {
         presentation,
         includeSignature: showSignature,
         includeAdminName: showAdminName,
+        includeExecutor: showExecutor,
         summary,
         monthlyRows,
+        transactionRows,
       },
       companyInfo,
       adminInfo,
@@ -491,7 +660,7 @@ export default function FinanceAccountsPage() {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <div>
             <label className="mb-1 block text-sm text-muted">Presentation</label>
             <select value={presentation} onChange={(event) => setPresentation(event.target.value as PresentationMode)} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm">
@@ -511,6 +680,14 @@ export default function FinanceAccountsPage() {
           <div>
             <label className="mb-1 block text-sm text-muted">Show admin name</label>
             <select value={showAdminName ? "yes" : "no"} onChange={(event) => setShowAdminName(event.target.value === "yes")} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm">
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm text-muted">Show executor</label>
+            <select value={showExecutor ? "yes" : "no"} onChange={(event) => setShowExecutor(event.target.value === "yes")} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm">
               <option value="yes">Yes</option>
               <option value="no">No</option>
             </select>
@@ -539,15 +716,15 @@ export default function FinanceAccountsPage() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <article className="rounded-md border border-border-color bg-surface-elevated p-3">
               <p className="text-xs text-muted">Rent Collected</p>
-              <p className="text-lg font-semibold">{formatCurrency(summary.rentCollected)}</p>
+              <p className="text-lg font-semibold text-green-600">{formatCurrency(summary.rentCollected)}</p>
             </article>
             <article className="rounded-md border border-border-color bg-surface-elevated p-3">
               <p className="text-xs text-muted">Total Expenses</p>
-              <p className="text-lg font-semibold">{formatCurrency(summary.totalExpenses)}</p>
+              <p className="text-lg font-semibold text-red-600">{formatCurrency(summary.totalExpenses)}</p>
             </article>
             <article className="rounded-md border border-border-color bg-surface-elevated p-3">
               <p className="text-xs text-muted">Tax</p>
-              <p className="text-lg font-semibold">{formatCurrency(summary.tax)}</p>
+              <p className="text-lg font-semibold text-red-600">{formatCurrency(summary.tax)}</p>
             </article>
             <article className="rounded-md border border-border-color bg-surface-elevated p-3">
               <p className="text-xs text-muted">Net Profit</p>
@@ -574,13 +751,46 @@ export default function FinanceAccountsPage() {
                   {monthlyRows.map((row) => (
                     <tr key={row.month} className="border-b border-border-color/60">
                       <td className="px-3 py-3">{row.month}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(row.rentCollected)}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(row.maintenance)}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(row.bills)}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(row.renovations)}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(row.tax)}</td>
-                      <td className="px-3 py-3 text-right">{formatCurrency(row.totalExpenses)}</td>
+                      <td className="px-3 py-3 text-right text-green-600 font-semibold">{formatCurrency(row.rentCollected)}</td>
+                      <td className="px-3 py-3 text-right text-red-600">{formatCurrency(row.maintenance)}</td>
+                      <td className="px-3 py-3 text-right text-red-600">{formatCurrency(row.bills)}</td>
+                      <td className="px-3 py-3 text-right text-red-600">{formatCurrency(row.renovations)}</td>
+                      <td className="px-3 py-3 text-right text-red-600">{formatCurrency(row.tax)}</td>
+                      <td className="px-3 py-3 text-right text-red-600 font-semibold">{formatCurrency(row.totalExpenses)}</td>
                       <td className={`px-3 py-3 text-right font-medium ${row.netProfit >= 0 ? "text-green-600" : "text-red-500"}`}>{formatCurrency(row.netProfit)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {presentation === "expanded" && (
+            <div className="overflow-x-auto">
+              <table className="min-w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-border-color text-left text-muted">
+                    <th className="px-3 py-2 font-medium">Date</th>
+                    <th className="px-3 py-2 font-medium">Month</th>
+                    <th className="px-3 py-2 font-medium">Entry</th>
+                    <th className="px-3 py-2 font-medium">Details</th>
+                    {showExecutor && <th className="px-3 py-2 font-medium">Executed By</th>}
+                    <th className="px-3 py-2 font-medium text-right">Amount</th>
+                    <th className="px-3 py-2 font-medium text-right">Tax</th>
+                    <th className="px-3 py-2 font-medium text-right">Net Effect</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transactionRows.map((row, index) => (
+                    <tr key={`${row.date}-${row.category}-${index}`} className="border-b border-border-color/60">
+                      <td className="px-3 py-3">{row.date}</td>
+                      <td className="px-3 py-3">{row.month}</td>
+                      <td className="px-3 py-3">{row.category}</td>
+                      <td className="px-3 py-3">{row.details}</td>
+                      {showExecutor && <td className="px-3 py-3">{row.executor || "-"}</td>}
+                      <td className={`px-3 py-3 text-right font-semibold ${row.entryType === "income" ? "text-green-600" : "text-red-600"}`}>{formatCurrency(row.amount)}</td>
+                      <td className="px-3 py-3 text-right text-red-600">{formatCurrency(row.tax)}</td>
+                      <td className={`px-3 py-3 text-right font-semibold ${row.net >= 0 ? "text-green-600" : "text-red-600"}`}>{formatCurrency(row.net)}</td>
                     </tr>
                   ))}
                 </tbody>

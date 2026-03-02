@@ -590,6 +590,18 @@ export type BalanceSheetMonthlyRow = {
   netProfit: number;
 };
 
+export type BalanceSheetTransactionRow = {
+  date: string;
+  month: string;
+  entryType: "income" | "expense" | "tax";
+  category: string;
+  details: string;
+  executor: string;
+  amount: number;
+  tax: number;
+  net: number;
+};
+
 export type BalanceSheetDocData = {
   scopeLabel: string;
   startDate: string;
@@ -597,6 +609,7 @@ export type BalanceSheetDocData = {
   presentation: "summary" | "expanded";
   includeSignature: boolean;
   includeAdminName: boolean;
+  includeExecutor: boolean;
   summary: {
     rentCollected: number;
     maintenance: number;
@@ -607,6 +620,7 @@ export type BalanceSheetDocData = {
     netProfit: number;
   };
   monthlyRows: BalanceSheetMonthlyRow[];
+  transactionRows: BalanceSheetTransactionRow[];
 };
 
 export function buildBalanceSheetHtml(
@@ -628,14 +642,30 @@ export function buildBalanceSheetHtml(
     <tr>
       <td>${index + 1}</td>
       <td>${esc(row.month)}</td>
-      <td class="amount">${formatNAD(row.rentCollected)}</td>
-      <td class="amount">${formatNAD(row.maintenance)}</td>
-      <td class="amount">${formatNAD(row.bills)}</td>
-      <td class="amount">${formatNAD(row.renovations)}</td>
-      <td class="amount">${formatNAD(row.tax)}</td>
-      <td class="amount">${formatNAD(row.totalExpenses)}</td>
-      <td class="amount">${formatNAD(row.netProfit)}</td>
+      <td class="amount" style="color:#15803d;font-weight:700;">${formatNAD(row.rentCollected)}</td>
+      <td class="amount" style="color:#dc2626;">${formatNAD(row.maintenance)}</td>
+      <td class="amount" style="color:#dc2626;">${formatNAD(row.bills)}</td>
+      <td class="amount" style="color:#dc2626;">${formatNAD(row.renovations)}</td>
+      <td class="amount" style="color:#dc2626;">${formatNAD(row.tax)}</td>
+      <td class="amount" style="color:#dc2626;font-weight:700;">${formatNAD(row.totalExpenses)}</td>
+      <td class="amount" style="color:${row.netProfit >= 0 ? "#15803d" : "#dc2626"};font-weight:700;">${formatNAD(row.netProfit)}</td>
     </tr>`).join("");
+
+  const transactionRowsHtml = doc.transactionRows.map((row, index) => {
+    const amountColor = row.entryType === "income" ? "#15803d" : "#dc2626";
+    return `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${fmtDate(row.date)}</td>
+      <td>${esc(row.month)}</td>
+      <td>${esc(row.category)}</td>
+      <td>${esc(row.details)}</td>
+      ${doc.includeExecutor ? `<td>${esc(row.executor || "-")}</td>` : ""}
+      <td class="amount" style="color:${amountColor};font-weight:700;">${formatNAD(row.amount)}</td>
+      <td class="amount" style="color:#dc2626;">${formatNAD(row.tax)}</td>
+      <td class="amount" style="color:${row.net >= 0 ? "#15803d" : "#dc2626"};font-weight:700;">${formatNAD(row.net)}</td>
+    </tr>`;
+  }).join("");
 
   return `<!doctype html>
 <html lang="en">
@@ -677,13 +707,14 @@ export function buildBalanceSheetHtml(
           </tr>
         </thead>
         <tbody>
-          <tr><td>Rent Collected</td><td class="amount">${formatNAD(doc.summary.rentCollected)}</td></tr>
-          <tr><td>Maintenance</td><td class="amount">${formatNAD(doc.summary.maintenance)}</td></tr>
-          <tr><td>Bills</td><td class="amount">${formatNAD(doc.summary.bills)}</td></tr>
-          <tr><td>Renovations</td><td class="amount">${formatNAD(doc.summary.renovations)}</td></tr>
-          <tr><td>Tax</td><td class="amount">${formatNAD(doc.summary.tax)}</td></tr>
-          <tr><td><strong>Total Expenses</strong></td><td class="amount"><strong>${formatNAD(doc.summary.totalExpenses)}</strong></td></tr>
-          <tr><td><strong>Net Profit</strong></td><td class="amount"><strong>${formatNAD(doc.summary.netProfit)}</strong></td></tr>
+          <tr><td><strong>INFLOWS (Income)</strong></td><td class="amount" style="color:#15803d;font-weight:700;">${formatNAD(doc.summary.rentCollected)}</td></tr>
+          <tr><td>Rent Collected</td><td class="amount" style="color:#15803d;">${formatNAD(doc.summary.rentCollected)}</td></tr>
+          <tr><td><strong>OUTFLOWS (Expenses)</strong></td><td class="amount" style="color:#dc2626;font-weight:700;">${formatNAD(doc.summary.totalExpenses + doc.summary.tax)}</td></tr>
+          <tr><td>Work Order Fees / Maintenance</td><td class="amount" style="color:#dc2626;">${formatNAD(doc.summary.maintenance)}</td></tr>
+          <tr><td>Bill Payments</td><td class="amount" style="color:#dc2626;">${formatNAD(doc.summary.bills)}</td></tr>
+          <tr><td>Renovations</td><td class="amount" style="color:#dc2626;">${formatNAD(doc.summary.renovations)}</td></tr>
+          <tr><td>Tax</td><td class="amount" style="color:#dc2626;">${formatNAD(doc.summary.tax)}</td></tr>
+          <tr><td><strong>Net Position</strong></td><td class="amount" style="color:${doc.summary.netProfit >= 0 ? "#15803d" : "#dc2626"};font-weight:700;">${formatNAD(doc.summary.netProfit)}</td></tr>
         </tbody>
       </table>
     </div>
@@ -707,6 +738,25 @@ export function buildBalanceSheetHtml(
         </thead>
         <tbody>
           ${monthlyRowsHtml || '<tr><td colspan="9" style="text-align:center;color:#888;">No monthly rows in selected range</td></tr>'}
+        </tbody>
+      </table>
+
+      <table class="items" style="margin-top:14px;">
+        <thead>
+          <tr>
+            <th style="width:40px">#</th>
+            <th style="width:120px">Date</th>
+            <th style="width:90px">Month</th>
+            <th style="width:110px">Entry</th>
+            <th>Details</th>
+            ${doc.includeExecutor ? '<th style="width:120px">Executed By</th>' : ""}
+            <th class="amount" style="width:120px">Amount</th>
+            <th class="amount" style="width:100px">Tax</th>
+            <th class="amount" style="width:120px">Net</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${transactionRowsHtml || `<tr><td colspan="${doc.includeExecutor ? 9 : 8}" style="text-align:center;color:#888;">No transaction rows in selected range</td></tr>`}
         </tbody>
       </table>
     </div>` : ""}
