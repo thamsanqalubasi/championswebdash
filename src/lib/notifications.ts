@@ -5,6 +5,8 @@
  * Falls back to mailto: / wa.me links when the server API is unavailable.
  */
 
+import { supabase } from "@/lib/supabase";
+
 /* ------------------------------------------------------------------ */
 /*  Beautiful HTML email wrapper                                       */
 /* ------------------------------------------------------------------ */
@@ -89,15 +91,39 @@ export async function sendEmailViaApi(opts: {
   }>;
 }): Promise<{ success: boolean; error?: string }> {
   try {
+    let configuredMethod = "resend";
+    try {
+      const { data: deliverySettings } = await supabase
+        .from("email_delivery_settings")
+        .select("method")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      configuredMethod = String((deliverySettings as { method?: string } | null)?.method ?? "resend").toLowerCase();
+    } catch {
+      configuredMethod = "resend";
+    }
+
+    if (configuredMethod === "mailto") {
+      const subject = encodeURIComponent(opts.subject);
+      const body = encodeURIComponent("Please find your document in the system preview/download and send manually.");
+      window.open(`mailto:${opts.to}?subject=${subject}&body=${body}`, "_blank", "noopener,noreferrer");
+      return { success: true };
+    }
+
     const response = await fetch("/api/send-email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(opts),
+      body: JSON.stringify({ ...opts, method: configuredMethod }),
     });
 
     const data = await response.json();
 
     if (!response.ok) {
+      if (response.status === 409 && typeof data?.mailtoUrl === "string" && data.mailtoUrl) {
+        window.open(data.mailtoUrl, "_blank", "noopener,noreferrer");
+        return { success: true };
+      }
       return { success: false, error: data?.error || `HTTP ${response.status}` };
     }
 
