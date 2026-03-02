@@ -34,10 +34,30 @@ export default function SettingsPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   // Edit states
-  const [editSection, setEditSection] = useState<"admin" | "company" | "invoice" | null>(null);
+  const [editSection, setEditSection] = useState<"admin" | "company" | "invoice" | "email" | null>(null);
   const [adminForm, setAdminForm] = useState({ first_name: "", last_name: "", email: "", signature_url: "" });
   const [companyForm, setCompanyForm] = useState({ company_name: "", logo_url: "", address: "" });
   const [invoiceForm, setInvoiceForm] = useState({ tax_rate: 0, default_due_day: 1, payment_instructions: "" });
+  const [emailForm, setEmailForm] = useState({
+    method: "resend" as "mailto" | "resend" | "smtp" | "nodemailer" | "sendgrid" | "ses" | "mailgun",
+    from_name: "",
+    from_email: "",
+    reply_to: "",
+    resend_api_key: "",
+    smtp_host: "",
+    smtp_port: 587,
+    smtp_secure: false,
+    smtp_user: "",
+    smtp_pass: "",
+    nodemailer_transport_json: "",
+    sendgrid_api_key: "",
+    ses_region: "",
+    ses_access_key_id: "",
+    ses_secret_access_key: "",
+    ses_from_arn: "",
+    mailgun_api_key: "",
+    mailgun_domain: "",
+  });
   const [saving, setSaving] = useState(false);
   const [signatureUploading, setSignatureUploading] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
@@ -48,6 +68,7 @@ export default function SettingsPage() {
   const [newPin, setNewPin] = useState("");
   const [pinVerifying, setPinVerifying] = useState(false);
   const [pinError, setPinError] = useState("");
+  const [emailSavePin, setEmailSavePin] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +130,31 @@ export default function SettingsPage() {
     if (!data) return;
     setInvoiceForm({ tax_rate: data.invoiceSettings.taxRate, default_due_day: data.invoiceSettings.defaultDueDay, payment_instructions: data.invoiceSettings.paymentInstructions });
     setEditSection("invoice");
+  };
+  const openEditEmail = () => {
+    if (!data) return;
+    setEmailForm({
+      method: data.emailDelivery.method,
+      from_name: data.emailDelivery.fromName,
+      from_email: data.emailDelivery.fromEmail,
+      reply_to: data.emailDelivery.replyTo,
+      resend_api_key: data.emailDelivery.resendApiKey,
+      smtp_host: data.emailDelivery.smtpHost,
+      smtp_port: data.emailDelivery.smtpPort,
+      smtp_secure: data.emailDelivery.smtpSecure,
+      smtp_user: data.emailDelivery.smtpUser,
+      smtp_pass: data.emailDelivery.smtpPass,
+      nodemailer_transport_json: data.emailDelivery.nodemailerTransportJson,
+      sendgrid_api_key: data.emailDelivery.sendgridApiKey,
+      ses_region: data.emailDelivery.sesRegion,
+      ses_access_key_id: data.emailDelivery.sesAccessKeyId,
+      ses_secret_access_key: data.emailDelivery.sesSecretAccessKey,
+      ses_from_arn: data.emailDelivery.sesFromArn,
+      mailgun_api_key: data.emailDelivery.mailgunApiKey,
+      mailgun_domain: data.emailDelivery.mailgunDomain,
+    });
+    setEmailSavePin("");
+    setEditSection("email");
   };
 
   const saveAdmin = async () => {
@@ -188,6 +234,62 @@ export default function SettingsPage() {
       setEditSection(null); reload();
     } catch (e) { alert(e instanceof Error ? e.message : "Save failed"); }
     finally { setSaving(false); }
+  };
+
+  const saveEmailSettings = async () => {
+    if (!emailSavePin.trim()) {
+      alert("Admin PIN is required.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const validPin = await verifyAdminPin(emailSavePin);
+      if (!validPin) {
+        alert("Invalid admin PIN.");
+        return;
+      }
+
+      const payload = {
+        method: emailForm.method,
+        from_name: emailForm.from_name,
+        from_email: emailForm.from_email,
+        reply_to: emailForm.reply_to,
+        resend_api_key: emailForm.resend_api_key,
+        smtp_host: emailForm.smtp_host,
+        smtp_port: emailForm.smtp_port,
+        smtp_secure: emailForm.smtp_secure,
+        smtp_user: emailForm.smtp_user,
+        smtp_pass: emailForm.smtp_pass,
+        nodemailer_transport_json: emailForm.nodemailer_transport_json,
+        sendgrid_api_key: emailForm.sendgrid_api_key,
+        ses_region: emailForm.ses_region,
+        ses_access_key_id: emailForm.ses_access_key_id,
+        ses_secret_access_key: emailForm.ses_secret_access_key,
+        ses_from_arn: emailForm.ses_from_arn,
+        mailgun_api_key: emailForm.mailgun_api_key,
+        mailgun_domain: emailForm.mailgun_domain,
+        updated_by_email: user?.email ?? null,
+      };
+
+      const { data: existing } = await supabase.from("email_delivery_settings").select("id").limit(1).maybeSingle();
+      if (existing?.id) {
+        const { error: err } = await supabase.from("email_delivery_settings").update(payload).eq("id", existing.id);
+        if (err) throw err;
+      } else {
+        const { error: err } = await supabase.from("email_delivery_settings").insert(payload);
+        if (err) throw err;
+      }
+
+      setEditSection(null);
+      setEmailSavePin("");
+      reload();
+      alert("Email delivery settings saved.");
+    } catch (saveError) {
+      alert(saveError instanceof Error ? saveError.message : "Could not save email delivery settings.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleChangePin = async () => {
@@ -353,6 +455,21 @@ export default function SettingsPage() {
               <Lock size={120} />
             </div>
           </section>
+
+          {/* Email Delivery */}
+          <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
+            <SectionHeader icon={Mail} title="Email Delivery Method" description="Choose how contracts and invoices are delivered by email." onEdit={openEditEmail} />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <LabelValue label="Current Method" value={data.emailDelivery.method.toUpperCase()} icon={Mail} />
+              <LabelValue label="From Address" value={data.emailDelivery.fromEmail || "-"} />
+            </div>
+            <div className="mt-4 rounded-xl border border-border-color bg-surface-elevated/20 p-4">
+              <p className="text-xs font-bold uppercase tracking-wider text-muted/60">How it works</p>
+              <p className="mt-2 text-sm text-foreground/80">
+                `mailto` opens the user email app. Other methods require server-side credentials and API integration in `api/send-email.ts`.
+              </p>
+            </div>
+          </section>
         </div>
       )}
 
@@ -416,6 +533,96 @@ export default function SettingsPage() {
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setEditSection(null)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
             <button type="button" onClick={saveInvoice} disabled={saving} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Email Delivery Modal */}
+      <Modal open={editSection === "email"} onClose={() => setEditSection(null)} title="Edit Email Delivery Method">
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-sm text-muted">Send Method</label>
+            <select value={emailForm.method} onChange={(e) => setEmailForm({ ...emailForm, method: e.target.value as typeof emailForm.method })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
+              <option value="mailto">mailto (open email app)</option>
+              <option value="resend">Resend API</option>
+              <option value="smtp">SMTP</option>
+              <option value="nodemailer">Nodemailer transport</option>
+              <option value="sendgrid">SendGrid API</option>
+              <option value="ses">AWS SES</option>
+              <option value="mailgun">Mailgun API</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div><label className="mb-1 block text-sm text-muted">From Name</label><input value={emailForm.from_name} onChange={(e) => setEmailForm({ ...emailForm, from_name: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+            <div><label className="mb-1 block text-sm text-muted">From Email</label><input value={emailForm.from_email} onChange={(e) => setEmailForm({ ...emailForm, from_email: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+          </div>
+          <div><label className="mb-1 block text-sm text-muted">Reply-To</label><input value={emailForm.reply_to} onChange={(e) => setEmailForm({ ...emailForm, reply_to: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+
+          <div className="rounded-md border border-border-color bg-surface-elevated p-3 text-xs text-muted">
+            {emailForm.method === "mailto" && "mailto: opens the admin's local email client. No API key required; delivery is manual by user confirmation."}
+            {emailForm.method === "resend" && "Resend: provide API key. Server endpoint should use RESEND API with this key and verified sender domain."}
+            {emailForm.method === "smtp" && "SMTP: provide host, port, secure flag, username, password. Server endpoint must authenticate and send via SMTP transport."}
+            {emailForm.method === "nodemailer" && "Nodemailer: provide a JSON transport config. Server endpoint must parse config and send using nodemailer."}
+            {emailForm.method === "sendgrid" && "SendGrid: provide API key. Server endpoint should call SendGrid /v3/mail/send with bearer auth."}
+            {emailForm.method === "ses" && "AWS SES: provide region, access key, secret, and optional From ARN. Server endpoint must sign SES requests."}
+            {emailForm.method === "mailgun" && "Mailgun: provide domain and API key. Server endpoint should call Mailgun messages API with basic auth."}
+          </div>
+
+          {emailForm.method === "resend" && (
+            <div><label className="mb-1 block text-sm text-muted">Resend API Key</label><input value={emailForm.resend_api_key} onChange={(e) => setEmailForm({ ...emailForm, resend_api_key: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+          )}
+
+          {emailForm.method === "smtp" && (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div><label className="mb-1 block text-sm text-muted">SMTP Host</label><input value={emailForm.smtp_host} onChange={(e) => setEmailForm({ ...emailForm, smtp_host: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+                <div><label className="mb-1 block text-sm text-muted">SMTP Port</label><input type="number" value={emailForm.smtp_port} onChange={(e) => setEmailForm({ ...emailForm, smtp_port: Number(e.target.value) })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div><label className="mb-1 block text-sm text-muted">SMTP User</label><input value={emailForm.smtp_user} onChange={(e) => setEmailForm({ ...emailForm, smtp_user: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+                <div><label className="mb-1 block text-sm text-muted">SMTP Password</label><input type="password" value={emailForm.smtp_pass} onChange={(e) => setEmailForm({ ...emailForm, smtp_pass: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-muted"><input type="checkbox" checked={emailForm.smtp_secure} onChange={(e) => setEmailForm({ ...emailForm, smtp_secure: e.target.checked })} /> Use TLS/SSL (secure)</label>
+            </>
+          )}
+
+          {emailForm.method === "nodemailer" && (
+            <div><label className="mb-1 block text-sm text-muted">Nodemailer Transport JSON</label><textarea value={emailForm.nodemailer_transport_json} onChange={(e) => setEmailForm({ ...emailForm, nodemailer_transport_json: e.target.value })} rows={4} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+          )}
+
+          {emailForm.method === "sendgrid" && (
+            <div><label className="mb-1 block text-sm text-muted">SendGrid API Key</label><input value={emailForm.sendgrid_api_key} onChange={(e) => setEmailForm({ ...emailForm, sendgrid_api_key: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+          )}
+
+          {emailForm.method === "ses" && (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div><label className="mb-1 block text-sm text-muted">AWS Region</label><input value={emailForm.ses_region} onChange={(e) => setEmailForm({ ...emailForm, ses_region: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+                <div><label className="mb-1 block text-sm text-muted">SES From ARN (optional)</label><input value={emailForm.ses_from_arn} onChange={(e) => setEmailForm({ ...emailForm, ses_from_arn: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div><label className="mb-1 block text-sm text-muted">AWS Access Key ID</label><input value={emailForm.ses_access_key_id} onChange={(e) => setEmailForm({ ...emailForm, ses_access_key_id: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+                <div><label className="mb-1 block text-sm text-muted">AWS Secret Access Key</label><input type="password" value={emailForm.ses_secret_access_key} onChange={(e) => setEmailForm({ ...emailForm, ses_secret_access_key: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+              </div>
+            </>
+          )}
+
+          {emailForm.method === "mailgun" && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div><label className="mb-1 block text-sm text-muted">Mailgun Domain</label><input value={emailForm.mailgun_domain} onChange={(e) => setEmailForm({ ...emailForm, mailgun_domain: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+              <div><label className="mb-1 block text-sm text-muted">Mailgun API Key</label><input value={emailForm.mailgun_api_key} onChange={(e) => setEmailForm({ ...emailForm, mailgun_api_key: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+            </div>
+          )}
+
+          <div>
+            <label className="mb-1 block text-sm text-muted">Admin PIN Confirmation</label>
+            <input type="password" value={emailSavePin} onChange={(e) => setEmailSavePin(e.target.value)} placeholder="Enter admin PIN to save" className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setEditSection(null)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
+            <button type="button" onClick={saveEmailSettings} disabled={saving} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Saving..." : "Save Email Method"}</button>
           </div>
         </div>
       </Modal>

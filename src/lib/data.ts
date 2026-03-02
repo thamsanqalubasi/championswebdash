@@ -917,6 +917,26 @@ export async function fetchSettingsData(): Promise<SettingsData> {
         security: {
           activePinExists: Boolean(data.active_pin_exists),
         },
+        emailDelivery: {
+          method: "resend",
+          fromName: String(data.email_from_name ?? "Champions Court"),
+          fromEmail: String(data.email_from ?? ""),
+          replyTo: String(data.email_reply_to ?? ""),
+          resendApiKey: "",
+          smtpHost: "",
+          smtpPort: 587,
+          smtpSecure: false,
+          smtpUser: "",
+          smtpPass: "",
+          nodemailerTransportJson: "",
+          sendgridApiKey: "",
+          sesRegion: "",
+          sesAccessKeyId: "",
+          sesSecretAccessKey: "",
+          sesFromArn: "",
+          mailgunApiKey: "",
+          mailgunDomain: "",
+        },
       };
     } catch (apiError) {
       logApiFallback("settings", apiError);
@@ -956,6 +976,17 @@ export async function fetchSettingsData(): Promise<SettingsData> {
   const settings = settingsRows?.[0];
   const user = userRows?.[0];
 
+  let emailDeliveryRow: Record<string, unknown> | null = null;
+  const emailDeliveryResult = await supabase
+    .from("email_delivery_settings")
+    .select("method, from_name, from_email, reply_to, resend_api_key, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, nodemailer_transport_json, sendgrid_api_key, ses_region, ses_access_key_id, ses_secret_access_key, ses_from_arn, mailgun_api_key, mailgun_domain")
+    .limit(1)
+    .maybeSingle();
+
+  if (!emailDeliveryResult.error) {
+    emailDeliveryRow = (emailDeliveryResult.data ?? null) as Record<string, unknown> | null;
+  }
+
   return {
     adminProfile: {
       firstName: String(user?.first_name ?? ""),
@@ -975,6 +1006,26 @@ export async function fetchSettingsData(): Promise<SettingsData> {
     },
     security: {
       activePinExists: (activePinCount ?? 0) > 0,
+    },
+    emailDelivery: {
+      method: String(emailDeliveryRow?.method ?? "resend") as "mailto" | "resend" | "smtp" | "nodemailer" | "sendgrid" | "ses" | "mailgun",
+      fromName: String(emailDeliveryRow?.from_name ?? "Champions Court"),
+      fromEmail: String(emailDeliveryRow?.from_email ?? ""),
+      replyTo: String(emailDeliveryRow?.reply_to ?? ""),
+      resendApiKey: String(emailDeliveryRow?.resend_api_key ?? ""),
+      smtpHost: String(emailDeliveryRow?.smtp_host ?? ""),
+      smtpPort: Number(emailDeliveryRow?.smtp_port ?? 587),
+      smtpSecure: Boolean(emailDeliveryRow?.smtp_secure ?? false),
+      smtpUser: String(emailDeliveryRow?.smtp_user ?? ""),
+      smtpPass: String(emailDeliveryRow?.smtp_pass ?? ""),
+      nodemailerTransportJson: String(emailDeliveryRow?.nodemailer_transport_json ?? ""),
+      sendgridApiKey: String(emailDeliveryRow?.sendgrid_api_key ?? ""),
+      sesRegion: String(emailDeliveryRow?.ses_region ?? ""),
+      sesAccessKeyId: String(emailDeliveryRow?.ses_access_key_id ?? ""),
+      sesSecretAccessKey: String(emailDeliveryRow?.ses_secret_access_key ?? ""),
+      sesFromArn: String(emailDeliveryRow?.ses_from_arn ?? ""),
+      mailgunApiKey: String(emailDeliveryRow?.mailgun_api_key ?? ""),
+      mailgunDomain: String(emailDeliveryRow?.mailgun_domain ?? ""),
     },
   };
 }

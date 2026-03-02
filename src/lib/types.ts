@@ -199,4 +199,24 @@ export type SettingsData = {
   security: {
     activePinExists: boolean;
   };
+  emailDelivery: {
+    method: "mailto" | "resend" | "smtp" | "nodemailer" | "sendgrid" | "ses" | "mailgun";
+    fromName: string;
+    fromEmail: string;
+    replyTo: string;
+    resendApiKey: string;
+    smtpHost: string;
+    smtpPort: number;
+    smtpSecure: boolean;
+    smtpUser: string;
+    smtpPass: string;
+    nodemailerTransportJson: string;
+    sendgridApiKey: string;
+    sesRegion: string;
+    sesAccessKeyId: string;
+    sesSecretAccessKey: string;
+    sesFromArn: string;
+    mailgunApiKey: string;
+    mailgunDomain: string;
+  };
 };
