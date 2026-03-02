@@ -82,6 +82,12 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
+function isExecutedByNameColumnMissing(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const lowered = message.toLowerCase();
+  return lowered.includes("executed_by_name") && lowered.includes("does not exist");
+}
+
 function StatCard({ label, value, detail, icon: Icon, colorClass = "text-foreground" }: { label: string; value: string; detail: string; icon: any; colorClass?: string }) {
   return (
     <article className="rounded-xl border border-border-color bg-surface p-5 transition-all hover:shadow-md">
@@ -301,15 +307,42 @@ export default function RentCollectionPage() {
       const admin = await fetchAdminInfo(user?.email ?? undefined);
       const executorName = admin.fullName || user?.email || "Admin";
 
-      const { data: insertedPayment, error: paymentError } = await supabase.from("tenant_rent_payments").insert({
+      const paymentPayload = {
         tenant_id: selectedTenant.id,
         payment_date: paymentForm.paymentDate,
         amount_paid: paymentForm.amountPaid,
         paid_months: [monthLabel],
         executed_by_name: executorName,
-      }).select("id").single();
+      };
+      const fallbackPaymentPayload = {
+        tenant_id: selectedTenant.id,
+        payment_date: paymentForm.paymentDate,
+        amount_paid: paymentForm.amountPaid,
+        paid_months: [monthLabel],
+      };
 
-      if (paymentError) throw paymentError;
+      let insertedPayment: { id?: string } | null = null;
+      const { data: insertedWithExecutor, error: paymentError } = await supabase
+        .from("tenant_rent_payments")
+        .insert(paymentPayload)
+        .select("id")
+        .single();
+
+      if (paymentError) {
+        if (isExecutedByNameColumnMissing(paymentError)) {
+          const { data: insertedFallback, error: fallbackError } = await supabase
+            .from("tenant_rent_payments")
+            .insert(fallbackPaymentPayload)
+            .select("id")
+            .single();
+          if (fallbackError) throw fallbackError;
+          insertedPayment = insertedFallback;
+        } else {
+          throw paymentError;
+        }
+      } else {
+        insertedPayment = insertedWithExecutor;
+      }
 
       await supabase.from("audit_log").insert({
         user_email: user?.email ?? null,
