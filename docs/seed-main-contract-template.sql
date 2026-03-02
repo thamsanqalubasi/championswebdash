@@ -5,20 +5,29 @@ begin;
 
 insert into public.contract_templates (
   title,
+  category,
+  content,
   description,
   monthly_rent,
   deposit_amount,
   is_default
 )
-select
+values (
   'Main Contract',
+  'residential',
+  '<p style="text-align: center;"><strong>LEASE AGREEMENT</strong></p>',
   'Residential lease template with full clauses and editable sections.',
   4500,
   4500,
   true
-where not exists (
-  select 1 from public.contract_templates where title = 'Main Contract'
-);
+)
+on conflict (title)
+do update set
+  category = coalesce(public.contract_templates.category, excluded.category),
+  content = case when coalesce(public.contract_templates.content, '') = '' then excluded.content else public.contract_templates.content end,
+  description = excluded.description,
+  monthly_rent = excluded.monthly_rent,
+  deposit_amount = excluded.deposit_amount;
 
 update public.contract_templates
 set is_default = case when title = 'Main Contract' then true else false end;

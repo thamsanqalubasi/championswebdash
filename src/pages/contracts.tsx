@@ -228,6 +228,8 @@ async function ensureMainContractTemplateInDb(): Promise<{ ok: true } | { ok: fa
       .from("contract_templates")
       .insert({
         title: MAIN_CONTRACT_TITLE,
+        category: "residential",
+        content: MAIN_CONTRACT_SECTIONS.map((section) => `${section.title}\n${section.content}`).join("\n\n"),
         description: MAIN_CONTRACT_DESCRIPTION,
         monthly_rent: 4500,
         deposit_amount: 4500,
@@ -774,8 +776,15 @@ export default function ContractsPage() {
     if (!templateForm.title.trim()) { alert("Please enter a template title."); return; }
     setSavingTemplate(true);
     try {
+      const templateContent = templateForm.sections
+        .filter((section) => section.title.trim() || section.content.trim())
+        .map((section) => `${section.title}\n${section.content}`)
+        .join("\n\n");
+
       const payload = {
         title: templateForm.title,
+        category: "residential",
+        content: templateContent || templateForm.description || "Template content",
         description: templateForm.description,
         monthly_rent: templateForm.monthly_rent,
         deposit_amount: templateForm.deposit_amount,
