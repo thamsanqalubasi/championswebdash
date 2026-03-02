@@ -3,12 +3,13 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { fetchContractsData } from "@/lib/data";
+import { verifyAdminPin } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, downloadHtmlDocument } from "@/lib/storage";
 import { buildProfessionalContractHtml } from "@/lib/document-templates";
 import type { ContractSection } from "@/lib/document-templates";
-import { sendEmail, sendWhatsApp } from "@/lib/notifications";
+import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
 import type { ContractRow } from "@/lib/types";
 
 /* ── local types ── */
@@ -43,7 +44,7 @@ async function ensureShareableDocumentUrl(existingUrl: string, html: string, fil
   }
 
   const file = new File([html], filename, { type: "text/html" });
-  return uploadFileToBucket("documents", "shared", file);
+  return uploadFileToBucket("contract-documents", "shared", file);
 }
 
 const emptySection: ContractSection = { title: "", content: "" };
@@ -485,16 +486,26 @@ export default function ContractsPage() {
       const documentHtml = await ensureGeneratedDocument(row);
       const company = await fetchCompanyInfo();
       const subject = `Lease Contract - ${row.propertyName}`;
-      const result = await sendEmail({
-        to: tenant.email,
+      const bodyText = `Please find your lease contract for ${row.propertyName}. The contract period is ${row.startDate} to ${row.endDate} with a monthly rent of ${formatCurrency(row.monthlyRent)}.`;
+      const emailHtml = wrapDocumentInEmailHtml({
         recipientName: row.tenantName,
         subject,
-        bodyText: `Please find your lease contract for <strong>${row.propertyName}</strong> attached below. The contract period is ${row.startDate} to ${row.endDate} with a monthly rent of <strong>${formatCurrency(row.monthlyRent)}</strong>.`,
+        bodyText,
         documentHtml,
-        attachmentFilename: `contract-${row.id}.html`,
         companyName: company?.companyName,
       });
-      if (result.sent) { alert("Contract sent via email successfully!"); }
+      const result = await sendEmailViaApi({
+        to: tenant.email,
+        subject,
+        html: emailHtml,
+        attachments: [{
+          filename: `contract-${row.id}.html`,
+          content: documentHtml,
+          contentType: "text/html",
+        }],
+      });
+      if (!result.success) throw new Error(result.error || "Email API request failed.");
+      alert("Contract sent via email successfully!");
     } catch (e) { alert(e instanceof Error ? e.message : "Could not send email."); }
   };
 
@@ -506,8 +517,9 @@ export default function ContractsPage() {
       const documentHtml = await ensureGeneratedDocument(row);
       const message = `Hello ${row.tenantName}, your contract for ${row.propertyName} is ready. Period: ${row.startDate} to ${row.endDate}. Monthly rent: ${formatCurrency(row.monthlyRent)}.`;
       const mediaUrl = await ensureShareableDocumentUrl(contractDocumentUrlById[row.id] ?? "", documentHtml, `contract-${row.id}.html`);
-      const result = await sendWhatsApp({ to: `+${phone}`, message, mediaUrl });
-      if (result.sent) { alert("Contract sent via WhatsApp successfully!"); }
+      const result = await sendWhatsAppViaApi({ to: `+${phone}`, message, mediaUrl });
+      if (!result.success) throw new Error(result.error || "WhatsApp API request failed.");
+      alert("Contract sent via WhatsApp successfully!");
     } catch (e) { alert(e instanceof Error ? e.message : "Could not send WhatsApp."); }
   };
 
@@ -587,12 +599,37 @@ export default function ContractsPage() {
 
   const onDeleteTemplate = async () => {
     if (!deleteTemplateTarget) return;
+    const pin = window.prompt("Enter admin PIN to delete this template:")?.trim() ?? "";
+    if (!pin) {
+      alert("PIN is required to delete a template.");
+      return;
+    }
+
     setDeletingTemplate(true);
     try {
+      const pinOk = await verifyAdminPin(pin);
+      if (!pinOk) {
+        alert("Invalid admin PIN.");
+        return;
+      }
+
+      const { error: deleteSectionsError } = await supabase
+        .from("contract_template_sections")
+        .delete()
+        .eq("template_id", deleteTemplateTarget.id);
+      if (deleteSectionsError) throw deleteSectionsError;
+
       const { error: err } = await supabase.from("contract_templates").delete().eq("id", deleteTemplateTarget.id);
       if (err) throw err;
       setDeleteTemplateTarget(null); reload();
-    } catch (e) { alert(e instanceof Error ? e.message : "Delete template failed"); }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Delete template failed";
+      if (/foreign key|violates/i.test(msg)) {
+        alert("Template is still linked to existing contracts and cannot be deleted.");
+      } else {
+        alert(msg);
+      }
+    }
     finally { setDeletingTemplate(false); }
   };
 
