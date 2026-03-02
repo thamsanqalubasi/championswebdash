@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
-import { Modal, ConfirmDialog } from "@/components/modal";
+import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { fetchContractsData } from "@/lib/data";
 import { verifyAdminPin } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
@@ -11,6 +11,33 @@ import { buildProfessionalContractHtml } from "@/lib/document-templates";
 import type { ContractSection } from "@/lib/document-templates";
 import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
 import type { ContractRow } from "@/lib/types";
+import { 
+  Plus, 
+  Search, 
+  FileText, 
+  Calendar, 
+  DollarSign, 
+  ChevronRight, 
+  Pencil, 
+  Trash, 
+  Download, 
+  Mail, 
+  Send,
+  Eye,
+  RefreshCw,
+  Clock,
+  User,
+  Building,
+  FileSignature,
+  ShieldCheck,
+  CheckCircle2,
+  XCircle,
+  Play,
+  Briefcase,
+  AlertCircle,
+  Info
+} from "lucide-react";
+import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 
 /* ── local types ── */
 
@@ -174,7 +201,7 @@ const MAIN_CONTRACT_SECTIONS: ContractSection[] = [
   },
 ];
 
-async function ensureMainContractTemplateInDb() {
+async function ensureMainContractTemplateInDb(): Promise<{ ok: true } | { ok: false; message: string }> {
   const { data: existingTemplate, error: existingError } = await supabase
     .from("contract_templates")
     .select("id")
@@ -182,12 +209,21 @@ async function ensureMainContractTemplateInDb() {
     .limit(1)
     .maybeSingle();
 
-  if (existingError) return;
+  if (existingError) {
+    return { ok: false, message: existingError.message };
+  }
 
   let templateId = String(existingTemplate?.id ?? "");
 
   if (!templateId) {
-    await supabase.from("contract_templates").update({ is_default: false }).neq("id", "00000000-0000-0000-0000-000000000000");
+    const { error: unsetDefaultError } = await supabase
+      .from("contract_templates")
+      .update({ is_default: false })
+      .neq("id", "00000000-0000-0000-0000-000000000000");
+    if (unsetDefaultError) {
+      return { ok: false, message: unsetDefaultError.message };
+    }
+
     const { data: insertedTemplate, error: insertError } = await supabase
       .from("contract_templates")
       .insert({
@@ -200,7 +236,10 @@ async function ensureMainContractTemplateInDb() {
       .select("id")
       .single();
 
-    if (insertError || !insertedTemplate?.id) return;
+    if (insertError || !insertedTemplate?.id) {
+      return { ok: false, message: insertError?.message || "Could not create Main Contract template." };
+    }
+
     templateId = String(insertedTemplate.id);
   }
 
@@ -209,10 +248,14 @@ async function ensureMainContractTemplateInDb() {
     .select("id", { count: "exact", head: true })
     .eq("template_id", templateId);
 
-  if (sectionCountError) return;
-  if ((count ?? 0) > 0) return;
+  if (sectionCountError) {
+    return { ok: false, message: sectionCountError.message };
+  }
+  if ((count ?? 0) > 0) {
+    return { ok: true };
+  }
 
-  await supabase.from("contract_template_sections").insert(
+  const { error: insertSectionsError } = await supabase.from("contract_template_sections").insert(
     MAIN_CONTRACT_SECTIONS.map((section, index) => ({
       template_id: templateId,
       sort_order: index,
@@ -220,6 +263,12 @@ async function ensureMainContractTemplateInDb() {
       content: section.content,
     })),
   );
+
+  if (insertSectionsError) {
+    return { ok: false, message: insertSectionsError.message };
+  }
+
+  return { ok: true };
 }
 
 type RichCommand =
@@ -328,6 +377,7 @@ function RichTextEditor({
 
 export default function ContractsPage() {
   const { user } = useAuth();
+  const templateSeedWarningShownRef = useRef(false);
 
   /* ── tab state ── */
   const [activeTab, setActiveTab] = useState<"contracts" | "templates">("contracts");
@@ -338,6 +388,7 @@ export default function ContractsPage() {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [activeFilter, setActiveFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyContractForm);
@@ -415,7 +466,11 @@ export default function ContractsPage() {
     async function loadTemplates() {
       setTemplatesLoading(true);
       try {
-        await ensureMainContractTemplateInDb();
+        const seedResult = await ensureMainContractTemplateInDb();
+        if (!seedResult.ok && !templateSeedWarningShownRef.current) {
+          templateSeedWarningShownRef.current = true;
+          alert(`Could not auto-create Main Contract template: ${seedResult.message}. You can run web/docs/seed-main-contract-template.sql in Supabase SQL Editor.`);
+        }
         const [{ data: tpls }, { data: tplSections }] = await Promise.all([
           supabase.from("contract_templates").select("id, title, description, monthly_rent, deposit_amount, is_default").order("created_at", { ascending: false }),
           supabase.from("contract_template_sections").select("template_id, sort_order, title, content").order("sort_order"),
@@ -455,7 +510,18 @@ export default function ContractsPage() {
     terminated: contracts.filter((c) => c.status === "terminated").length,
   }), [contracts]);
 
-  const filtered = useMemo(() => activeFilter === "all" ? contracts : contracts.filter((c) => c.status === activeFilter), [contracts, activeFilter]);
+  const filtered = useMemo(() => {
+    let result = activeFilter === "all" ? contracts : contracts.filter((c) => c.status === activeFilter);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(c => 
+        c.tenantName.toLowerCase().includes(q) || 
+        c.propertyName.toLowerCase().includes(q) ||
+        c.title.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [contracts, activeFilter, searchQuery]);
 
   /* ── contract form actions ── */
   const openAdd = () => {
@@ -720,9 +786,9 @@ export default function ContractsPage() {
         const { error: err } = await supabase.from("contract_templates").update(payload).eq("id", editingTemplateId);
         if (err) throw err;
       } else {
-        const { data, error: err } = await supabase.from("contract_templates").insert(payload).select("id").single();
+        const { data: created, error: err } = await supabase.from("contract_templates").insert(payload).select("id").single();
         if (err) throw err;
-        templateId = data.id;
+        if (created) templateId = created.id;
       }
 
       // Save sections
@@ -776,6 +842,12 @@ export default function ContractsPage() {
         .eq("template_id", deleteTemplateTarget.id);
       if (deleteSectionsError) throw deleteSectionsError;
 
+      const { error: detachContractsError } = await supabase
+        .from("contracts")
+        .update({ template_id: null })
+        .eq("template_id", deleteTemplateTarget.id);
+      if (detachContractsError) throw detachContractsError;
+
       const { error: err } = await supabase.from("contract_templates").delete().eq("id", deleteTemplateTarget.id);
       if (err) throw err;
       setDeleteTemplateTarget(null); reload();
@@ -804,66 +876,175 @@ export default function ContractsPage() {
 
   /* ── render ── */
   return (
-    <ModulePage title="Contracts" description="Manage lease agreements, contract templates, and lifecycle.">
+    <ModulePage title="Lease Management" description="Draft agreements, manage active contracts, and automate lease lifecycle communications.">
 
       {/* Top-level tabs */}
-      <div className="mb-4 flex gap-2 border-b border-border-color pb-2">
-        <button type="button" onClick={() => setActiveTab("contracts")} className={`px-4 py-2 text-sm font-medium rounded-t-md ${activeTab === "contracts" ? "bg-surface-elevated border border-b-0 border-border-color" : "text-muted"}`}>Contracts</button>
-        <button type="button" onClick={() => setActiveTab("templates")} className={`px-4 py-2 text-sm font-medium rounded-t-md ${activeTab === "templates" ? "bg-surface-elevated border border-b-0 border-border-color" : "text-muted"}`}>Contract Templates</button>
+      <div className="mb-6 flex gap-1 border-b border-border-color/50">
+        <button 
+          type="button" 
+          onClick={() => setActiveTab("contracts")} 
+          className={`relative px-6 py-3 text-sm font-bold transition-all ${activeTab === "contracts" ? "text-foreground" : "text-muted hover:text-foreground"}`}
+        >
+          <span className="flex items-center gap-2">
+            <FileText size={16} />
+            Active Contracts
+          </span>
+          {activeTab === "contracts" && <span className="absolute bottom-0 left-0 h-0.5 w-full bg-foreground rounded-full" />}
+        </button>
+        <button 
+          type="button" 
+          onClick={() => setActiveTab("templates")} 
+          className={`relative px-6 py-3 text-sm font-bold transition-all ${activeTab === "templates" ? "text-foreground" : "text-muted hover:text-foreground"}`}
+        >
+          <span className="flex items-center gap-2">
+            <FileSignature size={16} />
+            Contract Templates
+          </span>
+          {activeTab === "templates" && <span className="absolute bottom-0 left-0 h-0.5 w-full bg-foreground rounded-full" />}
+        </button>
       </div>
 
       {/* ═══════════ CONTRACTS TAB ═══════════ */}
       {activeTab === "contracts" && (
         <>
-          {loading && <LoadingState label="Loading contracts..." />}
+          {loading && <LoadingState label="Retreiving active lease registry..." />}
           {!loading && error && <ErrorState message={error} onRetry={reload} />}
           {!loading && !error && (
-            <section className="space-y-4 rounded-lg border border-border-color bg-surface p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap gap-2">
-                  {(["all", "pending", "active", "expired", "terminated"] as const).map((key) => (
-                    <button key={key} type="button" onClick={() => setActiveFilter(key)}
-                      className={`rounded-md border border-border-color px-3 py-2 text-sm ${activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"}`}>
-                      {key === "all" ? `All (${counts.all})` : `${key.charAt(0).toUpperCase() + key.slice(1)} (${counts[key]})`}
+            <section className="rounded-xl border border-border-color bg-surface p-1">
+              <div className="p-4">
+                <DataTableHeader
+                  searchValue={searchQuery}
+                  onSearchChange={setSearchQuery}
+                  searchPlaceholder="Search contracts by tenant or property..."
+                  filters={[
+                    { key: "all", label: "All", count: counts.all },
+                    { key: "pending", label: "Pending", count: counts.pending },
+                    { key: "active", label: "Active", count: counts.active },
+                    { key: "expired", label: "Expired", count: counts.expired },
+                    { key: "terminated", label: "Terminated", count: counts.terminated },
+                  ]}
+                  activeFilter={activeFilter}
+                  onFilterChange={setActiveFilter}
+                  actions={
+                    <button
+                      type="button"
+                      onClick={openAdd}
+                      className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-black text-surface hover:opacity-90 transition-all shadow-md"
+                    >
+                      <Plus size={16} />
+                      <span>Draft Contract</span>
                     </button>
-                  ))}
-                </div>
-                <button type="button" onClick={openAdd} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium">Add Contract</button>
+                  }
+                />
               </div>
 
-              {filtered.length === 0 ? <EmptyState title="No contracts found" description="Add a contract to get started." /> : (
+              {filtered.length === 0 ? (
+                <div className="p-12">
+                  <EmptyState title="No contracts found" description="Create your first lease agreement to get started." />
+                </div>
+              ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full border-collapse text-sm">
-                    <thead><tr className="border-b border-border-color text-left text-muted">
-                      <th className="px-3 py-2 font-medium">Tenant</th><th className="px-3 py-2 font-medium">Property</th><th className="px-3 py-2 font-medium">Start</th><th className="px-3 py-2 font-medium">End</th><th className="px-3 py-2 font-medium">Monthly Rent</th><th className="px-3 py-2 font-medium">Deposit</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Actions</th>
-                    </tr></thead>
-                    <tbody>{filtered.map((row) => (
-                      <tr key={row.id} className="border-b border-border-color/60">
-                        <td className="px-3 py-3 font-medium">{row.tenantName}</td>
-                        <td className="px-3 py-3 text-muted">{row.propertyName}</td>
-                        <td className="px-3 py-3 text-muted">{row.startDate}</td>
-                        <td className="px-3 py-3 text-muted">{row.endDate}</td>
-                        <td className="px-3 py-3 text-muted">{formatCurrency(row.monthlyRent)}</td>
-                        <td className="px-3 py-3 text-muted">{formatCurrency(row.depositAmount)}</td>
-                        <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.status}</span></td>
-                        <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
-                          <button type="button" onClick={() => void onGenerate(row)} disabled={printingId === row.id} className={btnSmDisabled}>{printingId === row.id ? "..." : "Generate"}</button>
-                          <button type="button" onClick={() => void onView(row)} disabled={printingId === row.id} className={btnSmDisabled}>View</button>
-                          <button type="button" onClick={() => void onDownload(row)} disabled={printingId === row.id} className={btnSmDisabled}>Download</button>
-                          <button type="button" onClick={() => void onSendWhatsApp(row)} className={btnSmClass}>WhatsApp</button>
-                          <button type="button" onClick={() => void onSendEmail(row)} className={btnSmClass}>Email</button>
-                          {row.status === "pending" && <button type="button" onClick={() => onStatusChange(row.id, "active")} className={btnSmClass}>Activate</button>}
-                          {row.status === "active" && <button type="button" onClick={() => onStatusChange(row.id, "terminated")} className={btnSmClass}>Terminate</button>}
-                          {row.status === "expired" && <button type="button" onClick={() => onStatusChange(row.id, "active")} className={btnSmClass}>Renew</button>}
-                          {row.status === "terminated" && <button type="button" onClick={() => onStatusChange(row.id, "active")} className={btnSmClass}>Reactivate</button>}
-                          <button type="button" onClick={() => openEdit(row)} className={btnSmClass}>Edit</button>
-                          <button type="button" onClick={() => setDeleteTarget(row)} className={btnSmClass}>Delete</button>
-                        </div></td>
+                    <thead>
+                      <tr className="border-b border-border-color text-left text-muted/60 uppercase text-[10px] font-bold tracking-wider">
+                        <th className="px-6 py-4 font-bold">Tenant & Property</th>
+                        <th className="px-6 py-4 font-bold">Contract Period</th>
+                        <th className="px-6 py-4 font-bold text-right">Monthly Rent</th>
+                        <th className="px-6 py-4 font-bold text-right">Security Deposit</th>
+                        <th className="px-6 py-4 font-bold">Status</th>
+                        <th className="px-6 py-4 font-bold text-right">Actions</th>
                       </tr>
-                    ))}</tbody>
+                    </thead>
+                    <tbody className="divide-y divide-border-color/40">
+                      {filtered.map((row) => (
+                        <tr key={row.id} className="group hover:bg-surface-elevated/40 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted/5 group-hover:bg-foreground group-hover:text-surface transition-all">
+                                <User size={20} className="text-muted/60 group-hover:text-current" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-bold tracking-tight text-foreground truncate">{row.tenantName}</p>
+                                <div className="flex items-center gap-1.5 text-xs text-muted">
+                                  <Building size={12} />
+                                  <span>{row.propertyName}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                                <Calendar size={12} className="text-muted" />
+                                <span>{row.startDate}</span>
+                                <span className="text-muted/40 font-normal">to</span>
+                                <span>{row.endDate}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[10px] text-muted font-bold uppercase tracking-tighter">
+                                <Clock size={10} />
+                                <span>Fixed Term Lease</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right font-bold text-foreground">{formatCurrency(row.monthlyRent)}</td>
+                          <td className="px-6 py-4 text-right font-medium text-muted">{formatCurrency(row.depositAmount)}</td>
+                          <td className="px-6 py-4">
+                            <StatusBadge status={row.status} />
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <TableRowActions>
+                              <TableActionButton
+                                icon={Eye}
+                                label="View Document"
+                                onClick={(e) => { e.stopPropagation(); void onView(row); }}
+                                disabled={printingId === row.id}
+                              />
+                              <TableActionButton
+                                icon={Download}
+                                label="Download"
+                                onClick={(e) => { e.stopPropagation(); void onDownload(row); }}
+                                disabled={printingId === row.id}
+                              />
+                              <TableActionButton
+                                icon={Mail}
+                                label="Send Email"
+                                onClick={(e) => { e.stopPropagation(); void onSendEmail(row); }}
+                              />
+                              <TableActionButton
+                                icon={Pencil}
+                                label="Edit Data"
+                                onClick={(e) => { e.stopPropagation(); openEdit(row); }}
+                              />
+                              {row.status === "pending" && (
+                                <TableActionButton
+                                  icon={Play}
+                                  label="Activate Lease"
+                                  onClick={(e) => { e.stopPropagation(); onStatusChange(row.id, "active"); }}
+                                  variant="success"
+                                />
+                              )}
+                              <TableActionButton
+                                icon={Trash}
+                                label="Delete"
+                                variant="danger"
+                                onClick={(e) => { e.stopPropagation(); setDeleteTarget(row); }}
+                              />
+                              <div className="ml-2 pl-2 border-l border-border-color/40">
+                                <ChevronRight size={18} className="text-muted/40 group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
+                              </div>
+                            </TableRowActions>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
                   </table>
                 </div>
               )}
+              <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted/40">
+                  Showing {filtered.length} of {counts.all} legal records
+                </p>
+              </div>
             </section>
           )}
         </>
@@ -871,49 +1052,90 @@ export default function ContractsPage() {
 
       {/* ═══════════ TEMPLATES TAB ═══════════ */}
       {activeTab === "templates" && (
-        <section className="space-y-4 rounded-lg border border-border-color bg-surface p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Saved Contract Templates</h3>
-            <button type="button" onClick={openAddTemplate} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium">Create Template</button>
+        <section className="space-y-6">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h3 className="text-lg font-bold tracking-tight">Contract Templates</h3>
+              <p className="text-sm text-muted">Standardized legal frameworks for reusable lease structures.</p>
+            </div>
+            <button 
+              type="button" 
+              onClick={openAddTemplate} 
+              className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-black text-surface hover:opacity-90 shadow-md transition-all"
+            >
+              <Plus size={16} />
+              <span>Create Template</span>
+            </button>
           </div>
 
-          {templatesLoading && <LoadingState label="Loading templates..." />}
+          {templatesLoading && <LoadingState label="Loading legal library..." />}
 
           {!templatesLoading && templates.length === 0 && (
-            <EmptyState title="No templates yet" description="Create a contract template with custom sections to get started." />
+            <div className="p-20 rounded-3xl border-2 border-dashed border-border-color bg-muted/5 text-center">
+              <FileSignature size={48} className="mx-auto text-muted/10 mb-4" />
+              <EmptyState title="Legal Library Empty" description="Create a contract template with custom clauses to automate your workflow." />
+            </div>
           )}
 
           {!templatesLoading && templates.length > 0 && (
-            <div className="space-y-3">
+            <div className="grid gap-6 md:grid-cols-2">
               {templates.map((tpl) => (
-                <div key={tpl.id} className="rounded-lg border border-border-color bg-surface-elevated p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-semibold">{tpl.title}</h4>
-                        {tpl.isDefault && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Default</span>}
+                <article key={tpl.id} className="group relative rounded-2xl border border-border-color bg-surface p-6 transition-all hover:shadow-xl hover:border-foreground/20 overflow-hidden">
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-1">
+                        <h4 className="text-lg font-bold tracking-tight truncate">{tpl.title}</h4>
+                        {tpl.isDefault && (
+                          <span className="rounded-md bg-sky-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-sky-700 dark:bg-sky-900/20 dark:text-sky-400 border border-sky-200/50 dark:border-sky-800/30">
+                            Default
+                          </span>
+                        )}
                       </div>
-                      {tpl.description && <p className="mt-1 text-xs text-muted">{tpl.description}</p>}
-                      <div className="mt-2 flex gap-4 text-xs text-muted">
-                        <span>Rent: {formatCurrency(tpl.monthlyRent)}</span>
-                        <span>Deposit: {formatCurrency(tpl.depositAmount)}</span>
-                        <span>Sections: {tpl.sections.length}</span>
-                      </div>
-                      {tpl.sections.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {tpl.sections.map((s, i) => (
-                            <span key={i} className="rounded border border-border-color px-2 py-0.5 text-xs text-muted">{s.title}</span>
-                          ))}
-                        </div>
-                      )}
+                      <p className="text-sm text-muted line-clamp-2 leading-relaxed">{tpl.description || "No description provided."}</p>
                     </div>
-                    <div className="flex gap-2">
-                      {!tpl.isDefault && <button type="button" onClick={() => onSetDefaultTemplate(tpl.id)} className={btnSmClass}>Set Default</button>}
-                      <button type="button" onClick={() => openEditTemplate(tpl)} className={btnSmClass}>Edit</button>
-                      <button type="button" onClick={() => setDeleteTemplateTarget(tpl)} className={btnSmClass}>Delete</button>
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-muted/5 text-muted group-hover:bg-foreground group-hover:text-surface transition-all">
+                      <FileSignature size={24} />
                     </div>
                   </div>
-                </div>
+
+                  <div className="grid grid-cols-2 gap-4 py-4 border-y border-border-color/40 mb-6">
+                    <div>
+                      <p className="text-[10px] font-bold text-muted/60 uppercase">Default Rent</p>
+                      <p className="font-bold text-foreground">{formatCurrency(tpl.monthlyRent)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-muted/60 uppercase">Structure</p>
+                      <p className="font-bold text-foreground">{tpl.sections.length} Legal Sections</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button 
+                      type="button" 
+                      onClick={() => openEditTemplate(tpl)} 
+                      className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-border-color bg-surface-elevated/50 py-2.5 text-xs font-bold text-foreground hover:bg-surface-elevated transition-all"
+                    >
+                      <Pencil size={14} />
+                      Edit Template
+                    </button>
+                    {!tpl.isDefault && (
+                      <button 
+                        type="button" 
+                        onClick={() => onSetDefaultTemplate(tpl.id)} 
+                        className="flex items-center justify-center gap-2 rounded-xl border border-border-color bg-surface-elevated/50 px-4 py-2.5 text-xs font-bold text-muted hover:text-foreground transition-all"
+                      >
+                        Set Default
+                      </button>
+                    )}
+                    <button 
+                      type="button" 
+                      onClick={() => setDeleteTemplateTarget(tpl)} 
+                      className="flex items-center justify-center rounded-xl border border-red-200 bg-red-50 p-2.5 text-red-600 hover:bg-red-100 transition-all dark:bg-red-900/10 dark:border-red-900/20"
+                    >
+                      <Trash size={16} />
+                    </button>
+                  </div>
+                </article>
               ))}
             </div>
           )}
@@ -921,121 +1143,236 @@ export default function ContractsPage() {
       )}
 
       {/* ═══════════ CONTRACT FORM MODAL ═══════════ */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? "Edit Contract" : "Generate Contract"}>
-        <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
-          {/* Template selector (add mode only) */}
-          {!editingId && templates.length > 0 && (
-            <div>
-              <label className="mb-1 block text-sm text-muted">Use Template</label>
-              <select value={form.template_id} onChange={(e) => onTemplateSelect(e.target.value)} className={inputClass}>
-                <option value="">No template (blank)</option>
-                {templates.map((t) => <option key={t.id} value={t.id}>{t.title}{t.isDefault ? " (Default)" : ""}</option>)}
-              </select>
+      <SideDrawer open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? "Edit Contract Protocol" : "New Lease Agreement Protocol"}>
+        <div className="space-y-8 pb-20">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-6">
+              <section className="space-y-4">
+                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Assignment Data</h4>
+                <div className="space-y-4">
+                  {!editingId && templates.length > 0 && (
+                    <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30">
+                      <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Legal Template</label>
+                      <select value={form.template_id} onChange={(e) => onTemplateSelect(e.target.value)} className={inputClass}>
+                        <option value="">No template (blank)</option>
+                        {templates.map((t) => <option key={t.id} value={t.id}>{t.title}{t.isDefault ? " (Default)" : ""}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30">
+                      <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Tenant</label>
+                      <select value={form.tenant_id} onChange={(e) => setForm({ ...form, tenant_id: e.target.value })} className={inputClass}>
+                        <option value="">Select tenant...</option>{tenants.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                      </select>
+                    </div>
+                    <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30">
+                      <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Property Unit</label>
+                      <select value={form.property_id} onChange={(e) => setForm({ ...form, property_id: e.target.value })} className={inputClass}>
+                        <option value="">Select unit...</option>{properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-4">
+                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Contract Timeline</h4>
+                <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Start Date</label>
+                    <input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} className={inputClass} />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">End Date</label>
+                    <input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} className={inputClass} />
+                  </div>
+                </div>
+              </section>
             </div>
-          )}
 
-          <div>
-            <label className="mb-1 block text-sm text-muted">Contract Title</label>
-            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={inputClass} placeholder="e.g. Lease Agreement" />
-          </div>
+            <div className="space-y-6">
+              <section className="space-y-4">
+                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Financial Structure</h4>
+                <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Monthly Rent (NAD)</label>
+                    <input type="number" value={form.monthly_rent} onChange={(e) => setForm({ ...form, monthly_rent: Number(e.target.value) })} className={inputClass} />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Security Deposit</label>
+                    <input type="number" value={form.deposit_amount} onChange={(e) => setForm({ ...form, deposit_amount: Number(e.target.value) })} className={inputClass} />
+                  </div>
+                </div>
+              </section>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-sm text-muted">Tenant</label><select value={form.tenant_id} onChange={(e) => setForm({ ...form, tenant_id: e.target.value })} className={inputClass}>
-              <option value="">Select tenant...</option>{tenants.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-            </select></div>
-            <div><label className="mb-1 block text-sm text-muted">Property</label><select value={form.property_id} onChange={(e) => setForm({ ...form, property_id: e.target.value })} className={inputClass}>
-              <option value="">Select property...</option>{properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select></div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-sm text-muted">Start Date</label><input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} className={inputClass} /></div>
-            <div><label className="mb-1 block text-sm text-muted">End Date</label><input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} className={inputClass} /></div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-sm text-muted">Monthly Rent</label><input type="number" value={form.monthly_rent} onChange={(e) => setForm({ ...form, monthly_rent: Number(e.target.value) })} className={inputClass} /></div>
-            <div><label className="mb-1 block text-sm text-muted">Deposit Amount</label><input type="number" value={form.deposit_amount} onChange={(e) => setForm({ ...form, deposit_amount: Number(e.target.value) })} className={inputClass} /></div>
+              <section className="space-y-4">
+                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Operational State</h4>
+                <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 space-y-4">
+                  <div>
+                    <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Workflow Status</label>
+                    <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className={inputClass}>
+                      <option value="pending">Pending Review</option>
+                      <option value="active">Active Execution</option>
+                      <option value="expired">Expired Term</option>
+                      <option value="terminated">Terminated EARLY</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Internal Administration Notes</label>
+                    <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} className={inputClass} placeholder="Add private operational notes here..." />
+                  </div>
+                </div>
+              </section>
+            </div>
           </div>
 
           {/* ── Contract Sections ── */}
-          <div className="space-y-2 rounded-md border border-border-color p-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-semibold">Contract Sections</h4>
-              <button type="button" onClick={addSection} className="rounded-md border border-border-color bg-surface px-3 py-1 text-xs font-medium hover:bg-surface-elevated">+ Add Section</button>
+          <section className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted/40">Lease Clauses & Content</h4>
+              <button type="button" onClick={addSection} className="flex items-center gap-1.5 rounded-lg bg-surface-elevated border border-border-color px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-muted hover:text-foreground transition-all">
+                <Plus size={12} />
+                Add Clause
+              </button>
             </div>
-            {form.sections.map((section, idx) => (
-              <div key={idx} className="space-y-1 rounded-md border border-border-color/60 bg-surface p-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-muted">Section {idx + 1}</label>
-                  {form.sections.length > 1 && (
-                    <button type="button" onClick={() => removeSection(idx)} className="text-xs text-red-500 hover:underline">Remove</button>
-                  )}
-                </div>
-                <input placeholder="Section Title (e.g. Property Damage)" value={section.title} onChange={(e) => updateSection(idx, "title", e.target.value)} className={inputClass} />
-                <RichTextEditor
-                  value={section.content}
-                  onChange={(value) => updateSection(idx, "content", value)}
-                  placeholder="Section content..."
-                />
-              </div>
-            ))}
-          </div>
+            
+            <div className="space-y-6">
+              {form.sections.map((section, idx) => (
+                <article key={idx} className="group relative rounded-2xl border border-border-color bg-surface-elevated/10 p-6 transition-all hover:bg-surface-elevated/20">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-foreground text-[10px] font-black text-surface">
+                        {idx + 1}
+                      </span>
+                      <input 
+                        placeholder="Clause Heading (e.g. Utility Charges)" 
+                        value={section.title} 
+                        onChange={(e) => updateSection(idx, "title", e.target.value)} 
+                        className="bg-transparent text-sm font-bold text-foreground outline-none border-b border-transparent focus:border-border-color transition-all min-w-[240px]" 
+                      />
+                    </div>
+                    {form.sections.length > 1 && (
+                      <button type="button" onClick={() => removeSection(idx)} className="text-[10px] font-bold uppercase text-red-500 opacity-0 group-hover:opacity-100 hover:underline transition-all">
+                        Delete Clause
+                      </button>
+                    )}
+                  </div>
+                  <RichTextEditor
+                    value={section.content}
+                    onChange={(value) => updateSection(idx, "content", value)}
+                    placeholder="Describe the specific legal terms for this clause..."
+                  />
+                </article>
+              ))}
+            </div>
+          </section>
 
-          <div><label className="mb-1 block text-sm text-muted">Additional Notes</label><textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} className={inputClass} /></div>
-          <div><label className="mb-1 block text-sm text-muted">Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className={inputClass}>
-            <option value="pending">Pending</option><option value="active">Active</option><option value="expired">Expired</option><option value="terminated">Terminated</option>
-          </select></div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setModalOpen(false)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
-            <button type="button" onClick={onSave} disabled={saving} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
-          </div>
+          <footer className="flex justify-end gap-3 pt-8 border-t border-border-color/50">
+            <button type="button" onClick={() => setModalOpen(false)} className="rounded-xl border border-border-color px-6 py-3 text-sm font-bold text-muted hover:text-foreground">Cancel</button>
+            <button 
+              type="button" 
+              onClick={onSave} 
+              disabled={saving} 
+              className="rounded-xl bg-foreground px-10 py-3 text-sm font-black text-surface hover:opacity-90 disabled:opacity-50 shadow-lg transition-all"
+            >
+              {saving ? "Synchronizing..." : editingId ? "Update Registry" : "Execute Agreement"}
+            </button>
+          </footer>
         </div>
-      </Modal>
+      </SideDrawer>
 
       {/* ═══════════ TEMPLATE FORM MODAL ═══════════ */}
-      <Modal open={templateModalOpen} onClose={() => setTemplateModalOpen(false)} title={editingTemplateId ? "Edit Template" : "Create Contract Template"}>
-        <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
-          <div>
-            <label className="mb-1 block text-sm text-muted">Template Title</label>
-            <input value={templateForm.title} onChange={(e) => setTemplateForm({ ...templateForm, title: e.target.value })} className={inputClass} placeholder="e.g. Standard Residential Lease" />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm text-muted">Description</label>
-            <input value={templateForm.description} onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })} className={inputClass} placeholder="Short description..." />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-sm text-muted">Default Monthly Rent</label><input type="number" value={templateForm.monthly_rent} onChange={(e) => setTemplateForm({ ...templateForm, monthly_rent: Number(e.target.value) })} className={inputClass} /></div>
-            <div><label className="mb-1 block text-sm text-muted">Default Deposit</label><input type="number" value={templateForm.deposit_amount} onChange={(e) => setTemplateForm({ ...templateForm, deposit_amount: Number(e.target.value) })} className={inputClass} /></div>
-          </div>
-
-          <div className="space-y-2 rounded-md border border-border-color p-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-semibold">Template Sections</h4>
-              <button type="button" onClick={addTemplateSection} className="rounded-md border border-border-color bg-surface px-3 py-1 text-xs font-medium hover:bg-surface-elevated">+ Add Section</button>
-            </div>
-            {templateForm.sections.map((section, idx) => (
-              <div key={idx} className="space-y-1 rounded-md border border-border-color/60 bg-surface p-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-muted">Section {idx + 1}</label>
-                  {templateForm.sections.length > 1 && (
-                    <button type="button" onClick={() => removeTemplateSection(idx)} className="text-xs text-red-500 hover:underline">Remove</button>
-                  )}
+      <SideDrawer open={templateModalOpen} onClose={() => setTemplateModalOpen(false)} title={editingTemplateId ? "Edit Legal Blueprint" : "Create New Legal Blueprint"}>
+        <div className="space-y-8 pb-20">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-6">
+              <section className="space-y-4">
+                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Blueprint Registry</h4>
+                <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 space-y-4">
+                  <div>
+                    <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Blueprint Title</label>
+                    <input value={templateForm.title} onChange={(e) => setTemplateForm({ ...templateForm, title: e.target.value })} className={inputClass} placeholder="e.g. Standard House Lease 2026" />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Strategic Description</label>
+                    <textarea value={templateForm.description} onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })} rows={2} className={inputClass} placeholder="Internal description for administrative use..." />
+                  </div>
                 </div>
-                <input placeholder="Section Title" value={section.title} onChange={(e) => updateTemplateSection(idx, "title", e.target.value)} className={inputClass} />
-                <RichTextEditor
-                  value={section.content}
-                  onChange={(value) => updateTemplateSection(idx, "content", value)}
-                  placeholder="Section content..."
-                />
-              </div>
-            ))}
+              </section>
+            </div>
+
+            <div className="space-y-6">
+              <section className="space-y-4">
+                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Financial Defaults</h4>
+                <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Standard Rent</label>
+                    <input type="number" value={templateForm.monthly_rent} onChange={(e) => setTemplateForm({ ...templateForm, monthly_rent: Number(e.target.value) })} className={inputClass} />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Standard Deposit</label>
+                    <input type="number" value={templateForm.deposit_amount} onChange={(e) => setTemplateForm({ ...templateForm, deposit_amount: Number(e.target.value) })} className={inputClass} />
+                  </div>
+                </div>
+              </section>
+            </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setTemplateModalOpen(false)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
-            <button type="button" onClick={onSaveTemplate} disabled={savingTemplate} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{savingTemplate ? "Saving..." : "Save Template"}</button>
-          </div>
+          <section className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted/40">Standardized Clause Library</h4>
+              <button type="button" onClick={addTemplateSection} className="flex items-center gap-1.5 rounded-lg bg-surface-elevated border border-border-color px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-muted hover:text-foreground transition-all">
+                <Plus size={12} />
+                Add Clause Blueprint
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {templateForm.sections.map((section, idx) => (
+                <article key={idx} className="group relative rounded-2xl border border-border-color bg-surface-elevated/10 p-6 transition-all hover:bg-surface-elevated/20">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-foreground text-[10px] font-black text-surface">
+                        {idx + 1}
+                      </span>
+                      <input 
+                        placeholder="Clause Blueprint Heading" 
+                        value={section.title} 
+                        onChange={(e) => updateTemplateSection(idx, "title", e.target.value)} 
+                        className="bg-transparent text-sm font-bold text-foreground outline-none border-b border-transparent focus:border-border-color transition-all min-w-[240px]" 
+                      />
+                    </div>
+                    {templateForm.sections.length > 1 && (
+                      <button type="button" onClick={() => removeTemplateSection(idx)} className="text-[10px] font-bold uppercase text-red-500 opacity-0 group-hover:opacity-100 hover:underline transition-all">
+                        Remove Pattern
+                      </button>
+                    )}
+                  </div>
+                  <RichTextEditor
+                    value={section.content}
+                    onChange={(value) => updateTemplateSection(idx, "content", value)}
+                    placeholder="Standard legal language for this clause pattern..."
+                  />
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <footer className="flex justify-end gap-3 pt-8 border-t border-border-color/50">
+            <button type="button" onClick={() => setTemplateModalOpen(false)} className="rounded-xl border border-border-color px-6 py-3 text-sm font-bold text-muted hover:text-foreground">Cancel</button>
+            <button 
+              type="button" 
+              onClick={onSaveTemplate} 
+              disabled={savingTemplate} 
+              className="rounded-xl bg-foreground px-10 py-3 text-sm font-black text-surface hover:opacity-90 disabled:opacity-50 shadow-lg transition-all"
+            >
+              {savingTemplate ? "Archiving Blueprint..." : "Save Legal Blueprint"}
+            </button>
+          </footer>
         </div>
-      </Modal>
+      </SideDrawer>
 
       {/* ═══════════ DELETE DIALOGS ═══════════ */}
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Contract" message={`Delete contract for ${deleteTarget?.tenantName}?`} confirmLabel="Delete" loading={deleting} />
