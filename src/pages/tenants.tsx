@@ -5,7 +5,7 @@ import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { fetchTenantsData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
-import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, downloadHtmlDocument } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, uploadPdfFromHtml, createPdfAttachmentFromUrl, downloadHtmlDocument } from "@/lib/storage";
 import { buildProfessionalInvoiceHtml, buildProfessionalContractHtml } from "@/lib/document-templates";
 import type { ContractSection } from "@/lib/document-templates";
 import { sendEmail, sendWhatsApp } from "@/lib/notifications";
@@ -99,12 +99,13 @@ function sanitizePhoneToWhatsApp(value: string) {
 }
 
 async function ensureShareableDocumentUrl(existingUrl: string, html: string, filename: string) {
-  if (existingUrl && existingUrl.startsWith("http")) {
+  if (existingUrl && existingUrl.startsWith("http") && existingUrl.toLowerCase().includes(".pdf")) {
     return existingUrl;
   }
 
-  const file = new File([html], filename, { type: "text/html" });
-  return uploadFileToBucket("documents", "shared", file);
+  const base = filename.replace(/\.html$/i, "").replace(/\.pdf$/i, "");
+  const bucket = base.startsWith("invoice-") ? "invoice-pdfs" : "contract-documents";
+  return uploadPdfFromHtml(bucket, "shared", html, base);
 }
 
 async function buildInvoiceHtmlProfessional(
@@ -753,14 +754,19 @@ export default function TenantsPage() {
         }
 
         const subject = `Invoice ${invoice.month} - ${detailsRow.fullName}`;
+        const pdfUrl = await ensureShareableDocumentUrl(invoice.pdfUrl, invoiceHtml, `invoice-${invoice.id}.pdf`);
+        await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoice.id);
+        const attachment = await createPdfAttachmentFromUrl(pdfUrl, `invoice-${invoice.id}.pdf`);
         const result = await sendEmail({
           to: detailsRow.email,
           recipientName: detailsRow.fullName,
           subject,
           bodyText: `Please find your invoice for <strong>${invoice.month}</strong> attached below. The total amount due is <strong>${formatCurrency(invoice.amount)}</strong>. Payments recorded on ${paymentsLabel}.`,
           documentHtml: invoiceHtml,
-          attachmentFilename: `invoice-${invoice.id}.html`,
+          attachmentFilename: attachment.filename,
           companyName: company?.companyName,
+          attachmentContentBase64: attachment.contentBase64,
+          attachmentContentType: attachment.contentType,
         });
 
         if (result.sent) {
@@ -775,11 +781,14 @@ export default function TenantsPage() {
           return;
         }
 
+        const latestPdfUrl = await ensureShareableDocumentUrl(invoice.pdfUrl, invoiceHtml, `invoice-${invoice.id}.pdf`);
         const result = await sendWhatsApp({
           to: `+${phone}`,
           message: messageText,
-          mediaUrl: await ensureShareableDocumentUrl(invoice.pdfUrl, invoiceHtml, `invoice-${invoice.id}.html`),
+          mediaUrl: latestPdfUrl,
         });
+
+        await supabase.from("invoices").update({ pdf_url: latestPdfUrl }).eq("id", invoice.id);
 
         if (result.sent) {
           alert("Invoice sent via WhatsApp successfully!");
@@ -866,14 +875,19 @@ export default function TenantsPage() {
       if (channel === "email") {
         if (!detailsRow.email) { alert("Tenant email is missing."); return; }
         const subject = `${contract.title} - ${detailsRow.fullName}`;
+        const pdfUrl = await ensureShareableDocumentUrl(contract.documentUrl, contractHtml, `contract-${contract.id}.pdf`);
+        await supabase.from("contracts").update({ document_url: pdfUrl }).eq("id", contract.id);
+        const attachment = await createPdfAttachmentFromUrl(pdfUrl, `contract-${contract.id}.pdf`);
         const result = await sendEmail({
           to: detailsRow.email,
           recipientName: detailsRow.fullName,
           subject,
           bodyText: `Please find your lease agreement <strong>"${contract.title}"</strong> for <strong>${contract.propertyName}</strong> attached below. The contract period is ${formatDate(contract.startDate)} to ${formatDate(contract.endDate)} with a monthly rent of <strong>${formatCurrency(contract.monthlyRent)}</strong>.`,
           documentHtml: contractHtml,
-          attachmentFilename: `contract-${contract.id}.html`,
+          attachmentFilename: attachment.filename,
           companyName: company?.companyName,
+          attachmentContentBase64: attachment.contentBase64,
+          attachmentContentType: attachment.contentType,
         });
         if (result.sent) {
           alert("Contract sent via email successfully!");
@@ -881,11 +895,14 @@ export default function TenantsPage() {
       } else {
         const phone = sanitizePhoneToWhatsApp(detailsRow.phone ?? "");
         if (!phone) { alert("Tenant phone is missing."); return; }
+        const latestContractPdfUrl = await ensureShareableDocumentUrl(contract.documentUrl, contractHtml, `contract-${contract.id}.pdf`);
         const result = await sendWhatsApp({
           to: `+${phone}`,
           message: messageText,
-          mediaUrl: await ensureShareableDocumentUrl(contract.documentUrl, contractHtml, `contract-${contract.id}.html`),
+          mediaUrl: latestContractPdfUrl,
         });
+
+        await supabase.from("contracts").update({ document_url: latestContractPdfUrl }).eq("id", contract.id);
         if (result.sent) {
           alert("Contract sent via WhatsApp successfully!");
         }

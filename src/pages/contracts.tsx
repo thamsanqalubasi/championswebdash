@@ -6,7 +6,7 @@ import { fetchContractsData } from "@/lib/data";
 import { verifyAdminPin } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
-import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, downloadHtmlDocument } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, uploadPdfFromHtml, createPdfAttachmentFromUrl, downloadHtmlDocument } from "@/lib/storage";
 import { buildProfessionalContractHtml } from "@/lib/document-templates";
 import type { ContractSection } from "@/lib/document-templates";
 import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
@@ -67,12 +67,12 @@ function formatCurrency(amount: number) {
 }
 
 async function ensureShareableDocumentUrl(existingUrl: string, html: string, filename: string) {
-  if (existingUrl && existingUrl.startsWith("http")) {
+  if (existingUrl && existingUrl.startsWith("http") && existingUrl.toLowerCase().includes(".pdf")) {
     return existingUrl;
   }
 
-  const file = new File([html], filename, { type: "text/html" });
-  return uploadFileToBucket("contract-documents", "shared", file);
+  const base = filename.replace(/\.html$/i, "").replace(/\.pdf$/i, "");
+  return uploadPdfFromHtml("contract-documents", "shared", html, base);
 }
 
 const emptySection: ContractSection = { title: "", content: "" };
@@ -704,7 +704,11 @@ export default function ContractsPage() {
     try {
       const tenant = getTenantContact(row);
       if (!tenant?.email) { alert("Tenant email is missing."); return; }
-      const documentHtml = await ensureGeneratedDocument(row);
+      const documentHtml = await generateContractHtml(row);
+      const pdfUrl = await ensureShareableDocumentUrl(contractDocumentUrlById[row.id] ?? "", documentHtml, `contract-${row.id}.pdf`);
+      await supabase.from("contracts").update({ document_url: pdfUrl }).eq("id", row.id);
+      setContractDocumentUrlById((prev) => ({ ...prev, [row.id]: pdfUrl }));
+      const attachment = await createPdfAttachmentFromUrl(pdfUrl, `contract-${row.id}.pdf`);
       const company = await fetchCompanyInfo();
       const subject = `Lease Contract - ${row.propertyName}`;
       const bodyText = `Please find your lease contract for ${row.propertyName}. The contract period is ${row.startDate} to ${row.endDate} with a monthly rent of ${formatCurrency(row.monthlyRent)}.`;
@@ -719,11 +723,7 @@ export default function ContractsPage() {
         to: tenant.email,
         subject,
         html: emailHtml,
-        attachments: [{
-          filename: `contract-${row.id}.html`,
-          content: documentHtml,
-          contentType: "text/html",
-        }],
+        attachments: [attachment],
       });
       if (!result.success) throw new Error(result.error || "Email API request failed.");
       alert("Contract sent via email successfully!");
@@ -739,7 +739,9 @@ export default function ContractsPage() {
       const message = `Hello ${row.tenantName}, your contract for ${row.propertyName} is ready. Period: ${row.startDate} to ${row.endDate}. Monthly rent: ${formatCurrency(row.monthlyRent)}.`;
       let mediaUrl = "";
       try {
-        mediaUrl = await ensureShareableDocumentUrl(contractDocumentUrlById[row.id] ?? "", documentHtml, `contract-${row.id}.html`);
+        mediaUrl = await ensureShareableDocumentUrl(contractDocumentUrlById[row.id] ?? "", documentHtml, `contract-${row.id}.pdf`);
+        await supabase.from("contracts").update({ document_url: mediaUrl }).eq("id", row.id);
+        setContractDocumentUrlById((prev) => ({ ...prev, [row.id]: mediaUrl }));
       } catch {
         mediaUrl = "";
       }

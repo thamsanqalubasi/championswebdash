@@ -5,6 +5,147 @@
 import { supabase } from "@/lib/supabase";
 import type { CompanyInfo, AdminInfo } from "@/lib/document-templates";
 
+function stripHtmlToText(html: string) {
+  return String(html ?? "")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\r/g, "")
+    .replace(/[\t ]+/g, " ")
+    .replace(/\n\s+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function escapePdfText(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)")
+    .replace(/[^\x20-\x7E]/g, "");
+}
+
+function buildPdfFromText(text: string): Uint8Array {
+  const normalized = String(text ?? "").replace(/\r/g, "");
+  const lines = normalized.split("\n");
+  const maxLinesPerPage = 46;
+  const pages: string[][] = [];
+
+  for (let index = 0; index < lines.length; index += maxLinesPerPage) {
+    pages.push(lines.slice(index, index + maxLinesPerPage));
+  }
+  if (pages.length === 0) pages.push([""]);
+
+  const objects: string[] = [];
+  const pageObjectIds: number[] = [];
+  const contentObjectIds: number[] = [];
+  const pagesRootObjectId = 2;
+  const fontObjectId = 3;
+
+  let nextId = 4;
+  pages.forEach((pageLines) => {
+    const pageObjectId = nextId++;
+    const contentObjectId = nextId++;
+    pageObjectIds.push(pageObjectId);
+    contentObjectIds.push(contentObjectId);
+
+    const contentStream = [
+      "BT",
+      "/F1 10 Tf",
+      "14 TL",
+      "40 800 Td",
+      ...pageLines.map((line) => `(${escapePdfText(line)}) Tj T*`),
+      "ET",
+    ].join("\n");
+
+    objects[contentObjectId] = `${contentObjectId} 0 obj\n<< /Length ${contentStream.length} >>\nstream\n${contentStream}\nendstream\nendobj\n`;
+    objects[pageObjectId] = `${pageObjectId} 0 obj\n<< /Type /Page /Parent ${pagesRootObjectId} 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontObjectId} 0 R >> >> /Contents ${contentObjectId} 0 R >>\nendobj\n`;
+  });
+
+  objects[1] = `1 0 obj\n<< /Type /Catalog /Pages ${pagesRootObjectId} 0 R >>\nendobj\n`;
+  objects[2] = `2 0 obj\n<< /Type /Pages /Count ${pageObjectIds.length} /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] >>\nendobj\n`;
+  objects[3] = `3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`;
+
+  const maxObjectId = nextId - 1;
+  let pdf = "%PDF-1.4\n";
+  const offsets: number[] = new Array(maxObjectId + 1).fill(0);
+
+  for (let objectId = 1; objectId <= maxObjectId; objectId += 1) {
+    offsets[objectId] = pdf.length;
+    pdf += objects[objectId] || "";
+  }
+
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${maxObjectId + 1}\n`;
+  pdf += "0000000000 65535 f \n";
+  for (let objectId = 1; objectId <= maxObjectId; objectId += 1) {
+    pdf += `${String(offsets[objectId]).padStart(10, "0")} 00000 n \n`;
+  }
+
+  pdf += `trailer\n<< /Size ${maxObjectId + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return new TextEncoder().encode(pdf);
+}
+
+export function createPdfFileFromHtml(html: string, fileNameBase: string): File {
+  const plainText = stripHtmlToText(html);
+  const pdfBytes = buildPdfFromText(plainText);
+  const safeBase = String(fileNameBase || "document").replace(/\.pdf$/i, "");
+  const pdfBuffer = pdfBytes.buffer.slice(
+    pdfBytes.byteOffset,
+    pdfBytes.byteOffset + pdfBytes.byteLength,
+  ) as ArrayBuffer;
+  return new File([pdfBuffer], `${safeBase}.pdf`, { type: "application/pdf" });
+}
+
+export async function createPdfAttachmentFromHtml(html: string, fileNameBase: string) {
+  const file = createPdfFileFromHtml(html, fileNameBase);
+  const arrayBuffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+
+  return {
+    filename: file.name,
+    contentBase64: btoa(binary),
+    contentType: "application/pdf",
+  };
+}
+
+export async function createPdfAttachmentFromUrl(url: string, fileName: string) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error("Could not fetch PDF attachment URL.");
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+
+  return {
+    filename: fileName,
+    contentBase64: btoa(binary),
+    contentType: "application/pdf",
+  };
+}
+
+export async function uploadPdfFromHtml(bucket: string, folder: string, html: string, fileNameBase: string): Promise<string> {
+  const file = createPdfFileFromHtml(html, fileNameBase);
+  return uploadFileToBucket(bucket, folder, file);
+}
+
 /**
  * Upload a file to a Supabase Storage bucket.
  * Returns the public URL of the uploaded file.

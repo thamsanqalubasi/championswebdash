@@ -86,7 +86,8 @@ export async function sendEmailViaApi(opts: {
   html: string;
   attachments?: Array<{
     filename: string;
-    content: string;
+    content?: string;
+    contentBase64?: string;
     contentType?: string;
   }>;
 }): Promise<{ success: boolean; error?: string }> {
@@ -172,13 +173,21 @@ export async function sendEmail(opts: {
   bodyText: string;
   documentHtml: string;
   attachmentFilename?: string;
+  attachmentContentBase64?: string;
+  attachmentContentType?: string;
   companyName?: string;
   companyEmail?: string;
 }): Promise<{ sent: boolean; fallback: boolean }> {
   const emailHtml = wrapDocumentInEmailHtml(opts);
 
   const attachments = opts.attachmentFilename
-    ? [{ filename: opts.attachmentFilename, content: opts.documentHtml, contentType: "text/html" }]
+    ? [{
+      filename: opts.attachmentFilename,
+      ...(opts.attachmentContentBase64
+        ? { contentBase64: opts.attachmentContentBase64 }
+        : { content: opts.documentHtml }),
+      contentType: opts.attachmentContentType || (opts.attachmentContentBase64 ? "application/pdf" : "text/html"),
+    }]
     : undefined;
 
   const result = await sendEmailViaApi({ to: opts.to, subject: opts.subject, html: emailHtml, attachments });

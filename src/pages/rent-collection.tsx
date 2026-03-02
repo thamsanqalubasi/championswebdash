@@ -4,7 +4,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
-import { fetchCompanyInfo, fetchAdminInfo, downloadHtmlDocument } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, downloadHtmlDocument, uploadPdfFromHtml, createPdfAttachmentFromUrl } from "@/lib/storage";
 import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
 import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
 import { 
@@ -401,13 +401,26 @@ export default function RentCollectionPage() {
       if (channel === "email") {
         if (!tenant.email || tenant.email === "-") { alert("No email available."); return; }
         const subject = `Rent Receipt - ${tenant.fullName}`;
+        const pdfUrl = invoice?.pdfUrl && invoice.pdfUrl.startsWith("http") && invoice.pdfUrl.toLowerCase().includes(".pdf")
+          ? invoice.pdfUrl
+          : await uploadPdfFromHtml("invoice-pdfs", invoiceId, html, `invoice-${invoiceId}`);
+        if (!invoice?.pdfUrl || invoice.pdfUrl !== pdfUrl) {
+          await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoiceId);
+        }
+        const attachment = await createPdfAttachmentFromUrl(pdfUrl, `invoice-${invoiceId}.pdf`);
         const emailHtml = wrapDocumentInEmailHtml({ recipientName: tenant.fullName, subject, bodyText: `Invoice for ${payment.paymentDate} settled.`, documentHtml: html, companyName: company?.companyName });
-        const result = await sendEmailViaApi({ to: tenant.email, subject, html: emailHtml, attachments: [{ filename: `invoice-${invoiceId}.html`, content: html, contentType: "text/html" }] });
+        const result = await sendEmailViaApi({ to: tenant.email, subject, html: emailHtml, attachments: [attachment] });
         if (result.success) alert("Sent successfully!");
       } else {
         const phone = tenant.phone.replace(/\D/g, "");
         if (!phone) { alert("No phone available."); return; }
-        const result = await sendWhatsAppViaApi({ to: `+${phone}`, message: `Rent Receipt: ${formatCurrency(payment.amountPaid)} settled on ${payment.paymentDate}.` });
+        const mediaUrl = invoice?.pdfUrl && invoice.pdfUrl.startsWith("http") && invoice.pdfUrl.toLowerCase().includes(".pdf")
+          ? invoice.pdfUrl
+          : await uploadPdfFromHtml("invoice-pdfs", invoiceId, html, `invoice-${invoiceId}`);
+        if (!invoice?.pdfUrl || invoice.pdfUrl !== mediaUrl) {
+          await supabase.from("invoices").update({ pdf_url: mediaUrl }).eq("id", invoiceId);
+        }
+        const result = await sendWhatsAppViaApi({ to: `+${phone}`, message: `Rent Receipt: ${formatCurrency(payment.amountPaid)} settled on ${payment.paymentDate}.`, mediaUrl });
         if (result.success) alert("Sent successfully!");
       }
     } catch (e) { alert("Could not send invoice."); }

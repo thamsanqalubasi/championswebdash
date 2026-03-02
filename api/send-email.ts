@@ -2,7 +2,8 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 type EmailAttachment = {
   filename: string;
-  content: string;
+  content?: string;
+  contentBase64?: string;
   contentType?: string;
 };
 
@@ -57,20 +58,20 @@ function toSender(fromName: string, fromEmail: string, fallback: string) {
 
 function toResendAttachments(attachments: EmailAttachment[]) {
   return attachments
-    .filter((item) => item && typeof item.filename === "string" && typeof item.content === "string")
+    .filter((item) => item && typeof item.filename === "string" && (typeof item.contentBase64 === "string" || typeof item.content === "string"))
     .map((item) => ({
       filename: item.filename,
-      content: Buffer.from(item.content, "utf-8").toString("base64"),
+      content: item.contentBase64 || Buffer.from(String(item.content ?? ""), "utf-8").toString("base64"),
       ...(item.contentType ? { content_type: item.contentType } : {}),
     }));
 }
 
 function toSendgridAttachments(attachments: EmailAttachment[]) {
   return attachments
-    .filter((item) => item && typeof item.filename === "string" && typeof item.content === "string")
+    .filter((item) => item && typeof item.filename === "string" && (typeof item.contentBase64 === "string" || typeof item.content === "string"))
     .map((item) => ({
       filename: item.filename,
-      content: Buffer.from(item.content, "utf-8").toString("base64"),
+      content: item.contentBase64 || Buffer.from(String(item.content ?? ""), "utf-8").toString("base64"),
       type: item.contentType || "text/plain",
       disposition: "attachment",
     }));
@@ -166,7 +167,10 @@ async function sendWithMailgun(params: {
   }
 
   params.attachments.forEach((attachment) => {
-    const blob = new Blob([attachment.content], { type: attachment.contentType || "text/plain" });
+    const bytes = attachment.contentBase64
+      ? Buffer.from(attachment.contentBase64, "base64")
+      : Buffer.from(String(attachment.content ?? ""), "utf-8");
+    const blob = new Blob([bytes], { type: attachment.contentType || "text/plain" });
     form.append("attachment", blob, attachment.filename);
   });
 
@@ -220,7 +224,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const sender = from || toSender(String(settings?.from_name ?? ""), String(settings?.from_email ?? ""), process.env.EMAIL_FROM || "Champions Court <onboarding@resend.dev>");
   const replyTo = String(settings?.reply_to ?? "").trim() || undefined;
   const normalizedAttachments: EmailAttachment[] = Array.isArray(attachments)
-    ? (attachments as EmailAttachment[]).filter((item) => item && typeof item.filename === "string" && typeof item.content === "string")
+    ? (attachments as EmailAttachment[]).filter(
+      (item) => item && typeof item.filename === "string" && (typeof item.contentBase64 === "string" || typeof item.content === "string"),
+    )
     : [];
 
   try {

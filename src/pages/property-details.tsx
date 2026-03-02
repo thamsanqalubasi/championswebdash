@@ -5,7 +5,7 @@ import { Modal } from "@/components/modal";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ImageGallery } from "@/components/image-gallery";
 import { supabase } from "@/lib/supabase";
-import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, downloadHtmlDocument } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, uploadPdfFromHtml, createPdfAttachmentFromUrl, downloadHtmlDocument } from "@/lib/storage";
 import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
 import { useAuth } from "@/lib/auth";
 import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
@@ -119,13 +119,13 @@ function isExecutedByNameColumnMissing(error: unknown) {
 }
 
 async function ensureShareableDocumentUrl(existingUrl: string, html: string, filename: string) {
-  if (existingUrl && existingUrl.startsWith("http")) {
+  if (existingUrl && existingUrl.startsWith("http") && existingUrl.toLowerCase().includes(".pdf")) {
     return existingUrl;
   }
 
   try {
-    const file = new File([html], filename, { type: "text/html" });
-    return await uploadFileToBucket("invoice-pdfs", "shared", file);
+    const base = filename.replace(/\.html$/i, "").replace(/\.pdf$/i, "");
+    return await uploadPdfFromHtml("invoice-pdfs", "shared", html, base);
   } catch {
     return "";
   }
@@ -631,6 +631,11 @@ export default function PropertyDetailsPage() {
     if (!tenant?.email) { alert("No tenant email address available."); return; }
     try {
       const html = await buildInvoiceHtml(invoice);
+      const pdfUrl = await ensureShareableDocumentUrl(invoice.pdfUrl, html, `invoice-${invoice.id}.pdf`);
+      if (pdfUrl && pdfUrl !== invoice.pdfUrl) {
+        await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoice.id);
+      }
+      const attachment = await createPdfAttachmentFromUrl(pdfUrl, `invoice-${invoice.id}.pdf`);
       const company = await fetchCompanyInfo();
       const subject = `Invoice ${invoice.month} - ${property?.name ?? "Property"}`;
       const bodyText = `Please find your invoice for ${invoice.month} attached below. The total amount due is ${formatCurrency(invoice.amount)}.`;
@@ -645,11 +650,7 @@ export default function PropertyDetailsPage() {
         to: tenant.email,
         subject,
         html: emailHtml,
-        attachments: [{
-          filename: `invoice-${invoice.id}.html`,
-          content: html,
-          contentType: "text/html",
-        }],
+        attachments: [attachment],
       });
       if (!result.success) throw new Error(result.error || "Email API request failed.");
       alert("Invoice sent via email successfully!");
@@ -663,7 +664,10 @@ export default function PropertyDetailsPage() {
     try {
       const message = `Invoice ${invoice.month}: ${formatCurrency(invoice.amount)} due on ${invoice.dueDate}.`;
       const html = await buildInvoiceHtml(invoice);
-      const mediaUrl = await ensureShareableDocumentUrl(invoice.pdfUrl, html, `invoice-${invoice.id}.html`);
+      const mediaUrl = await ensureShareableDocumentUrl(invoice.pdfUrl, html, `invoice-${invoice.id}.pdf`);
+      if (mediaUrl && mediaUrl !== invoice.pdfUrl) {
+        await supabase.from("invoices").update({ pdf_url: mediaUrl }).eq("id", invoice.id);
+      }
       const result = await sendWhatsAppViaApi({ to: `+${phone}`, message, ...(mediaUrl ? { mediaUrl } : {}) });
       if (!result.success) throw new Error(result.error || "WhatsApp API request failed.");
       alert("Invoice sent via WhatsApp successfully!");
