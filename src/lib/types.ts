@@ -174,6 +174,7 @@ export type AuditEventRow = {
   action: string;
   entityType: string;
   entityId: string;
+  entityName: string;
   actorName: string;
   details: string;
 };

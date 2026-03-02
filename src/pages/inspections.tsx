@@ -2,8 +2,30 @@ import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
-import { Plus, Search, User, Building, Calendar, Clock, CheckSquare, Eye, Upload, Save, FileText, Activity, ClipboardList, ShieldCheck } from "lucide-react";
-import { StatusBadge } from "@/components/data-table";
+import { 
+  Plus, 
+  Search, 
+  User, 
+  Building, 
+  Calendar, 
+  Clock, 
+  CheckSquare, 
+  Eye, 
+  Upload, 
+  Save, 
+  FileText, 
+  Activity, 
+  ClipboardList, 
+  ShieldCheck,
+  Download,
+  Trash,
+  ChevronRight,
+  Play,
+  RotateCcw,
+  CheckCircle2,
+  XCircle
+} from "lucide-react";
+import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 import { ImageGallery } from "@/components/image-gallery";
 import { fetchInspectionsData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
@@ -36,12 +58,30 @@ function formatDate(value: string) {
   return date.toLocaleDateString("en-ZA", { year: "numeric", month: "short", day: "2-digit" });
 }
 
+function StatCard({ label, value, detail, icon: Icon, colorClass = "text-foreground" }: { label: string; value: string; detail: string; icon: any; colorClass?: string }) {
+  return (
+    <article className="rounded-xl border border-border-color bg-surface p-5 transition-all hover:shadow-md">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60">{label}</p>
+          <p className={`mt-2 text-2xl font-bold tracking-tight ${colorClass}`}>{value}</p>
+        </div>
+        <div className="rounded-lg bg-surface-elevated p-2 ring-1 ring-border-color/50">
+          <Icon size={20} className="text-muted" />
+        </div>
+      </div>
+      <p className="mt-4 text-[10px] font-bold uppercase tracking-widest text-muted/40">{detail}</p>
+    </article>
+  );
+}
+
 export default function InspectionsPage() {
   const [inspections, setInspections] = useState<InspectionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [activeFilter, setActiveFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -92,7 +132,14 @@ export default function InspectionsPage() {
     cancelled: inspections.filter((i) => i.status === "cancelled").length,
   }), [inspections]);
 
-  const filtered = useMemo(() => activeFilter === "all" ? inspections : inspections.filter((i) => i.status === activeFilter), [inspections, activeFilter]);
+  const filtered = useMemo(() => {
+    let result = activeFilter === "all" ? inspections : inspections.filter((i) => i.status === activeFilter);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(i => i.propertyName.toLowerCase().includes(q) || i.tenantName.toLowerCase().includes(q) || i.inspectorName.toLowerCase().includes(q));
+    }
+    return result;
+  }, [inspections, activeFilter, searchQuery]);
 
   const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
 
@@ -247,52 +294,187 @@ export default function InspectionsPage() {
     setGalleryOpen(true);
   };
 
+  const exportCsv = () => {
+    const header = "Property,Tenant,Type,Inspector,Scheduled,Completed,Status\n";
+    const rows = filtered.map((r) => `"${r.propertyName}","${r.tenantName}","${r.type}","${r.inspectorName}","${r.scheduledDate}","${r.completedDate}","${r.status}"`).join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "inspections.csv";
+    a.click();
+  };
+
+  const filterTabs = [
+    { key: "all", label: "All", count: counts.all },
+    { key: "scheduled", label: "Scheduled", count: counts.scheduled },
+    { key: "in_progress", label: "In Progress", count: counts.in_progress },
+    { key: "completed", label: "Completed", count: counts.completed },
+    { key: "cancelled", label: "Cancelled", count: counts.cancelled },
+  ];
+
   return (
-    <ModulePage title="Inspections" description="Inspection schedules, statuses, and checklist workflows.">
-      {loading && <LoadingState label="Loading inspections..." />}
+    <ModulePage title="Property Inspections" description="Schedule routine checkups, move-in/out protocols, and document property condition.">
+      {loading && <LoadingState label="Retreiving inspection schedules..." />}
       {!loading && error && <ErrorState message={error} onRetry={reload} />}
       {!loading && !error && (
-        <section className="space-y-4 rounded-lg border border-border-color bg-surface p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-2">
-              {(["all", "scheduled", "in_progress", "completed", "cancelled"] as const).map((key) => (
-                <button key={key} type="button" onClick={() => setActiveFilter(key)}
-                  className={`rounded-md border border-border-color px-3 py-2 text-sm ${activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"}`}>
-                  {key === "all" ? `All (${counts.all})` : `${key.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())} (${counts[key]})`}
-                </button>
-              ))}
-            </div>
-            <button type="button" onClick={openAdd} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium">Schedule Inspection</button>
+        <div className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-4">
+            <StatCard label="Total Inspections" value={String(counts.all)} detail="All recorded protocols" icon={ClipboardList} />
+            <StatCard label="Scheduled" value={String(counts.scheduled)} detail="Upcoming site visits" icon={Calendar} colorClass="text-sky-600" />
+            <StatCard label="In Progress" value={String(counts.in_progress)} detail="Active on-site audits" icon={Activity} colorClass="text-amber-600" />
+            <StatCard label="Completed" value={String(counts.completed)} detail="Finalized reports" icon={CheckCircle2} colorClass="text-green-600" />
           </div>
-          {filtered.length === 0 ? <EmptyState title="No inspections found" description="Schedule an inspection to get started." /> : (
+
+          <section className="rounded-xl border border-border-color bg-surface p-1">
+          <div className="p-4">
+            <DataTableHeader
+              searchValue={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search inspections by unit, tenant or inspector..."
+              filters={filterTabs}
+              activeFilter={activeFilter}
+              onFilterChange={setActiveFilter}
+              actions={
+                <>
+                  <button
+                    type="button"
+                    onClick={exportCsv}
+                    className="flex items-center gap-2 rounded-lg border border-border-color bg-surface-elevated px-4 py-2 text-sm font-medium text-muted hover:text-foreground transition-all"
+                  >
+                    <Download size={16} />
+                    <span>Export</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openAdd}
+                    className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-surface hover:opacity-90 transition-all"
+                  >
+                    <Plus size={16} />
+                    <span>Schedule Inspection</span>
+                  </button>
+                </>
+              }
+            />
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="p-12">
+              <EmptyState title="No inspections found" description={searchQuery ? "Try a different search term or filter." : "Add an inspection to get started."} />
+            </div>
+          ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse text-sm">
-                <thead><tr className="border-b border-border-color text-left text-muted">
-                  <th className="px-3 py-2 font-medium">Property</th><th className="px-3 py-2 font-medium">Tenant</th><th className="px-3 py-2 font-medium">Type</th><th className="px-3 py-2 font-medium">Inspector</th><th className="px-3 py-2 font-medium">Scheduled</th><th className="px-3 py-2 font-medium">Completed</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Actions</th>
-                </tr></thead>
-                <tbody>{filtered.map((row) => (
-                  <tr key={row.id} onClick={() => void openInspectionDetails(row.id)} className="cursor-pointer border-b border-border-color/60 hover:bg-surface-elevated/40">
-                    <td className="px-3 py-3 font-medium">{row.propertyName}</td>
-                    <td className="px-3 py-3 text-muted">{row.tenantName}</td>
-                    <td className="px-3 py-3 text-muted">{row.type}</td>
-                    <td className="px-3 py-3 text-muted">{row.inspectorName}</td>
-                    <td className="px-3 py-3 text-muted">{row.scheduledDate}</td>
-                    <td className="px-3 py-3 text-muted">{row.completedDate}</td>
-                    <td className="px-3 py-3"><span className="rounded-full border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted capitalize">{row.status}</span></td>
-                    <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
-                      {row.status === "scheduled" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "in_progress"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Start</button>}
-                      {row.status === "in_progress" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "scheduled"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Reschedule</button>}
-                      {row.status !== "completed" && row.status !== "cancelled" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "completed", new Date().toISOString().slice(0, 10)); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Complete</button>}
-                      {row.status !== "cancelled" && row.status !== "completed" && <button type="button" onClick={(event) => { event.stopPropagation(); onStatusChange(row.id, "cancelled"); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Cancel</button>}
-                      <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteTarget(row); }} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
-                    </div></td>
+                <thead>
+                  <tr className="border-b border-border-color text-left text-muted/60 uppercase text-[10px] font-bold tracking-wider">
+                    <th className="px-6 py-4 font-bold">Property & Tenant</th>
+                    <th className="px-6 py-4 font-bold">Type</th>
+                    <th className="px-6 py-4 font-bold">Inspector</th>
+                    <th className="px-6 py-4 font-bold">Timeline</th>
+                    <th className="px-6 py-4 font-bold">Status</th>
+                    <th className="px-6 py-4 font-bold text-right">Actions</th>
                   </tr>
-                ))}</tbody>
+                </thead>
+                <tbody className="divide-y divide-border-color/40">
+                  {filtered.map((row) => (
+                    <tr
+                      key={row.id}
+                      onClick={() => void openInspectionDetails(row.id)}
+                      className="group cursor-pointer hover:bg-surface-elevated/40 transition-colors"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted/5 group-hover:bg-foreground group-hover:text-surface transition-all">
+                            <Building size={20} className="text-muted/60 group-hover:text-current" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold tracking-tight text-foreground truncate">{row.propertyName}</p>
+                            <div className="flex items-center gap-1.5 text-xs text-muted">
+                              <User size={12} />
+                              <span>{row.tenantName}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <FileText size={14} className="text-muted/40" />
+                          <span className="font-medium text-foreground capitalize">{row.type.replace(/_/g, " ")}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2 font-bold text-foreground">
+                          <ShieldCheck size={14} className="text-sky-600" />
+                          <span>{row.inspectorName}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                            <Calendar size={12} className="text-muted" />
+                            <span>{formatDate(row.scheduledDate)}</span>
+                          </div>
+                          {row.completedDate && row.completedDate !== "-" && (
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-green-600 uppercase">
+                              <CheckCircle2 size={10} />
+                              <span>Done {formatDate(row.completedDate)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <StatusBadge status={row.status} />
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <TableRowActions>
+                          {row.status === "scheduled" && (
+                            <TableActionButton
+                              icon={Play}
+                              label="Start"
+                              onClick={(e) => { e.stopPropagation(); onStatusChange(row.id, "in_progress"); }}
+                              variant="success"
+                            />
+                          )}
+                          {row.status === "in_progress" && (
+                            <TableActionButton
+                              icon={CheckCircle2}
+                              label="Complete"
+                              onClick={(e) => { e.stopPropagation(); onStatusChange(row.id, "completed", new Date().toISOString().slice(0, 10)); }}
+                              variant="success"
+                            />
+                          )}
+                          {(row.status === "scheduled" || row.status === "in_progress") && (
+                            <TableActionButton
+                              icon={XCircle}
+                              label="Cancel"
+                              onClick={(e) => { e.stopPropagation(); onStatusChange(row.id, "cancelled"); }}
+                              variant="danger"
+                            />
+                          )}
+                          <TableActionButton
+                            icon={Trash}
+                            label="Delete"
+                            variant="danger"
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(row); }}
+                          />
+                          <div className="ml-2 pl-2 border-l border-border-color/40">
+                            <ChevronRight size={18} className="text-muted/40 group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
+                          </div>
+                        </TableRowActions>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
               </table>
             </div>
           )}
+          <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted/40">
+              Showing {filtered.length} of {counts.all} recorded inspections
+            </p>
+          </div>
         </section>
-      )}
+      </div>
+    )}
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? "Edit Inspection" : "Schedule Inspection"}>
         <div className="space-y-3">

@@ -35,34 +35,35 @@ function formatAuditAction(row: AuditEventRow): string {
     const details = JSON.parse(row.details);
     const action = row.action.toLowerCase();
     const entity = row.entityType.toLowerCase();
+    const entityName = row.entityName ? ` "${row.entityName}"` : "";
 
     switch (action) {
       case "create":
-        return `Created a new ${entity}`;
+        return `Created a new ${entity}${entityName}`;
       case "update":
         if (details.changes) {
           const changedKeys = Object.keys(details.changes).join(", ");
-          return `Updated ${entity} details (${changedKeys})`;
+          return `Updated ${entity}${entityName} details (${changedKeys})`;
         }
-        return `Modified ${entity} information`;
+        return `Modified ${entity}${entityName} information`;
       case "delete":
-        return `Removed ${entity} record`;
+        return `Removed ${entity}${entityName} record`;
       case "payment_recorded":
       case "rent_payment_recorded":
-        return `Recorded payment of ${formatCurrency(details.amount_paid || 0)} for ${details.paid_month || details.payment_date || "this period"}`;
+        return `Recorded payment from ${row.entityName || "tenant"} of ${formatCurrency(details.amount_paid || 0)} for ${details.paid_month || details.payment_date || "this period"}`;
       case "invoice_generated":
       case "unified_invoice_generated":
-        return `Generated invoice for ${details.month || "billing period"} total ${formatCurrency(details.total_amount || details.total_amount_paid || 0)}`;
+        return `Generated invoice for ${row.entityName || "tenant"} for ${details.month || "billing period"} total ${formatCurrency(details.total_amount || details.total_amount_paid || 0)}`;
       case "invoice_shared":
-        return `Shared invoice via ${details.channel || "external channel"}`;
+        return `Shared invoice with ${row.entityName || "tenant"} via ${details.channel || "external channel"}`;
       case "status_change":
-        return `Changed status to ${details.new_status || "updated state"}`;
+        return `Changed status of ${entity}${entityName} to ${details.new_status || "updated state"}`;
       default:
         // Handle underscore separated actions
-        return action.replace(/_/g, " ");
+        return `${action.replace(/_/g, " ")}${entityName}`;
     }
   } catch (e) {
-    return row.action.replace(/_/g, " ");
+    return `${row.action.replace(/_/g, " ")}${row.entityName ? ` "${row.entityName}"` : ""}`;
   }
 }
 

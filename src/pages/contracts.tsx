@@ -35,7 +35,8 @@ import {
   Play,
   Briefcase,
   AlertCircle,
-  Info
+  Info,
+  MessageSquare
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 
@@ -1003,6 +1004,12 @@ export default function ContractsPage() {
                           <td className="px-6 py-4 text-right">
                             <TableRowActions>
                               <TableActionButton
+                                icon={RefreshCw}
+                                label="Regenerate Contract"
+                                onClick={(e) => { e.stopPropagation(); void onGenerate(row); }}
+                                disabled={printingId === row.id}
+                              />
+                              <TableActionButton
                                 icon={Eye}
                                 label="View Document"
                                 onClick={(e) => { e.stopPropagation(); void onView(row); }}
@@ -1018,6 +1025,11 @@ export default function ContractsPage() {
                                 icon={Mail}
                                 label="Send Email"
                                 onClick={(e) => { e.stopPropagation(); void onSendEmail(row); }}
+                              />
+                              <TableActionButton
+                                icon={MessageSquare}
+                                label="Send WhatsApp"
+                                onClick={(e) => { e.stopPropagation(); void onSendWhatsApp(row); }}
                               />
                               <TableActionButton
                                 icon={Pencil}

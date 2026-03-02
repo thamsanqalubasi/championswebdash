@@ -8,6 +8,24 @@ import { useAuth } from "@/lib/auth";
 import { uploadFileToBucket } from "@/lib/storage";
 import type { SettingsData } from "@/lib/types";
 
+import { 
+  User as UserIcon, 
+  Building2, 
+  CreditCard, 
+  ShieldCheck, 
+  Mail, 
+  MapPin, 
+  Percent, 
+  Calendar, 
+  Lock, 
+  Pencil, 
+  Upload, 
+  CheckCircle2, 
+  AlertCircle,
+  FileSignature,
+  FileText
+} from "lucide-react";
+
 export default function SettingsPage() {
   const { user } = useAuth();
   const [data, setData] = useState<SettingsData | null>(null);
@@ -196,86 +214,144 @@ export default function SettingsPage() {
     finally { setPinVerifying(false); }
   };
 
-  const LabelValue = ({ label, value }: { label: string; value: string }) => (
-    <div><p className="text-xs text-muted">{label}</p><p className="font-medium">{value || "-"}</p></div>
+  const SectionHeader = ({ icon: Icon, title, description, onEdit }: { icon: any; title: string; description: string; onEdit: () => void }) => (
+    <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center gap-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-foreground text-surface shadow-lg">
+          <Icon size={24} />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold tracking-tight text-foreground">{title}</h2>
+          <p className="text-sm text-muted">{description}</p>
+        </div>
+      </div>
+      <button 
+        type="button" 
+        onClick={onEdit} 
+        className="flex items-center gap-2 rounded-lg border border-border-color bg-surface-elevated px-4 py-2 text-sm font-bold text-muted hover:text-foreground transition-all"
+      >
+        <Pencil size={16} />
+        <span>Edit</span>
+      </button>
+    </div>
+  );
+
+  const LabelValue = ({ label, value, icon: Icon }: { label: string; value: string; icon?: any }) => (
+    <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/20 flex items-center gap-3">
+      {Icon && <Icon size={16} className="text-muted/40" />}
+      <div>
+        <p className="text-[10px] font-bold text-muted/60 uppercase mb-0.5">{label}</p>
+        <p className="font-bold text-foreground truncate">{value || "-"}</p>
+      </div>
+    </div>
   );
 
   return (
-    <ModulePage title="Settings" description="Manage admin, company, and invoice settings.">
-      {loading && <LoadingState label="Loading settings..." />}
+    <ModulePage title="System Configuration" description="Manage administrator credentials, company branding, and financial parameters.">
+      {loading && <LoadingState label="Synchronizing cloud settings..." />}
       {!loading && error && <ErrorState message={error} onRetry={reload} />}
       {!loading && !error && data && (
-        <div className="space-y-6">
+        <div className="max-w-5xl space-y-10 pb-20">
 
           {/* Admin Profile */}
-          <section className="rounded-lg border border-border-color bg-surface p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Admin Profile</h2>
-              <button type="button" onClick={openEditAdmin} className="rounded-md border border-border-color px-3 py-1 text-sm text-muted hover:bg-surface-elevated">Edit</button>
-            </div>
+          <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
+            <SectionHeader icon={UserIcon} title="Administrator Profile" description="Your personal identity and security credentials." onEdit={openEditAdmin} />
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <LabelValue label="First Name" value={data.adminProfile.firstName} />
               <LabelValue label="Last Name" value={data.adminProfile.lastName} />
-              <LabelValue label="Email" value={data.adminProfile.email} />
+              <LabelValue label="Email Address" value={data.adminProfile.email} icon={Mail} />
             </div>
-            <div className="mt-4">
-              <p className="mb-2 text-xs text-muted">Uploaded Signature</p>
+            <div className="mt-8 pt-6 border-t border-border-color/50">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted/40 mb-4 px-1">Authorization Signature</p>
               {data.adminProfile.signatureUrl ? (
-                <div className="w-full max-w-sm rounded-md border border-border-color bg-surface-elevated p-3">
-                  <img
-                    src={data.adminProfile.signatureUrl}
-                    alt="Admin signature"
-                    className="h-20 w-full object-contain"
-                  />
+                <div className="inline-block rounded-xl border border-border-color bg-surface-elevated/40 p-4 shadow-inner">
+                  <img src={data.adminProfile.signatureUrl} alt="Admin signature" className="h-16 object-contain mix-blend-multiply dark:invert dark:mix-blend-normal" />
                 </div>
               ) : (
-                <p className="text-sm text-muted">No signature uploaded yet.</p>
+                <div className="p-8 rounded-xl border-2 border-dashed border-border-color bg-muted/5 text-center">
+                  <FileSignature size={24} className="mx-auto text-muted/20 mb-2" />
+                  <p className="text-xs text-muted font-medium">No digital signature established.</p>
+                </div>
               )}
             </div>
           </section>
 
           {/* Company Profile */}
-          <section className="rounded-lg border border-border-color bg-surface p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Company Profile</h2>
-              <button type="button" onClick={openEditCompany} className="rounded-md border border-border-color px-3 py-1 text-sm text-muted hover:bg-surface-elevated">Edit</button>
+          <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
+            <SectionHeader icon={Building2} title="Company Identity" description="Public branding and corporate correspondence details." onEdit={openEditCompany} />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <LabelValue label="Legal Company Name" value={data.companyProfile.companyName} />
+              <LabelValue label="Physical Address" value={data.companyProfile.address} icon={MapPin} />
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <LabelValue label="Company Name" value={data.companyProfile.companyName} />
-              <LabelValue label="Address" value={data.companyProfile.address} />
-            </div>
-            <div className="mt-4">
-              <p className="mb-2 text-xs text-muted">Company Logo</p>
+            <div className="mt-8 pt-6 border-t border-border-color/50">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted/40 mb-4 px-1">Corporate Logo</p>
               {data.companyProfile.logoUrl ? (
-                <div className="w-full max-w-sm rounded-md border border-border-color bg-surface-elevated p-3">
-                  <img src={data.companyProfile.logoUrl} alt="Company logo" className="h-16 w-full object-contain" />
+                <div className="inline-block rounded-xl border border-border-color bg-surface-elevated/40 p-4 shadow-inner">
+                  <img src={data.companyProfile.logoUrl} alt="Company logo" className="h-12 object-contain" />
                 </div>
               ) : (
-                <p className="text-sm text-muted">No logo uploaded yet.</p>
+                <div className="p-8 rounded-xl border-2 border-dashed border-border-color bg-muted/5 text-center">
+                  <Building2 size={24} className="mx-auto text-muted/20 mb-2" />
+                  <p className="text-xs text-muted font-medium">No company logo uploaded.</p>
+                </div>
               )}
             </div>
           </section>
 
-          {/* Invoice Settings */}
-          <section className="rounded-lg border border-border-color bg-surface p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Invoice Settings</h2>
-              <button type="button" onClick={openEditInvoice} className="rounded-md border border-border-color px-3 py-1 text-sm text-muted hover:bg-surface-elevated">Edit</button>
+          {/* Financial & Invoice Settings */}
+          <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
+            <SectionHeader icon={CreditCard} title="Financial Parameters" description="Global tax rates and default invoicing behaviors." onEdit={openEditInvoice} />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <LabelValue label="Default Tax Rate" value={`${data.invoiceSettings.taxRate}%`} icon={Percent} />
+              <LabelValue label="Monthly Due Day" value={`Day ${data.invoiceSettings.defaultDueDay}`} icon={Calendar} />
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <LabelValue label="Tax Rate" value={`${data.invoiceSettings.taxRate}%`} />
-              <LabelValue label="Default Due Day" value={String(data.invoiceSettings.defaultDueDay)} />
-              <LabelValue label="Payment Instructions" value={data.invoiceSettings.paymentInstructions} />
+            <div className="mt-6">
+              <div className="p-5 rounded-2xl border border-border-color bg-surface-elevated/10">
+                <p className="text-[10px] font-bold text-muted/60 uppercase mb-2 flex items-center gap-1.5">
+                  <FileText size={12} />
+                  Default Payment Instructions
+                </p>
+                <p className="text-sm font-medium text-foreground whitespace-pre-wrap leading-relaxed">{data.invoiceSettings.paymentInstructions || "No instructions provided."}</p>
+              </div>
             </div>
           </section>
 
           {/* Security */}
-          <section className="rounded-lg border border-border-color bg-surface p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Security</h2>
-              <button type="button" onClick={() => setPinModalOpen(true)} className="rounded-md border border-border-color px-3 py-1 text-sm text-muted hover:bg-surface-elevated">Manage PIN</button>
+          <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm overflow-hidden relative">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500 text-white shadow-lg">
+                  <ShieldCheck size={24} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight text-foreground">Advanced Security</h2>
+                  <p className="text-sm text-muted">Manage system-wide access tokens and administrative PINs.</p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setPinModalOpen(true)} 
+                className="rounded-lg bg-foreground px-6 py-2 text-sm font-black text-surface hover:opacity-90 shadow-md transition-all"
+              >
+                Manage Access PIN
+              </button>
             </div>
-            <p className="text-sm text-muted">Active PIN: {data.security.activePinExists ? "Yes" : "No PIN set"}</p>
+            <div className="mt-6 flex items-center gap-2 px-1">
+              {data.security.activePinExists ? (
+                <>
+                  <CheckCircle2 size={16} className="text-green-600" />
+                  <span className="text-xs font-bold text-green-700 uppercase tracking-wider">System Locked & Protected</span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle size={16} className="text-amber-600" />
+                  <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">No active admin PIN established</span>
+                </>
+              )}
+            </div>
+            <div className="absolute right-[-20px] bottom-[-20px] opacity-5">
+              <Lock size={120} />
+            </div>
           </section>
         </div>
       )}

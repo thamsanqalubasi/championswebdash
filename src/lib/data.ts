@@ -252,6 +252,7 @@ function toAuditEventRow(payload: Record<string, unknown>): AuditEventRow {
     action: String(payload.action ?? "unknown"),
     entityType: String(payload.entity_type ?? "-"),
     entityId: String(payload.entity_id ?? "-"),
+    entityName: String(payload.entity_name ?? ""),
     actorName: String(payload.user_name ?? payload.actor_name ?? "System"),
     details:
       typeof detailsValue === "string"
@@ -1051,7 +1052,7 @@ export async function fetchAuditTrailData(): Promise<AuditEventRow[]> {
 
   const { data, error } = await supabase
     .from("audit_log")
-    .select("id, created_at, action, entity_type, entity_id, details, user_name")
+    .select("id, created_at, action, entity_type, entity_id, entity_name, details, user_name")
     .order("created_at", { ascending: false })
     .limit(200);
 
