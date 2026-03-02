@@ -63,6 +63,25 @@ function toMonthKey(value: string) {
   return String(value).slice(0, 7);
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const value = (error as { message?: unknown }).message;
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return fallback;
+}
+
+function isMissingDbObjectError(error: unknown) {
+  const message = getErrorMessage(error, "").toLowerCase();
+  return (
+    message.includes("does not exist") ||
+    message.includes("could not find") ||
+    message.includes("schema cache") ||
+    message.includes("column")
+  );
+}
+
 function buildMonthRange(startDate: string, endDate: string) {
   const start = firstDayOfMonth(new Date(startDate));
   const end = firstDayOfMonth(new Date(endDate));
@@ -95,13 +114,118 @@ async function fetchOptionalTable<T>(table: string, selector: string, startDate:
     .lte("created_at", `${endDate}T23:59:59.999Z`);
 
   if (error) {
-    if (error.message.toLowerCase().includes("does not exist")) {
+    if (isMissingDbObjectError(error)) {
       return [];
     }
     throw error;
   }
 
   return (data ?? []) as T[];
+}
+
+type PaymentProjection = {
+  payment_date?: string;
+  amount_paid?: number;
+  tenant_id?: string;
+  tenants?: { property_id?: string } | null;
+};
+
+type PaymentWithProperty = {
+  paymentDate: string;
+  amountPaid: number;
+  tenantPropertyId: string;
+};
+
+async function fetchPaymentsWithProperty(startDate: string, endDate: string): Promise<PaymentWithProperty[]> {
+  const withJoin = await supabase
+    .from("tenant_rent_payments")
+    .select("payment_date, amount_paid, tenant_id, tenants(property_id)")
+    .gte("payment_date", startDate)
+    .lte("payment_date", endDate)
+    .order("payment_date");
+
+  if (!withJoin.error) {
+    return ((withJoin.data ?? []) as PaymentProjection[]).map((row) => ({
+      paymentDate: String(row.payment_date ?? ""),
+      amountPaid: Number(row.amount_paid ?? 0),
+      tenantPropertyId: String((row.tenants as { property_id?: string } | null)?.property_id ?? ""),
+    }));
+  }
+
+  if (!isMissingDbObjectError(withJoin.error)) {
+    throw withJoin.error;
+  }
+
+  const base = await supabase
+    .from("tenant_rent_payments")
+    .select("payment_date, amount_paid, tenant_id")
+    .gte("payment_date", startDate)
+    .lte("payment_date", endDate)
+    .order("payment_date");
+
+  if (base.error) throw base.error;
+
+  const rows = (base.data ?? []) as PaymentProjection[];
+  const tenantIds = Array.from(new Set(rows.map((row) => String(row.tenant_id ?? "")).filter(Boolean)));
+
+  let tenantPropertyMap = new Map<string, string>();
+  if (tenantIds.length > 0) {
+    const tenantsResult = await supabase
+      .from("tenants")
+      .select("id, property_id")
+      .in("id", tenantIds);
+    if (!tenantsResult.error) {
+      tenantPropertyMap = new Map(
+        (tenantsResult.data ?? []).map((row) => [String(row.id ?? ""), String(row.property_id ?? "")]),
+      );
+    }
+  }
+
+  return rows.map((row) => {
+    const tenantId = String(row.tenant_id ?? "");
+    return {
+      paymentDate: String(row.payment_date ?? ""),
+      amountPaid: Number(row.amount_paid ?? 0),
+      tenantPropertyId: tenantPropertyMap.get(tenantId) ?? "",
+    };
+  });
+}
+
+type MaintenanceProjection = {
+  created_at?: string;
+  cost?: number;
+  actual_cost?: number;
+  category?: string;
+  property_id?: string;
+};
+
+async function fetchMaintenanceRows(startDate: string, endDate: string): Promise<MaintenanceProjection[]> {
+  const withProperty = await supabase
+    .from("maintenance")
+    .select("created_at, cost, actual_cost, category, property_id")
+    .gte("created_at", `${startDate}T00:00:00.000Z`)
+    .lte("created_at", `${endDate}T23:59:59.999Z`);
+
+  if (!withProperty.error) {
+    return (withProperty.data ?? []) as MaintenanceProjection[];
+  }
+
+  if (!isMissingDbObjectError(withProperty.error)) {
+    throw withProperty.error;
+  }
+
+  const fallback = await supabase
+    .from("maintenance")
+    .select("created_at, cost, actual_cost, category")
+    .gte("created_at", `${startDate}T00:00:00.000Z`)
+    .lte("created_at", `${endDate}T23:59:59.999Z`);
+
+  if (fallback.error) throw fallback.error;
+
+  return ((fallback.data ?? []) as MaintenanceProjection[]).map((row) => ({
+    ...row,
+    property_id: "",
+  }));
 }
 
 export default function FinanceAccountsPage() {
@@ -185,20 +309,11 @@ export default function FinanceAccountsPage() {
     setError(null);
 
     try {
-      const [company, admin, paymentsResult, maintenanceResult, renovations, bills] = await Promise.all([
+      const [company, admin, payments, maintenanceRows, renovations, bills] = await Promise.all([
         fetchCompanyInfo(),
         fetchAdminInfo(user?.email ?? undefined),
-        supabase
-          .from("tenant_rent_payments")
-          .select("payment_date, amount_paid, tenant_id, tenants(property_id)")
-          .gte("payment_date", startDate)
-          .lte("payment_date", endDate)
-          .order("payment_date"),
-        supabase
-          .from("maintenance")
-          .select("created_at, cost, actual_cost, category, property_id")
-          .gte("created_at", `${startDate}T00:00:00.000Z`)
-          .lte("created_at", `${endDate}T23:59:59.999Z`),
+        fetchPaymentsWithProperty(startDate, endDate),
+        fetchMaintenanceRows(startDate, endDate),
         fetchOptionalTable<Array<{ created_at?: string; cost?: number; actual_cost?: number; property_id?: string }>[number]>(
           "renovations",
           "created_at, cost, actual_cost, property_id",
@@ -212,9 +327,6 @@ export default function FinanceAccountsPage() {
           endDate,
         ),
       ]);
-
-      if (paymentsResult.error) throw paymentsResult.error;
-      if (maintenanceResult.error) throw maintenanceResult.error;
 
       setCompanyInfo(company);
       setAdminInfo(admin);
@@ -234,15 +346,15 @@ export default function FinanceAccountsPage() {
         });
       });
 
-      (paymentsResult.data ?? []).forEach((row) => {
-        const tenantPropertyId = String((row.tenants as { property_id?: string } | null)?.property_id ?? "");
+      payments.forEach((row) => {
+        const tenantPropertyId = row.tenantPropertyId;
         if (scope === "property" && tenantPropertyId !== propertyId) return;
-        const month = toMonthKey(String(row.payment_date ?? ""));
+        const month = toMonthKey(row.paymentDate);
         if (!monthMap.has(month)) return;
-        monthMap.get(month)!.rentCollected += Number(row.amount_paid ?? 0);
+        monthMap.get(month)!.rentCollected += Number(row.amountPaid ?? 0);
       });
 
-      (maintenanceResult.data ?? []).forEach((row) => {
+      maintenanceRows.forEach((row) => {
         if (scope === "property" && String(row.property_id ?? "") !== propertyId) return;
         const month = toMonthKey(String(row.created_at ?? ""));
         if (!monthMap.has(month)) return;
@@ -288,7 +400,7 @@ export default function FinanceAccountsPage() {
       setMonthlyRows(monthly);
       setSummary(reportSummary);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not generate balance sheet.");
+      setError(getErrorMessage(loadError, "Could not generate balance sheet."));
     } finally {
       setLoading(false);
     }
