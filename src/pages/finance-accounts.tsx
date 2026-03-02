@@ -138,6 +138,7 @@ type PaymentProjection = {
   payment_date?: string;
   amount_paid?: number;
   tenant_id?: string;
+  executed_by_name?: string;
   created_by?: string;
   recorded_by?: string;
   collected_by?: string;
@@ -164,7 +165,7 @@ function pickExecutor(record: Record<string, unknown>) {
 async function fetchPaymentsWithProperty(startDate: string, endDate: string): Promise<PaymentWithProperty[]> {
   const richJoin = await supabase
     .from("tenant_rent_payments")
-    .select("payment_date, amount_paid, tenant_id, created_by, recorded_by, collected_by, tenants(property_id, full_name)")
+    .select("payment_date, amount_paid, tenant_id, executed_by_name, created_by, recorded_by, collected_by, tenants(property_id, full_name)")
     .gte("payment_date", startDate)
     .lte("payment_date", endDate)
     .order("payment_date");
@@ -175,7 +176,7 @@ async function fetchPaymentsWithProperty(startDate: string, endDate: string): Pr
       amountPaid: Number(row.amount_paid ?? 0),
       tenantPropertyId: String((row.tenants as { property_id?: string } | null)?.property_id ?? ""),
       tenantName: String((row.tenants as { full_name?: string } | null)?.full_name ?? "Tenant"),
-      executor: pickExecutor(row as Record<string, unknown>),
+      executor: String(row.executed_by_name ?? "") || pickExecutor(row as Record<string, unknown>),
     }));
   }
 
@@ -261,16 +262,38 @@ type MaintenanceProjection = {
   category?: string;
   description?: string;
   property_id?: string;
+  executed_by_name?: string;
   maintainers?: { name?: string } | null;
   created_by?: string;
   updated_by?: string;
   executed_by?: string;
 };
 
+type AdminUserRow = {
+  id: string;
+  email: string;
+  fullName: string;
+};
+
+function buildAdminLookup(users: AdminUserRow[]) {
+  const lookup = new Map<string, string>();
+  users.forEach((user) => {
+    if (user.id) lookup.set(user.id.toLowerCase(), user.fullName);
+    if (user.email) lookup.set(user.email.toLowerCase(), user.fullName);
+  });
+  return lookup;
+}
+
+function resolveExecutorName(rawValue: string, lookup: Map<string, string>) {
+  const value = String(rawValue ?? "").trim();
+  if (!value) return "-";
+  return lookup.get(value.toLowerCase()) ?? value;
+}
+
 async function fetchMaintenanceRows(startDate: string, endDate: string): Promise<MaintenanceProjection[]> {
   const rich = await supabase
     .from("maintenance")
-    .select("created_at, cost, actual_cost, category, description, property_id, created_by, updated_by, executed_by, maintainers(name)")
+    .select("created_at, cost, actual_cost, category, description, property_id, executed_by_name, created_by, updated_by, executed_by, maintainers(name)")
     .gte("created_at", `${startDate}T00:00:00.000Z`)
     .lte("created_at", `${endDate}T23:59:59.999Z`);
 
@@ -393,9 +416,10 @@ export default function FinanceAccountsPage() {
     setError(null);
 
     try {
-      const [company, admin, payments, maintenanceRows, renovations, bills] = await Promise.all([
+      const [company, admin, usersResult, payments, maintenanceRows, renovations, bills] = await Promise.all([
         fetchCompanyInfo(),
         fetchAdminInfo(user?.email ?? undefined),
+        supabase.from("users").select("id, email, first_name, last_name"),
         fetchPaymentsWithProperty(startDate, endDate),
         fetchMaintenanceRows(startDate, endDate),
         fetchOptionalTable<Array<{ created_at?: string; cost?: number; actual_cost?: number; property_id?: string }>[number]>(
@@ -414,6 +438,14 @@ export default function FinanceAccountsPage() {
 
       setCompanyInfo(company);
       setAdminInfo(admin);
+
+      const adminLookup = buildAdminLookup(
+        (usersResult.data ?? []).map((row) => ({
+          id: String(row.id ?? ""),
+          email: String(row.email ?? ""),
+          fullName: `${String((row as Record<string, unknown>).first_name ?? "")} ${String((row as Record<string, unknown>).last_name ?? "")}`.trim() || String(row.email ?? "Admin"),
+        })),
+      );
 
       const monthKeys = buildMonthRange(startDate, endDate);
       const monthMap = new Map<string, BalanceSheetMonthlyRow>();
@@ -443,7 +475,7 @@ export default function FinanceAccountsPage() {
           entryType: "income",
           category: "Rent Collected",
           details: `Rent payment accepted: ${row.tenantName}`,
-          executor: row.executor,
+          executor: resolveExecutorName(row.executor, adminLookup),
           amount: Number(row.amountPaid ?? 0),
           tax: 0,
           net: Number(row.amountPaid ?? 0),
@@ -457,9 +489,9 @@ export default function FinanceAccountsPage() {
         const amount = Number(row.actual_cost ?? row.cost ?? 0);
         const categoryLabel = humanize(String(row.category ?? "general"));
         const description = String(row.description ?? "").trim();
-        const executor = pickExecutor(row as Record<string, unknown>) !== "-"
+        const executor = String(row.executed_by_name ?? "") || (pickExecutor(row as Record<string, unknown>) !== "-"
           ? pickExecutor(row as Record<string, unknown>)
-          : String((row.maintainers as { name?: string } | null)?.name ?? "-");
+          : String((row.maintainers as { name?: string } | null)?.name ?? "-"));
         if (classifyMaintenanceCategory(String(row.category ?? "")) === "bills") {
           monthMap.get(month)!.bills += amount;
           transactions.push({
@@ -468,7 +500,7 @@ export default function FinanceAccountsPage() {
             entryType: "expense",
             category: "Bill Payment",
             details: `Bill payment: ${categoryLabel}${description ? ` - ${description}` : ""}`,
-            executor,
+            executor: resolveExecutorName(executor, adminLookup),
             amount,
             tax: 0,
             net: -amount,
@@ -481,7 +513,7 @@ export default function FinanceAccountsPage() {
             entryType: "expense",
             category: "Work Order Fee",
             details: `Work order fee: ${categoryLabel}${description ? ` - ${description}` : ""}`,
-            executor,
+            executor: resolveExecutorName(executor, adminLookup),
             amount,
             tax: 0,
             net: -amount,
@@ -501,7 +533,7 @@ export default function FinanceAccountsPage() {
           entryType: "expense",
           category: "Renovation",
           details: `Renovation expense entry`,
-          executor: pickExecutor(row as Record<string, unknown>),
+          executor: resolveExecutorName(String((row as Record<string, unknown>).executed_by_name ?? "") || pickExecutor(row as Record<string, unknown>), adminLookup),
           amount,
           tax: 0,
           net: -amount,
@@ -522,7 +554,7 @@ export default function FinanceAccountsPage() {
           entryType: "expense",
           category: "Bill Payment",
           details: `Bill payment: ${billHint}`,
-          executor: pickExecutor(row as Record<string, unknown>),
+          executor: resolveExecutorName(String((row as Record<string, unknown>).executed_by_name ?? "") || pickExecutor(row as Record<string, unknown>), adminLookup),
           amount,
           tax: 0,
           net: -amount,

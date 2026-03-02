@@ -5,7 +5,8 @@ import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { ImageGallery } from "@/components/image-gallery";
 import { fetchWorkOrdersData } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
-import { uploadFileToBucket } from "@/lib/storage";
+import { fetchAdminInfo, uploadFileToBucket } from "@/lib/storage";
+import { useAuth } from "@/lib/auth";
 import type { WorkOrderRow } from "@/lib/types";
 import { Plus, Wrench, ClipboardList, Clock, Play, CheckCircle2, XCircle, RotateCcw, Trash, ChevronRight, AlertTriangle, User, Building, Calendar, DollarSign, Image as ImageIcon, Save, Upload, Eye, Pencil } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
@@ -39,6 +40,7 @@ function formatDate(value: string) {
 }
 
 export default function WorkOrdersPage() {
+  const { user } = useAuth();
   const [workOrders, setWorkOrders] = useState<WorkOrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -142,9 +144,12 @@ export default function WorkOrdersPage() {
     if (!editingId && !form.property_id) { alert("Please select a property."); return; }
     setSaving(true);
     try {
+      const admin = await fetchAdminInfo(user?.email ?? undefined);
+      const executorName = admin.fullName || user?.email || "Admin";
       const payload: Record<string, unknown> = { description: form.description, category: form.category, priority: form.priority, status: form.status, scheduled_date: form.scheduled_date || null, estimated_cost: form.estimated_cost, actual_cost: form.actual_cost };
       if (form.property_id) payload.property_id = form.property_id;
       if (form.maintainer_id) payload.maintainer_id = form.maintainer_id;
+      payload.executed_by_name = executorName;
       if (editingId) {
         const { error: err } = await supabase.from("maintenance").update(payload).eq("id", editingId);
         if (err) throw err;
@@ -158,7 +163,9 @@ export default function WorkOrdersPage() {
   };
 
   const onStatusChange = async (id: string, newStatus: string) => {
-    const { error: err } = await supabase.from("maintenance").update({ status: newStatus }).eq("id", id);
+    const admin = await fetchAdminInfo(user?.email ?? undefined);
+    const executorName = admin.fullName || user?.email || "Admin";
+    const { error: err } = await supabase.from("maintenance").update({ status: newStatus, executed_by_name: executorName }).eq("id", id);
     if (err) { alert(err.message); return; }
     reload();
   };

@@ -5,6 +5,8 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { supabase } from "@/lib/supabase";
 import { verifyAdminPin } from "@/lib/data";
+import { useAuth } from "@/lib/auth";
+import { fetchAdminInfo } from "@/lib/storage";
 import { billStatusMeta, frequencyLabel, type BillFrequency, type BillRow, type BillStatus } from "@/lib/bills";
 
 type BillForm = {
@@ -84,6 +86,7 @@ function isFrequencyColumnMissing(error: unknown) {
 }
 
 export default function BillsPage() {
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [bills, setBills] = useState<BillRow[]>([]);
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
@@ -281,6 +284,8 @@ export default function BillsPage() {
 
   const upsertCurrentMonthStatus = async (scheduleId: string) => {
     const monthKey = currentMonthKey();
+    const admin = await fetchAdminInfo(user?.email ?? undefined);
+    const executorName = admin.fullName || user?.email || "Admin";
     const { data: existingMonthly, error: existingMonthlyError } = await supabase
       .from("property_monthly_bills")
       .select("id")
@@ -298,6 +303,7 @@ export default function BillsPage() {
       amount: form.status === "paid" ? form.paidAmount : form.amount,
       status: form.status,
       paid_at: form.status === "paid" ? `${form.paidDate}T12:00:00.000Z` : null,
+      executed_by_name: executorName,
     };
 
     if (existingMonthly?.id) {

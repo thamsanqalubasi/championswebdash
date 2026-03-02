@@ -260,6 +260,8 @@ export default function RentCollectionPage() {
 
     try {
       const monthLabel = `${paymentForm.paidMonth}-01`;
+      const admin = await fetchAdminInfo(user?.email ?? undefined);
+      const executorName = admin.fullName || user?.email || "Admin";
 
       const { data: insertedPayment, error: paymentError } = await supabase
         .from("tenant_rent_payments")
@@ -268,6 +270,7 @@ export default function RentCollectionPage() {
           payment_date: paymentForm.paymentDate,
           amount_paid: paymentForm.amountPaid,
           paid_months: [monthLabel],
+          executed_by_name: executorName,
         })
         .select("id")
         .single();

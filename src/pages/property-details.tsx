@@ -717,6 +717,8 @@ export default function PropertyDetailsPage() {
 
       const monthKey = currentMonthKey();
       const dueDate = buildDueDate(monthKey, billPaymentTarget.dueDay);
+      const admin = await fetchAdminInfo(user?.email ?? undefined);
+      const executorName = admin.fullName || user?.email || "Admin";
 
       const { data: existingMonthly, error: existingMonthlyError } = await supabase
         .from("property_monthly_bills")
@@ -734,6 +736,7 @@ export default function PropertyDetailsPage() {
         amount: billPaymentStatus === "paid" ? billPaidAmount : billPaymentTarget.amount,
         status: billPaymentStatus,
         paid_at: billPaymentStatus === "paid" ? `${billPaidDate}T12:00:00.000Z` : null,
+        executed_by_name: executorName,
       };
 
       if (existingMonthly?.id) {
