@@ -1,246 +1,332 @@
 import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
-import { fetchAuditTrailData } from "@/lib/data";
-import type { AuditEventRow } from "@/lib/types";
-import { 
-  History, 
-  Search, 
-  Download, 
-  RefreshCw, 
-  User, 
-  Clock, 
-  FileText, 
-  Home, 
-  Users, 
-  CreditCard, 
-  Wrench, 
-  Shield, 
-  CheckCircle2, 
-  Mail, 
-  Send 
+import { fetchAuditEvents, fetchCheckinPatterns, fetchInvoices } from "@/lib/data";
+import type { AuditEventRow, InvoiceRow } from "@/lib/types";
+import { useAuth } from "@/lib/auth";
+import {
+  History,
+  Search,
+  Download,
+  User,
+  Clock,
+  FileText,
+  Home,
+  Users,
+  CreditCard,
+  Wrench,
+  Shield,
+  KeyRound,
+  TrendingUp,
+  BarChart3,
+  Calendar,
+  Utensils,
+  CheckCircle2,
+  Lock,
 } from "lucide-react";
-import { DataTableHeader } from "@/components/data-table";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+
+const COLORS = ["#0ea5e9", "#10b981", "#8b5cf6", "#f59e0b"];
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-ZA", {
     style: "currency",
-    currency: "NAD",
+    currency: "ZAR",
     maximumFractionDigits: 0,
   }).format(amount);
 }
 
-function formatAuditAction(row: AuditEventRow): string {
-  try {
-    const details = JSON.parse(row.details);
-    const action = row.action.toLowerCase();
-    const entity = row.entityType.toLowerCase();
-    const entityName = row.entityName ? ` "${row.entityName}"` : "";
-
-    switch (action) {
-      case "create":
-        return `Created a new ${entity}${entityName}`;
-      case "update":
-        if (details.changes) {
-          const changedKeys = Object.keys(details.changes).join(", ");
-          return `Updated ${entity}${entityName} details (${changedKeys})`;
-        }
-        return `Modified ${entity}${entityName} information`;
-      case "delete":
-        return `Removed ${entity}${entityName} record`;
-      case "payment_recorded":
-      case "rent_payment_recorded":
-        return `Recorded payment from ${row.entityName || "tenant"} of ${formatCurrency(details.amount_paid || 0)} for ${details.paid_month || details.payment_date || "this period"}`;
-      case "invoice_generated":
-      case "unified_invoice_generated":
-        return `Generated invoice for ${row.entityName || "tenant"} for ${details.month || "billing period"} total ${formatCurrency(details.total_amount || details.total_amount_paid || 0)}`;
-      case "invoice_shared":
-        return `Shared invoice with ${row.entityName || "tenant"} via ${details.channel || "external channel"}`;
-      case "status_change":
-        return `Changed status of ${entity}${entityName} to ${details.new_status || "updated state"}`;
-      case "bill_payment_updated": {
-        const fromAmount = Number(details.previous_amount ?? 0);
-        const toAmount = Number(details.new_amount ?? 0);
-        const fromStatus = String(details.previous_status ?? "pending");
-        const toStatus = String(details.new_status ?? "pending");
-        return `Updated bill payment for ${row.entityName || "bill"}: ${formatCurrency(fromAmount)} (${fromStatus}) → ${formatCurrency(toAmount)} (${toStatus})`;
-      }
-      case "invoice_status_updated":
-        return `Updated invoice status for ${row.entityName || "tenant"}: ${details.previous_status || "draft"} → ${details.new_status || details.stored_status || "updated"}`;
-      default:
-        // Handle underscore separated actions
-        return `${action.replace(/_/g, " ")}${entityName}`;
-    }
-  } catch (e) {
-    return `${row.action.replace(/_/g, " ")}${row.entityName ? ` "${row.entityName}"` : ""}`;
-  }
-}
-
-function getEventIcon(type: string) {
-  const t = type.toLowerCase();
-  if (t.includes("property")) return <Home size={16} className="text-sky-600" />;
-  if (t.includes("tenant")) return <Users size={16} className="text-emerald-600" />;
-  if (t.includes("payment") || t.includes("invoice")) return <CreditCard size={16} className="text-amber-600" />;
-  if (t.includes("maintenance") || t.includes("work_order")) return <Wrench size={16} className="text-orange-600" />;
-  if (t.includes("contract")) return <FileText size={16} className="text-indigo-600" />;
-  if (t.includes("user") || t.includes("admin")) return <Shield size={16} className="text-purple-600" />;
-  return <History size={16} className="text-muted" />;
-}
-
 export default function AuditTrailPage() {
+  const { currentCompany } = useAuth();
+  const [activeTab, setActiveTab] = useState<"logs" | "patterns" | "financials">("logs");
   const [events, setEvents] = useState<AuditEventRow[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
+  const [patterns, setPatterns] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
   const [search, setSearch] = useState("");
-  const [entityFilter, setEntityFilter] = useState("all");
+  const [actionFilter, setActionFilter] = useState("all");
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true); setError(null);
+    async function loadData() {
+      setLoading(true);
       try {
-        const result = await fetchAuditTrailData();
-        if (!cancelled) setEvents(result);
-      } catch (e) { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load audit trail."); }
-      finally { if (!cancelled) setLoading(false); }
+        const [evs, invs, pat] = await Promise.all([
+          fetchAuditEvents(currentCompany.id),
+          fetchInvoices(currentCompany.id),
+          fetchCheckinPatterns(currentCompany.id),
+        ]);
+        setEvents(evs);
+        setInvoices(invs);
+        setPatterns(pat);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load audit data");
+      } finally {
+        setLoading(false);
+      }
     }
-    void load();
-    return () => { cancelled = true; };
-  }, [reloadKey]);
+    loadData();
+  }, [currentCompany.id]);
 
-  const reload = () => setReloadKey((v) => v + 1);
+  const filteredEvents = useMemo(() => {
+    return events.filter((e) => {
+      const matchesSearch =
+        e.action.toLowerCase().includes(search.toLowerCase()) ||
+        e.entityName.toLowerCase().includes(search.toLowerCase()) ||
+        e.actorName.toLowerCase().includes(search.toLowerCase()) ||
+        e.details.toLowerCase().includes(search.toLowerCase());
 
-  const entityTypes = useMemo(() => {
-    const types = new Set(events.map((e) => e.entityType).filter(Boolean));
-    return Array.from(types).sort();
-  }, [events]);
-
-  const filtered = useMemo(() => {
-    let result = events;
-    if (entityFilter !== "all") result = result.filter((e) => e.entityType === entityFilter);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter((e) =>
-        e.action.toLowerCase().includes(q) ||
-        e.entityType.toLowerCase().includes(q) ||
-        e.actorName.toLowerCase().includes(q) ||
-        e.details.toLowerCase().includes(q)
-      );
-    }
-    return result;
-  }, [events, entityFilter, search]);
-
-  const exportCSV = () => {
-    const header = "Date,Action,Entity,Actor,Friendly Description";
-    const rows = filtered.map((e) => `"${new Date(e.createdAt).toLocaleString()}","${e.action}","${e.entityType}","${e.actorName}","${formatAuditAction(e)}"`);
-    const csv = [header, ...rows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "audit-trail.csv"; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const filterTabs = [
-    { key: "all", label: "All Events", count: events.length },
-    ...entityTypes.map(t => ({ key: t, label: t.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase()) }))
-  ];
+      const matchesFilter = actionFilter === "all" || e.entityType.includes(actionFilter) || e.action.toLowerCase().includes(actionFilter);
+      return matchesSearch && matchesFilter;
+    });
+  }, [events, search, actionFilter]);
 
   return (
-    <ModulePage title="Audit Trail" description="Activity log and historical operational records.">
-      {loading && <LoadingState label="Retreiving security logs..." />}
-      {!loading && error && <ErrorState message={error} onRetry={reload} />}
-      {!loading && !error && (
-        <section className="rounded-xl border border-border-color bg-surface p-1">
-          <div className="p-4">
-            <DataTableHeader
-              searchValue={search}
-              onSearchChange={setSearch}
-              searchPlaceholder="Search events by actor or action..."
-              filters={filterTabs}
-              activeFilter={entityFilter}
-              onFilterChange={setEntityFilter}
-              actions={
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={reload}
-                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-border-color bg-surface-elevated text-muted hover:text-foreground transition-all"
-                    title="Refresh"
-                  >
-                    <RefreshCw size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={exportCSV}
-                    className="flex items-center gap-2 rounded-lg border border-border-color bg-surface-elevated px-4 py-2 text-sm font-bold text-muted hover:text-foreground transition-all"
-                  >
-                    <Download size={16} />
-                    <span>Export</span>
-                  </button>
-                </div>
-              }
-            />
+    <ModulePage
+      title={`Audit Department & Compliance (${currentCompany.name})`}
+      description="Immutable activity trail, financial transaction verification, and client check-in/checkout patterns."
+    >
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-border-color pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab("logs")}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
+            activeTab === "logs"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-muted hover:bg-surface-elevated hover:text-foreground"
+          }`}
+        >
+          <History size={16} />
+          System Activity Trail ({events.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("patterns")}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
+            activeTab === "patterns"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-muted hover:bg-surface-elevated hover:text-foreground"
+          }`}
+        >
+          <TrendingUp size={16} />
+          Check-In & Checkout Patterns
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("financials")}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
+            activeTab === "financials"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-muted hover:bg-surface-elevated hover:text-foreground"
+          }`}
+        >
+          <CreditCard size={16} />
+          Financial & Invoicing Audit
+        </button>
+      </div>
+
+      {loading && <LoadingState label="Loading audit trail and compliance streams..." />}
+      {!loading && error && <ErrorState message={error} onRetry={() => {}} />}
+
+      {/* TAB 1: ACTIVITY LOGS */}
+      {!loading && !error && activeTab === "logs" && (
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-border-color bg-surface p-4">
+            <div className="relative flex-1">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+              <input
+                type="search"
+                placeholder="Search audit trail by actor, action, booking code, or target entity..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-xl border border-border-color bg-surface-elevated pl-9 pr-4 py-2 text-sm text-foreground outline-none focus:border-blue-600"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted font-medium">Filter:</span>
+              <select
+                value={actionFilter}
+                onChange={(e) => setActionFilter(e.target.value)}
+                className="rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs font-semibold text-foreground focus:border-blue-600 focus:outline-none"
+              >
+                <option value="all">All Events</option>
+                <option value="checkin">Check-Ins & Extensions</option>
+                <option value="user">User & Rights Grants</option>
+                <option value="payment">Payments & Invoices</option>
+                <option value="leave">HR & Leave Approvals</option>
+              </select>
+            </div>
           </div>
 
-          {filtered.length === 0 ? (
-            <div className="p-12">
-              <EmptyState title="No events recorded" description={search ? "No events match your criteria." : "Logs will appear as system actions occur."} />
+          <div className="rounded-2xl border border-border-color bg-surface overflow-hidden shadow-sm">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-border-color bg-surface-elevated/70 text-[11px] font-bold uppercase tracking-wider text-muted">
+                <tr>
+                  <th className="px-4 py-3.5">Timestamp</th>
+                  <th className="px-4 py-3.5">Action & Scope</th>
+                  <th className="px-4 py-3.5">Entity / Target</th>
+                  <th className="px-4 py-3.5">Performed By</th>
+                  <th className="px-4 py-3.5">Audit Summary & Details</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-color text-foreground">
+                {filteredEvents.map((row) => (
+                  <tr key={row.id} className="hover:bg-surface-elevated/30 transition">
+                    <td className="px-4 py-3.5 font-mono text-xs text-muted whitespace-nowrap">
+                      {new Date(row.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className="rounded-md bg-blue-500/10 px-2 py-0.5 text-xs font-bold text-blue-600">
+                        {row.action}
+                      </span>
+                      <p className="text-[10px] text-muted capitalize mt-0.5">{row.entityType}</p>
+                    </td>
+                    <td className="px-4 py-3.5 font-semibold text-foreground">
+                      {row.entityName}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className="font-semibold text-foreground">{row.actorName}</span>
+                    </td>
+                    <td className="px-4 py-3.5 text-xs text-muted max-w-md">
+                      {row.details}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: CHECK-IN & CHECKOUT PATTERN ANALYTICS */}
+      {!loading && !error && activeTab === "patterns" && patterns && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="rounded-2xl border border-border-color bg-surface p-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase text-muted">Average Length of Stay</p>
+              <p className="mt-2 text-3xl font-black text-blue-600">{patterns.averageLengthOfStayNights} Nights</p>
+              <p className="mt-1 text-[11px] text-muted">Guest reservation average</p>
             </div>
-          ) : (
+
+            <div className="rounded-2xl border border-border-color bg-surface p-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase text-muted">Peak Check-In Arrival Window</p>
+              <p className="mt-2 text-2xl font-black text-foreground">{patterns.peakCheckinHour}</p>
+              <p className="mt-1 text-[11px] text-muted">Front desk rush period</p>
+            </div>
+
+            <div className="rounded-2xl border border-border-color bg-surface p-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase text-muted">Most Selected Meal Plan</p>
+              <p className="mt-2 text-lg font-black text-emerald-600">{patterns.mostPopularMealPlan}</p>
+              <p className="mt-1 text-[11px] text-muted">Breakfast inclusive package</p>
+            </div>
+
+            <div className="rounded-2xl border border-border-color bg-surface p-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase text-muted">Room Turnover Efficiency</p>
+              <p className="mt-2 text-3xl font-black text-purple-600">{patterns.turnoverEfficiencyHours} Hours</p>
+              <p className="mt-1 text-[11px] text-muted">Checkout to next guest ready</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {/* Weekly Occupancy Pattern */}
+            <div className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
+              <h3 className="text-base font-bold text-foreground mb-1">Weekly Check-In & Occupancy Trend (%)</h3>
+              <p className="text-xs text-muted mb-4">Historical peak arrival days across weekend/weekdays</p>
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={patterns.weeklyOccupancyTrend}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" opacity={0.5} />
+                    <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "var(--muted)" }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "var(--muted)" }} />
+                    <Tooltip contentStyle={{ backgroundColor: "var(--surface-elevated)", borderColor: "var(--border-color)", borderRadius: "12px" }} />
+                    <Bar dataKey="rate" fill="#0ea5e9" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Meal Plan Distribution */}
+            <div className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
+              <h3 className="text-base font-bold text-foreground mb-1">Meal & Board Selection Breakdown</h3>
+              <p className="text-xs text-muted mb-4">Client package preferences at check-in</p>
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={patterns.mealPlanDistribution}
+                      dataKey="count"
+                      nameKey="plan"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={80}
+                      label={(entry: any) => `${entry.plan || entry.name} (${entry.count || entry.value}%)`}
+                    >
+                      {patterns.mealPlanDistribution.map((_: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: FINANCIAL AUDIT */}
+      {!loading && !error && activeTab === "financials" && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
+            <h3 className="text-base font-bold text-foreground mb-1">Invoice Reconciliation & Financial Stream</h3>
+            <p className="text-xs text-muted mb-4">Verified billing history for audits and taxation</p>
             <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-border-color text-left text-muted/60 uppercase text-[10px] font-bold tracking-wider">
-                    <th className="px-6 py-4 font-bold">Activity Time</th>
-                    <th className="px-6 py-4 font-bold">Category</th>
-                    <th className="px-6 py-4 font-bold">Administrator</th>
-                    <th className="px-6 py-4 font-bold">Record Description</th>
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-border-color text-[11px] font-bold uppercase text-muted">
+                  <tr>
+                    <th className="pb-3">Invoice ID</th>
+                    <th className="pb-3">Client / Tenant</th>
+                    <th className="pb-3">Property</th>
+                    <th className="pb-3">Billing Month</th>
+                    <th className="pb-3">Amount</th>
+                    <th className="pb-3">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border-color/40">
-                  {filtered.map((row) => (
-                    <tr key={row.id} className="group hover:bg-surface-elevated/40 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-foreground">{new Date(row.createdAt).toLocaleDateString("en-ZA", { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                          <span className="text-[10px] font-medium text-muted uppercase tracking-tighter">{new Date(row.createdAt).toLocaleTimeString("en-ZA", { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted/5 group-hover:bg-foreground group-hover:text-surface transition-all">
-                            {getEventIcon(row.entityType)}
-                          </div>
-                          <span className="text-xs font-bold text-muted/80 capitalize tracking-tight">{row.entityType.replace(/_/g, " ")}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2 text-foreground font-bold">
-                          <User size={14} className="text-muted/40" />
-                          <span>{row.actorName}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="text-sm font-medium text-foreground leading-relaxed">
-                          {formatAuditAction(row)}
-                        </p>
-                        <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-0.5 opacity-60">
-                          Ref: #{row.entityId.slice(0, 8)}
-                        </p>
+                <tbody className="divide-y divide-border-color">
+                  {invoices.map((inv) => (
+                    <tr key={inv.id} className="hover:bg-surface-elevated/30">
+                      <td className="py-3 font-mono text-xs font-bold text-blue-600">{inv.id}</td>
+                      <td className="py-3 font-semibold text-foreground">{inv.tenantName}</td>
+                      <td className="py-3 text-muted">{inv.propertyName}</td>
+                      <td className="py-3 text-muted">{inv.month}</td>
+                      <td className="py-3 font-black text-foreground">{formatCurrency(inv.totalAmount)}</td>
+                      <td className="py-3">
+                        <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-bold text-emerald-600 uppercase">
+                          {inv.status}
+                        </span>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          )}
-          <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-muted/40">
-              Showing {filtered.length} recent operations
-            </p>
           </div>
-        </section>
+        </div>
       )}
     </ModulePage>
   );

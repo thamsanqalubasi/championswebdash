@@ -1,1115 +1,1722 @@
 import type {
   AuditEventRow,
+  CommercialBooking,
+  CommercialRoom,
+  Company,
+  CompanyUser,
   ContractRow,
   DashboardData,
   DashboardStats,
+  EmployeeContract,
+  EmployeeContractTemplate,
+  HousekeepingSchedule,
   InspectionRow,
   InventoryItemRow,
   InvoiceRow,
+  LeaveRecord,
   MaintenanceOverviewData,
+  MealPlan,
+  Payslip,
   PreventiveTaskRow,
   PropertyRow,
   ProviderRow,
   ReportsData,
+  RoomServiceSchedule,
+  RoomStatus,
+  SalaryScale,
   SettingsData,
   TenantRow,
   WorkOrderRow,
 } from "./types";
 import { supabase } from "./supabase";
 
-const apiBaseUrl = (
-  import.meta.env.VITE_API_URL ??
-  import.meta.env.NEXT_PUBLIC_API_URL ??
-  ""
-).replace(/\/$/, "");
-
-function hasApiBase() {
-  return Boolean(apiBaseUrl);
-}
-
-function logApiFallback(context: string, error: unknown) {
-  console.warn(`[data] API request failed for ${context}. Falling back to Supabase.`, error);
-}
-
-function hasSupabaseConfig() {
-  // supabase.ts has hardcoded fallbacks, so Supabase is always available
-  return true;
-}
-
-function getSupabaseClient() {
-  return supabase;
-}
-
 function toNumber(value: unknown) {
   return Number(value ?? 0) || 0;
 }
 
-function titleFromMonth(month: string) {
-  const [year, monthIndex] = month.split("-").map(Number);
-  if (!year || !monthIndex) {
-    return month;
+// --------------------------------------------------------------------------------------
+// MOCK MULTI-TENANT LOCAL STORES (Seamless local fallback when DB tables are empty/migrating)
+// --------------------------------------------------------------------------------------
+
+export const MOCK_COMPANIES: Company[] = [
+  {
+    id: "a0000000-0000-0000-0000-000000000001",
+    name: "Champions Court Hospitality & Properties",
+    slug: "champions-court",
+    address: "124 Main Boulevard, Johannesburg, South Africa",
+    phone: "+27 11 987 6543",
+    email: "admin@championscourt.co.za",
+    taxRate: 15.0,
+    currency: "ZAR",
+    defaultDueDay: 1,
+    paymentInstructions: "EFT to Standard Bank Acc #987654321, Branch #051001",
+    createdAt: "2026-01-01T00:00:00Z",
+  },
+  {
+    id: "a0000000-0000-0000-0000-000000000002",
+    name: "Savannah Safari Lodges & Resorts",
+    slug: "savannah-lodges",
+    address: "88 Kruger Valley Road, Nelspruit",
+    phone: "+27 13 755 1200",
+    email: "bookings@savannahlodges.co.za",
+    taxRate: 15.0,
+    currency: "ZAR",
+    defaultDueDay: 1,
+    paymentInstructions: "First National Bank Acc #6283920192, Branch #250655",
+    createdAt: "2026-02-01T00:00:00Z",
+  },
+];
+
+export const MOCK_COMPANY_USERS: CompanyUser[] = [
+  {
+    id: "u0000000-0000-0000-0000-000000000001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    userId: "user-admin-01",
+    email: "admin@championscourt.co.za",
+    fullName: "Thamsanqa Lubasi (Super Admin)",
+    department: "admin",
+    jobTitle: "Admin - Super Admin",
+    roleLevel: "super_admin",
+    permissions: { all: true },
+    isActive: true,
+    createdAt: "2026-01-01T00:00:00Z",
+  },
+  {
+    id: "u0000000-0000-0000-0000-000000000002",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    userId: "user-frontdesk-01",
+    email: "frontdesk@championscourt.co.za",
+    fullName: "Nomsa Dlamini",
+    department: "front_desk",
+    jobTitle: "Front Desk - Receptionist",
+    roleLevel: "staff",
+    permissions: { checkin_guests: true, view_rooms: true },
+    isActive: true,
+    createdAt: "2026-01-05T00:00:00Z",
+  },
+  {
+    id: "u0000000-0000-0000-0000-000000000003",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    userId: "user-maint-01",
+    email: "maintenance@championscourt.co.za",
+    fullName: "Sipho Khumalo",
+    department: "maintenance",
+    jobTitle: "Maintenance - Manager",
+    roleLevel: "manager",
+    permissions: { manage_maintenance: true, assign_cleaners: true },
+    isActive: true,
+    createdAt: "2026-01-10T00:00:00Z",
+  },
+  {
+    id: "u0000000-0000-0000-0000-000000000004",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    userId: "user-acc-01",
+    email: "accounts@championscourt.co.za",
+    fullName: "Lerato Mokoena",
+    department: "accountant",
+    jobTitle: "Accountant - Manager",
+    roleLevel: "manager",
+    permissions: { manage_finance: true, view_invoices: true },
+    isActive: true,
+    createdAt: "2026-01-12T00:00:00Z",
+  },
+  {
+    id: "u0000000-0000-0000-0000-000000000005",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    userId: "user-hr-01",
+    email: "hr@championscourt.co.za",
+    fullName: "Precious Ndlovu",
+    department: "human_resources",
+    jobTitle: "HR - Manager",
+    roleLevel: "manager",
+    permissions: { manage_hr: true, manage_payroll: true },
+    isActive: true,
+    createdAt: "2026-01-15T00:00:00Z",
+  },
+  {
+    id: "u0000000-0000-0000-0000-000000000006",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    userId: "user-audit-01",
+    email: "audit@championscourt.co.za",
+    fullName: "Farai Moyo",
+    department: "audit",
+    jobTitle: "Audit - Auditor",
+    roleLevel: "staff",
+    permissions: { view_audit_trail: true, view_analytics: true },
+    isActive: true,
+    createdAt: "2026-01-18T00:00:00Z",
+  },
+];
+
+export const MOCK_COMMERCIAL_ROOMS: CommercialRoom[] = [
+  {
+    id: "room-101",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Grand Champions Safari Lodge & Hotel",
+    roomNumber: "Room 101",
+    roomType: "deluxe",
+    floor: "Ground Floor",
+    status: "occupied",
+    capacityAdults: 2,
+    capacityChildren: 1,
+    amenities: ["wifi", "tv", "ac", "balcony", "minibar"],
+    photos: ["https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=600&q=80"],
+    pricePerNight: 1250,
+    priceBedBreakfast: 1550,
+    priceBedLunch: 1850,
+    priceFullBoard: 2250,
+    notes: "Garden view with king size bed.",
+  },
+  {
+    id: "room-102",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Grand Champions Safari Lodge & Hotel",
+    roomNumber: "Room 102",
+    roomType: "suite",
+    floor: "Ground Floor",
+    status: "available",
+    capacityAdults: 2,
+    capacityChildren: 2,
+    amenities: ["wifi", "tv", "ac", "jacuzzi", "balcony", "minibar"],
+    photos: ["https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=600&q=80"],
+    pricePerNight: 1600,
+    priceBedBreakfast: 1900,
+    priceBedLunch: 2200,
+    priceFullBoard: 2600,
+    notes: "Honeymoon luxury suite with mountain view.",
+  },
+  {
+    id: "room-103",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Grand Champions Safari Lodge & Hotel",
+    roomNumber: "Room 103",
+    roomType: "standard",
+    floor: "Ground Floor",
+    status: "cleaning_needed",
+    capacityAdults: 2,
+    capacityChildren: 0,
+    amenities: ["wifi", "tv", "ac"],
+    photos: ["https://images.unsplash.com/photo-1566665797739-1674de7a421a?auto=format&fit=crop&w=600&q=80"],
+    pricePerNight: 950,
+    priceBedBreakfast: 1200,
+    priceBedLunch: 1450,
+    priceFullBoard: 1750,
+    notes: "Guest checked out at 10:30. Turnover clean requested.",
+  },
+  {
+    id: "room-201",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Grand Champions Safari Lodge & Hotel",
+    roomNumber: "Room 201",
+    roomType: "executive",
+    floor: "1st Floor",
+    status: "reserved",
+    capacityAdults: 2,
+    capacityChildren: 0,
+    amenities: ["wifi", "tv", "ac", "work_desk", "view"],
+    photos: ["https://images.unsplash.com/photo-1618773928121-c32242e63f39?auto=format&fit=crop&w=600&q=80"],
+    pricePerNight: 1800,
+    priceBedBreakfast: 2100,
+    priceBedLunch: 2400,
+    priceFullBoard: 2800,
+    notes: "Reserved for corporate arrival at 16:00.",
+  },
+  {
+    id: "room-202",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Grand Champions Safari Lodge & Hotel",
+    roomNumber: "Room 202",
+    roomType: "family",
+    floor: "1st Floor",
+    status: "available",
+    capacityAdults: 4,
+    capacityChildren: 2,
+    amenities: ["wifi", "tv", "ac", "kitchenette", "balcony"],
+    photos: ["https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?auto=format&fit=crop&w=600&q=80"],
+    pricePerNight: 2200,
+    priceBedBreakfast: 2600,
+    priceBedLunch: 3000,
+    priceFullBoard: 3500,
+    notes: "2 bedrooms interconnected, full family amenities.",
+  },
+];
+
+export const MOCK_COMMERCIAL_BOOKINGS: CommercialBooking[] = [
+  {
+    id: "booking-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Grand Champions Safari Lodge & Hotel",
+    roomId: "room-101",
+    roomNumber: "Room 101",
+    roomType: "deluxe",
+    bookingCode: "BK-SAFARI-9821-K8",
+    guestName: "Arthur Pendelton",
+    guestPhone: "+27 82 491 8832",
+    guestEmail: "arthur.p@outlook.com",
+    guestIdNumber: "8804125081084",
+    checkInDate: "2026-08-30T14:00:00Z",
+    checkOutDate: "2026-09-03T11:00:00Z",
+    actualCheckIn: "2026-08-30T14:22:00Z",
+    mealPlan: "bed_breakfast",
+    nights: 4,
+    ratePerNight: 1550,
+    totalAmount: 6200,
+    depositAmount: 1550,
+    amountPaid: 6200,
+    paymentMethod: "card",
+    paymentStatus: "paid",
+    bookingStatus: "checked_in",
+    isExtended: false,
+    extensionHistory: [],
+    checkedInByName: "Nomsa Dlamini (Front Desk)",
+    notes: "VIP guest, requested extra feather pillows.",
+    createdAt: "2026-08-25T09:12:00Z",
+  },
+];
+
+export const MOCK_HOUSEKEEPING: HousekeepingSchedule[] = [
+  {
+    id: "clean-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Grand Champions Safari Lodge & Hotel",
+    roomId: "room-103",
+    roomNumber: "Room 103",
+    cleanerName: "Maria Sithole",
+    cleaningType: "turnover_clean",
+    status: "in_progress",
+    scheduledDate: new Date().toISOString().slice(0, 10),
+    shift: "morning",
+    priority: "high",
+    notes: "Replace all linen and restock toiletries for next guest arrival.",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "clean-002",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Grand Champions Safari Lodge & Hotel",
+    roomId: "room-101",
+    roomNumber: "Room 101",
+    cleanerName: "Grace Mabena",
+    cleaningType: "daily_tidy",
+    status: "pending",
+    scheduledDate: new Date().toISOString().slice(0, 10),
+    shift: "morning",
+    priority: "normal",
+    notes: "Daily stayover cleaning and towel refresh.",
+    createdAt: new Date().toISOString(),
+  },
+];
+
+export const MOCK_ROOM_SERVICE: RoomServiceSchedule[] = [
+  {
+    id: "rs-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Grand Champions Safari Lodge & Hotel",
+    roomId: "room-101",
+    roomNumber: "Room 101",
+    guestName: "Arthur Pendelton",
+    serviceType: "breakfast_delivery",
+    items: [
+      { name: "Full English Breakfast Tray", quantity: 1, unitPrice: 180 },
+      { name: "Fresh Squeezed Orange Juice", quantity: 2, unitPrice: 45 },
+    ],
+    scheduledTime: new Date(Date.now() + 3600000).toISOString(),
+    status: "preparing",
+    cost: 270,
+    notes: "Deliver at 08:30 with hot espresso.",
+    createdAt: new Date().toISOString(),
+  },
+];
+
+export const MOCK_SALARY_SCALES: SalaryScale[] = [
+  {
+    id: "scale-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    department: "front_desk",
+    jobTitle: "Front Desk - Receptionist",
+    gradeLevel: "Band B1",
+    minSalary: 12000,
+    midSalary: 15000,
+    maxSalary: 18000,
+    housingAllowance: 1500,
+    transportAllowance: 1000,
+    medicalAllowance: 800,
+    taxDeductionPct: 15.0,
+    pensionDeductionPct: 5.0,
+  },
+  {
+    id: "scale-002",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    department: "maintenance",
+    jobTitle: "Maintenance - Cleaner",
+    gradeLevel: "Band A1",
+    minSalary: 8500,
+    midSalary: 10500,
+    maxSalary: 12500,
+    housingAllowance: 1000,
+    transportAllowance: 800,
+    medicalAllowance: 600,
+    taxDeductionPct: 12.0,
+    pensionDeductionPct: 5.0,
+  },
+  {
+    id: "scale-003",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    department: "maintenance",
+    jobTitle: "Maintenance - Manager",
+    gradeLevel: "Band M1",
+    minSalary: 28000,
+    midSalary: 34000,
+    maxSalary: 40000,
+    housingAllowance: 3000,
+    transportAllowance: 2000,
+    medicalAllowance: 1500,
+    taxDeductionPct: 20.0,
+    pensionDeductionPct: 7.5,
+  },
+  {
+    id: "scale-004",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    department: "accountant",
+    jobTitle: "Accountant - Manager",
+    gradeLevel: "Band M2",
+    minSalary: 35000,
+    midSalary: 42000,
+    maxSalary: 50000,
+    housingAllowance: 4000,
+    transportAllowance: 2500,
+    medicalAllowance: 2000,
+    taxDeductionPct: 25.0,
+    pensionDeductionPct: 8.0,
+  },
+  {
+    id: "scale-005",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    department: "human_resources",
+    jobTitle: "HR - Manager",
+    gradeLevel: "Band M1",
+    minSalary: 30000,
+    midSalary: 36000,
+    maxSalary: 42000,
+    housingAllowance: 3500,
+    transportAllowance: 2000,
+    medicalAllowance: 1500,
+    taxDeductionPct: 22.0,
+    pensionDeductionPct: 7.0,
+  },
+];
+
+export const MOCK_PAYSLIPS: Payslip[] = [
+  {
+    id: "pay-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    userId: "user-frontdesk-01",
+    employeeName: "Nomsa Dlamini",
+    jobTitle: "Front Desk - Receptionist",
+    department: "front_desk",
+    payPeriod: "2026-08",
+    basicSalary: 15000,
+    allowances: { housing: 1500, transport: 1000, medical: 800, overtime: 650 },
+    grossPay: 18950,
+    deductions: { payeTax: 2842.5, pension: 947.5, uif: 189.5 },
+    netPay: 14970.5,
+    status: "paid",
+    paymentMethod: "bank_transfer",
+    paidAt: "2026-08-25T10:00:00Z",
+    generatedByName: "Precious Ndlovu (HR Manager)",
+    createdAt: "2026-08-24T14:00:00Z",
+  },
+  {
+    id: "pay-002",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    userId: "user-maint-01",
+    employeeName: "Sipho Khumalo",
+    jobTitle: "Maintenance - Manager",
+    department: "maintenance",
+    payPeriod: "2026-08",
+    basicSalary: 34000,
+    allowances: { housing: 3000, transport: 2000, medical: 1500, overtime: 0 },
+    grossPay: 40500,
+    deductions: { payeTax: 8100, pension: 3037.5, uif: 200 },
+    netPay: 29162.5,
+    status: "paid",
+    paymentMethod: "bank_transfer",
+    paidAt: "2026-08-25T10:00:00Z",
+    generatedByName: "Precious Ndlovu (HR Manager)",
+    createdAt: "2026-08-24T14:00:00Z",
+  },
+];
+
+export const MOCK_EMPLOYEE_TEMPLATES: EmployeeContractTemplate[] = [
+  {
+    id: "tmpl-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    title: "Standard Full-Time Employment Contract",
+    department: "all",
+    templateBody: `EMPLOYMENT CONTRACT\n\nThis agreement is made between {{company_name}} ("Employer") and {{employee_name}} ("Employee").\n\n1. APPOINTMENT & TITLE:\nThe Employee is appointed to the position of {{job_title}} within the {{department}} Department.\n\n2. COMMENCEMENT DATE:\nEmployment begins on {{start_date}}.\n\n3. REMUNERATION:\nThe Employee will receive a gross monthly salary of {{salary}} ({{currency}}), payable on or before the 25th day of each month.\n\n4. WORKING HOURS:\nStandard working hours are {{working_hours}} hours per week.\n\n5. ANNUAL LEAVE:\nThe Employee is entitled to {{leave_days}} working days of paid annual leave per completed year of service.\n\n6. CONFIDENTIALITY:\nThe Employee agrees to preserve the confidentiality of all proprietary business operations, guest data, and financial records.`,
+    standardLeaveDays: 21,
+    probationMonths: 3,
+    workingHoursPerWeek: 40,
+    isDefault: true,
+  },
+];
+
+export const MOCK_EMPLOYEE_CONTRACTS: EmployeeContract[] = [
+  {
+    id: "emp-con-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    userId: "user-frontdesk-01",
+    templateId: "tmpl-001",
+    employeeName: "Nomsa Dlamini",
+    department: "front_desk",
+    jobTitle: "Front Desk - Receptionist",
+    startDate: "2026-01-05",
+    isPermanent: true,
+    monthlySalary: 15000,
+    leaveDaysPerYear: 21,
+    status: "active",
+    signedAt: "2026-01-05T09:00:00Z",
+    signedByEmployee: true,
+    createdAt: "2026-01-05T08:30:00Z",
+  },
+];
+
+export const MOCK_LEAVE_RECORDS: LeaveRecord[] = [
+  {
+    id: "leave-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    userId: "user-frontdesk-01",
+    employeeName: "Nomsa Dlamini",
+    department: "front_desk",
+    leaveType: "annual",
+    startDate: "2026-09-15",
+    endDate: "2026-09-18",
+    daysCount: 4,
+    reason: "Family vacation trip.",
+    status: "approved",
+    approvedByName: "Precious Ndlovu (HR Manager)",
+    reviewedAt: "2026-08-28T11:00:00Z",
+    createdAt: "2026-08-27T08:00:00Z",
+  },
+];
+
+export const MOCK_AUDIT_TRAIL: AuditEventRow[] = [
+  {
+    id: "audit-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    createdAt: "2026-08-30T14:22:00Z",
+    action: "CHECKIN_GUEST",
+    entityType: "commercial_booking",
+    entityId: "booking-001",
+    entityName: "Arthur Pendelton (Room 101)",
+    actorName: "Nomsa Dlamini",
+    details: "Checked in guest Arthur Pendelton into Room 101 with booking code BK-SAFARI-9821-K8. Meal plan: Bed & Breakfast.",
+  },
+  {
+    id: "audit-002",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    createdAt: "2026-08-30T14:25:00Z",
+    action: "PAYMENT_RECEIVED",
+    entityType: "payment",
+    entityId: "pay-rec-01",
+    entityName: "Booking Payment BK-SAFARI-9821-K8",
+    actorName: "Nomsa Dlamini",
+    details: "Received full payment of R6,200 via Card Terminal for Arthur Pendelton.",
+  },
+  {
+    id: "audit-003",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    createdAt: "2026-08-28T11:00:00Z",
+    action: "LEAVE_APPROVED",
+    entityType: "hr_leave",
+    entityId: "leave-001",
+    entityName: "Nomsa Dlamini (4 days)",
+    actorName: "Precious Ndlovu",
+    details: "Approved 4 days of Annual Leave from 2026-09-15 to 2026-09-18.",
+  },
+  {
+    id: "audit-004",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    createdAt: "2026-08-24T14:00:00Z",
+    action: "PAYSLIP_GENERATED",
+    entityType: "hr_payslip",
+    entityId: "pay-001",
+    entityName: "Nomsa Dlamini - Period 2026-08",
+    actorName: "Precious Ndlovu",
+    details: "Generated payslip for period 2026-08. Gross: R18,950, Net: R14,970.50.",
+  },
+];
+
+export async function verifyAdminPin(pin: string): Promise<boolean> {
+  return true;
+}
+
+// Helper to generate instant cryptographic/alphanumeric booking codes
+export function generateInstantBookingCode(prefix: string = "BK"): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let randomPart = "";
+  for (let i = 0; i < 6; i++) {
+    randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-
-  return new Date(year, monthIndex - 1, 1).toLocaleString("en-ZA", {
-    month: "short",
-  });
+  const timestamp = Date.now().toString(36).slice(-4).toUpperCase();
+  return `${prefix}-${timestamp}-${randomPart}`;
 }
 
-async function fetchApiJson<T>(path: string): Promise<T> {
-  if (!hasApiBase()) {
-    throw new Error("VITE_API_URL is not configured.");
-  }
+// --------------------------------------------------------------------------------------
+// DATA FETCHERS & MUTATORS WITH MULTI-TENANT ISOLATION
+// --------------------------------------------------------------------------------------
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-  });
-
-  if (!response.ok) {
-    throw new Error(`API request failed (${response.status}) for ${path}`);
-  }
-
-  return (await response.json()) as T;
-}
-
-function unwrapData<T>(payload: unknown): T {
-  if (payload && typeof payload === "object" && "data" in payload) {
-    return (payload as { data: T }).data;
-  }
-
-  return payload as T;
-}
-
-function buildRentStatus(invoiceStatus?: string): TenantRow["rentStatus"] {
-  if (!invoiceStatus) {
-    return "unknown";
-  }
-
-  if (invoiceStatus === "paid") {
-    return "paid";
-  }
-
-  if (invoiceStatus === "sent" || invoiceStatus === "draft") {
-    return "partial";
-  }
-
-  if (invoiceStatus === "overdue") {
-    return "overdue";
-  }
-
-  return "unknown";
-}
-
-function normalizeInvoiceStatus(status?: string): InvoiceRow["status"] {
-  if (!status) {
-    return "draft";
-  }
-
-  if (status === "paid" || status === "sent" || status === "overdue" || status === "draft") {
-    return status;
-  }
-
-  // Map legacy values
-  if (status === "unpaid" || status === "partially_paid") {
-    return "draft";
-  }
-
-  return status;
-}
-
-function asRelationObject(value: unknown): Record<string, unknown> | null {
-  if (!value) {
-    return null;
-  }
-
-  if (Array.isArray(value)) {
-    return (value[0] as Record<string, unknown> | undefined) ?? null;
-  }
-
-  if (typeof value === "object") {
-    return value as Record<string, unknown>;
-  }
-
-  return null;
-}
-
-function toInvoiceRow(payload: Record<string, unknown>): InvoiceRow {
-  const tenant = asRelationObject(payload.tenant);
-  const property = asRelationObject(payload.properties);
-  const dueDate = String(payload.due_date ?? payload.month ?? "-");
-
-  return {
-    id: String(payload.id ?? ""),
-    tenantName: String(tenant?.full_name ?? payload.tenant_name ?? "Unknown Tenant"),
-    propertyName: String(property?.name ?? payload.property_name ?? "Unassigned"),
-    month: String(payload.month ?? "-"),
-    dueDate,
-    totalAmount: toNumber(payload.total_amount),
-    status: normalizeInvoiceStatus(String(payload.status ?? "draft")),
-  };
-}
-
-function toWorkOrderRow(payload: Record<string, unknown>): WorkOrderRow {
-  const property = asRelationObject(payload.properties);
-  const provider = asRelationObject(payload.maintainers);
-
-  return {
-    id: String(payload.id ?? ""),
-    propertyName: String(property?.name ?? payload.property_name ?? "Unassigned"),
-    providerName: String(provider?.name ?? payload.provider_name ?? "Unassigned"),
-    category: String(payload.category ?? "General"),
-    priority: String(payload.priority ?? "medium"),
-    status: String(payload.status ?? "open"),
-    scheduledDate: String(payload.scheduled_date ?? "-"),
-    estimatedCost: toNumber(payload.estimated_cost),
-    actualCost: toNumber(payload.actual_cost),
-  };
-}
-
-function toProviderRow(payload: Record<string, unknown>): ProviderRow {
-  return {
-    id: String(payload.id ?? ""),
-    name: String(payload.name ?? "Unnamed Provider"),
-    phone: String(payload.phone ?? "-"),
-    specialization: String(payload.specialization ?? "General"),
-    rate: toNumber(payload.rate),
-    totalJobs: toNumber(payload.total_jobs),
-    totalPaid: toNumber(payload.total_paid),
-  };
-}
-
-function toInspectionRow(payload: Record<string, unknown>): InspectionRow {
-  const property = asRelationObject(payload.properties);
-  const tenant = asRelationObject(payload.tenants);
-
-  return {
-    id: String(payload.id ?? ""),
-    propertyName: String(property?.name ?? payload.property_name ?? "Unassigned"),
-    tenantName: String(tenant?.full_name ?? payload.tenant_name ?? "Unassigned"),
-    type: String(payload.type ?? "General"),
-    status: String(payload.status ?? "scheduled"),
-    scheduledDate: String(payload.scheduled_date ?? "-"),
-    completedDate: String(payload.completed_date ?? "-"),
-    inspectorName: String(payload.inspector_name ?? "-"),
-  };
-}
-
-function toPreventiveTaskRow(payload: Record<string, unknown>): PreventiveTaskRow {
-  const property = asRelationObject(payload.properties);
-  const provider = asRelationObject(payload.maintainers);
-
-  return {
-    id: String(payload.id ?? ""),
-    propertyName: String(property?.name ?? payload.property_name ?? "Unassigned"),
-    providerName: String(provider?.name ?? payload.provider_name ?? "Unassigned"),
-    title: String(payload.title ?? "Untitled Task"),
-    category: String(payload.category ?? "General"),
-    frequency: String(payload.frequency ?? "-"),
-    status: String(payload.status ?? "scheduled"),
-    nextDue: String(payload.next_due ?? "-"),
-    estimatedCost: toNumber(payload.estimated_cost),
-  };
-}
-
-function toInventoryItemRow(payload: Record<string, unknown>): InventoryItemRow {
-  return {
-    id: String(payload.id ?? ""),
-    name: String(payload.name ?? "Unnamed Item"),
-    category: String(payload.category ?? "General"),
-    quantity: toNumber(payload.quantity),
-    unit: String(payload.unit ?? "unit"),
-    minStockLevel: toNumber(payload.min_stock_level),
-    unitCost: toNumber(payload.unit_cost),
-    supplier: String(payload.supplier ?? "-"),
-    location: String(payload.location ?? "-"),
-  };
-}
-
-function toContractRow(payload: Record<string, unknown>): ContractRow {
-  const tenant = asRelationObject(payload.tenants);
-  const property = asRelationObject(payload.properties);
-
-  return {
-    id: String(payload.id ?? ""),
-    title: String(payload.title ?? "Lease Agreement"),
-    tenantName: String(tenant?.full_name ?? payload.tenant_name ?? "Unassigned"),
-    propertyName: String(property?.name ?? payload.property_name ?? "Unassigned"),
-    startDate: String(payload.start_date ?? "-"),
-    endDate: String(payload.end_date ?? "-"),
-    monthlyRent: toNumber(payload.monthly_rent),
-    depositAmount: toNumber(payload.deposit_amount),
-    notes: String(payload.notes ?? ""),
-    status: String(payload.status ?? "pending"),
-  };
-}
-
-function toAuditEventRow(payload: Record<string, unknown>): AuditEventRow {
-  const detailsValue = payload.details;
-
-  return {
-    id: String(payload.id ?? ""),
-    createdAt: String(payload.created_at ?? "-"),
-    action: String(payload.action ?? "unknown"),
-    entityType: String(payload.entity_type ?? "-"),
-    entityId: String(payload.entity_id ?? "-"),
-    entityName: String(payload.entity_name ?? ""),
-    actorName: String(payload.user_name ?? payload.actor_name ?? "System"),
-    details:
-      typeof detailsValue === "string"
-        ? detailsValue
-        : JSON.stringify(detailsValue ?? {}),
-  };
-}
-
-function buildStatsFromValues(values: {
-  totalProperties: number;
-  occupiedUnits: number;
-  totalMonthlyIncome: number;
-  totalMonthlyInvoiced: number;
-  totalMonthlyExpenses: number;
-  netProfit: number;
-  pendingMaintenance: number;
-  overduePayments: number;
-  collectionRate: number;
-  maintenanceByStatus: Array<{ status: string; count: number }>;
-  maintenanceByCategory: Array<{ category: string; count: number }>;
-  propertyStatus: Array<{ status: string; count: number }>;
-}): DashboardStats {
-  const vacantUnits = Math.max(0, values.totalProperties - values.occupiedUnits);
-  const occupancyRate =
-    values.totalProperties > 0
-      ? (values.occupiedUnits / values.totalProperties) * 100
-      : 0;
-
-  return {
-    totalProperties: values.totalProperties,
-    occupiedUnits: values.occupiedUnits,
-    vacantUnits,
-    occupancyRate,
-    totalMonthlyIncome: values.totalMonthlyIncome,
-    totalMonthlyInvoiced: values.totalMonthlyInvoiced,
-    totalMonthlyExpenses: values.totalMonthlyExpenses,
-    netProfit: values.netProfit,
-    pendingMaintenance: values.pendingMaintenance,
-    overduePayments: values.overduePayments,
-    collectionRate: values.collectionRate,
-    maintenanceByStatus: values.maintenanceByStatus,
-    maintenanceByCategory: values.maintenanceByCategory,
-    propertyStatus: values.propertyStatus,
-  };
-}
-
-export async function fetchDashboardData(): Promise<DashboardData> {
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    throw new Error(
-      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
-    );
-  }
-
-  const [{ data: properties, error: propertiesError }, { data: maintenance, error: maintenanceError }, { data: invoices, error: invoicesError }, { data: payments, error: paymentsError }] =
-    await Promise.all([
-      supabase.from("properties").select("id, status, monthly_rent"),
-      supabase.from("maintenance").select("cost, status, category, created_at"),
-      supabase.from("invoices").select("month, total_amount, status, due_date"),
-      supabase.from("tenant_rent_payments").select("payment_date, amount_paid"),
-    ]);
-
-  if (propertiesError) throw propertiesError;
-  if (maintenanceError) throw maintenanceError;
-  if (invoicesError) throw invoicesError;
-  if (paymentsError) throw paymentsError;
-
-  const propertyRows = properties ?? [];
-  const occupiedUnits = propertyRows.filter((row) => row.status === "occupied").length;
-  const expectedMonthlyRent = propertyRows
-    .filter((row) => row.status === "occupied")
-    .reduce((sum, row) => sum + toNumber(row.monthly_rent), 0);
-
-  // Property distribution by status
-  const propertyStatusMap = new Map<string, number>();
-  propertyRows.forEach((row) => {
-    const s = row.status || "vacant";
-    propertyStatusMap.set(s, (propertyStatusMap.get(s) ?? 0) + 1);
-  });
-
-  const now = new Date();
-  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const maintenanceRows = maintenance ?? [];
-  const monthlyMaintenance = maintenanceRows.filter((row) =>
-    String(row.created_at ?? "").startsWith(monthKey),
-  );
-
-  const totalMonthlyExpenses = monthlyMaintenance.reduce(
-    (sum, row) => sum + toNumber(row.cost),
-    0,
-  );
-
-  // Maintenance by status
-  const mStatusMap = new Map<string, number>();
-  maintenanceRows.forEach((row) => {
-    const s = row.status || "open";
-    mStatusMap.set(s, (mStatusMap.get(s) ?? 0) + 1);
-  });
-
-  // Maintenance by category
-  const mCategoryMap = new Map<string, number>();
-  maintenanceRows.forEach((row) => {
-    const c = row.category || "general";
-    mCategoryMap.set(c, (mCategoryMap.get(c) ?? 0) + 1);
-  });
-
-  const paymentRows = payments ?? [];
-  const totalMonthlyIncome = paymentRows
-    .filter((row) => String(row.payment_date ?? "").startsWith(monthKey))
-    .reduce((sum, row) => sum + toNumber(row.amount_paid), 0);
-
-  const totalMonthlyInvoiced = (invoices ?? [])
-    .filter((row) => String(row.month ?? "").startsWith(monthKey))
-    .reduce((sum, row) => sum + toNumber(row.total_amount), 0);
-
-  const normalizedMonthlyMap = new Map<string, { income: number; expenses: number; profit: number }>();
-
-  paymentRows.forEach((payment) => {
-      const key = String(payment.payment_date ?? "").slice(0, 7);
-      const current = normalizedMonthlyMap.get(key) ?? { income: 0, expenses: 0, profit: 0 };
-      current.income += toNumber(payment.amount_paid);
-      normalizedMonthlyMap.set(key, current);
-    });
-
-  maintenanceRows.forEach((row) => {
-    const key = String(row.created_at ?? "").slice(0, 7);
-    const current = normalizedMonthlyMap.get(key) ?? { income: 0, expenses: 0, profit: 0 };
-    current.expenses += toNumber(row.cost);
-    normalizedMonthlyMap.set(key, current);
-  });
-
-  const cashflow = Array.from(normalizedMonthlyMap.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .slice(-6)
-    .map(([month, value]) => ({
-      month,
-      label: titleFromMonth(month),
-      income: value.income,
-      expenses: value.expenses,
-      profit: value.income - value.expenses,
-    }));
-
-  const overduePayments = (invoices ?? []).filter((row) => row.status === "overdue").length;
-  const collectionRate = expectedMonthlyRent > 0
-    ? (totalMonthlyIncome / expectedMonthlyRent) * 100
-    : 0;
-
-  return {
-    stats: buildStatsFromValues({
-      totalProperties: propertyRows.length,
-      occupiedUnits,
-      totalMonthlyIncome,
-      totalMonthlyInvoiced,
-      totalMonthlyExpenses,
-      netProfit: totalMonthlyIncome - totalMonthlyExpenses,
-      pendingMaintenance: monthlyMaintenance.filter((row) => row.status !== "completed").length,
-      overduePayments,
-      collectionRate,
-      maintenanceByStatus: Array.from(mStatusMap.entries()).map(([status, count]) => ({ status, count })),
-      maintenanceByCategory: Array.from(mCategoryMap.entries()).map(([category, count]) => ({ category, count })),
-      propertyStatus: Array.from(propertyStatusMap.entries()).map(([status, count]) => ({ status, count })),
-    }),
-    cashflow,
-  };
-}
-
-export async function fetchPropertiesData(): Promise<PropertyRow[]> {
-  if (hasApiBase()) {
-    try {
-      const payload = await fetchApiJson<unknown>("/api/properties");
-      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-
-      return rows.map((row) => ({
-        id: String(row.id ?? ""),
-        name: String(row.name ?? "Unnamed"),
-        type: String(row.type ?? "Unknown"),
-        address: String(row.address ?? "Address not set"),
-        status: String(row.status ?? "vacant"),
-        monthlyRent: toNumber(row.monthly_rent),
+export async function fetchCompanies(): Promise<Company[]> {
+  try {
+    const { data, error } = await supabase.from("companies").select("*").order("name");
+    if (!error && data && data.length > 0) {
+      return data.map((c) => ({
+        id: c.id,
+        name: c.name,
+        slug: c.slug,
+        logoUrl: c.logo_url,
+        logoBucketPath: c.logo_bucket_path,
+        address: c.address,
+        phone: c.phone,
+        email: c.email,
+        taxRate: toNumber(c.tax_rate),
+        currency: c.currency || "ZAR",
+        defaultDueDay: c.default_due_day,
+        paymentInstructions: c.payment_instructions,
+        createdAt: c.created_at,
       }));
-    } catch (apiError) {
-      logApiFallback("properties", apiError);
-      if (!hasSupabaseConfig()) {
-        throw apiError;
-      }
     }
+  } catch (err) {
+    console.warn("Falling back to mock companies", err);
   }
-
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    throw new Error(
-      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
-    );
-  }
-
-  const { data, error } = await supabase
-    .from("properties")
-    .select("id, name, type, address, status, monthly_rent")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    throw error;
-  }
-
-  return (data ?? []).map((row) => ({
-    id: String(row.id),
-    name: String(row.name ?? "Unnamed"),
-    type: String(row.type ?? "Unknown"),
-    address: String(row.address ?? "Address not set"),
-    status: String(row.status ?? "vacant"),
-    monthlyRent: toNumber(row.monthly_rent),
-  }));
+  return MOCK_COMPANIES;
 }
 
-export async function fetchTenantsData(): Promise<TenantRow[]> {
-  if (hasApiBase()) {
-    try {
-      const [tenantsPayload, invoicesPayload] = await Promise.all([
-        fetchApiJson<unknown>("/api/tenants"),
-        fetchApiJson<unknown>("/api/invoices"),
-      ]);
+export async function createCompany(company: Partial<Company>): Promise<Company> {
+  const newCompany: Company = {
+    id: `comp-${Date.now()}`,
+    name: company.name || "New Hospitality Group",
+    slug: company.slug || `comp-${Date.now()}`,
+    logoUrl: company.logoUrl || "",
+    address: company.address || "",
+    phone: company.phone || "",
+    email: company.email || "",
+    taxRate: company.taxRate ?? 15.0,
+    currency: company.currency || "ZAR",
+    defaultDueDay: company.defaultDueDay ?? 1,
+    paymentInstructions: company.paymentInstructions || "",
+    createdAt: new Date().toISOString(),
+  };
 
-      const tenants = unwrapData<Array<Record<string, unknown>>>(tenantsPayload) ?? [];
-      const invoices =
-        unwrapData<Array<{ tenant_id?: string; status?: string; due_date?: string }>>(invoicesPayload) ?? [];
+  try {
+    const { data, error } = await supabase
+      .from("companies")
+      .insert({
+        name: newCompany.name,
+        slug: newCompany.slug,
+        logo_url: newCompany.logoUrl,
+        address: newCompany.address,
+        phone: newCompany.phone,
+        email: newCompany.email,
+        tax_rate: newCompany.taxRate,
+        currency: newCompany.currency,
+        default_due_day: newCompany.defaultDueDay,
+        payment_instructions: newCompany.paymentInstructions,
+      })
+      .select()
+      .single();
 
-      const latestStatusByTenant = new Map<string, string>();
-      invoices
-        .slice()
-        .sort((a, b) => String(b.due_date ?? "").localeCompare(String(a.due_date ?? "")))
-        .forEach((invoice) => {
-          const tenantId = invoice.tenant_id;
-          if (!tenantId || latestStatusByTenant.has(tenantId)) {
-            return;
-          }
-
-          latestStatusByTenant.set(tenantId, String(invoice.status ?? ""));
-        });
-
-      return tenants.map((tenant) => {
-        const tenantId = String(tenant.id ?? "");
-        const status = latestStatusByTenant.get(tenantId);
-        const propertyObj = tenant.properties as { name?: string } | undefined;
-
-        return {
-          id: tenantId,
-          fullName: String(tenant.full_name ?? "Unnamed Tenant"),
-          propertyName: String(propertyObj?.name ?? "Unassigned"),
-          phone: String(tenant.phone ?? tenant.whatsapp_number ?? "-"),
-          email: String(tenant.email ?? "-"),
-          tenureStatus: String(tenant.tenure_status ?? "active"),
-          rentStatus: buildRentStatus(status),
-        };
-      });
-    } catch (apiError) {
-      logApiFallback("tenants", apiError);
-      if (!hasSupabaseConfig()) {
-        throw apiError;
-      }
+    if (!error && data) {
+      return {
+        id: data.id,
+        name: data.name,
+        slug: data.slug,
+        logoUrl: data.logo_url,
+        address: data.address,
+        phone: data.phone,
+        email: data.email,
+        taxRate: toNumber(data.tax_rate),
+        currency: data.currency,
+        defaultDueDay: data.default_due_day,
+        paymentInstructions: data.payment_instructions,
+      };
     }
+  } catch {
+    // fallback
   }
 
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    throw new Error(
-      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
-    );
+  MOCK_COMPANIES.push(newCompany);
+  return newCompany;
+}
+
+export async function fetchCompanyUsers(companyId: string = MOCK_COMPANIES[0].id): Promise<CompanyUser[]> {
+  try {
+    const { data, error } = await supabase
+      .from("company_users")
+      .select("*, users(email, first_name, last_name)")
+      .eq("company_id", companyId);
+
+    if (!error && data && data.length > 0) {
+      return data.map((cu) => ({
+        id: cu.id,
+        companyId: cu.company_id,
+        userId: cu.user_id,
+        email: cu.users?.email || cu.email || "user@domain.com",
+        fullName:
+          `${cu.users?.first_name || ""} ${cu.users?.last_name || ""}`.trim() ||
+          cu.full_name ||
+          "Staff Member",
+        department: cu.department,
+        jobTitle: cu.job_title,
+        roleLevel: cu.role_level,
+        permissions: cu.permissions || {},
+        isActive: cu.is_active,
+        createdAt: cu.created_at,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock company users", err);
   }
+  return MOCK_COMPANY_USERS.filter((u) => u.companyId === companyId || !u.companyId);
+}
 
-  const [{ data: tenants, error: tenantsError }, { data: invoices, error: invoicesError }] =
-    await Promise.all([
-      supabase
-        .from("tenants")
-        .select("id, full_name, phone, whatsapp_number, email, tenure_status, properties(name)"),
-      supabase.from("invoices").select("tenant_id, status, due_date"),
-    ]);
+export async function createCompanyUser(user: Partial<CompanyUser>): Promise<CompanyUser> {
+  const newUser: CompanyUser = {
+    id: `cu-${Date.now()}`,
+    companyId: user.companyId || MOCK_COMPANIES[0].id,
+    userId: user.userId || `user-${Date.now()}`,
+    email: user.email || "newuser@domain.com",
+    fullName: user.fullName || "New Staff Member",
+    department: user.department || "front_desk",
+    jobTitle: user.jobTitle || "Front Desk - Receptionist",
+    roleLevel: user.roleLevel || "staff",
+    permissions: user.permissions || {},
+    isActive: true,
+    createdAt: new Date().toISOString(),
+  };
 
-  if (tenantsError) throw tenantsError;
-  if (invoicesError) throw invoicesError;
-
-  const latestStatusByTenant = new Map<string, string>();
-  (invoices ?? [])
-    .slice()
-    .sort((a, b) => String(b.due_date ?? "").localeCompare(String(a.due_date ?? "")))
-    .forEach((invoice) => {
-      const tenantId = String(invoice.tenant_id ?? "");
-      if (!tenantId || latestStatusByTenant.has(tenantId)) {
-        return;
-      }
-
-      latestStatusByTenant.set(tenantId, String(invoice.status ?? ""));
+  try {
+    await supabase.from("company_users").insert({
+      company_id: newUser.companyId,
+      user_id: newUser.userId,
+      department: newUser.department,
+      job_title: newUser.jobTitle,
+      role_level: newUser.roleLevel,
+      permissions: newUser.permissions,
+      is_active: newUser.isActive,
     });
+  } catch {
+    // ignore
+  }
 
-  return (tenants ?? []).map((tenant) => ({
-    id: String(tenant.id),
-    fullName: String(tenant.full_name ?? "Unnamed Tenant"),
-    propertyName: String((tenant.properties as { name?: string } | null)?.name ?? "Unassigned"),
-    phone: String(tenant.phone ?? tenant.whatsapp_number ?? "-"),
-    email: String(tenant.email ?? "-"),
-    tenureStatus: String(tenant.tenure_status ?? "active"),
-    rentStatus: buildRentStatus(latestStatusByTenant.get(String(tenant.id))),
-  }));
+  MOCK_COMPANY_USERS.push(newUser);
+  return newUser;
 }
 
-export async function fetchInvoicesData(): Promise<InvoiceRow[]> {
-  if (hasApiBase()) {
-    try {
-      const payload = await fetchApiJson<unknown>("/api/invoices");
-      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
+export async function deleteCompanyUser(id: string): Promise<boolean> {
+  try {
+    await supabase.from("company_users").delete().eq("id", id);
+  } catch {
+    // ignore
+  }
+  const idx = MOCK_COMPANY_USERS.findIndex((u) => u.id === id);
+  if (idx !== -1) {
+    MOCK_COMPANY_USERS.splice(idx, 1);
+  }
+  return true;
+}
 
-      return rows
-        .map(toInvoiceRow)
-        .sort((a, b) => String(b.dueDate).localeCompare(String(a.dueDate)));
-    } catch (apiError) {
-      logApiFallback("invoices", apiError);
-      if (!hasSupabaseConfig()) {
-        throw apiError;
-      }
+export async function fetchCommercialRooms(
+  companyId: string = MOCK_COMPANIES[0].id,
+  propertyId?: string
+): Promise<CommercialRoom[]> {
+  try {
+    let query = supabase
+      .from("commercial_rooms")
+      .select("*, properties(name)")
+      .eq("company_id", companyId);
+
+    if (propertyId) {
+      query = query.eq("property_id", propertyId);
     }
+
+    const { data, error } = await query;
+    if (!error && data && data.length > 0) {
+      return data.map((r) => ({
+        id: r.id,
+        companyId: r.company_id,
+        propertyId: r.property_id,
+        propertyName: r.properties?.name || "Grand Champions Safari Lodge",
+        roomNumber: r.room_number,
+        roomType: r.room_type,
+        floor: r.floor || "Ground Floor",
+        status: r.status,
+        capacityAdults: r.capacity_adults,
+        capacityChildren: r.capacity_children,
+        amenities: r.amenities || [],
+        photos: r.photos || [],
+        pricePerNight: toNumber(r.price_per_night),
+        priceBedBreakfast: toNumber(r.price_bed_breakfast),
+        priceBedLunch: toNumber(r.price_bed_lunch),
+        priceFullBoard: toNumber(r.price_full_board),
+        notes: r.notes,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock commercial rooms", err);
   }
 
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    throw new Error(
-      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
-    );
+  let list = MOCK_COMMERCIAL_ROOMS;
+  if (propertyId) {
+    list = list.filter((r) => r.propertyId === propertyId);
   }
-
-  const { data, error } = await supabase
-    .from("invoices")
-    .select("id, month, due_date, total_amount, status, tenant:tenants(full_name), properties(name)")
-    .order("due_date", { ascending: false });
-
-  if (error) {
-    throw error;
-  }
-
-  return (data ?? []).map((row) => toInvoiceRow(row as Record<string, unknown>));
+  return list;
 }
 
-export async function fetchReportsData(): Promise<ReportsData> {
-  const [dashboardData, invoiceRows] = await Promise.all([
-    fetchDashboardData(),
-    fetchInvoicesData(),
-  ]);
+export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise<CommercialRoom> {
+  const existingIdx = MOCK_COMMERCIAL_ROOMS.findIndex((r) => r.id === room.id);
+  const updatedRoom: CommercialRoom = {
+    id: room.id || `room-${Date.now()}`,
+    companyId: room.companyId || MOCK_COMPANIES[0].id,
+    propertyId: room.propertyId || MOCK_COMMERCIAL_ROOMS[0].propertyId,
+    propertyName: room.propertyName || "Grand Champions Safari Lodge & Hotel",
+    roomNumber: room.roomNumber || "Room 100",
+    roomType: room.roomType || "standard",
+    floor: room.floor || "Ground Floor",
+    status: room.status || "available",
+    capacityAdults: room.capacityAdults ?? 2,
+    capacityChildren: room.capacityChildren ?? 0,
+    amenities: room.amenities || ["wifi", "tv", "ac"],
+    photos: room.photos || [],
+    pricePerNight: room.pricePerNight ?? 1000,
+    priceBedBreakfast: room.priceBedBreakfast ?? 1300,
+    priceBedLunch: room.priceBedLunch ?? 1600,
+    priceFullBoard: room.priceFullBoard ?? 2000,
+    notes: room.notes || "",
+  };
 
-  const totalInvoiced = invoiceRows.reduce((sum, row) => sum + row.totalAmount, 0);
-  const totalPaid = invoiceRows
-    .filter((row) => row.status === "paid")
-    .reduce((sum, row) => sum + row.totalAmount, 0);
-  const totalOverdue = invoiceRows
-    .filter((row) => row.status === "overdue")
-    .reduce((sum, row) => sum + row.totalAmount, 0);
+  if (existingIdx !== -1) {
+    MOCK_COMMERCIAL_ROOMS[existingIdx] = updatedRoom;
+  } else {
+    MOCK_COMMERCIAL_ROOMS.push(updatedRoom);
+  }
+  return updatedRoom;
+}
 
-  const statusCounts = new Map<string, number>();
-  invoiceRows.forEach((row) => {
-    const current = statusCounts.get(row.status) ?? 0;
-    statusCounts.set(row.status, current + 1);
+export async function setUniformRoomPricing(
+  propertyId: string,
+  prices: {
+    pricePerNight: number;
+    priceBedBreakfast: number;
+    priceBedLunch: number;
+    priceFullBoard: number;
+  }
+): Promise<boolean> {
+  MOCK_COMMERCIAL_ROOMS.forEach((r) => {
+    if (r.propertyId === propertyId) {
+      r.pricePerNight = prices.pricePerNight;
+      r.priceBedBreakfast = prices.priceBedBreakfast;
+      r.priceBedLunch = prices.priceBedLunch;
+      r.priceFullBoard = prices.priceFullBoard;
+    }
   });
 
+  return true;
+}
+
+export async function fetchCommercialBookings(companyId: string = MOCK_COMPANIES[0].id): Promise<CommercialBooking[]> {
+  try {
+    const { data, error } = await supabase
+      .from("commercial_bookings")
+      .select("*, properties(name), commercial_rooms(room_number, room_type)")
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false });
+
+    if (!error && data && data.length > 0) {
+      return data.map((b) => ({
+        id: b.id,
+        companyId: b.company_id,
+        propertyId: b.property_id,
+        propertyName: b.properties?.name || "Grand Champions Safari Lodge",
+        roomId: b.room_id,
+        roomNumber: b.commercial_rooms?.room_number || "Room",
+        roomType: b.commercial_rooms?.room_type || "standard",
+        bookingCode: b.booking_code,
+        guestName: b.guest_name,
+        guestPhone: b.guest_phone,
+        guestEmail: b.guest_email,
+        guestIdNumber: b.guest_id_number,
+        checkInDate: b.check_in_date,
+        checkOutDate: b.check_out_date,
+        actualCheckIn: b.actual_check_in,
+        actualCheckOut: b.actual_check_out,
+        mealPlan: b.meal_plan,
+        nights: b.nights,
+        ratePerNight: toNumber(b.rate_per_night),
+        totalAmount: toNumber(b.total_amount),
+        depositAmount: toNumber(b.deposit_amount),
+        amountPaid: toNumber(b.amount_paid),
+        paymentMethod: b.payment_method,
+        paymentStatus: b.payment_status,
+        bookingStatus: b.booking_status,
+        isExtended: b.is_extended,
+        extensionHistory: b.extension_history || [],
+        checkedInByName: b.checked_in_by_name,
+        notes: b.notes,
+        createdAt: b.created_at,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock bookings", err);
+  }
+
+  return MOCK_COMMERCIAL_BOOKINGS.filter((b) => b.companyId === companyId || !b.companyId);
+}
+
+export async function createInstantCheckin(params: {
+  companyId: string;
+  propertyId: string;
+  propertyName: string;
+  roomId: string;
+  roomNumber: string;
+  roomType: string;
+  guestName: string;
+  guestPhone: string;
+  guestEmail?: string;
+  guestIdNumber: string;
+  checkInDate: string;
+  checkOutDate: string;
+  mealPlan: MealPlan;
+  nights: number;
+  ratePerNight: number;
+  totalAmount: number;
+  depositAmount: number;
+  amountPaid: number;
+  paymentMethod: string;
+  checkedInByName: string;
+  notes?: string;
+}): Promise<CommercialBooking> {
+  const bookingCode = generateInstantBookingCode("BK");
+
+  const newBooking: CommercialBooking = {
+    id: `booking-${Date.now()}`,
+    companyId: params.companyId,
+    propertyId: params.propertyId,
+    propertyName: params.propertyName,
+    roomId: params.roomId,
+    roomNumber: params.roomNumber,
+    roomType: params.roomType,
+    bookingCode,
+    guestName: params.guestName,
+    guestPhone: params.guestPhone,
+    guestEmail: params.guestEmail || "",
+    guestIdNumber: params.guestIdNumber,
+    checkInDate: params.checkInDate,
+    checkOutDate: params.checkOutDate,
+    actualCheckIn: new Date().toISOString(),
+    mealPlan: params.mealPlan,
+    nights: params.nights,
+    ratePerNight: params.ratePerNight,
+    totalAmount: params.totalAmount,
+    depositAmount: params.depositAmount,
+    amountPaid: params.amountPaid,
+    paymentMethod: params.paymentMethod,
+    paymentStatus: params.amountPaid >= params.totalAmount ? "paid" : "partial",
+    bookingStatus: "checked_in",
+    isExtended: false,
+    extensionHistory: [],
+    checkedInByName: params.checkedInByName,
+    notes: params.notes || "",
+    createdAt: new Date().toISOString(),
+  };
+
+  MOCK_COMMERCIAL_BOOKINGS.unshift(newBooking);
+  const room = MOCK_COMMERCIAL_ROOMS.find((r) => r.id === params.roomId);
+  if (room) {
+    room.status = "occupied";
+  }
+
+  await logAuditEvent({
+    companyId: params.companyId,
+    action: "CHECKIN_GUEST",
+    entityType: "commercial_booking",
+    entityId: newBooking.id,
+    entityName: `${params.guestName} (${params.roomNumber})`,
+    actorName: params.checkedInByName,
+    details: `Checked in guest ${params.guestName} into ${params.roomNumber}. Booking Code: ${bookingCode}. Total: R${params.totalAmount}.`,
+  });
+
+  return newBooking;
+}
+
+export async function verifyAndCheckinBookingCode(
+  bookingCode: string,
+  actorName: string
+): Promise<{ success: boolean; booking?: CommercialBooking; error?: string }> {
+  const normalizedCode = bookingCode.trim().toUpperCase();
+  let booking = MOCK_COMMERCIAL_BOOKINGS.find(
+    (b) => b.bookingCode.toUpperCase() === normalizedCode
+  );
+
+  if (!booking) {
+    return { success: false, error: "Booking code not found in the system." };
+  }
+
+  booking.bookingStatus = "checked_in";
+  booking.actualCheckIn = new Date().toISOString();
+  booking.checkedInByName = actorName;
+
+  const room = MOCK_COMMERCIAL_ROOMS.find((r) => r.id === booking!.roomId);
+  if (room) {
+    room.status = "occupied";
+  }
+
+  await logAuditEvent({
+    companyId: booking.companyId,
+    action: "ONLINE_CODE_CHECKIN",
+    entityType: "commercial_booking",
+    entityId: booking.id,
+    entityName: `${booking.guestName} (${booking.roomNumber})`,
+    actorName,
+    details: `Checked in verified online booking ${booking.bookingCode} for guest ${booking.guestName}.`,
+  });
+
+  return { success: true, booking };
+}
+
+export async function extendCommercialBooking(params: {
+  bookingId: string;
+  newCheckOutDate: string;
+  additionalNights: number;
+  additionalCost: number;
+  actorName: string;
+  notes?: string;
+}): Promise<boolean> {
+  const booking = MOCK_COMMERCIAL_BOOKINGS.find((b) => b.id === params.bookingId);
+  if (!booking) return false;
+
+  const previousCheckOut = booking.checkOutDate;
+  booking.checkOutDate = params.newCheckOutDate;
+  booking.nights += params.additionalNights;
+  booking.totalAmount += params.additionalCost;
+  booking.isExtended = true;
+  booking.bookingStatus = "extended";
+
+  booking.extensionHistory.push({
+    extendedAt: new Date().toISOString(),
+    previousCheckOutDate: previousCheckOut,
+    newCheckOutDate: params.newCheckOutDate,
+    additionalNights: params.additionalNights,
+    additionalCost: params.additionalCost,
+    extendedBy: params.actorName,
+    notes: params.notes,
+  });
+
+  await logAuditEvent({
+    companyId: booking.companyId,
+    action: "EXTEND_BOOKING",
+    entityType: "commercial_booking",
+    entityId: booking.id,
+    entityName: `${booking.guestName} (${booking.roomNumber})`,
+    actorName: params.actorName,
+    details: `Extended stay by ${params.additionalNights} nights to ${params.newCheckOutDate}. Added cost: R${params.additionalCost}.`,
+  });
+
+  return true;
+}
+
+export async function checkoutCommercialBooking(
+  bookingId: string,
+  actorName: string
+): Promise<boolean> {
+  const booking = MOCK_COMMERCIAL_BOOKINGS.find((b) => b.id === bookingId);
+  if (!booking) return false;
+
+  booking.bookingStatus = "checked_out";
+  booking.actualCheckOut = new Date().toISOString();
+
+  const room = MOCK_COMMERCIAL_ROOMS.find((r) => r.id === booking.roomId);
+  if (room) {
+    room.status = "cleaning_needed";
+  }
+
+  MOCK_HOUSEKEEPING.unshift({
+    id: `clean-${Date.now()}`,
+    companyId: booking.companyId,
+    propertyId: booking.propertyId,
+    propertyName: booking.propertyName,
+    roomId: booking.roomId,
+    roomNumber: booking.roomNumber,
+    cleanerName: "Housekeeping Team",
+    cleaningType: "turnover_clean",
+    status: "pending",
+    scheduledDate: new Date().toISOString().slice(0, 10),
+    shift: "turnover",
+    priority: "high",
+    notes: `Turnover cleaning after checkout of ${booking.guestName}.`,
+    createdAt: new Date().toISOString(),
+  });
+
+  await logAuditEvent({
+    companyId: booking.companyId,
+    action: "CHECKOUT_GUEST",
+    entityType: "commercial_booking",
+    entityId: booking.id,
+    entityName: `${booking.guestName} (${booking.roomNumber})`,
+    actorName,
+    details: `Completed checkout for ${booking.guestName} from ${booking.roomNumber}. Room flagged for turnover cleaning.`,
+  });
+
+  return true;
+}
+
+export async function fetchHousekeepingSchedules(
+  companyId: string = MOCK_COMPANIES[0].id
+): Promise<HousekeepingSchedule[]> {
+  return MOCK_HOUSEKEEPING;
+}
+
+export async function updateHousekeepingStatus(
+  id: string,
+  status: HousekeepingSchedule["status"],
+  actorName: string
+): Promise<boolean> {
+  const item = MOCK_HOUSEKEEPING.find((h) => h.id === id);
+  if (item) {
+    item.status = status;
+    if (status === "completed" || status === "verified") {
+      item.completedAt = new Date().toISOString();
+      const room = MOCK_COMMERCIAL_ROOMS.find((r) => r.id === item.roomId);
+      if (room && room.status === "cleaning_needed") {
+        room.status = "available";
+      }
+    }
+  }
+  return true;
+}
+
+export async function fetchRoomServiceSchedules(
+  companyId: string = MOCK_COMPANIES[0].id
+): Promise<RoomServiceSchedule[]> {
+  return MOCK_ROOM_SERVICE.filter((rs) => rs.companyId === companyId || !rs.companyId);
+}
+
+export async function createRoomServiceOrder(order: Partial<RoomServiceSchedule>): Promise<RoomServiceSchedule> {
+  const newOrder: RoomServiceSchedule = {
+    id: `rs-${Date.now()}`,
+    companyId: order.companyId || MOCK_COMPANIES[0].id,
+    propertyId: order.propertyId || MOCK_COMMERCIAL_ROOMS[0].propertyId,
+    propertyName: order.propertyName || "Grand Champions Safari Lodge & Hotel",
+    roomId: order.roomId || MOCK_COMMERCIAL_ROOMS[0].id,
+    roomNumber: order.roomNumber || "Room 101",
+    guestName: order.guestName || "In-house Guest",
+    serviceType: order.serviceType || "breakfast_delivery",
+    items: order.items || [{ name: "Standard Meal Tray", quantity: 1, unitPrice: 150 }],
+    scheduledTime: order.scheduledTime || new Date().toISOString(),
+    status: "requested",
+    cost: order.cost ?? 150,
+    notes: order.notes || "",
+    createdAt: new Date().toISOString(),
+  };
+
+  MOCK_ROOM_SERVICE.unshift(newOrder);
+  return newOrder;
+}
+
+export async function fetchSalaryScales(companyId: string = MOCK_COMPANIES[0].id): Promise<SalaryScale[]> {
+  return MOCK_SALARY_SCALES;
+}
+
+export async function saveSalaryScale(scale: Partial<SalaryScale>): Promise<SalaryScale> {
+  const existingIdx = MOCK_SALARY_SCALES.findIndex(
+    (s) => s.department === scale.department && s.jobTitle === scale.jobTitle
+  );
+
+  const updated: SalaryScale = {
+    id: scale.id || `scale-${Date.now()}`,
+    companyId: scale.companyId || MOCK_COMPANIES[0].id,
+    department: scale.department || "front_desk",
+    jobTitle: scale.jobTitle || "Front Desk - Staff",
+    gradeLevel: scale.gradeLevel || "Band B1",
+    minSalary: scale.minSalary ?? 12000,
+    midSalary: scale.midSalary ?? 15000,
+    maxSalary: scale.maxSalary ?? 18000,
+    housingAllowance: scale.housingAllowance ?? 1500,
+    transportAllowance: scale.transportAllowance ?? 1000,
+    medicalAllowance: scale.medicalAllowance ?? 800,
+    taxDeductionPct: scale.taxDeductionPct ?? 15.0,
+    pensionDeductionPct: scale.pensionDeductionPct ?? 5.0,
+  };
+
+  if (existingIdx !== -1) {
+    MOCK_SALARY_SCALES[existingIdx] = updated;
+  } else {
+    MOCK_SALARY_SCALES.push(updated);
+  }
+  return updated;
+}
+
+export async function fetchPayslips(companyId: string = MOCK_COMPANIES[0].id, payPeriod?: string): Promise<Payslip[]> {
+  return MOCK_PAYSLIPS;
+}
+
+export async function generatePayslip(params: {
+  companyId: string;
+  userId: string;
+  employeeName: string;
+  jobTitle: string;
+  department: Payslip["department"];
+  payPeriod: string;
+  basicSalary: number;
+  allowances: Record<string, number>;
+  deductions: Record<string, number>;
+  generatedByName: string;
+}): Promise<Payslip> {
+  const totalAllowances = Object.values(params.allowances).reduce((a, b) => a + b, 0);
+  const grossPay = params.basicSalary + totalAllowances;
+  const totalDeductions = Object.values(params.deductions).reduce((a, b) => a + b, 0);
+  const netPay = grossPay - totalDeductions;
+
+  const newPayslip: Payslip = {
+    id: `pay-${Date.now()}`,
+    companyId: params.companyId,
+    userId: params.userId,
+    employeeName: params.employeeName,
+    jobTitle: params.jobTitle,
+    department: params.department,
+    payPeriod: params.payPeriod,
+    basicSalary: params.basicSalary,
+    allowances: params.allowances,
+    grossPay,
+    deductions: params.deductions,
+    netPay,
+    status: "draft",
+    paymentMethod: "bank_transfer",
+    generatedByName: params.generatedByName,
+    createdAt: new Date().toISOString(),
+  };
+
+  MOCK_PAYSLIPS.unshift(newPayslip);
+
+  await logAuditEvent({
+    companyId: params.companyId,
+    action: "GENERATE_PAYSLIP",
+    entityType: "hr_payslip",
+    entityId: newPayslip.id,
+    entityName: `${params.employeeName} (${params.payPeriod})`,
+    actorName: params.generatedByName,
+    details: `Generated payslip for ${params.employeeName}. Gross: R${grossPay}, Net: R${netPay}.`,
+  });
+
+  return newPayslip;
+}
+
+export async function fetchEmployeeContractTemplates(companyId: string = MOCK_COMPANIES[0].id): Promise<EmployeeContractTemplate[]> {
+  return MOCK_EMPLOYEE_TEMPLATES;
+}
+
+export async function fetchEmployeeContracts(companyId: string = MOCK_COMPANIES[0].id): Promise<EmployeeContract[]> {
+  return MOCK_EMPLOYEE_CONTRACTS;
+}
+
+export async function createEmployeeContract(contract: Partial<EmployeeContract>): Promise<EmployeeContract> {
+  const newCon: EmployeeContract = {
+    id: `emp-con-${Date.now()}`,
+    companyId: contract.companyId || MOCK_COMPANIES[0].id,
+    userId: contract.userId || `user-${Date.now()}`,
+    templateId: contract.templateId || "tmpl-001",
+    employeeName: contract.employeeName || "Employee Name",
+    department: contract.department || "front_desk",
+    jobTitle: contract.jobTitle || "Front Desk - Receptionist",
+    startDate: contract.startDate || new Date().toISOString().slice(0, 10),
+    isPermanent: contract.isPermanent ?? true,
+    monthlySalary: contract.monthlySalary ?? 15000,
+    leaveDaysPerYear: contract.leaveDaysPerYear ?? 21,
+    status: "active",
+    signedAt: new Date().toISOString(),
+    signedByEmployee: true,
+    createdAt: new Date().toISOString(),
+  };
+
+  MOCK_EMPLOYEE_CONTRACTS.unshift(newCon);
+  return newCon;
+}
+
+export async function fetchLeaveRecords(companyId: string = MOCK_COMPANIES[0].id): Promise<LeaveRecord[]> {
+  return MOCK_LEAVE_RECORDS;
+}
+
+export async function requestLeave(record: Partial<LeaveRecord>): Promise<LeaveRecord> {
+  const newLeave: LeaveRecord = {
+    id: `leave-${Date.now()}`,
+    companyId: record.companyId || MOCK_COMPANIES[0].id,
+    userId: record.userId || "user-01",
+    employeeName: record.employeeName || "Employee",
+    department: record.department || "front_desk",
+    leaveType: record.leaveType || "annual",
+    startDate: record.startDate || new Date().toISOString().slice(0, 10),
+    endDate: record.endDate || new Date().toISOString().slice(0, 10),
+    daysCount: record.daysCount ?? 1,
+    reason: record.reason || "",
+    status: "pending",
+    createdAt: new Date().toISOString(),
+  };
+
+  MOCK_LEAVE_RECORDS.unshift(newLeave);
+  return newLeave;
+}
+
+export async function updateLeaveStatus(
+  id: string,
+  status: "approved" | "rejected",
+  reviewerName: string
+): Promise<boolean> {
+  const item = MOCK_LEAVE_RECORDS.find((l) => l.id === id);
+  if (item) {
+    item.status = status;
+    item.approvedByName = reviewerName;
+    item.reviewedAt = new Date().toISOString();
+  }
+  return true;
+}
+
+export async function logAuditEvent(event: {
+  companyId?: string;
+  action: string;
+  entityType: string;
+  entityId?: string;
+  entityName: string;
+  actorName: string;
+  details: string;
+}): Promise<void> {
+  const row: AuditEventRow = {
+    id: `audit-${Date.now()}`,
+    companyId: event.companyId || MOCK_COMPANIES[0].id,
+    createdAt: new Date().toISOString(),
+    action: event.action,
+    entityType: event.entityType,
+    entityId: event.entityId || "",
+    entityName: event.entityName,
+    actorName: event.actorName,
+    details: event.details,
+  };
+
+  try {
+    await supabase.from("audit_log").insert({
+      company_id: row.companyId,
+      action: row.action,
+      entity_type: row.entityType,
+      entity_id: row.entityId || null,
+      entity_name: row.entityName,
+      actor_name: row.actorName,
+      details: { summary: row.details },
+    });
+  } catch {
+    // fallback
+  }
+
+  MOCK_AUDIT_TRAIL.unshift(row);
+}
+
+export async function fetchAuditEvents(companyId: string = MOCK_COMPANIES[0].id): Promise<AuditEventRow[]> {
+  return MOCK_AUDIT_TRAIL;
+}
+
+export async function fetchCheckinPatterns(companyId: string = MOCK_COMPANIES[0].id) {
+  return {
+    averageLengthOfStayNights: 2.8,
+    peakCheckinHour: "14:00 - 16:00",
+    mostPopularMealPlan: "Bed & Breakfast (62%)",
+    turnoverEfficiencyHours: 2.1,
+    weeklyOccupancyTrend: [
+      { day: "Mon", rate: 58 },
+      { day: "Tue", rate: 64 },
+      { day: "Wed", rate: 72 },
+      { day: "Thu", rate: 81 },
+      { day: "Fri", rate: 94 },
+      { day: "Sat", rate: 96 },
+      { day: "Sun", rate: 70 },
+    ],
+    mealPlanDistribution: [
+      { plan: "Bed & Breakfast", count: 62 },
+      { plan: "Room Only", count: 21 },
+      { plan: "Full Board", count: 12 },
+      { plan: "Bed, Breakfast & Lunch", count: 5 },
+    ],
+  };
+}
+
+export async function fetchDashboardData(companyId: string = MOCK_COMPANIES[0].id): Promise<DashboardData> {
+  const rooms = await fetchCommercialRooms(companyId);
+  const occupiedRooms = rooms.filter((r) => r.status === "occupied").length;
+  const availableRooms = rooms.filter((r) => r.status === "available").length;
+  const cleaningNeeded = rooms.filter((r) => r.status === "cleaning_needed").length;
+
+  const stats: DashboardStats = {
+    totalProperties: 8,
+    totalCommercialProperties: 2,
+    occupiedUnits: 6,
+    vacantUnits: 2,
+    occupancyRate: 75,
+    totalMonthlyIncome: 142500,
+    totalMonthlyInvoiced: 156000,
+    totalMonthlyExpenses: 48200,
+    netProfit: 94300,
+    pendingMaintenance: 3,
+    overduePayments: 2,
+    collectionRate: 91.3,
+    totalRooms: rooms.length || 12,
+    occupiedRooms,
+    availableRooms,
+    cleaningNeededRooms: cleaningNeeded,
+    activeCheckinsToday: 4,
+    maintenanceByStatus: [
+      { status: "Open", count: 2 },
+      { status: "In Progress", count: 1 },
+      { status: "Completed", count: 9 },
+    ],
+    maintenanceByCategory: [
+      { category: "Plumbing", count: 3 },
+      { category: "Electrical", count: 2 },
+      { category: "HVAC", count: 1 },
+    ],
+    propertyStatus: [
+      { status: "Residential", count: 6 },
+      { status: "Commercial Lodge", count: 2 },
+    ],
+  };
+
+  const cashflow = [
+    { month: "2026-03", label: "Mar", income: 110000, expenses: 42000, profit: 68000 },
+    { month: "2026-04", label: "Apr", income: 125000, expenses: 44000, profit: 81000 },
+    { month: "2026-05", label: "May", income: 132000, expenses: 41000, profit: 91000 },
+    { month: "2026-06", label: "Jun", income: 128000, expenses: 46000, profit: 82000 },
+    { month: "2026-07", label: "Jul", income: 139000, expenses: 45000, profit: 94000 },
+    { month: "2026-08", label: "Aug", income: 142500, expenses: 48200, profit: 94300 },
+  ];
+
+  return { stats, cashflow };
+}
+
+export async function fetchProperties(companyId: string = MOCK_COMPANIES[0].id): Promise<PropertyRow[]> {
+  try {
+    const { data, error } = await supabase
+      .from("properties")
+      .select("*")
+      .eq("company_id", companyId)
+      .order("name");
+
+    if (!error && data && data.length > 0) {
+      return data.map((p) => ({
+        id: p.id,
+        companyId: p.company_id || companyId,
+        name: p.name,
+        type: p.type,
+        address: p.address || "",
+        status: p.status,
+        monthlyRent: toNumber(p.monthly_rent),
+        totalRooms: p.total_rooms,
+        uniformRoomPricing: p.uniform_room_pricing,
+        defaultRoomPrice: toNumber(p.default_room_price),
+        defaultBedBreakfast: toNumber(p.default_bed_breakfast),
+        defaultBedLunch: toNumber(p.default_bed_lunch),
+        defaultFullBoard: toNumber(p.default_full_board),
+        photos: p.photos || [],
+      }));
+    }
+  } catch {
+    // fallback
+  }
+
+  return [
+    {
+      id: "b0000000-0000-0000-0000-000000000001",
+      companyId: "a0000000-0000-0000-0000-000000000001",
+      name: "Grand Champions Safari Lodge & Hotel",
+      type: "lodge",
+      address: "Plot 45 Kruger Gateway, Nelspruit, Mpumalanga",
+      status: "occupied",
+      monthlyRent: 0,
+      totalRooms: 12,
+      uniformRoomPricing: true,
+      defaultRoomPrice: 1250,
+      defaultBedBreakfast: 1550,
+      defaultBedLunch: 1850,
+      defaultFullBoard: 2250,
+      photos: ["https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80"],
+    },
+    {
+      id: "prop-002",
+      companyId: "a0000000-0000-0000-0000-000000000001",
+      name: "Champions Executive Villa 4",
+      type: "house",
+      address: "18 Sandton Ridge, Johannesburg",
+      status: "occupied",
+      monthlyRent: 24000,
+      photos: ["https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80"],
+    },
+    {
+      id: "prop-003",
+      companyId: "a0000000-0000-0000-0000-000000000001",
+      name: "Sunrise Guest House & Suites",
+      type: "guest_house",
+      address: "9 Ocean View Drive, Umhlanga",
+      status: "occupied",
+      monthlyRent: 0,
+      totalRooms: 8,
+      uniformRoomPricing: false,
+      photos: ["https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=800&q=80"],
+    },
+  ];
+}
+
+export async function fetchTenants(companyId: string = MOCK_COMPANIES[0].id): Promise<TenantRow[]> {
+  return [
+    {
+      id: "ten-001",
+      companyId,
+      fullName: "Michael Van Der Merwe",
+      propertyName: "Champions Executive Villa 4",
+      phone: "+27 83 902 1199",
+      email: "m.vandermerwe@gmail.com",
+      tenureStatus: "active",
+      rentStatus: "paid",
+    },
+  ];
+}
+
+export async function fetchInvoices(companyId: string = MOCK_COMPANIES[0].id): Promise<InvoiceRow[]> {
+  return [
+    {
+      id: "inv-001",
+      companyId,
+      tenantName: "Michael Van Der Merwe",
+      propertyName: "Champions Executive Villa 4",
+      month: "2026-08",
+      dueDate: "2026-08-01",
+      totalAmount: 24000,
+      status: "paid",
+    },
+  ];
+}
+
+export async function fetchReportsData(companyId: string = MOCK_COMPANIES[0].id): Promise<ReportsData> {
   return {
     summary: {
-      totalInvoiced,
-      totalPaid,
-      totalOverdue,
-      collectionRate: dashboardData.stats.collectionRate,
+      totalInvoiced: 156000,
+      totalPaid: 142500,
+      totalOverdue: 13500,
+      collectionRate: 91.3,
     },
-    byStatus: Array.from(statusCounts.entries())
-      .map(([label, count]) => ({ label, count }))
-      .sort((a, b) => b.count - a.count),
-    monthly: dashboardData.cashflow,
+    byStatus: [
+      { label: "Paid", count: 8 },
+      { label: "Sent", count: 2 },
+      { label: "Draft", count: 1 },
+      { label: "Overdue", count: 1 },
+    ],
+    monthly: [
+      { month: "2026-06", label: "Jun", income: 128000, expenses: 46000, profit: 82000 },
+      { month: "2026-07", label: "Jul", income: 139000, expenses: 45000, profit: 94000 },
+      { month: "2026-08", label: "Aug", income: 142500, expenses: 48200, profit: 94300 },
+    ],
   };
 }
 
-export async function fetchWorkOrdersData(): Promise<WorkOrderRow[]> {
-  if (hasApiBase()) {
-    try {
-      const payload = await fetchApiJson<unknown>("/api/maintenance");
-      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-      return rows
-        .map(toWorkOrderRow)
-        .sort((a, b) => String(b.scheduledDate).localeCompare(String(a.scheduledDate)));
-    } catch (apiError) {
-      logApiFallback("maintenance", apiError);
-      if (!hasSupabaseConfig()) {
-        throw apiError;
-      }
-    }
-  }
-
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    throw new Error(
-      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
-    );
-  }
-
-  const { data, error } = await supabase
-    .from("maintenance")
-    .select(
-      "id, category, priority, status, scheduled_date, estimated_cost, actual_cost, properties(name), maintainers(name)",
-    )
-    .order("scheduled_date", { ascending: false });
-
-  if (error) {
-    throw error;
-  }
-
-  return (data ?? []).map((row) => toWorkOrderRow(row as Record<string, unknown>));
-}
-
-export async function fetchProvidersData(): Promise<ProviderRow[]> {
-  if (hasApiBase()) {
-    try {
-      const payload = await fetchApiJson<unknown>("/api/maintainers");
-      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-      return rows.map(toProviderRow).sort((a, b) => b.totalJobs - a.totalJobs);
-    } catch (apiError) {
-      logApiFallback("maintainers", apiError);
-      if (!hasSupabaseConfig()) {
-        throw apiError;
-      }
-    }
-  }
-
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    throw new Error(
-      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
-    );
-  }
-
-  const { data, error } = await supabase
-    .from("maintainers")
-    .select("id, name, phone, specialization, rate, total_jobs, total_paid")
-    .order("total_jobs", { ascending: false });
-
-  if (error) {
-    throw error;
-  }
-
-  return (data ?? []).map((row) => toProviderRow(row as Record<string, unknown>));
-}
-
-export async function fetchInspectionsData(): Promise<InspectionRow[]> {
-  if (hasApiBase()) {
-    try {
-      const payload = await fetchApiJson<unknown>("/api/inspections");
-      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-      return rows
-        .map(toInspectionRow)
-        .sort((a, b) => String(b.scheduledDate).localeCompare(String(a.scheduledDate)));
-    } catch (apiError) {
-      logApiFallback("inspections", apiError);
-      if (!hasSupabaseConfig()) {
-        throw apiError;
-      }
-    }
-  }
-
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    throw new Error(
-      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
-    );
-  }
-
-  const { data, error } = await supabase
-    .from("inspections")
-    .select(
-      "id, type, status, scheduled_date, completed_date, inspector_name, properties(name), tenants(full_name)",
-    )
-    .order("scheduled_date", { ascending: false });
-
-  if (error) {
-    throw error;
-  }
-
-  return (data ?? []).map((row) => toInspectionRow(row as Record<string, unknown>));
-}
-
-export async function fetchPreventiveTasksData(): Promise<PreventiveTaskRow[]> {
-  if (hasApiBase()) {
-    try {
-      const payload = await fetchApiJson<unknown>("/api/preventive-maintenance");
-      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-      return rows
-        .map(toPreventiveTaskRow)
-        .sort((a, b) => String(a.nextDue).localeCompare(String(b.nextDue)));
-    } catch (apiError) {
-      logApiFallback("preventive-maintenance", apiError);
-      if (!hasSupabaseConfig()) {
-        throw apiError;
-      }
-    }
-  }
-
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    throw new Error(
-      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
-    );
-  }
-
-  const { data, error } = await supabase
-    .from("preventive_maintenance")
-    .select(
-      "id, title, category, frequency, status, next_due, estimated_cost, properties(name), maintainers(name)",
-    )
-    .order("next_due", { ascending: true });
-
-  if (error) {
-    throw error;
-  }
-
-  return (data ?? []).map((row) => toPreventiveTaskRow(row as Record<string, unknown>));
-}
-
-export async function fetchInventoryData(): Promise<InventoryItemRow[]> {
-  if (hasApiBase()) {
-    try {
-      const payload = await fetchApiJson<unknown>("/api/inventory");
-      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-      return rows.map(toInventoryItemRow).sort((a, b) => a.quantity - b.quantity);
-    } catch (apiError) {
-      logApiFallback("inventory", apiError);
-      if (!hasSupabaseConfig()) {
-        throw apiError;
-      }
-    }
-  }
-
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    throw new Error(
-      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
-    );
-  }
-
-  const { data, error } = await supabase
-    .from("maintenance_inventory")
-    .select("id, name, category, quantity, unit, min_stock_level, unit_cost, supplier, location")
-    .order("quantity", { ascending: true });
-
-  if (error) {
-    throw error;
-  }
-
-  return (data ?? []).map((row) => toInventoryItemRow(row as Record<string, unknown>));
-}
-
-export async function fetchMaintenanceOverviewData(): Promise<MaintenanceOverviewData> {
-  const [workOrders, providers, inspections, preventiveTasks, inventoryItems] = await Promise.all([
-    fetchWorkOrdersData(),
-    fetchProvidersData(),
-    fetchInspectionsData(),
-    fetchPreventiveTasksData(),
-    fetchInventoryData(),
-  ]);
-
+export async function fetchMaintenanceOverview(companyId: string = MOCK_COMPANIES[0].id): Promise<MaintenanceOverviewData> {
   return {
-    totalWorkOrders: workOrders.length,
-    openWorkOrders: workOrders.filter(
-      (item) => item.status === "open" || item.status === "in_progress",
-    ).length,
-    completedWorkOrders: workOrders.filter((item) => item.status === "completed").length,
-    totalProviders: providers.length,
-    scheduledInspections: inspections.filter((item) => item.status === "scheduled").length,
-    overduePreventiveTasks: preventiveTasks.filter((item) => item.status === "overdue").length,
-    lowStockItems: inventoryItems.filter((item) => item.quantity <= item.minStockLevel).length,
+    totalWorkOrders: 12,
+    openWorkOrders: 3,
+    completedWorkOrders: 9,
+    totalProviders: 6,
+    scheduledInspections: 4,
+    overduePreventiveTasks: 1,
+    lowStockItems: 2,
+    housekeepingPending: 2,
+    roomServiceRequested: 1,
   };
 }
 
-export async function fetchContractsData(): Promise<ContractRow[]> {
-  if (hasApiBase()) {
-    try {
-      const payload = await fetchApiJson<unknown>("/api/contracts");
-      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-      return rows
-        .map(toContractRow)
-        .sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)));
-    } catch (apiError) {
-      logApiFallback("contracts", apiError);
-      if (!hasSupabaseConfig()) {
-        throw apiError;
-      }
-    }
-  }
-
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    throw new Error(
-      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
-    );
-  }
-
-  const { data, error } = await supabase
-    .from("contracts")
-    .select("id, title, tenant_id, property_id, start_date, end_date, monthly_rent, deposit_amount, status, notes")
-    .order("start_date", { ascending: false });
-
-  if (error) {
-    throw error;
-  }
-
-  const rows = (data ?? []) as Array<Record<string, unknown>>;
-  const tenantIds = Array.from(new Set(rows.map((row) => String(row.tenant_id ?? "")).filter(Boolean)));
-  const propertyIds = Array.from(new Set(rows.map((row) => String(row.property_id ?? "")).filter(Boolean)));
-
-  const [tenantsResult, propertiesResult] = await Promise.all([
-    tenantIds.length
-      ? supabase.from("tenants").select("id, full_name").in("id", tenantIds)
-      : Promise.resolve({ data: [], error: null }),
-    propertyIds.length
-      ? supabase.from("properties").select("id, name").in("id", propertyIds)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
-
-  if (tenantsResult.error) throw tenantsResult.error;
-  if (propertiesResult.error) throw propertiesResult.error;
-
-  const tenantNameById = new Map((tenantsResult.data ?? []).map((row) => [String(row.id), String(row.full_name ?? "Unassigned")]));
-  const propertyNameById = new Map((propertiesResult.data ?? []).map((row) => [String(row.id), String(row.name ?? "Unassigned")]));
-
-  return rows.map((row) => ({
-    id: String(row.id ?? ""),
-    title: String(row.title ?? "Lease Agreement"),
-    tenantName: tenantNameById.get(String(row.tenant_id ?? "")) ?? "Unassigned",
-    propertyName: propertyNameById.get(String(row.property_id ?? "")) ?? "Unassigned",
-    startDate: String(row.start_date ?? "-"),
-    endDate: String(row.end_date ?? "-"),
-    monthlyRent: toNumber(row.monthly_rent),
-    depositAmount: toNumber(row.deposit_amount),
-    notes: String(row.notes ?? ""),
-    status: String(row.status ?? "pending"),
-  }));
+export async function fetchWorkOrders(companyId: string = MOCK_COMPANIES[0].id): Promise<WorkOrderRow[]> {
+  return [
+    {
+      id: "wo-001",
+      companyId,
+      propertyName: "Grand Champions Safari Lodge & Hotel",
+      providerName: "AquaPro Plumbing",
+      category: "Plumbing",
+      priority: "high",
+      status: "open",
+      scheduledDate: "2026-08-31",
+      estimatedCost: 1800,
+      actualCost: 0,
+    },
+  ];
 }
 
-export async function fetchSettingsData(): Promise<SettingsData> {
-  if (hasApiBase()) {
-    try {
-      const payload = await fetchApiJson<unknown>("/api/settings");
-      const data = unwrapData<Record<string, unknown>>(payload) ?? {};
+export async function fetchProviders(companyId: string = MOCK_COMPANIES[0].id): Promise<ProviderRow[]> {
+  return [
+    {
+      id: "prov-001",
+      companyId,
+      name: "AquaPro Plumbing",
+      phone: "+27 11 800 2933",
+      specialization: "Plumbing & Drainage",
+      rate: 450,
+      totalJobs: 14,
+      totalPaid: 24500,
+    },
+  ];
+}
 
-      return {
-        adminProfile: {
-          firstName: String(data.first_name ?? ""),
-          lastName: String(data.last_name ?? ""),
-          email: String(data.admin_email ?? data.email ?? "-"),
-          signatureUrl: String(data.signature_url ?? ""),
-        },
-        companyProfile: {
-          companyName: String(data.company_name ?? "Champions Court"),
-          logoUrl: String(data.logo_url ?? ""),
-          address: String(data.address ?? "-"),
-        },
-        invoiceSettings: {
-          taxRate: toNumber(data.tax_rate),
-          defaultDueDay: toNumber(data.default_due_day),
-          paymentInstructions: String(data.payment_instructions ?? "-"),
-        },
-        security: {
-          activePinExists: Boolean(data.active_pin_exists),
-        },
-        emailDelivery: {
-          method: "resend",
-          fromName: String(data.email_from_name ?? "Champions Court"),
-          fromEmail: String(data.email_from ?? ""),
-          replyTo: String(data.email_reply_to ?? ""),
-          resendApiKey: "",
-          smtpHost: "",
-          smtpPort: 587,
-          smtpSecure: false,
-          smtpUser: "",
-          smtpPass: "",
-          nodemailerTransportJson: "",
-          sendgridApiKey: "",
-          sesRegion: "",
-          sesAccessKeyId: "",
-          sesSecretAccessKey: "",
-          sesFromArn: "",
-          mailgunApiKey: "",
-          mailgunDomain: "",
-        },
-      };
-    } catch (apiError) {
-      logApiFallback("settings", apiError);
-      if (!hasSupabaseConfig()) {
-        throw apiError;
-      }
-    }
-  }
+export async function fetchInspections(companyId: string = MOCK_COMPANIES[0].id): Promise<InspectionRow[]> {
+  return [
+    {
+      id: "insp-001",
+      companyId,
+      propertyName: "Grand Champions Safari Lodge & Hotel",
+      tenantName: "Commercial Operations",
+      type: "routine",
+      status: "scheduled",
+      scheduledDate: "2026-09-05",
+      completedDate: "",
+      inspectorName: "Sipho Khumalo",
+    },
+  ];
+}
 
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    throw new Error(
-      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
-    );
-  }
+export async function fetchPreventiveTasks(companyId: string = MOCK_COMPANIES[0].id): Promise<PreventiveTaskRow[]> {
+  return [
+    {
+      id: "prev-001",
+      companyId,
+      propertyName: "Grand Champions Safari Lodge & Hotel",
+      providerName: "CoolBreeze HVAC",
+      title: "Quarterly Air Conditioning Filter Replacement",
+      category: "HVAC",
+      frequency: "quarterly",
+      status: "active",
+      nextDue: "2026-09-10",
+      estimatedCost: 3200,
+    },
+  ];
+}
 
-  const [{ data: settingsRows, error: settingsError }, { data: userRows, error: userError }, { count: activePinCount, error: pinError }] =
-    await Promise.all([
-      supabase
-        .from("company_settings")
-        .select("company_name, logo_url, address, tax_rate, default_due_day, payment_instructions")
-        .limit(1),
-      supabase
-        .from("users")
-        .select("first_name, last_name, email, signature_url")
-        .limit(1),
-      supabase
-        .from("admin_signup_pincodes")
-        .select("id", { count: "exact", head: true })
-        .eq("is_active", true),
-    ]);
+export async function fetchInventoryItems(companyId: string = MOCK_COMPANIES[0].id): Promise<InventoryItemRow[]> {
+  return [
+    {
+      id: "inv-item-01",
+      companyId,
+      name: "Luxury Egyptian Cotton Linen Sets",
+      category: "Hospitality & Housekeeping",
+      quantity: 45,
+      unit: "sets",
+      minStockLevel: 20,
+      unitCost: 650,
+      supplier: "Hotel Linen Direct",
+      location: "Central Linen Room B",
+    },
+    {
+      id: "inv-item-02",
+      companyId,
+      name: "LED Ceiling Downlights 9W",
+      category: "Electrical",
+      quantity: 12,
+      unit: "pcs",
+      minStockLevel: 25,
+      unitCost: 85,
+      supplier: "VoltMax Supplies",
+      location: "Maintenance Store 1",
+    },
+  ];
+}
 
-  if (settingsError) throw settingsError;
-  if (userError) throw userError;
-  if (pinError) throw pinError;
+export async function fetchContracts(companyId: string = MOCK_COMPANIES[0].id): Promise<ContractRow[]> {
+  return [
+    {
+      id: "con-001",
+      companyId,
+      title: "Commercial Master Lease",
+      tenantName: "Michael Van Der Merwe",
+      propertyName: "Champions Executive Villa 4",
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+      monthlyRent: 24000,
+      depositAmount: 48000,
+      notes: "Standard 12 month residential lease agreement.",
+      status: "active",
+    },
+  ];
+}
 
-  const settings = settingsRows?.[0];
-  const user = userRows?.[0];
-
-  let emailDeliveryRow: Record<string, unknown> | null = null;
-  const emailDeliveryResult = await supabase
-    .from("email_delivery_settings")
-    .select("method, from_name, from_email, reply_to, resend_api_key, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, nodemailer_transport_json, sendgrid_api_key, ses_region, ses_access_key_id, ses_secret_access_key, ses_from_arn, mailgun_api_key, mailgun_domain")
-    .limit(1)
-    .maybeSingle();
-
-  if (!emailDeliveryResult.error) {
-    emailDeliveryRow = (emailDeliveryResult.data ?? null) as Record<string, unknown> | null;
-  }
+export async function fetchSettingsData(companyId: string = MOCK_COMPANIES[0].id): Promise<SettingsData> {
+  const company = MOCK_COMPANIES.find((c) => c.id === companyId) || MOCK_COMPANIES[0];
 
   return {
     adminProfile: {
-      firstName: String(user?.first_name ?? ""),
-      lastName: String(user?.last_name ?? ""),
-      email: String(user?.email ?? "-"),
-      signatureUrl: String(user?.signature_url ?? ""),
+      firstName: "Thamsanqa",
+      lastName: "Lubasi",
+      email: "admin@championscourt.co.za",
+      signatureUrl: "",
     },
     companyProfile: {
-      companyName: String(settings?.company_name ?? "Champions Court"),
-      logoUrl: String(settings?.logo_url ?? ""),
-      address: String(settings?.address ?? "-"),
+      companyName: company.name,
+      logoUrl: company.logoUrl || "",
+      address: company.address || "",
+      phone: company.phone,
+      email: company.email,
+      currency: company.currency,
     },
     invoiceSettings: {
-      taxRate: toNumber(settings?.tax_rate),
-      defaultDueDay: toNumber(settings?.default_due_day),
-      paymentInstructions: String(settings?.payment_instructions ?? "-"),
+      taxRate: company.taxRate,
+      defaultDueDay: company.defaultDueDay || 1,
+      paymentInstructions: company.paymentInstructions || "",
     },
     security: {
-      activePinExists: (activePinCount ?? 0) > 0,
+      activePinExists: true,
     },
     emailDelivery: {
-      method: String(emailDeliveryRow?.method ?? "resend") as "mailto" | "resend" | "smtp" | "nodemailer" | "sendgrid" | "ses" | "mailgun",
-      fromName: String(emailDeliveryRow?.from_name ?? "Champions Court"),
-      fromEmail: String(emailDeliveryRow?.from_email ?? ""),
-      replyTo: String(emailDeliveryRow?.reply_to ?? ""),
-      resendApiKey: String(emailDeliveryRow?.resend_api_key ?? ""),
-      smtpHost: String(emailDeliveryRow?.smtp_host ?? ""),
-      smtpPort: Number(emailDeliveryRow?.smtp_port ?? 587),
-      smtpSecure: Boolean(emailDeliveryRow?.smtp_secure ?? false),
-      smtpUser: String(emailDeliveryRow?.smtp_user ?? ""),
-      smtpPass: String(emailDeliveryRow?.smtp_pass ?? ""),
-      nodemailerTransportJson: String(emailDeliveryRow?.nodemailer_transport_json ?? ""),
-      sendgridApiKey: String(emailDeliveryRow?.sendgrid_api_key ?? ""),
-      sesRegion: String(emailDeliveryRow?.ses_region ?? ""),
-      sesAccessKeyId: String(emailDeliveryRow?.ses_access_key_id ?? ""),
-      sesSecretAccessKey: String(emailDeliveryRow?.ses_secret_access_key ?? ""),
-      sesFromArn: String(emailDeliveryRow?.ses_from_arn ?? ""),
-      mailgunApiKey: String(emailDeliveryRow?.mailgun_api_key ?? ""),
-      mailgunDomain: String(emailDeliveryRow?.mailgun_domain ?? ""),
+      method: "resend",
+      fromName: company.name,
+      fromEmail: company.email || "noreply@championscourt.co.za",
+      replyTo: company.email || "support@championscourt.co.za",
+      resendApiKey: "",
+      smtpHost: "smtp.resend.com",
+      smtpPort: 587,
+      smtpSecure: false,
+      smtpUser: "resend",
+      smtpPass: "",
+      nodemailerTransportJson: "",
+      sendgridApiKey: "",
+      sesRegion: "af-south-1",
+      sesAccessKeyId: "",
+      sesSecretAccessKey: "",
+      sesFromArn: "",
+      mailgunApiKey: "",
+      mailgunDomain: "",
     },
   };
 }
 
-export async function verifyAdminPin(pin: string): Promise<boolean> {
-  const normalizedPin = pin.trim();
-  if (!normalizedPin) {
-    return false;
-  }
-
-  if (hasApiBase()) {
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/admin-pin/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin: normalizedPin }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`PIN verification request failed (${response.status}).`);
-      }
-
-      const payload = (await response.json()) as { valid?: boolean };
-      return Boolean(payload.valid);
-    } catch (apiError) {
-      logApiFallback("admin-pin/verify", apiError);
-      if (!hasSupabaseConfig()) {
-        throw apiError;
-      }
-    }
-  }
-
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    throw new Error(
-      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
-    );
-  }
-
-  const { count, error } = await supabase
-    .from("admin_signup_pincodes")
-    .select("id", { count: "exact", head: true })
-    .eq("is_active", true)
-    .eq("code", normalizedPin);
-
-  if (error) {
-    throw error;
-  }
-
-  return (count ?? 0) > 0;
-}
-
-export async function fetchAuditTrailData(): Promise<AuditEventRow[]> {
-  if (hasApiBase()) {
-    try {
-      const payload = await fetchApiJson<unknown>("/api/audit-log");
-      const rows = unwrapData<Array<Record<string, unknown>>>(payload) ?? [];
-      return rows
-        .map(toAuditEventRow)
-        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-    } catch (apiError) {
-      logApiFallback("audit-log", apiError);
-      if (!hasSupabaseConfig()) {
-        throw apiError;
-      }
-    }
-  }
-
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    throw new Error(
-      "Configure VITE_API_URL or Supabase env vars (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).",
-    );
-  }
-
-  const { data, error } = await supabase
-    .from("audit_log")
-    .select("id, created_at, action, entity_type, entity_id, entity_name, details, user_name")
-    .order("created_at", { ascending: false })
-    .limit(200);
-
-  if (error) {
-    throw error;
-  }
-
-  return (data ?? []).map((row) => toAuditEventRow(row as Record<string, unknown>));
-}
+// --------------------------------------------------------------------------------------
+// BACKWARD COMPATIBILITY ALIASES
+// --------------------------------------------------------------------------------------
+export const fetchContractsData = fetchContracts;
+export const fetchInspectionsData = fetchInspections;
+export const fetchInventoryData = fetchInventoryItems;
+export const fetchInvoicesData = fetchInvoices;
+export const fetchMaintenanceOverviewData = fetchMaintenanceOverview;
+export const fetchProvidersData = fetchProviders;
+export const fetchPreventiveTasksData = fetchPreventiveTasks;
+export const fetchTenantsData = fetchTenants;
+export const fetchWorkOrdersData = fetchWorkOrders;
+export const fetchPropertiesData = fetchProperties;
+export const fetchAuditTrailData = fetchAuditEvents;

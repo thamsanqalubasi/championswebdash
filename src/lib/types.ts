@@ -1,18 +1,331 @@
+export type PropertyType =
+  | "house"
+  | "storage"
+  | "apartment"
+  | "hotel"
+  | "motel"
+  | "lodge"
+  | "guest_house"
+  | "commercial"
+  | string;
+
 export type PropertyStatus = "occupied" | "vacant" | "maintenance" | string;
 
 export type PropertyRow = {
   id: string;
+  companyId: string;
   name: string;
-  type: string;
+  type: PropertyType;
   address: string;
   status: PropertyStatus;
   monthlyRent: number;
+  totalRooms?: number;
+  uniformRoomPricing?: boolean;
+  defaultRoomPrice?: number;
+  defaultBedBreakfast?: number;
+  defaultBedLunch?: number;
+  defaultFullBoard?: number;
+  photos?: string[];
+};
+
+export type Company = {
+  id: string;
+  name: string;
+  slug?: string;
+  logoUrl?: string;
+  logoBucketPath?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  taxRate: number;
+  currency: string;
+  defaultDueDay?: number;
+  paymentInstructions?: string;
+  createdAt?: string;
+};
+
+export type DepartmentType =
+  | "admin"
+  | "manager"
+  | "accountant"
+  | "front_desk"
+  | "it"
+  | "maintenance"
+  | "human_resources"
+  | "procurement"
+  | "audit";
+
+export type RoleLevel =
+  | "super_admin"
+  | "admin"
+  | "manager"
+  | "all_rights"
+  | "staff";
+
+export type CompanyUser = {
+  id: string;
+  companyId: string;
+  userId: string;
+  email: string;
+  fullName: string;
+  department: DepartmentType;
+  jobTitle: string;
+  roleLevel: RoleLevel;
+  permissions: Record<string, boolean>;
+  isActive: boolean;
+  createdAt: string;
+};
+
+export type RoomStatus =
+  | "available"
+  | "occupied"
+  | "cleaning_needed"
+  | "maintenance"
+  | "reserved";
+
+export type RoomType =
+  | "standard"
+  | "single"
+  | "double"
+  | "twin"
+  | "suite"
+  | "deluxe"
+  | "family"
+  | "penthouse"
+  | "executive";
+
+export type MealPlan =
+  | "room_only"
+  | "bed_breakfast"
+  | "bed_lunch"
+  | "full_board";
+
+export type CommercialRoom = {
+  id: string;
+  companyId: string;
+  propertyId: string;
+  propertyName?: string;
+  roomNumber: string;
+  roomType: RoomType;
+  floor: string;
+  status: RoomStatus;
+  capacityAdults: number;
+  capacityChildren: number;
+  amenities: string[];
+  photos: string[];
+  pricePerNight: number;
+  priceBedBreakfast: number;
+  priceBedLunch: number;
+  priceFullBoard: number;
+  notes?: string;
+  currentBooking?: CommercialBooking;
+};
+
+export type BookingStatus =
+  | "confirmed"
+  | "checked_in"
+  | "checked_out"
+  | "cancelled"
+  | "extended";
+
+export type CommercialBooking = {
+  id: string;
+  companyId: string;
+  propertyId: string;
+  propertyName?: string;
+  roomId: string;
+  roomNumber?: string;
+  roomType?: string;
+  bookingCode: string;
+  guestName: string;
+  guestPhone: string;
+  guestEmail?: string;
+  guestIdNumber: string;
+  checkInDate: string;
+  checkOutDate: string;
+  actualCheckIn?: string;
+  actualCheckOut?: string;
+  mealPlan: MealPlan;
+  nights: number;
+  ratePerNight: number;
+  totalAmount: number;
+  depositAmount: number;
+  amountPaid: number;
+  paymentMethod: "cash" | "card" | "eft" | "online" | "company_account" | string;
+  paymentStatus: "pending" | "partial" | "paid" | "refunded";
+  bookingStatus: BookingStatus;
+  isExtended: boolean;
+  extensionHistory: Array<{
+    extendedAt: string;
+    previousCheckOutDate: string;
+    newCheckOutDate: string;
+    additionalNights: number;
+    additionalCost: number;
+    extendedBy: string;
+    notes?: string;
+  }>;
+  createdByName?: string;
+  checkedInByName?: string;
+  notes?: string;
+  createdAt: string;
+};
+
+export type HousekeepingStatus = "pending" | "in_progress" | "completed" | "verified";
+export type CleaningType = "daily_tidy" | "turnover_clean" | "deep_clean" | "inspection" | "sanitization";
+
+export type HousekeepingSchedule = {
+  id: string;
+  companyId: string;
+  propertyId: string;
+  propertyName?: string;
+  roomId: string;
+  roomNumber?: string;
+  cleanerId?: string;
+  cleanerName: string;
+  cleaningType: CleaningType;
+  status: HousekeepingStatus;
+  scheduledDate: string;
+  shift: "morning" | "afternoon" | "evening" | "turnover";
+  priority: "low" | "normal" | "high" | "urgent";
+  completedAt?: string;
+  notes?: string;
+  createdAt: string;
+};
+
+export type RoomServiceStatus = "requested" | "preparing" | "out_for_delivery" | "delivered" | "cancelled";
+export type RoomServiceType =
+  | "breakfast_delivery"
+  | "lunch_delivery"
+  | "dinner_delivery"
+  | "beverages"
+  | "laundry"
+  | "luggage"
+  | "custom";
+
+export type RoomServiceSchedule = {
+  id: string;
+  companyId: string;
+  propertyId: string;
+  propertyName?: string;
+  roomId: string;
+  roomNumber?: string;
+  bookingId?: string;
+  guestName: string;
+  serviceType: RoomServiceType;
+  items: Array<{ name: string; quantity: number; unitPrice: number }>;
+  scheduledTime: string;
+  status: RoomServiceStatus;
+  cost: number;
+  deliveredAt?: string;
+  notes?: string;
+  createdAt: string;
+};
+
+export type SalaryScale = {
+  id: string;
+  companyId: string;
+  department: DepartmentType;
+  jobTitle: string;
+  gradeLevel: string;
+  minSalary: number;
+  midSalary: number;
+  maxSalary: number;
+  housingAllowance: number;
+  transportAllowance: number;
+  medicalAllowance: number;
+  taxDeductionPct: number;
+  pensionDeductionPct: number;
+};
+
+export type Payslip = {
+  id: string;
+  companyId: string;
+  userId: string;
+  employeeName: string;
+  jobTitle: string;
+  department: DepartmentType;
+  payPeriod: string; // YYYY-MM
+  basicSalary: number;
+  allowances: {
+    housing?: number;
+    transport?: number;
+    medical?: number;
+    overtime?: number;
+    bonuses?: number;
+    [key: string]: number | undefined;
+  };
+  grossPay: number;
+  deductions: {
+    payeTax?: number;
+    pension?: number;
+    uif?: number;
+    other?: number;
+    [key: string]: number | undefined;
+  };
+  netPay: number;
+  status: "draft" | "approved" | "paid";
+  paymentMethod: string;
+  paidAt?: string;
+  pdfUrl?: string;
+  generatedByName?: string;
+  createdAt: string;
+};
+
+export type EmployeeContractTemplate = {
+  id: string;
+  companyId: string;
+  title: string;
+  department: string;
+  templateBody: string;
+  standardLeaveDays: number;
+  probationMonths: number;
+  workingHoursPerWeek: number;
+  isDefault: boolean;
+};
+
+export type EmployeeContract = {
+  id: string;
+  companyId: string;
+  userId: string;
+  templateId?: string;
+  employeeName: string;
+  department: DepartmentType;
+  jobTitle: string;
+  startDate: string;
+  endDate?: string;
+  isPermanent: boolean;
+  monthlySalary: number;
+  leaveDaysPerYear: number;
+  contractDocumentUrl?: string;
+  status: "draft" | "active" | "suspended" | "terminated" | "expired";
+  signedAt?: string;
+  signedByEmployee: boolean;
+  createdAt: string;
+};
+
+export type LeaveRecord = {
+  id: string;
+  companyId: string;
+  userId: string;
+  employeeName: string;
+  department: DepartmentType;
+  leaveType: "annual" | "sick" | "study" | "maternity" | "paternity" | "bereavement" | "unpaid";
+  startDate: string;
+  endDate: string;
+  daysCount: number;
+  reason?: string;
+  status: "pending" | "approved" | "rejected";
+  approvedByName?: string;
+  reviewedAt?: string;
+  notes?: string;
+  createdAt: string;
 };
 
 export type TenantStatus = "active" | "notice" | "ended" | string;
 
 export type TenantRow = {
   id: string;
+  companyId?: string;
   fullName: string;
   propertyName: string;
   phone: string;
@@ -23,6 +336,7 @@ export type TenantRow = {
 
 export type DashboardStats = {
   totalProperties: number;
+  totalCommercialProperties: number;
   occupiedUnits: number;
   vacantUnits: number;
   occupancyRate: number;
@@ -33,6 +347,11 @@ export type DashboardStats = {
   pendingMaintenance: number;
   overduePayments: number;
   collectionRate: number;
+  totalRooms: number;
+  occupiedRooms: number;
+  availableRooms: number;
+  cleaningNeededRooms: number;
+  activeCheckinsToday: number;
   maintenanceByStatus: Array<{ status: string; count: number }>;
   maintenanceByCategory: Array<{ category: string; count: number }>;
   propertyStatus: Array<{ status: string; count: number }>;
@@ -60,6 +379,7 @@ export type InvoiceStatus =
 
 export type InvoiceRow = {
   id: string;
+  companyId?: string;
   tenantName: string;
   propertyName: string;
   month: string;
@@ -90,6 +410,7 @@ export type WorkOrderStatus =
 
 export type WorkOrderRow = {
   id: string;
+  companyId?: string;
   propertyName: string;
   providerName: string;
   category: string;
@@ -102,6 +423,7 @@ export type WorkOrderRow = {
 
 export type ProviderRow = {
   id: string;
+  companyId?: string;
   name: string;
   phone: string;
   specialization: string;
@@ -112,6 +434,7 @@ export type ProviderRow = {
 
 export type InspectionRow = {
   id: string;
+  companyId?: string;
   propertyName: string;
   tenantName: string;
   type: string;
@@ -123,6 +446,7 @@ export type InspectionRow = {
 
 export type PreventiveTaskRow = {
   id: string;
+  companyId?: string;
   propertyName: string;
   providerName: string;
   title: string;
@@ -135,6 +459,7 @@ export type PreventiveTaskRow = {
 
 export type InventoryItemRow = {
   id: string;
+  companyId?: string;
   name: string;
   category: string;
   quantity: number;
@@ -153,10 +478,13 @@ export type MaintenanceOverviewData = {
   scheduledInspections: number;
   overduePreventiveTasks: number;
   lowStockItems: number;
+  housekeepingPending: number;
+  roomServiceRequested: number;
 };
 
 export type ContractRow = {
   id: string;
+  companyId?: string;
   title: string;
   tenantName: string;
   propertyName: string;
@@ -170,6 +498,7 @@ export type ContractRow = {
 
 export type AuditEventRow = {
   id: string;
+  companyId?: string;
   createdAt: string;
   action: string;
   entityType: string;
@@ -190,6 +519,9 @@ export type SettingsData = {
     companyName: string;
     logoUrl: string;
     address: string;
+    phone?: string;
+    email?: string;
+    currency?: string;
   };
   invoiceSettings: {
     taxRate: number;

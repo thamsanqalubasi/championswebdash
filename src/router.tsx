@@ -3,6 +3,8 @@ import { useAuth } from "@/lib/auth";
 import { AppShell } from "@/components/app-shell";
 import LoginPage from "@/pages/login";
 import DashboardPage from "@/pages/dashboard";
+import CommercialBookingsPage from "@/pages/commercial-bookings";
+import RoomManagementPage from "@/pages/room-management";
 import PropertiesPage from "@/pages/properties";
 import PropertyDetailsPage from "@/pages/property-details";
 import TenantsPage from "@/pages/tenants";
@@ -18,6 +20,9 @@ import ProvidersPage from "@/pages/providers";
 import InspectionsPage from "@/pages/inspections";
 import ScheduledTasksPage from "@/pages/scheduled-tasks";
 import InventoryPage from "@/pages/inventory";
+import HRPage from "@/pages/hr";
+import UsersManagementPage from "@/pages/users-management";
+import CompaniesPage from "@/pages/companies";
 import ContractsPage from "@/pages/contracts";
 import SettingsPage from "@/pages/settings";
 import AuditTrailPage from "@/pages/audit-trail";
@@ -53,6 +58,8 @@ export function AppRouter() {
 
       <Route element={<ProtectedLayout />}>
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/commercial-bookings" element={<CommercialBookingsPage />} />
+        <Route path="/room-management" element={<RoomManagementPage />} />
         <Route path="/rent-collection" element={<RentCollectionPage />} />
         <Route path="/properties" element={<PropertiesPage />} />
         <Route path="/properties/:propertyId" element={<PropertyDetailsPage />} />
@@ -68,6 +75,9 @@ export function AppRouter() {
         <Route path="/maintenance/inspections" element={<InspectionsPage />} />
         <Route path="/maintenance/scheduled-tasks" element={<ScheduledTasksPage />} />
         <Route path="/maintenance/inventory" element={<InventoryPage />} />
+        <Route path="/hr" element={<HRPage />} />
+        <Route path="/users-management" element={<UsersManagementPage />} />
+        <Route path="/companies" element={<CompaniesPage />} />
         <Route path="/contracts" element={<ContractsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/audit-trail" element={<AuditTrailPage />} />
