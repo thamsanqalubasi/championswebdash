@@ -362,7 +362,7 @@ export default function BillsPage() {
         amount: form.amount,
         due_day: form.dueDay,
         is_active: true,
-        company_id: compId,
+        company_id: currentCompany.id,
       };
 
       const saveSchedule = async (withFrequency: boolean) => {

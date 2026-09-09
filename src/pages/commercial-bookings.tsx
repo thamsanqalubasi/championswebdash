@@ -66,8 +66,8 @@ function buildFolioHtml(booking: CommercialBooking, companyName: string) {
       <div>
         <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b;">Stay Details</div>
         <div style="font-size: 13px; font-weight: 600; color: #0f172a; margin-top: 4px;">Room: ${booking.roomNumber} (${booking.propertyName})</div>
-        <div style="font-size: 12px; color: #475569; margin-top: 2px;">${booking.checkinDate} to ${booking.checkoutDate} (${booking.nights} night${booking.nights > 1 ? "s" : ""})</div>
-        <div style="font-size: 12px; color: #475569;">Meal Board: ${booking.mealPlan.replace(/_/g, " ")} | Status: ${booking.status}</div>
+        <div style="font-size: 12px; color: #475569; margin-top: 2px;">${booking.checkInDate} to ${booking.checkOutDate} (${booking.nights} night${booking.nights > 1 ? "s" : ""})</div>
+        <div style="font-size: 12px; color: #475569;">Meal Board: ${booking.mealPlan.replace(/_/g, " ")} | Status: ${booking.bookingStatus}</div>
       </div>
     </div>
 

@@ -61,6 +61,7 @@ export default function ProvidersPage() {
   const [deleting, setDeleting] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<ProviderRow | null>(null);
+  const [detailsRow, setDetailsRow] = useState<ProviderRow | null>(null);
 
   useEffect(() => {
     let cancelled = false;

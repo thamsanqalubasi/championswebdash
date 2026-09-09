@@ -133,6 +133,15 @@ export default function SettingsPage() {
     setEditSection("company");
   };
 
+  const openEditInvoice = () => {
+    setInvoiceForm({
+      tax_rate: currentCompany.taxRate || 15,
+      default_due_day: currentCompany.defaultDueDay || 1,
+      payment_instructions: currentCompany.paymentInstructions || "",
+    });
+    setEditSection("invoice");
+  };
+
   const handleCountryChange = (newCountry: string) => {
     const defaultCurr = getCurrencyForCountry(newCountry);
     setCompanyForm((prev) => ({

@@ -794,6 +794,7 @@ export default function TenantsPage() {
         }
 
         const latestPdfUrl = await ensureShareableDocumentUrl(invoice.pdfUrl, invoiceHtml, `invoice-${invoice.id}.pdf`);
+        const messageText = `Dear ${detailsRow.fullName}, please find your rental invoice for ${invoice.month} in the amount of ${formatCurrency(invoice.amount)}.`;
         const result = await sendWhatsApp({
           to: `+${phone}`,
           message: messageText,

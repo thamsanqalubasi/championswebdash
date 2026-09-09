@@ -380,6 +380,7 @@ export type InvoiceStatus =
 export type InvoiceRow = {
   id: string;
   companyId?: string;
+  tenantId?: string;
   tenantName: string;
   propertyName: string;
   month: string;

@@ -336,7 +336,7 @@ async function fetchMaintenanceRows(startDate: string, endDate: string): Promise
 }
 
 export default function FinanceAccountsPage() {
-  const { user } = useAuth();
+  const { user, currentCompany } = useAuth();
   const today = new Date();
 
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);

@@ -536,6 +536,13 @@ export default function InvoicesPage() {
       } catch {
         // ignore
       }
+    } else if (row.tenantName) {
+      try {
+        const { data: t } = await supabase.from("tenants").select("email").ilike("name", row.tenantName).maybeSingle();
+        if (t?.email) tenantEmail = t.email;
+      } catch {
+        // ignore
+      }
     }
 
     return { html, url, tenantEmail };
