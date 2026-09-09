@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal } from "@/components/modal";
-import { fetchSettingsData, verifyAdminPin, logAuditEvent } from "@/lib/data";
+import { fetchSettingsData, verifyAdminPin, logAuditEvent, setUserPin, hasUserPin } from "@/lib/data";
+import { COUNTRIES, COMMON_CURRENCIES, getCurrencyForCountry } from "@/lib/countries";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { uploadFileToBucket } from "@/lib/storage";
@@ -25,10 +26,12 @@ import {
   FileSignature,
   FileText,
   KeyRound,
+  Globe,
+  Coins,
 } from "lucide-react";
 
 export default function SettingsPage() {
-  const { user, currentCompany, currentCompanyUser, changePassword, isAdmin } = useAuth();
+  const { user, currentCompany, currentCompanyUser, setCurrentCompany, changePassword, isAdmin } = useAuth();
   const [data, setData] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +40,13 @@ export default function SettingsPage() {
   // Edit states
   const [editSection, setEditSection] = useState<"admin" | "company" | "invoice" | "email" | "password" | null>(null);
   const [adminForm, setAdminForm] = useState({ first_name: "", last_name: "", email: "", signature_url: "" });
-  const [companyForm, setCompanyForm] = useState({ company_name: "", logo_url: "", address: "" });
+  const [companyForm, setCompanyForm] = useState({
+    company_name: "",
+    logo_url: "",
+    address: "",
+    country: "South Africa",
+    currency: "ZAR",
+  });
   const [invoiceForm, setInvoiceForm] = useState({ tax_rate: 0, default_due_day: 1, payment_instructions: "" });
   const [emailForm, setEmailForm] = useState({
     method: "resend" as "mailto" | "resend" | "smtp" | "nodemailer" | "sendgrid" | "ses" | "mailgun",
@@ -66,17 +75,17 @@ export default function SettingsPage() {
   const [passwordMsg, setPasswordMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [passwordChanging, setPasswordChanging] = useState(false);
 
+  // Security PIN state
+  const [userHasPin, setUserHasPin] = useState(false);
+  const [pinOld, setPinOld] = useState("");
+  const [pinNew, setPinNew] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
+  const [pinSaving, setPinSaving] = useState(false);
+  const [pinMessage, setPinMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
   const [saving, setSaving] = useState(false);
   const [signatureUploading, setSignatureUploading] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
-
-  // PIN states
-  const [pinModalOpen, setPinModalOpen] = useState(false);
-  const [pin, setPin] = useState("");
-  const [newPin, setNewPin] = useState("");
-  const [pinVerifying, setPinVerifying] = useState(false);
-  const [pinError, setPinError] = useState("");
-  const [emailSavePin, setEmailSavePin] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -113,94 +122,78 @@ export default function SettingsPage() {
 
   const openEditCompany = () => {
     if (!data) return;
+    const savedCountry = localStorage.getItem(`cc_company_country_${currentCompany.id}`) || "South Africa";
     setCompanyForm({
       company_name: currentCompany.name,
       logo_url: currentCompany.logoUrl || "",
       address: currentCompany.address || "",
+      country: savedCountry,
+      currency: currentCompany.currency || "ZAR",
     });
     setEditSection("company");
   };
 
-  const openEditInvoice = () => {
-    if (!data) return;
-    setInvoiceForm({
-      tax_rate: data.invoiceSettings.taxRate,
-      default_due_day: data.invoiceSettings.defaultDueDay,
-      payment_instructions: data.invoiceSettings.paymentInstructions,
-    });
-    setEditSection("invoice");
+  const handleCountryChange = (newCountry: string) => {
+    const defaultCurr = getCurrencyForCountry(newCountry);
+    setCompanyForm((prev) => ({
+      ...prev,
+      country: newCountry,
+      currency: defaultCurr,
+    }));
   };
 
-  const openEditEmail = () => {
-    if (!data) return;
-    setEmailForm({
-      method: data.emailDelivery.method,
-      from_name: data.emailDelivery.fromName,
-      from_email: data.emailDelivery.fromEmail,
-      reply_to: data.emailDelivery.replyTo,
-      resend_api_key: data.emailDelivery.resendApiKey,
-      smtp_host: data.emailDelivery.smtpHost,
-      smtp_port: data.emailDelivery.smtpPort,
-      smtp_secure: data.emailDelivery.smtpSecure,
-      smtp_user: data.emailDelivery.smtpUser,
-      smtp_pass: data.emailDelivery.smtpPass,
-      nodemailer_transport_json: data.emailDelivery.nodemailerTransportJson,
-      sendgrid_api_key: data.emailDelivery.sendgridApiKey,
-      ses_region: data.emailDelivery.sesRegion,
-      ses_access_key_id: data.emailDelivery.sesAccessKeyId,
-      ses_secret_access_key: data.emailDelivery.sesSecretAccessKey,
-      ses_from_arn: data.emailDelivery.sesFromArn,
-      mailgun_api_key: data.emailDelivery.mailgunApiKey,
-      mailgun_domain: data.emailDelivery.mailgunDomain,
-    });
-    setEditSection("email");
-  };
+  const userId = user?.id || currentCompanyUser?.userId || currentCompanyUser?.email || "";
 
-  const onUploadSignature = async (file: File | null) => {
-    if (!file) return;
-    setSignatureUploading(true);
-    try {
-      const publicUrl = await uploadFileToBucket("signatures", "admin-signatures", file);
-      setAdminForm((prev) => ({ ...prev, signature_url: publicUrl }));
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Signature upload failed");
-    } finally {
-      setSignatureUploading(false);
+  useEffect(() => {
+    if (userId) {
+      hasUserPin(userId).then(setUserHasPin);
     }
-  };
+  }, [userId, reloadKey]);
 
-  const onUploadLogo = async (file: File | null) => {
-    if (!file) return;
-    setLogoUploading(true);
-    try {
-      const publicUrl = await uploadFileToBucket("company-assets", "logos", file);
-      setCompanyForm((prev) => ({ ...prev, logo_url: publicUrl }));
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Logo upload failed");
-    } finally {
-      setLogoUploading(false);
+  const handlePinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPinMessage(null);
+
+    if (pinNew.length < 4) {
+      setPinMessage({ type: "error", text: "New PIN must be at least 4 digits." });
+      return;
     }
-  };
+    if (pinNew !== pinConfirm) {
+      setPinMessage({ type: "error", text: "New PIN and Confirmation PIN do not match." });
+      return;
+    }
 
-  const saveAdmin = async () => {
-    setSaving(true);
+    setPinSaving(true);
     try {
-      if (user?.id) {
-        await supabase
-          .from("users")
-          .update({
-            first_name: adminForm.first_name,
-            last_name: adminForm.last_name,
-            signature_url: adminForm.signature_url,
-          })
-          .eq("id", user.id);
+      const res = await setUserPin(userId, pinNew, userHasPin ? pinOld : undefined);
+      if (!res.ok) {
+        setPinMessage({ type: "error", text: res.message || "Failed to set PIN." });
+      } else {
+        setPinMessage({
+          type: "success",
+          text: userHasPin
+            ? "Security PIN changed successfully!"
+            : "Security PIN created successfully! You can now use it to authorize deletions.",
+        });
+        setUserHasPin(true);
+        setPinOld("");
+        setPinNew("");
+        setPinConfirm("");
+
+        await logAuditEvent({
+          companyId: currentCompany.id,
+          action: "PIN_UPDATED",
+          entityType: "user_security",
+          entityId: userId,
+          entityName: currentCompanyUser.fullName,
+          actorName: currentCompanyUser.fullName,
+          details: "User configured/updated their security PIN.",
+        });
       }
-      setEditSection(null);
-      reload();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Save failed");
+    } catch (err) {
+      setPinMessage({ type: "error", text: err instanceof Error ? err.message : "Error saving PIN." });
     } finally {
-      setSaving(false);
+      setPinSaving(false);
     }
   };
 
@@ -213,12 +206,20 @@ export default function SettingsPage() {
           name: companyForm.company_name,
           logo_url: companyForm.logo_url,
           address: companyForm.address,
+          currency: companyForm.currency,
         })
         .eq("id", currentCompany.id);
 
-      currentCompany.name = companyForm.company_name;
-      currentCompany.logoUrl = companyForm.logo_url;
-      currentCompany.address = companyForm.address;
+      const updatedCompany = {
+        ...currentCompany,
+        name: companyForm.company_name,
+        logoUrl: companyForm.logo_url,
+        address: companyForm.address,
+        currency: companyForm.currency,
+      };
+
+      setCurrentCompany(updatedCompany);
+      localStorage.setItem(`cc_company_country_${currentCompany.id}`, companyForm.country);
 
       await logAuditEvent({
         companyId: currentCompany.id,
@@ -227,7 +228,7 @@ export default function SettingsPage() {
         entityId: currentCompany.id,
         entityName: companyForm.company_name,
         actorName: currentCompanyUser.fullName,
-        details: `Updated company branding and headquarters address.`,
+        details: `Updated company operating country to ${companyForm.country}, currency to ${companyForm.currency}, and logo.`,
       });
 
       setEditSection(null);
@@ -250,6 +251,15 @@ export default function SettingsPage() {
           payment_instructions: invoiceForm.payment_instructions,
         })
         .eq("id", currentCompany.id);
+
+      const updatedCompany = {
+        ...currentCompany,
+        taxRate: invoiceForm.tax_rate,
+        defaultDueDay: invoiceForm.default_due_day,
+        paymentInstructions: invoiceForm.payment_instructions,
+      };
+
+      setCurrentCompany(updatedCompany);
 
       setEditSection(null);
       reload();
@@ -409,20 +419,156 @@ export default function SettingsPage() {
             </div>
           </section>
 
+          {/* Security PIN Section */}
+          <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
+            <SectionHeader
+              icon={ShieldCheck}
+              title="Security PIN Management"
+              description="Set or change your personal 4-digit authorization PIN used to verify deletions (pictures, properties, rooms)."
+            />
+
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div className="rounded-xl bg-surface-elevated/60 p-4 text-xs space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted">PIN Status</p>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                      userHasPin ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
+                    }`}
+                  >
+                    {userHasPin ? "● Custom Security PIN Active" : "○ No PIN Configured (Default: 1234)"}
+                  </span>
+                </div>
+                <p className="text-muted leading-relaxed pt-1">
+                  Your PIN safeguards sensitive business records. Every time you delete a property, room, or picture,
+                  the system will require you to verify this PIN before proceeding.
+                </p>
+              </div>
+
+              {/* PIN Form */}
+              <form onSubmit={handlePinSubmit} className="space-y-3 text-xs">
+                <p className="font-bold text-foreground">
+                  {userHasPin ? "Change Security PIN" : "First-Time Security PIN Setup"}
+                </p>
+
+                {pinMessage && (
+                  <div
+                    className={`flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium ${
+                      pinMessage.type === "success"
+                        ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                        : "bg-red-500/10 text-red-600 border border-red-500/20"
+                    }`}
+                  >
+                    {pinMessage.type === "success" ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                    <span>{pinMessage.text}</span>
+                  </div>
+                )}
+
+                {userHasPin && (
+                  <div>
+                    <label className="mb-1 block text-muted font-medium">Current PIN *</label>
+                    <input
+                      type="password"
+                      maxLength={8}
+                      placeholder="••••"
+                      value={pinOld}
+                      onChange={(e) => setPinOld(e.target.value)}
+                      className="w-full tracking-widest font-mono rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                      required
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="mb-1 block text-muted font-medium">New 4-Digit PIN *</label>
+                  <input
+                    type="password"
+                    maxLength={8}
+                    placeholder="••••"
+                    value={pinNew}
+                    onChange={(e) => setPinNew(e.target.value)}
+                    className="w-full tracking-widest font-mono rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-muted font-medium">Confirm New 4-Digit PIN *</label>
+                  <input
+                    type="password"
+                    maxLength={8}
+                    placeholder="••••"
+                    value={pinConfirm}
+                    onChange={(e) => setPinConfirm(e.target.value)}
+                    className="w-full tracking-widest font-mono rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={pinSaving}
+                  className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {pinSaving ? "Saving..." : userHasPin ? "Update Security PIN" : "Save Security PIN"}
+                </button>
+              </form>
+            </div>
+          </section>
+
           {/* Company Profile */}
           <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
             <SectionHeader
               icon={Building2}
-              title="Company Identity & Branding"
-              description="Organization name, logo, and correspondence address."
+              title="Company Identity & Country/Currency"
+              description="Organization operating country, billing currency, name, and correspondence address."
               onEdit={isAdmin ? openEditCompany : undefined}
             />
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 text-xs">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 border-b border-border-color/60 pb-4 mb-4">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border-color bg-surface-elevated p-1 shadow-sm">
+                {currentCompany.logoUrl ? (
+                  <img
+                    src={currentCompany.logoUrl}
+                    alt={currentCompany.name}
+                    className="h-full w-full object-contain"
+                  />
+                ) : (
+                  <Building2 size={28} className="text-muted" />
+                )}
+              </div>
+              <div className="space-y-0.5">
+                <h3 className="text-lg font-black text-foreground">{currentCompany.name}</h3>
+                <p className="font-mono text-xs text-blue-600 font-semibold">
+                  Dedicated Portal URL: /c/{currentCompany.slug || currentCompany.id}
+                </p>
+                <p className="text-xs text-muted">
+                  Your logo and company details dynamically brand all generated invoices, contracts, receipts, and folios.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 text-xs">
               <div>
                 <p className="text-muted">Company Name:</p>
                 <p className="text-sm font-bold text-foreground mt-0.5">{currentCompany.name}</p>
               </div>
               <div>
+                <p className="text-muted flex items-center gap-1">
+                  <Globe size={12} className="text-blue-500" />
+                  <span>Operating Country:</span>
+                </p>
+                <p className="text-sm font-bold text-foreground mt-0.5">
+                  {localStorage.getItem(`cc_company_country_${currentCompany.id}`) || "South Africa"}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted flex items-center gap-1">
+                  <Coins size={12} className="text-amber-500" />
+                  <span>Billing Currency:</span>
+                </p>
+                <p className="text-sm font-bold text-emerald-600 mt-0.5">{currentCompany.currency || "ZAR"}</p>
+              </div>
+              <div className="sm:col-span-3">
                 <p className="text-muted">Headquarters Address:</p>
                 <p className="text-sm font-semibold text-foreground mt-0.5">{currentCompany.address || "Unconfigured"}</p>
               </div>
@@ -466,6 +612,67 @@ export default function SettingsPage() {
               className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"
             />
           </div>
+
+          <div>
+            <label className="mb-1 block font-medium text-foreground">Company Profile Logo / Image URL</label>
+            <input
+              type="url"
+              placeholder="https://example.com/logo.png"
+              value={companyForm.logo_url}
+              onChange={(e) => setCompanyForm({ ...companyForm, logo_url: e.target.value })}
+              className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600 font-mono text-xs"
+            />
+            {companyForm.logo_url && (
+              <div className="mt-2 flex items-center gap-3 rounded-lg border border-border-color bg-surface-elevated/40 p-2">
+                <img
+                  src={companyForm.logo_url}
+                  alt="Logo Preview"
+                  className="h-10 w-10 object-contain rounded border border-border-color bg-white"
+                  onError={(e) => ((e.target as HTMLElement).style.display = "none")}
+                />
+                <span className="text-[11px] text-muted">Preview: will appear on invoices, contracts, and login portal</span>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block font-medium text-foreground flex items-center gap-1">
+                <Globe size={13} className="text-blue-500" />
+                <span>Operating Country *</span>
+              </label>
+              <select
+                value={companyForm.country}
+                onChange={(e) => handleCountryChange(e.target.value)}
+                className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"
+              >
+                {COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.name}>
+                    {c.name} ({c.currency})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block font-medium text-foreground flex items-center gap-1">
+                <Coins size={13} className="text-amber-500" />
+                <span>Billing Currency *</span>
+              </label>
+              <select
+                value={companyForm.currency}
+                onChange={(e) => setCompanyForm({ ...companyForm, currency: e.target.value })}
+                className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600 font-mono font-semibold"
+              >
+                {COMMON_CURRENCIES.map((cur) => (
+                  <option key={cur.code} value={cur.code}>
+                    {cur.code} - {cur.name} ({cur.symbol})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           <div>
             <label className="mb-1 block font-medium text-foreground">Headquarters Address</label>
             <input
@@ -474,6 +681,7 @@ export default function SettingsPage() {
               className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"
             />
           </div>
+
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setEditSection(null)} className="rounded-lg border border-border-color px-3 py-1.5 text-muted">
               Cancel

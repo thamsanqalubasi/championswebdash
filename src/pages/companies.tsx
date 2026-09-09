@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import {
   Building,
   Plus,
@@ -11,6 +12,8 @@ import {
   Phone,
   Mail,
   MapPin,
+  Sparkles,
+  Globe,
 } from "lucide-react";
 import { fetchCompanies, createCompany } from "@/lib/data";
 import type { Company } from "@/lib/types";
@@ -70,30 +73,40 @@ export default function CompaniesPage() {
             Multi-Company / Organization Network
           </h1>
           <p className="text-sm text-muted">
-            WordPress-style multisite property management. Manage separate commercial client companies, logos, and settings.
+            WordPress-style multisite property management. Manage separate commercial client companies, dedicated portals, and logos.
           </p>
         </div>
 
-        {isSuperAdmin && (
-          <button
-            type="button"
-            onClick={() => {
-              setName("");
-              setSlug("");
-              setAddress("");
-              setPhone("");
-              setEmail("");
-              setTaxRate(15.0);
-              setCurrency("ZAR");
-              setPaymentInstructions("");
-              setModalOpen(true);
-            }}
-            className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition"
+        <div className="flex items-center gap-2.5">
+          <Link
+            to="/signup"
+            className="flex items-center gap-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2.5 text-sm font-bold text-blue-600 hover:bg-blue-500/20 transition"
           >
-            <Plus size={18} />
-            <span>Create New Organization</span>
-          </button>
-        )}
+            <Sparkles size={16} className="text-amber-500" />
+            <span>Public Signup Form</span>
+          </Link>
+
+          {isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                setName("");
+                setSlug("");
+                setAddress("");
+                setPhone("");
+                setEmail("");
+                setTaxRate(15.0);
+                setCurrency("ZAR");
+                setPaymentInstructions("");
+                setModalOpen(true);
+              }}
+              className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition"
+            >
+              <Plus size={18} />
+              <span>Create Organization</span>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -108,9 +121,15 @@ export default function CompaniesPage() {
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600 font-black text-lg">
-                    {c.name.charAt(0)}
-                  </div>
+                  {c.logoUrl ? (
+                    <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl border border-border-color bg-surface-elevated p-1">
+                      <img src={c.logoUrl} alt={c.name} className="h-full w-full object-contain" />
+                    </div>
+                  ) : (
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600 font-black text-lg">
+                      {c.name.charAt(0)}
+                    </div>
+                  )}
                   <div>
                     <h3 className="font-black text-foreground">{c.name}</h3>
                     <p className="text-xs text-muted font-mono">{c.slug}</p>
@@ -122,6 +141,25 @@ export default function CompaniesPage() {
                     Active Org
                   </span>
                 )}
+              </div>
+
+              {/* Dedicated Portal URL preview */}
+              <div className="rounded-xl border border-border-color bg-surface-elevated/60 p-2.5 text-[11px] flex items-center justify-between gap-2">
+                <div className="truncate">
+                  <span className="text-muted block text-[10px] uppercase font-bold">Portal URL</span>
+                  <span className="font-mono text-blue-600 font-semibold truncate block">
+                    /c/{c.slug || c.id}/login
+                  </span>
+                </div>
+                <a
+                  href={`/c/${c.slug || c.id}/login`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="shrink-0 flex items-center gap-1 rounded-lg border border-border-color px-2 py-1 text-[10px] font-bold text-muted hover:text-foreground hover:bg-surface-elevated"
+                >
+                  <ExternalLink size={11} />
+                  <span>Open</span>
+                </a>
               </div>
 
               <div className="space-y-1.5 text-xs text-muted">

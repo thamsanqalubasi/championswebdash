@@ -1,7 +1,9 @@
-import { Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, Outlet, useLocation, useParams } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { AppShell } from "@/components/app-shell";
 import LoginPage from "@/pages/login";
+import SignupPage from "@/pages/signup";
+import SetPasswordPage from "@/pages/set-password";
 import DashboardPage from "@/pages/dashboard";
 import CommercialBookingsPage from "@/pages/commercial-bookings";
 import RoomManagementPage from "@/pages/room-management";
@@ -26,6 +28,11 @@ import CompaniesPage from "@/pages/companies";
 import ContractsPage from "@/pages/contracts";
 import SettingsPage from "@/pages/settings";
 import AuditTrailPage from "@/pages/audit-trail";
+
+function CompanySlugRedirect() {
+  const { companySlug } = useParams<{ companySlug: string }>();
+  return <Navigate to={`/c/${companySlug}/login`} replace />;
+}
 
 function ProtectedLayout() {
   const { user, loading } = useAuth();
@@ -54,7 +61,15 @@ function ProtectedLayout() {
 export function AppRouter() {
   return (
     <Routes>
+      {/* Public Organization & Authentication Routes */}
+      <Route path="/signup" element={<SignupPage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/set-password" element={<SetPasswordPage />} />
+
+      {/* Unique Dedicated Multi-Tenant Organization URLs */}
+      <Route path="/c/:companySlug" element={<CompanySlugRedirect />} />
+      <Route path="/c/:companySlug/login" element={<LoginPage />} />
+      <Route path="/c/:companySlug/set-password" element={<SetPasswordPage />} />
 
       <Route element={<ProtectedLayout />}>
         <Route path="/dashboard" element={<DashboardPage />} />

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { ImageGallery } from "@/components/image-gallery";
-import { fetchWorkOrdersData } from "@/lib/data";
+import { fetchWorkOrdersData, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { fetchAdminInfo, uploadFileToBucket } from "@/lib/storage";
 import { useAuth } from "@/lib/auth";
@@ -40,7 +41,9 @@ function formatDate(value: string) {
 }
 
 export default function WorkOrdersPage() {
-  const { user } = useAuth();
+  const { user, currentCompany } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [prefillHandled, setPrefillHandled] = useState(false);
   const [workOrders, setWorkOrders] = useState<WorkOrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +89,23 @@ export default function WorkOrdersPage() {
     void loadData();
     return () => { cancelled = true; };
   }, [reloadKey]);
+
+  useEffect(() => {
+    if (!prefillHandled && !loading) {
+      const create = searchParams.get("create");
+      const propId = searchParams.get("propertyId");
+      if (create === "1" || propId) {
+        setEditingId(null);
+        setForm({
+          ...emptyForm,
+          property_id: propId || "",
+        });
+        setModalOpen(true);
+        setPrefillHandled(true);
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [searchParams, prefillHandled, loading, setSearchParams]);
 
   const reload = () => setReloadKey((v) => v + 1);
 
@@ -146,10 +166,21 @@ export default function WorkOrdersPage() {
     try {
       const admin = await fetchAdminInfo(user?.email ?? undefined);
       const executorName = admin.fullName || user?.email || "Admin";
-      const payload: Record<string, unknown> = { description: form.description, category: form.category, priority: form.priority, status: form.status, scheduled_date: form.scheduled_date || null, estimated_cost: form.estimated_cost, actual_cost: form.actual_cost };
-      if (form.property_id) payload.property_id = form.property_id;
-      if (form.maintainer_id) payload.maintainer_id = form.maintainer_id;
-      payload.executed_by_name = executorName;
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      const payload: Record<string, unknown> = {
+        description: form.description,
+        category: form.category,
+        priority: form.priority,
+        status: form.status,
+        scheduled_date: form.scheduled_date || null,
+        estimated_cost: form.estimated_cost,
+        actual_cost: form.actual_cost,
+        cost: form.actual_cost || form.estimated_cost || 0,
+        executed_by_name: executorName,
+        company_id: compId,
+      };
+      if (form.property_id && isValidUuid(form.property_id)) payload.property_id = form.property_id;
+      if (form.maintainer_id && isValidUuid(form.maintainer_id)) payload.maintainer_id = form.maintainer_id;
       if (editingId) {
         const { error: err } = await supabase.from("maintenance").update(payload).eq("id", editingId);
         if (err) throw err;

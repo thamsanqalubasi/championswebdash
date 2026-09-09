@@ -3,7 +3,9 @@ import { ModulePage } from "@/components/module-page";
 import { ErrorState, LoadingState } from "@/components/data-state";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
-import { fetchAdminInfo, fetchCompanyInfo } from "@/lib/storage";
+import { fetchAdminInfo, fetchCompanyInfo, downloadPdfDocument } from "@/lib/storage";
+import { DocumentShareModal } from "@/components/document-share-modal";
+import { Download, Mail, Eye } from "lucide-react";
 import {
   buildBalanceSheetHtml,
   type AdminInfo,
@@ -356,6 +358,21 @@ export default function FinanceAccountsPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shareModalDoc, setShareModalDoc] = useState<{
+    isOpen: boolean;
+    documentTitle: string;
+    documentType?: string;
+    documentHtml?: string;
+    documentUrl?: string;
+    fileNameBase?: string;
+    ownerName?: string;
+    ownerEmail?: string;
+    defaultSubject?: string;
+    defaultMessage?: string;
+  }>({
+    isOpen: false,
+    documentTitle: "",
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -646,6 +663,56 @@ export default function FinanceAccountsPage() {
     }
   };
 
+  const getBalanceSheetHtml = () => {
+    if (!summary || !companyInfo || !adminInfo) return "";
+    return buildBalanceSheetHtml(
+      {
+        scopeLabel,
+        startDate,
+        endDate,
+        presentation,
+        includeSignature: showSignature,
+        includeAdminName: showAdminName,
+        includeExecutor: showExecutor,
+        summary,
+        monthlyRows,
+        transactionRows,
+      },
+      companyInfo,
+      adminInfo,
+    );
+  };
+
+  const handleDownloadBalanceSheetPdf = () => {
+    const html = getBalanceSheetHtml();
+    if (!html) {
+      setError("Please generate the balance sheet first.");
+      return;
+    }
+    const cleanScope = scopeLabel.replace(/[^a-zA-Z0-9_-]/g, "_");
+    downloadPdfDocument(html, `balance-sheet-${cleanScope}-${startDate}-to-${endDate}`);
+  };
+
+  const handleShareBalanceSheet = () => {
+    const html = getBalanceSheetHtml();
+    if (!html) {
+      setError("Please generate the balance sheet first.");
+      return;
+    }
+    const cleanScope = scopeLabel.replace(/[^a-zA-Z0-9_-]/g, "_");
+    setShareModalDoc({
+      isOpen: true,
+      documentTitle: `Balance Sheet - ${scopeLabel} (${startDate} to ${endDate})`,
+      documentType: "Financial Statement",
+      documentHtml: html,
+      fileNameBase: `balance-sheet-${cleanScope}-${startDate}-to-${endDate}`,
+      ownerName: "Property Owner / Stakeholder",
+      ownerEmail: "",
+      defaultSubject: `Balance Sheet: ${scopeLabel} (${startDate} to ${endDate}) - ${companyInfo?.companyName || currentCompany?.name || "Champions Court"}`,
+      defaultMessage: `Please find attached the official financial balance sheet statement for ${scopeLabel} covering the period ${startDate} to ${endDate}.`,
+    });
+  };
+
   return (
     <ModulePage title="Finance Accounts" description="Generate balance sheets for whole system or specific properties.">
       <section className="space-y-4 rounded-lg border border-border-color bg-surface p-4">
@@ -730,11 +797,17 @@ export default function FinanceAccountsPage() {
           <button type="button" onClick={() => void generateBalanceSheet()} className="rounded-md border border-border-color bg-surface-elevated px-4 py-2 text-sm font-medium">
             Generate Balance Sheet
           </button>
-          <button type="button" onClick={() => openPdfWindow(false)} className="rounded-md border border-border-color px-4 py-2 text-sm text-muted hover:bg-surface-elevated">
-            View PDF
+          <button type="button" onClick={() => openPdfWindow(false)} className="inline-flex items-center gap-1.5 rounded-md border border-border-color px-4 py-2 text-sm text-muted hover:bg-surface-elevated">
+            <Eye size={14} />
+            <span>View PDF</span>
           </button>
-          <button type="button" onClick={() => openPdfWindow(true)} className="rounded-md border border-border-color px-4 py-2 text-sm text-muted hover:bg-surface-elevated">
-            Download PDF
+          <button type="button" onClick={handleDownloadBalanceSheetPdf} className="inline-flex items-center gap-1.5 rounded-md border border-border-color px-4 py-2 text-sm text-muted hover:bg-surface-elevated">
+            <Download size={14} />
+            <span>Download as PDF</span>
+          </button>
+          <button type="button" onClick={handleShareBalanceSheet} className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface shadow hover:opacity-90">
+            <Mail size={14} />
+            <span>Email / Share</span>
           </button>
         </div>
       </section>
@@ -831,6 +904,20 @@ export default function FinanceAccountsPage() {
           )}
         </section>
       )}
+
+      <DocumentShareModal
+        isOpen={shareModalDoc.isOpen}
+        onClose={() => setShareModalDoc((prev) => ({ ...prev, isOpen: false }))}
+        documentTitle={shareModalDoc.documentTitle}
+        documentType={shareModalDoc.documentType}
+        documentHtml={shareModalDoc.documentHtml}
+        documentUrl={shareModalDoc.documentUrl}
+        fileNameBase={shareModalDoc.fileNameBase}
+        ownerName={shareModalDoc.ownerName}
+        ownerEmail={shareModalDoc.ownerEmail}
+        defaultSubject={shareModalDoc.defaultSubject}
+        defaultMessage={shareModalDoc.defaultMessage}
+      />
     </ModulePage>
   );
 }

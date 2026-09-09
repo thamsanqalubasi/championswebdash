@@ -3,8 +3,10 @@ import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
 import { supabase } from "@/lib/supabase";
+import { isValidUuid } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
-import { fetchCompanyInfo, fetchAdminInfo, downloadHtmlDocument, uploadPdfFromHtml, createPdfAttachmentFromUrl } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, downloadHtmlDocument, downloadPdfDocument, downloadPdfFromUrl, uploadPdfFromHtml, createPdfAttachmentFromUrl } from "@/lib/storage";
+import { DocumentShareModal } from "@/components/document-share-modal";
 import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
 import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
 import { 
@@ -106,7 +108,7 @@ function StatCard({ label, value, detail, icon: Icon, colorClass = "text-foregro
 }
 
 export default function RentCollectionPage() {
-  const { user } = useAuth();
+  const { user, currentCompany } = useAuth();
   const [tenants, setTenants] = useState<RentTenantRow[]>([]);
   const [paymentsByTenant, setPaymentsByTenant] = useState<Record<string, TenantPaymentHistoryRow[]>>({});
   const [invoiceById, setInvoiceById] = useState<Record<string, InvoiceLite>>({});
@@ -122,6 +124,21 @@ export default function RentCollectionPage() {
   const [saving, setSaving] = useState(false);
   const [invoiceActionPaymentId, setInvoiceActionPaymentId] = useState<string | null>(null);
   const [sendingPaymentId, setSendingPaymentId] = useState<string | null>(null);
+  const [shareModalDoc, setShareModalDoc] = useState<{
+    isOpen: boolean;
+    documentTitle: string;
+    documentType?: string;
+    documentHtml?: string;
+    documentUrl?: string;
+    fileNameBase?: string;
+    ownerName?: string;
+    ownerEmail?: string;
+    defaultSubject?: string;
+    defaultMessage?: string;
+  }>({
+    isOpen: false,
+    documentTitle: "",
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -303,55 +320,43 @@ export default function RentCollectionPage() {
     if (!paymentForm.amountPaid || paymentForm.amountPaid <= 0) { alert("Enter a valid payment amount."); return; }
     setSaving(true);
     try {
-      const monthLabel = `${paymentForm.paidMonth}-01`;
       const admin = await fetchAdminInfo(user?.email ?? undefined);
       const executorName = admin.fullName || user?.email || "Admin";
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
 
-      const paymentPayload = {
+      const paymentPayload: Record<string, unknown> = {
         tenant_id: selectedTenant.id,
+        property_id: selectedTenant.propertyId,
         payment_date: paymentForm.paymentDate,
         amount_paid: paymentForm.amountPaid,
-        paid_months: [monthLabel],
-        executed_by_name: executorName,
-      };
-      const fallbackPaymentPayload = {
-        tenant_id: selectedTenant.id,
-        payment_date: paymentForm.paymentDate,
-        amount_paid: paymentForm.amountPaid,
-        paid_months: [monthLabel],
+        paid_month: paymentForm.paidMonth,
+        notes: `Recorded by ${executorName}`,
+        company_id: compId,
       };
 
-      let insertedPayment: { id?: string } | null = null;
-      const { data: insertedWithExecutor, error: paymentError } = await supabase
+      const { data: insertedPayment, error: paymentError } = await supabase
         .from("tenant_rent_payments")
         .insert(paymentPayload)
         .select("id")
         .single();
 
-      if (paymentError) {
-        if (isExecutedByNameColumnMissing(paymentError)) {
-          const { data: insertedFallback, error: fallbackError } = await supabase
-            .from("tenant_rent_payments")
-            .insert(fallbackPaymentPayload)
-            .select("id")
-            .single();
-          if (fallbackError) throw fallbackError;
-          insertedPayment = insertedFallback;
-        } else {
-          throw paymentError;
-        }
-      } else {
-        insertedPayment = insertedWithExecutor;
-      }
+      if (paymentError) throw paymentError;
 
       await supabase.from("audit_log").insert({
-        user_email: user?.email ?? null,
-        user_name: user?.email ?? "Admin",
+        user_email: user?.email || "admin@championscourt.co.za",
+        user_name: executorName,
         action: "rent_payment_recorded",
         entity_type: "tenant_rent_payment",
-        entity_id: insertedPayment?.id ?? null,
-        entity_name: selectedTenant.fullName,
-        details: { tenant_id: selectedTenant.id, property_id: selectedTenant.propertyId, amount_paid: paymentForm.amountPaid, payment_date: paymentForm.paymentDate, paid_month: paymentForm.paidMonth },
+        entity_id: insertedPayment?.id && isValidUuid(insertedPayment.id) ? insertedPayment.id : null,
+        company_id: compId,
+        details: {
+          tenant_name: selectedTenant.fullName,
+          tenant_id: selectedTenant.id,
+          property_id: selectedTenant.propertyId,
+          amount_paid: paymentForm.amountPaid,
+          payment_date: paymentForm.paymentDate,
+          paid_month: paymentForm.paidMonth,
+        },
       });
 
       setSelectedTenant(null); reload();
@@ -363,6 +368,7 @@ export default function RentCollectionPage() {
     if (!tenant.propertyId) return;
     setInvoiceActionPaymentId(payment.id);
     try {
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
       const month = payment.paymentDate.slice(0, 7);
       const { data: createdInvoice, error: createInvoiceError } = await supabase.from("invoices").insert({
         tenant_id: tenant.id,
@@ -371,6 +377,7 @@ export default function RentCollectionPage() {
         due_date: payment.paymentDate,
         total_amount: payment.amountPaid,
         status: "paid",
+        company_id: compId,
       }).select("id").single();
 
       if (createInvoiceError) throw createInvoiceError;
@@ -379,6 +386,7 @@ export default function RentCollectionPage() {
         invoice_id: createdInvoice.id,
         description: `Rent payment invoice. Payment ID: ${payment.id}`,
         amount: payment.amountPaid,
+        company_id: compId,
       });
 
       reload();
@@ -411,12 +419,17 @@ export default function RentCollectionPage() {
     if (!invoiceId) return;
     try {
       const invoice = invoiceById[invoiceId];
+      const fileNameBase = `receipt-${tenantName.replace(/\s+/g, "_")}-${payment.paymentDate}`;
+      if (invoice?.pdfUrl && invoice.pdfUrl.startsWith("http") && invoice.pdfUrl.toLowerCase().includes(".pdf")) {
+        await downloadPdfFromUrl(invoice.pdfUrl, fileNameBase);
+        return;
+      }
       const [company, admin] = await Promise.all([fetchCompanyInfo(), fetchAdminInfo(user?.email ?? undefined)]);
       const html = invoice?.pdfUrl && invoice.pdfUrl.startsWith("<") ? invoice.pdfUrl : buildProfessionalInvoiceHtml(
         { invoiceId, tenantName, propertyName, month: invoice?.month ?? payment.paymentDate.slice(0, 7), dueDate: payment.paymentDate, status: invoice?.status ?? "paid", lineItems: [{ description: `Rent payment on ${payment.paymentDate}`, amount: payment.amountPaid }] },
         company, admin
       );
-      downloadHtmlDocument(html, `invoice-${invoiceId}.html`);
+      downloadPdfDocument(html, fileNameBase);
     } catch (e) { alert("Could not download invoice."); }
   };
 
@@ -432,18 +445,25 @@ export default function RentCollectionPage() {
         company, admin
       );
       if (channel === "email") {
-        if (!tenant.email || tenant.email === "-") { alert("No email available."); return; }
-        const subject = `Rent Receipt - ${tenant.fullName}`;
         const pdfUrl = invoice?.pdfUrl && invoice.pdfUrl.startsWith("http") && invoice.pdfUrl.toLowerCase().includes(".pdf")
           ? invoice.pdfUrl
           : await uploadPdfFromHtml("invoice-pdfs", invoiceId, html, `invoice-${invoiceId}`);
         if (!invoice?.pdfUrl || invoice.pdfUrl !== pdfUrl) {
           await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoiceId);
         }
-        const attachment = await createPdfAttachmentFromUrl(pdfUrl, `invoice-${invoiceId}.pdf`);
-        const emailHtml = wrapDocumentInEmailHtml({ recipientName: tenant.fullName, subject, bodyText: `Invoice for ${payment.paymentDate} settled.`, documentHtml: html, companyName: company?.companyName });
-        const result = await sendEmailViaApi({ to: tenant.email, subject, html: emailHtml, attachments: [attachment] });
-        if (result.success) alert("Sent successfully!");
+        setShareModalDoc({
+          isOpen: true,
+          documentTitle: `Rent Receipt - ${tenant.fullName} (${payment.paymentDate})`,
+          documentType: "Receipt",
+          documentHtml: html,
+          documentUrl: pdfUrl,
+          fileNameBase: `receipt-${tenant.fullName.replace(/\s+/g, "_")}-${payment.paymentDate}`,
+          ownerName: tenant.fullName,
+          ownerEmail: tenant.email && tenant.email !== "-" ? tenant.email : "",
+          defaultSubject: `Rent Receipt - ${tenant.fullName} - ${tenant.propertyName}`,
+          defaultMessage: `Dear ${tenant.fullName},\n\nPlease find your payment receipt for ${payment.paymentDate} in the amount of ${formatCurrency(payment.amountPaid)}.`,
+        });
+        return;
       } else {
         const phone = tenant.phone.replace(/\D/g, "");
         if (!phone) { alert("No phone available."); return; }
@@ -695,6 +715,20 @@ export default function RentCollectionPage() {
           </div>
         </div>
       </Modal>
+
+      <DocumentShareModal
+        isOpen={shareModalDoc.isOpen}
+        onClose={() => setShareModalDoc((prev) => ({ ...prev, isOpen: false }))}
+        documentTitle={shareModalDoc.documentTitle}
+        documentType={shareModalDoc.documentType}
+        documentHtml={shareModalDoc.documentHtml}
+        documentUrl={shareModalDoc.documentUrl}
+        fileNameBase={shareModalDoc.fileNameBase}
+        ownerName={shareModalDoc.ownerName}
+        ownerEmail={shareModalDoc.ownerEmail}
+        defaultSubject={shareModalDoc.defaultSubject}
+        defaultMessage={shareModalDoc.defaultMessage}
+      />
     </ModulePage>
   );
 }

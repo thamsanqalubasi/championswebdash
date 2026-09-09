@@ -76,6 +76,167 @@ export function wrapDocumentInEmailHtml(opts: {
 </html>`;
 }
 
+export function wrapStaffInvitationEmailHtml(opts: {
+  recipientName: string;
+  companyName: string;
+  companyLogo?: string;
+  jobTitle: string;
+  department: string;
+  inviteUrl: string;
+  invitedByName: string;
+}): string {
+  const { recipientName, companyName, companyLogo, jobTitle, department, inviteUrl, invitedByName } = opts;
+  const year = new Date().getFullYear();
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Staff Account Invitation - ${companyName}</title>
+<style>
+  body { margin: 0; padding: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1e293b; }
+  .wrapper { padding: 32px 16px; }
+  .card { max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.15); }
+  .header { background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); padding: 36px 32px; text-align: center; color: #ffffff; }
+  .logo { max-height: 48px; margin-bottom: 12px; }
+  .header h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+  .header p { margin: 6px 0 0; font-size: 13px; color: #bfdbfe; font-weight: 500; }
+  .content { padding: 32px; }
+  .greeting { font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 14px; }
+  .body-text { font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px; }
+  .highlight-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; margin: 0 0 24px; }
+  .highlight-row { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
+  .highlight-row:last-child { border-bottom: none; }
+  .highlight-label { color: #64748b; font-weight: 500; }
+  .highlight-val { color: #0f172a; font-weight: 700; }
+  .btn-container { text-align: center; margin: 28px 0; }
+  .btn { display: inline-block; background: #2563eb; color: #ffffff !important; text-decoration: none; font-size: 15px; font-weight: 700; padding: 14px 32px; border-radius: 10px; box-shadow: 0 4px 14px rgba(37,99,235,0.35); }
+  .btn:hover { background: #1d4ed8; }
+  .direct-link { font-size: 12px; color: #64748b; line-height: 1.5; word-break: break-all; margin: 0 0 20px; padding: 12px; background: #f1f5f9; border-radius: 8px; }
+  .security-note { font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px; }
+  .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="card">
+    <div class="header">
+      ${companyLogo ? `<img src="${companyLogo}" alt="${companyName}" class="logo" />` : ""}
+      <h1>${companyName}</h1>
+      <p>Staff Portal Access & Onboarding</p>
+    </div>
+    <div class="content">
+      <p class="greeting">Hello ${recipientName},</p>
+      <p class="body-text">
+        You have been invited by <strong>${invitedByName}</strong> to join <strong>${companyName}</strong> on the property management platform.
+      </p>
+      <div class="highlight-box">
+        <div class="highlight-row">
+          <span class="highlight-label">Organization:</span>
+          <span class="highlight-val">${companyName}</span>
+        </div>
+        <div class="highlight-row">
+          <span class="highlight-label">Job Title:</span>
+          <span class="highlight-val">${jobTitle}</span>
+        </div>
+        <div class="highlight-row">
+          <span class="highlight-label">Department:</span>
+          <span class="highlight-val" style="text-transform: capitalize;">${department.replace(/_/g, " ")}</span>
+        </div>
+      </div>
+      <p class="body-text">
+        Please click the button below to create your password and log in to your company's dedicated portal:
+      </p>
+      <div class="btn-container">
+        <a href="${inviteUrl}" target="_blank" class="btn">Create Password &amp; Log In &rarr;</a>
+      </div>
+      <p style="font-size: 12px; color: #64748b; margin-bottom: 6px;">Or paste this link into your browser:</p>
+      <div class="direct-link">${inviteUrl}</div>
+      <div class="security-note">
+        This invitation was dispatched securely. If you did not expect this email, please notify ${invitedByName} or ignore this message.
+      </div>
+    </div>
+    <div class="footer">
+      &copy; ${year} ${companyName}. Powered by Enterprise Property Management SaaS.
+    </div>
+  </div>
+</div>
+</body>
+</html>`;
+}
+
+export function wrapStaffPasswordResetEmailHtml(opts: {
+  recipientName: string;
+  companyName: string;
+  companyLogo?: string;
+  resetUrl: string;
+  requestedByName: string;
+  requestedByRole: string;
+}): string {
+  const { recipientName, companyName, companyLogo, resetUrl, requestedByName, requestedByRole } = opts;
+  const year = new Date().getFullYear();
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Password Reset - ${companyName}</title>
+<style>
+  body { margin: 0; padding: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1e293b; }
+  .wrapper { padding: 32px 16px; }
+  .card { max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.15); }
+  .header { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 36px 32px; text-align: center; color: #ffffff; }
+  .logo { max-height: 48px; margin-bottom: 12px; }
+  .header h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+  .header p { margin: 6px 0 0; font-size: 13px; color: #94a3b8; font-weight: 500; }
+  .content { padding: 32px; }
+  .greeting { font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 14px; }
+  .body-text { font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px; }
+  .alert-box { background: #fef2f2; border: 1px solid #fee2e2; border-left: 4px solid #ef4444; border-radius: 8px; padding: 14px 16px; margin: 0 0 24px; font-size: 13px; color: #991b1b; }
+  .btn-container { text-align: center; margin: 28px 0; }
+  .btn { display: inline-block; background: #2563eb; color: #ffffff !important; text-decoration: none; font-size: 15px; font-weight: 700; padding: 14px 32px; border-radius: 10px; box-shadow: 0 4px 14px rgba(37,99,235,0.35); }
+  .btn:hover { background: #1d4ed8; }
+  .direct-link { font-size: 12px; color: #64748b; line-height: 1.5; word-break: break-all; margin: 0 0 20px; padding: 12px; background: #f1f5f9; border-radius: 8px; }
+  .security-note { font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px; }
+  .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="card">
+    <div class="header">
+      ${companyLogo ? `<img src="${companyLogo}" alt="${companyName}" class="logo" />` : ""}
+      <h1>${companyName}</h1>
+      <p>Staff Account Security</p>
+    </div>
+    <div class="content">
+      <p class="greeting">Hello ${recipientName},</p>
+      <p class="body-text">
+        A password reset was requested for your staff portal account by <strong>${requestedByName}</strong> (${requestedByRole}).
+      </p>
+      <div class="alert-box">
+        If you requested this reset or your manager initiated it for you, you can proceed below to create your new password.
+      </div>
+      <div class="btn-container">
+        <a href="${resetUrl}" target="_blank" class="btn">Reset Staff Password &rarr;</a>
+      </div>
+      <p style="font-size: 12px; color: #64748b; margin-bottom: 6px;">Or paste this reset link into your browser:</p>
+      <div class="direct-link">${resetUrl}</div>
+      <div class="security-note">
+        If you did not authorize or expect this reset request, please contact your department manager or IT administrator immediately.
+      </div>
+    </div>
+    <div class="footer">
+      &copy; ${year} ${companyName}. Enterprise RBAC Security.
+    </div>
+  </div>
+</div>
+</body>
+</html>`;
+}
+
 /* ------------------------------------------------------------------ */
 /*  API callers                                                        */
 /* ------------------------------------------------------------------ */

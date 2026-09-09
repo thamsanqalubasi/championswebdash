@@ -4,7 +4,7 @@ import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { supabase } from "@/lib/supabase";
-import { verifyAdminPin } from "@/lib/data";
+import { verifyAdminPin, isValidUuid } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
 import { fetchAdminInfo } from "@/lib/storage";
 import { billStatusMeta, frequencyLabel, type BillFrequency, type BillRow, type BillStatus } from "@/lib/bills";
@@ -86,7 +86,7 @@ function isFrequencyColumnMissing(error: unknown) {
 }
 
 export default function BillsPage() {
-  const { user } = useAuth();
+  const { user, currentCompany } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [bills, setBills] = useState<BillRow[]>([]);
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
@@ -110,19 +110,18 @@ export default function BillsPage() {
     let cancelled = false;
 
     async function fetchSchedules() {
-      const withFrequency = await supabase
+      const res = await supabase
         .from("property_bill_schedules")
-        .select("id, title, property_id, amount, due_day, frequency, created_at, is_active, properties(name)")
+        .select("id, name, property_id, amount, due_day, created_at, is_active, properties(name)")
         .eq("is_active", true)
-        .order("title");
+        .order("name");
 
-      if (!withFrequency.error) {
-        setSupportsFrequency(true);
-        return (withFrequency.data ?? []) as ScheduleBaseRow[];
-      }
-
-      if (!isFrequencyColumnMissing(withFrequency.error)) {
-        throw withFrequency.error;
+      if (!res.error && res.data) {
+        return res.data.map((row) => ({
+          ...row,
+          title: row.name,
+          frequency: "monthly" as const,
+        }));
       }
 
       const fallback = await supabase
@@ -133,7 +132,7 @@ export default function BillsPage() {
 
       if (fallback.error) throw fallback.error;
       setSupportsFrequency(false);
-      return ((fallback.data ?? []) as ScheduleBaseRow[]).map((row) => ({ ...row, frequency: "monthly" }));
+      return ((fallback.data ?? []) as ScheduleBaseRow[]).map((row) => ({ ...row, frequency: "monthly" as const }));
     }
 
     async function loadData() {
@@ -145,8 +144,8 @@ export default function BillsPage() {
           fetchSchedules(),
           supabase
             .from("property_monthly_bills")
-            .select("schedule_id, month, due_date, amount, status, paid_at")
-            .order("due_date", { ascending: false }),
+            .select("schedule_id, month, amount, status, paid_date")
+            .order("month", { ascending: false }),
           supabase.from("properties").select("id, name").order("name"),
         ]);
 
@@ -157,10 +156,10 @@ export default function BillsPage() {
           const monthlyRows = (monthlyResult.data ?? []).map((row) => ({
             schedule_id: String(row.schedule_id ?? ""),
             month: String(row.month ?? ""),
-            due_date: String(row.due_date ?? ""),
+            due_date: "",
             amount: Number(row.amount ?? 0),
             status: String(row.status ?? "pending"),
-            paid_at: row.paid_at ? String(row.paid_at) : null,
+            paid_at: row.paid_date ? String(row.paid_date) : null,
           })) as MonthlyBillRow[];
 
           const monthlyBySchedule = new Map<string, MonthlyBillRow[]>();
@@ -295,15 +294,14 @@ export default function BillsPage() {
 
     if (existingMonthlyError) throw existingMonthlyError;
 
-    const monthlyPayload = {
+    const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+    const monthlyPayload: Record<string, unknown> = {
       schedule_id: scheduleId,
-      property_id: form.propertyId,
       month: monthKey,
-      due_date: buildDueDate(monthKey, form.dueDay),
       amount: form.status === "paid" ? form.paidAmount : form.amount,
       status: form.status,
-      paid_at: form.status === "paid" ? `${form.paidDate}T12:00:00.000Z` : null,
-      executed_by_name: executorName,
+      paid_date: form.status === "paid" ? form.paidDate : null,
+      company_id: compId,
     };
 
     if (existingMonthly?.id) {
@@ -357,13 +355,14 @@ export default function BillsPage() {
         }
       }
 
-      const scheduleBase = {
-        title: form.name,
+      const scheduleBase: Record<string, unknown> = {
+        name: form.name,
         property_id: form.propertyId,
         category: "other",
         amount: form.amount,
         due_day: form.dueDay,
         is_active: true,
+        company_id: compId,
       };
 
       const saveSchedule = async (withFrequency: boolean) => {

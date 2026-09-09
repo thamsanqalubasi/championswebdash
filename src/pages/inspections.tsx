@@ -27,8 +27,9 @@ import {
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 import { ImageGallery } from "@/components/image-gallery";
-import { fetchInspectionsData } from "@/lib/data";
+import { fetchInspectionsData, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
 import { uploadFileToBucket } from "@/lib/storage";
 import type { InspectionRow } from "@/lib/types";
 
@@ -76,6 +77,7 @@ function StatCard({ label, value, detail, icon: Icon, colorClass = "text-foregro
 }
 
 export default function InspectionsPage() {
+  const { currentCompany } = useAuth();
   const [inspections, setInspections] = useState<InspectionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -149,9 +151,16 @@ export default function InspectionsPage() {
     if (!editingId && !form.property_id) { alert("Please select a property."); return; }
     setSaving(true);
     try {
-      const payload: Record<string, unknown> = { type: form.type, inspector_name: form.inspector_name, scheduled_date: form.scheduled_date || null, status: form.status };
-      if (form.property_id) payload.property_id = form.property_id;
-      if (form.tenant_id) payload.tenant_id = form.tenant_id;
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      const payload: Record<string, unknown> = {
+        type: form.type,
+        inspector_name: form.inspector_name,
+        scheduled_date: form.scheduled_date || null,
+        status: form.status,
+        company_id: compId,
+      };
+      if (form.property_id && isValidUuid(form.property_id)) payload.property_id = form.property_id;
+      if (form.tenant_id && isValidUuid(form.tenant_id)) payload.tenant_id = form.tenant_id;
       if (editingId) {
         const { error: err } = await supabase.from("inspections").update(payload).eq("id", editingId);
         if (err) throw err;

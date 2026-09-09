@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
-import { fetchProvidersData } from "@/lib/data";
+import { fetchProvidersData, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
 import type { ProviderRow } from "@/lib/types";
 import { 
   Plus, 
@@ -46,6 +47,7 @@ function StatCard({ label, value, detail, icon: Icon, colorClass = "text-foregro
 }
 
 export default function ProvidersPage() {
+  const { currentCompany } = useAuth();
   const [providers, setProviders] = useState<ProviderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,36 +58,47 @@ export default function ProvidersPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ProviderRow | null>(null);
-  const [detailsRow, setDetailsRow] = useState<ProviderRow | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState<ProviderRow | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     async function loadData() {
       setLoading(true); setError(null);
-      try { const result = await fetchProvidersData(); if (!cancelled) setProviders(result); }
-      catch (e) { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load providers."); }
-      finally { if (!cancelled) setLoading(false); }
+      try {
+        const result = await fetchProvidersData();
+        if (!cancelled) setProviders(result);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Could not load maintainers.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
     void loadData();
     return () => { cancelled = true; };
   }, [reloadKey]);
 
-  const reload = () => setReloadKey((v) => v + 1);
-
-  const totals = useMemo(() => ({
-    jobs: providers.reduce((s, r) => s + r.totalJobs, 0),
-    paid: providers.reduce((s, r) => s + r.totalPaid, 0),
-  }), [providers]);
+  const reload = () => setReloadKey(k => k + 1);
 
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return providers;
     const q = searchQuery.toLowerCase();
-    return providers.filter(p => p.name.toLowerCase().includes(q) || p.specialization.toLowerCase().includes(q));
+    return providers.filter(p => p.name.toLowerCase().includes(q) || p.specialization.toLowerCase().includes(q) || p.phone.toLowerCase().includes(q));
   }, [providers, searchQuery]);
 
+  const totals = useMemo(() => ({
+    jobs: providers.reduce((sum, p) => sum + p.totalJobs, 0),
+    paid: providers.reduce((sum, p) => sum + p.totalPaid, 0),
+  }), [providers]);
+
   const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
-  const openEdit = (row: ProviderRow) => { setEditingId(row.id); setForm({ name: row.name, phone: row.phone, specialization: row.specialization, rate: row.rate }); setModalOpen(true); };
+  const openEdit = (p: ProviderRow) => {
+    setEditingId(p.id);
+    setForm({ name: p.name, phone: p.phone, specialization: p.specialization, rate: p.rate });
+    setModalOpen(true);
+  };
+  const openDetail = (p: ProviderRow) => { setSelectedProvider(p); setDrawerOpen(true); };
 
   const onSave = async () => {
     if (!form.name.trim() || !form.phone.trim() || !form.specialization.trim()) {
@@ -94,7 +107,14 @@ export default function ProvidersPage() {
     }
     setSaving(true);
     try {
-      const payload = { name: form.name, phone: form.phone, specialization: form.specialization, rate: form.rate };
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      const payload: Record<string, unknown> = {
+        name: form.name.trim(),
+        phone: form.phone.trim(),
+        specialization: form.specialization.trim(),
+        rate: form.rate,
+        company_id: compId,
+      };
       if (editingId) {
         const { error: err } = await supabase.from("maintainers").update(payload).eq("id", editingId);
         if (err) throw err;

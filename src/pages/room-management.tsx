@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   BedDouble,
   Plus,
@@ -15,6 +15,18 @@ import {
   Coffee,
   CheckCheck,
   AlertCircle,
+  Wifi,
+  Tv,
+  Wind,
+  Sun,
+  Wine,
+  Bath,
+  Bell,
+  Shield,
+  Image as ImageIcon,
+  X,
+  Loader2,
+  Lock,
 } from "lucide-react";
 import {
   fetchCommercialRooms,
@@ -25,7 +37,12 @@ import {
   updateHousekeepingStatus,
   fetchRoomServiceSchedules,
   createRoomServiceOrder,
+  fetchPropertyFloors,
+  savePropertyFloors,
+  deleteCommercialRoom,
 } from "@/lib/data";
+import { uploadFileToBucket } from "@/lib/storage";
+import { PinPromptDialog } from "@/components/pin-dialog";
 import type {
   CommercialRoom,
   PropertyRow,
@@ -34,6 +51,17 @@ import type {
   RoomServiceSchedule,
 } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
+
+export const AVAILABLE_AMENITIES = [
+  { key: "wifi", label: "Free Wi-Fi", icon: Wifi },
+  { key: "tv", label: "Smart TV", icon: Tv },
+  { key: "ac", label: "Air Conditioning", icon: Wind },
+  { key: "balcony", label: "Balcony / Terrace", icon: Sun },
+  { key: "minibar", label: "Mini Bar / Fridge", icon: Wine },
+  { key: "ensuite", label: "En-Suite Bathroom", icon: Bath },
+  { key: "room_service", label: "Room Service", icon: Bell },
+  { key: "safe", label: "In-Room Safe", icon: Shield },
+];
 
 export default function RoomManagementPage() {
   const { currentCompany, currentCompanyUser } = useAuth();
@@ -45,6 +73,11 @@ export default function RoomManagementPage() {
   const [housekeeping, setHousekeeping] = useState<HousekeepingSchedule[]>([]);
   const [roomServices, setRoomServices] = useState<RoomServiceSchedule[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Property floors state
+  const [propertyFloors, setPropertyFloors] = useState<string[]>(["Ground Floor", "1st Floor", "2nd Floor"]);
+  const [showNewFloorInput, setShowNewFloorInput] = useState(false);
+  const [newFloorName, setNewFloorName] = useState("");
 
   // Add / Edit Room Modal State
   const [roomModalOpen, setRoomModalOpen] = useState(false);
@@ -58,8 +91,17 @@ export default function RoomManagementPage() {
   const [priceBedBreakfast, setPriceBedBreakfast] = useState(1250);
   const [priceBedLunch, setPriceBedLunch] = useState(1550);
   const [priceFullBoard, setPriceFullBoard] = useState(1950);
-  const [amenities, setAmenities] = useState<string[]>(["wifi", "tv", "ac"]);
+  const [amenities, setAmenities] = useState<string[]>(["wifi", "tv", "ac", "ensuite"]);
+  const [roomPhotos, setRoomPhotos] = useState<string[]>([]);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [notes, setNotes] = useState("");
+  const roomPhotoInputRef = useRef<HTMLInputElement | null>(null);
+
+  // PIN security states
+  const [roomToDelete, setRoomToDelete] = useState<CommercialRoom | null>(null);
+  const [pinDialogForRoom, setPinDialogForRoom] = useState(false);
+  const [photoToDeleteIndex, setPhotoToDeleteIndex] = useState<number | null>(null);
+  const [pinDialogForPhoto, setPinDialogForPhoto] = useState(false);
 
   // Uniform Pricing Form State
   const [uniBedOnly, setUniBedOnly] = useState(1000);
@@ -67,6 +109,25 @@ export default function RoomManagementPage() {
   const [uniBedLunch, setUniBedLunch] = useState(1600);
   const [uniFullBoard, setUniFullBoard] = useState(2000);
   const [uniSuccess, setUniSuccess] = useState(false);
+
+  // Rights Checks: Admin, Manager, Accountant, or users with given rights can edit room pricing
+  const isSuperAdminOrAdmin =
+    currentCompanyUser?.roleLevel === "super_admin" ||
+    currentCompanyUser?.roleLevel === "admin" ||
+    currentCompanyUser?.department === "admin";
+  const isManager =
+    currentCompanyUser?.roleLevel === "manager" ||
+    currentCompanyUser?.department === "manager";
+  const isAccountant =
+    currentCompanyUser?.department === "accountant";
+  const hasAllRights =
+    currentCompanyUser?.roleLevel === "all_rights" ||
+    currentCompanyUser?.permissions?.all ||
+    currentCompanyUser?.permissions?.manage_pricing ||
+    currentCompanyUser?.permissions?.manage_finance;
+
+  const canEditPricing = isSuperAdminOrAdmin || isManager || isAccountant || hasAllRights;
+  const canDelete = isSuperAdminOrAdmin || isManager || hasAllRights;
 
   const loadData = async () => {
     setLoading(true);
@@ -76,15 +137,17 @@ export default function RoomManagementPage() {
     const activePropId = selectedPropertyId || props[0]?.id || "";
     setSelectedPropertyId(activePropId);
 
-    const [allRooms, hk, rs] = await Promise.all([
+    const [allRooms, hk, rs, floors] = await Promise.all([
       fetchCommercialRooms(currentCompany.id, activePropId),
       fetchHousekeepingSchedules(currentCompany.id),
       fetchRoomServiceSchedules(currentCompany.id),
+      fetchPropertyFloors(currentCompany.id, activePropId),
     ]);
 
     setRooms(allRooms);
     setHousekeeping(hk);
     setRoomServices(rs);
+    setPropertyFloors(floors);
     setLoading(false);
   };
 
@@ -96,15 +159,17 @@ export default function RoomManagementPage() {
     setEditingRoom(null);
     setRoomNumber(`Room ${rooms.length + 101}`);
     setRoomType("standard");
-    setFloor("Ground Floor");
+    setFloor(propertyFloors[0] || "Ground Floor");
     setCapacityAdults(2);
     setCapacityChildren(0);
     setPricePerNight(950);
     setPriceBedBreakfast(1250);
     setPriceBedLunch(1550);
     setPriceFullBoard(1950);
-    setAmenities(["wifi", "tv", "ac"]);
+    setAmenities(["wifi", "tv", "ac", "ensuite"]);
+    setRoomPhotos([]);
     setNotes("");
+    setShowNewFloorInput(false);
     setRoomModalOpen(true);
   };
 
@@ -112,16 +177,85 @@ export default function RoomManagementPage() {
     setEditingRoom(r);
     setRoomNumber(r.roomNumber);
     setRoomType(r.roomType);
-    setFloor(r.floor);
+    setFloor(r.floor || propertyFloors[0] || "Ground Floor");
     setCapacityAdults(r.capacityAdults);
     setCapacityChildren(r.capacityChildren);
     setPricePerNight(r.pricePerNight);
     setPriceBedBreakfast(r.priceBedBreakfast);
     setPriceBedLunch(r.priceBedLunch);
     setPriceFullBoard(r.priceFullBoard);
-    setAmenities(r.amenities);
+    setAmenities(r.amenities || []);
+    setRoomPhotos(r.photos || []);
     setNotes(r.notes || "");
+    setShowNewFloorInput(false);
     setRoomModalOpen(true);
+  };
+
+  const handleAddNewFloor = async () => {
+    const trimmed = newFloorName.trim();
+    if (!trimmed) return;
+    const updated = Array.from(new Set([...propertyFloors, trimmed]));
+    setPropertyFloors(updated);
+    await savePropertyFloors(currentCompany.id, selectedPropertyId, updated);
+    setFloor(trimmed);
+    setNewFloorName("");
+    setShowNewFloorInput(false);
+  };
+
+  const toggleAmenity = (key: string) => {
+    setAmenities((prev) =>
+      prev.includes(key) ? prev.filter((a) => a !== key) : [...prev, key]
+    );
+  };
+
+  const handleRoomPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploadingPhoto(true);
+    try {
+      const targetId = editingRoom?.id || "new-room-photo";
+      const newUrls: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const url = await uploadFileToBucket("room-photos", targetId, files[i]);
+        newUrls.push(url);
+      }
+      setRoomPhotos((prev) => [...prev, ...newUrls]);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to upload room photo");
+    } finally {
+      setUploadingPhoto(false);
+      if (roomPhotoInputRef.current) roomPhotoInputRef.current.value = "";
+    }
+  };
+
+  const promptDeletePhoto = (idx: number) => {
+    setPhotoToDeleteIndex(idx);
+    setPinDialogForPhoto(true);
+  };
+
+  const confirmDeletePhoto = async () => {
+    if (photoToDeleteIndex === null) return;
+    const updated = roomPhotos.filter((_, i) => i !== photoToDeleteIndex);
+    setRoomPhotos(updated);
+    if (editingRoom?.id) {
+      await saveCommercialRoom({
+        id: editingRoom.id,
+        photos: updated,
+      });
+    }
+    setPhotoToDeleteIndex(null);
+  };
+
+  const handleTriggerDeleteRoom = (r: CommercialRoom) => {
+    setRoomToDelete(r);
+    setPinDialogForRoom(true);
+  };
+
+  const confirmDeleteRoom = async () => {
+    if (!roomToDelete) return;
+    await deleteCommercialRoom(roomToDelete.id);
+    setRoomToDelete(null);
+    loadData();
   };
 
   const handleSaveRoom = async (e: React.FormEvent) => {
@@ -140,6 +274,7 @@ export default function RoomManagementPage() {
       priceBedLunch,
       priceFullBoard,
       amenities,
+      photos: roomPhotos,
       notes,
     });
     setRoomModalOpen(false);
@@ -266,81 +401,106 @@ export default function RoomManagementPage() {
           {rooms.map((r) => (
             <div
               key={r.id}
-              className="rounded-2xl border border-border-color bg-surface p-5 shadow-sm transition hover:shadow-md"
+              className="rounded-2xl border border-border-color bg-surface overflow-hidden shadow-sm transition hover:shadow-md flex flex-col justify-between"
             >
-              <div className="flex items-center justify-between border-b border-border-color pb-3">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-                    {r.floor}
-                  </span>
-                  <h3 className="text-lg font-black text-foreground">{r.roomNumber}</h3>
+              {r.photos && r.photos.length > 0 && (
+                <div className="relative aspect-video w-full overflow-hidden bg-black/10 border-b border-border-color">
+                  <img src={r.photos[0]} alt={r.roomNumber} className="h-full w-full object-cover" />
+                  {r.photos.length > 1 && (
+                    <span className="absolute bottom-2 right-2 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-bold text-white">
+                      +{r.photos.length - 1} photos
+                    </span>
+                  )}
                 </div>
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${
-                    r.status === "available"
-                      ? "bg-emerald-500/10 text-emerald-600"
-                      : r.status === "occupied"
-                      ? "bg-blue-500/10 text-blue-600"
-                      : r.status === "cleaning_needed"
-                      ? "bg-amber-500/10 text-amber-600"
-                      : "bg-purple-500/10 text-purple-600"
-                  }`}
-                >
-                  {r.status.replace("_", " ")}
-                </span>
-              </div>
+              )}
 
-              <div className="mt-3 space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted">Type & Capacity:</span>
-                  <span className="font-semibold text-foreground capitalize">
-                    {r.roomType} · {r.capacityAdults} Adults, {r.capacityChildren} Kids
+              <div className="p-5 flex-1 space-y-3">
+                <div className="flex items-center justify-between border-b border-border-color pb-3">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                      {r.floor}
+                    </span>
+                    <h3 className="text-lg font-black text-foreground">{r.roomNumber}</h3>
+                  </div>
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${
+                      r.status === "available"
+                        ? "bg-emerald-500/10 text-emerald-600"
+                        : r.status === "occupied"
+                        ? "bg-blue-500/10 text-blue-600"
+                        : r.status === "cleaning_needed"
+                        ? "bg-amber-500/10 text-amber-600"
+                        : "bg-purple-500/10 text-purple-600"
+                    }`}
+                  >
+                    {r.status.replace("_", " ")}
                   </span>
                 </div>
 
-                <div className="rounded-xl bg-surface-elevated/70 p-2.5 space-y-1">
-                  <p className="text-[10px] font-bold uppercase text-muted">Meal Board Rates</p>
-                  <div className="grid grid-cols-2 gap-1 text-[11px]">
-                    <div>
-                      <span className="text-muted">Bed Only:</span>{" "}
-                      <span className="font-bold text-foreground">R{r.pricePerNight}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted">B&B:</span>{" "}
-                      <span className="font-bold text-emerald-600">R{r.priceBedBreakfast}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted">B&L:</span>{" "}
-                      <span className="font-bold text-amber-600">R{r.priceBedLunch}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted">Full Board:</span>{" "}
-                      <span className="font-bold text-purple-600">R{r.priceFullBoard}</span>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted">Type & Capacity:</span>
+                    <span className="font-semibold text-foreground capitalize">
+                      {r.roomType} · {r.capacityAdults} Adults, {r.capacityChildren} Kids
+                    </span>
+                  </div>
+
+                  <div className="rounded-xl bg-surface-elevated/70 p-2.5 space-y-1">
+                    <p className="text-[10px] font-bold uppercase text-muted">Meal Board Rates</p>
+                    <div className="grid grid-cols-2 gap-1 text-[11px]">
+                      <div>
+                        <span className="text-muted">Bed Only:</span>{" "}
+                        <span className="font-bold text-foreground">R{r.pricePerNight}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted">B&B:</span>{" "}
+                        <span className="font-bold text-emerald-600">R{r.priceBedBreakfast}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted">B&L:</span>{" "}
+                        <span className="font-bold text-amber-600">R{r.priceBedLunch}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted">Full Board:</span>{" "}
+                        <span className="font-bold text-purple-600">R{r.priceFullBoard}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex flex-wrap gap-1 pt-1">
-                  {r.amenities.map((am) => (
-                    <span
-                      key={am}
-                      className="rounded-md bg-surface-elevated px-2 py-0.5 text-[10px] font-medium text-muted uppercase"
-                    >
-                      {am}
-                    </span>
-                  ))}
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {r.amenities.map((am) => (
+                      <span
+                        key={am}
+                        className="rounded-md bg-surface-elevated px-2 py-0.5 text-[10px] font-medium text-muted uppercase"
+                      >
+                        {am}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-4 flex items-center justify-end gap-2 border-t border-border-color pt-3">
+              <div className="flex items-center justify-end gap-2 border-t border-border-color p-3 bg-surface-elevated/30">
                 <button
                   type="button"
                   onClick={() => openEditRoom(r)}
-                  className="flex items-center gap-1 rounded-lg border border-border-color px-2.5 py-1 text-xs font-semibold text-muted hover:bg-surface-elevated hover:text-foreground"
+                  className="flex items-center gap-1 rounded-lg border border-border-color px-2.5 py-1 text-xs font-semibold text-muted hover:bg-surface-elevated hover:text-foreground transition"
                 >
                   <Edit2 size={13} />
                   <span>Edit Room</span>
                 </button>
+
+                {canDelete && (
+                  <button
+                    type="button"
+                    onClick={() => handleTriggerDeleteRoom(r)}
+                    className="flex items-center gap-1 rounded-lg border border-red-500/20 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-500/10 transition"
+                    title="Delete Room (Requires PIN)"
+                  >
+                    <Trash2 size={13} />
+                    <span>Delete</span>
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -606,14 +766,65 @@ export default function RoomManagementPage() {
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="mb-1 block font-medium text-foreground">Floor</label>
-                  <input
-                    type="text"
-                    value={floor}
-                    onChange={(e) => setFloor(e.target.value)}
-                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-medium text-foreground">Floor / Level</label>
+                    {!showNewFloorInput && (
+                      <button
+                        type="button"
+                        onClick={() => setShowNewFloorInput(true)}
+                        className="text-[10px] text-blue-600 hover:underline font-semibold"
+                      >
+                        + New
+                      </button>
+                    )}
+                  </div>
+                  {showNewFloorInput ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        value={newFloorName}
+                        onChange={(e) => setNewFloorName(e.target.value)}
+                        placeholder="Floor name"
+                        className="w-full rounded-lg border border-border-color bg-surface-elevated px-2 py-1 text-xs text-foreground focus:border-blue-600 focus:outline-none"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddNewFloor}
+                        className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-700"
+                      >
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowNewFloorInput(false)}
+                        className="rounded-lg border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      value={floor}
+                      onChange={(e) => {
+                        if (e.target.value === "__add_new__") {
+                          setShowNewFloorInput(true);
+                        } else {
+                          setFloor(e.target.value);
+                        }
+                      }}
+                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                    >
+                      {propertyFloors.map((fl) => (
+                        <option key={fl} value={fl}>
+                          {fl}
+                        </option>
+                      ))}
+                      <option value="__add_new__">+ Add new floor...</option>
+                    </select>
+                  )}
                 </div>
+
                 <div>
                   <label className="mb-1 block font-medium text-foreground">Adults Capacity</label>
                   <input
@@ -623,6 +834,7 @@ export default function RoomManagementPage() {
                     className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
                   />
                 </div>
+
                 <div>
                   <label className="mb-1 block font-medium text-foreground">Kids Capacity</label>
                   <input
@@ -634,44 +846,153 @@ export default function RoomManagementPage() {
                 </div>
               </div>
 
-              {/* Price tiers */}
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <div>
-                  <label className="mb-1 block font-medium text-foreground">Bed Only Rate (ZAR)</label>
-                  <input
-                    type="number"
-                    value={pricePerNight}
-                    onChange={(e) => setPricePerNight(Number(e.target.value))}
-                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
-                  />
+              {/* Price tiers with permission check */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-foreground">Nightly Rate & Meal Plan Pricing (ZAR)</label>
+                  {editingRoom && !canEditPricing && (
+                    <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded">
+                      <Lock size={12} />
+                      <span>Pricing Locked (Requires Admin, Manager, or Accountant)</span>
+                    </span>
+                  )}
                 </div>
-                <div>
-                  <label className="mb-1 block font-medium text-foreground">Bed & Breakfast Rate (ZAR)</label>
-                  <input
-                    type="number"
-                    value={priceBedBreakfast}
-                    onChange={(e) => setPriceBedBreakfast(Number(e.target.value))}
-                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
-                  />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block font-medium text-foreground">Bed Only Rate (ZAR)</label>
+                    <input
+                      type="number"
+                      value={pricePerNight}
+                      disabled={editingRoom !== null && !canEditPricing}
+                      readOnly={editingRoom !== null && !canEditPricing}
+                      onChange={(e) => setPricePerNight(Number(e.target.value))}
+                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block font-medium text-foreground">Bed & Breakfast Rate (ZAR)</label>
+                    <input
+                      type="number"
+                      value={priceBedBreakfast}
+                      disabled={editingRoom !== null && !canEditPricing}
+                      readOnly={editingRoom !== null && !canEditPricing}
+                      onChange={(e) => setPriceBedBreakfast(Number(e.target.value))}
+                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block font-medium text-foreground">Bed, B/Fast & Lunch (ZAR)</label>
+                    <input
+                      type="number"
+                      value={priceBedLunch}
+                      disabled={editingRoom !== null && !canEditPricing}
+                      readOnly={editingRoom !== null && !canEditPricing}
+                      onChange={(e) => setPriceBedLunch(Number(e.target.value))}
+                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block font-medium text-foreground">Full Board Rate (ZAR)</label>
+                    <input
+                      type="number"
+                      value={priceFullBoard}
+                      disabled={editingRoom !== null && !canEditPricing}
+                      readOnly={editingRoom !== null && !canEditPricing}
+                      onChange={(e) => setPriceFullBoard(Number(e.target.value))}
+                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="mb-1 block font-medium text-foreground">Bed, B/Fast & Lunch (ZAR)</label>
-                  <input
-                    type="number"
-                    value={priceBedLunch}
-                    onChange={(e) => setPriceBedLunch(Number(e.target.value))}
-                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
-                  />
+              </div>
+
+              {/* Room Amenities Multi-Select */}
+              <div className="space-y-1.5 pt-1">
+                <label className="block font-medium text-foreground">
+                  Room Features & Amenities ({amenities.length} selected)
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  {AVAILABLE_AMENITIES.map((item) => {
+                    const Icon = item.icon;
+                    const isSelected = amenities.includes(item.key);
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => toggleAmenity(item.key)}
+                        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+                          isSelected
+                            ? "border-blue-600 bg-blue-600/10 text-blue-600 dark:text-blue-400"
+                            : "border-border-color bg-surface-elevated text-muted hover:text-foreground"
+                        }`}
+                      >
+                        <Icon size={13} />
+                        <span className="truncate">{item.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-                <div>
-                  <label className="mb-1 block font-medium text-foreground">Full Board Rate (ZAR)</label>
-                  <input
-                    type="number"
-                    value={priceFullBoard}
-                    onChange={(e) => setPriceFullBoard(Number(e.target.value))}
-                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
-                  />
+              </div>
+
+              {/* Room Photos Section */}
+              <div className="space-y-2 rounded-xl border border-border-color bg-surface-elevated/40 p-3">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-foreground flex items-center gap-1.5">
+                    <ImageIcon size={14} className="text-emerald-600" />
+                    <span>Room Pictures ({roomPhotos.length})</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="file"
+                      ref={roomPhotoInputRef}
+                      onChange={handleRoomPhotoUpload}
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      id="room-photo-upload"
+                    />
+                    <label
+                      htmlFor="room-photo-upload"
+                      className={`inline-flex items-center gap-1.5 cursor-pointer rounded-lg bg-surface border border-border-color px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-surface-elevated shadow-xs ${
+                        uploadingPhoto ? "opacity-50 pointer-events-none" : ""
+                      }`}
+                    >
+                      {uploadingPhoto ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                      <span>{uploadingPhoto ? "Uploading..." : "Upload Photo"}</span>
+                    </label>
+                  </div>
                 </div>
+
+                {roomPhotos.length === 0 ? (
+                  <p className="text-[11px] text-muted italic">No pictures uploaded yet for this room.</p>
+                ) : (
+                  <div className="grid grid-cols-4 gap-2 pt-1">
+                    {roomPhotos.map((url, idx) => (
+                      <div key={idx} className="group relative aspect-video rounded-lg overflow-hidden border border-border-color bg-black/10">
+                        <img src={url} alt={`Room ${idx + 1}`} className="h-full w-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => promptDeletePhoto(idx)}
+                          className="absolute top-1 right-1 rounded-md bg-black/70 p-1 text-white hover:bg-red-600 opacity-0 group-hover:opacity-100 transition shadow-sm"
+                          title="Delete picture (Requires PIN)"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-1 block font-medium text-foreground">Room Notes & Special Instructions</label>
+                <input
+                  type="text"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="e.g. Garden facing, recently refurbished with extra storage"
+                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                />
               </div>
 
               <div className="flex justify-end gap-2 pt-3">
@@ -693,6 +1014,34 @@ export default function RoomManagementPage() {
           </div>
         </div>
       )}
+
+      {/* PIN-Protected Room Deletion Dialog */}
+      <PinPromptDialog
+        isOpen={pinDialogForRoom}
+        onClose={() => {
+          setPinDialogForRoom(false);
+          setRoomToDelete(null);
+        }}
+        onSuccess={confirmDeleteRoom}
+        title={`Delete Room ${roomToDelete?.roomNumber}`}
+        description="Security PIN verification required. Please enter your PIN to permanently delete this room."
+        actionLabel="Verify PIN & Delete Room"
+        actionVariant="danger"
+      />
+
+      {/* PIN-Protected Room Photo Deletion Dialog */}
+      <PinPromptDialog
+        isOpen={pinDialogForPhoto}
+        onClose={() => {
+          setPinDialogForPhoto(false);
+          setPhotoToDeleteIndex(null);
+        }}
+        onSuccess={confirmDeletePhoto}
+        title="Delete Room Picture"
+        description="Security PIN verification required. Please enter your PIN to permanently remove this room picture."
+        actionLabel="Verify PIN & Delete Picture"
+        actionVariant="danger"
+      />
     </div>
   );
 }

@@ -23,8 +23,9 @@ import {
   AlertCircle
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
-import { fetchPreventiveTasksData } from "@/lib/data";
+import { fetchPreventiveTasksData, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
 import type { PreventiveTaskRow } from "@/lib/types";
 
 function formatCurrency(amount: number) {
@@ -51,6 +52,7 @@ function StatCard({ label, value, detail, icon: Icon, colorClass = "text-foregro
 }
 
 export default function ScheduledTasksPage() {
+  const { currentCompany } = useAuth();
   const [tasks, setTasks] = useState<PreventiveTaskRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -139,9 +141,18 @@ export default function ScheduledTasksPage() {
     if (!form.next_due) { alert("Please select a next due date."); return; }
     setSaving(true);
     try {
-      const payload: Record<string, unknown> = { title: form.title, category: form.category, frequency: form.frequency, next_due: form.next_due || null, estimated_cost: form.estimated_cost, status: form.status };
-      if (form.property_id) payload.property_id = form.property_id;
-      if (form.maintainer_id) payload.maintainer_id = form.maintainer_id;
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      const payload: Record<string, unknown> = {
+        title: form.title,
+        category: form.category,
+        frequency: form.frequency,
+        next_due: form.next_due || null,
+        estimated_cost: form.estimated_cost,
+        status: form.status,
+        company_id: compId,
+      };
+      if (form.property_id && isValidUuid(form.property_id)) payload.property_id = form.property_id;
+      if (form.maintainer_id && isValidUuid(form.maintainer_id)) payload.maintainer_id = form.maintainer_id;
       if (editingId) {
         const { error: err } = await supabase.from("preventive_maintenance").update(payload).eq("id", editingId);
         if (err) throw err;

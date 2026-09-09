@@ -18,6 +18,8 @@ import {
   ShieldCheck,
   Building2,
   FileText,
+  Eye,
+  Pencil,
 } from "lucide-react";
 import {
   fetchCommercialBookings,
@@ -28,6 +30,86 @@ import type { CommercialBooking, CommercialRoom } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import { CheckinModal } from "@/components/checkin-modal";
 import { ExtendBookingModal } from "@/components/extend-booking-modal";
+import { CommercialBookingDetailModal } from "@/components/commercial-booking-detail-modal";
+import { DocumentShareModal } from "@/components/document-share-modal";
+import { downloadPdfDocument } from "@/lib/storage";
+
+function buildFolioHtml(booking: CommercialBooking, companyName: string) {
+  const balance = booking.totalAmount - booking.amountPaid;
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Guest Folio - ${booking.bookingCode}</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 32px; color: #0f172a; background: #ffffff;">
+  <div style="max-width: 680px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 28px;">
+    <div style="border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start;">
+      <div>
+        <h1 style="margin: 0 0 4px 0; font-size: 20px; font-weight: 800; color: #0f172a; text-transform: uppercase;">${companyName}</h1>
+        <p style="margin: 0; font-size: 12px; color: #64748b;">Hospitality & Guest Operations</p>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #2563eb;">Guest Folio & Receipt</div>
+        <div style="font-family: monospace; font-size: 15px; font-weight: 700; color: #0f172a; margin-top: 4px;">#${booking.bookingCode}</div>
+        <div style="font-size: 11px; color: #64748b; margin-top: 2px;">${new Date().toLocaleDateString()}</div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0;">
+      <div>
+        <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b;">Guest Details</div>
+        <div style="font-size: 14px; font-weight: 700; color: #0f172a; margin-top: 4px;">${booking.guestName}</div>
+        <div style="font-size: 12px; color: #475569; margin-top: 2px;">Email: ${booking.guestEmail || "-"}</div>
+        <div style="font-size: 12px; color: #475569;">Phone: ${booking.guestPhone || "-"}</div>
+      </div>
+      <div>
+        <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b;">Stay Details</div>
+        <div style="font-size: 13px; font-weight: 600; color: #0f172a; margin-top: 4px;">Room: ${booking.roomNumber} (${booking.propertyName})</div>
+        <div style="font-size: 12px; color: #475569; margin-top: 2px;">${booking.checkinDate} to ${booking.checkoutDate} (${booking.nights} night${booking.nights > 1 ? "s" : ""})</div>
+        <div style="font-size: 12px; color: #475569;">Meal Board: ${booking.mealPlan.replace(/_/g, " ")} | Status: ${booking.status}</div>
+      </div>
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
+      <thead>
+        <tr style="background: #0f172a; color: #ffffff; text-align: left;">
+          <th style="padding: 10px 12px;">Description</th>
+          <th style="padding: 10px 12px; text-align: center;">Nights</th>
+          <th style="padding: 10px 12px; text-align: right;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 10px 12px;">Room Accommodation (${booking.propertyName} - Room ${booking.roomNumber})</td>
+          <td style="padding: 10px 12px; text-align: center;">${booking.nights}</td>
+          <td style="padding: 10px 12px; text-align: right; font-weight: 600;">R${booking.totalAmount.toLocaleString()}</td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="2" style="padding: 8px 12px; text-align: right; font-weight: 600; color: #64748b;">Total Charges:</td>
+          <td style="padding: 8px 12px; text-align: right; font-weight: 700; color: #0f172a;">R${booking.totalAmount.toLocaleString()}</td>
+        </tr>
+        <tr>
+          <td colspan="2" style="padding: 6px 12px; text-align: right; font-weight: 600; color: #16a34a;">Amount Paid:</td>
+          <td style="padding: 6px 12px; text-align: right; font-weight: 700; color: #16a34a;">R${booking.amountPaid.toLocaleString()}</td>
+        </tr>
+        <tr style="border-top: 2px solid #0f172a;">
+          <td colspan="2" style="padding: 10px 12px; text-align: right; font-weight: 800; color: #0f172a; font-size: 14px;">Balance:</td>
+          <td style="padding: 10px 12px; text-align: right; font-weight: 800; color: ${balance > 0 ? "#dc2626" : "#16a34a"}; font-size: 14px;">R${balance.toLocaleString()}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <div style="border-top: 1px dashed #cbd5e1; padding-top: 16px; font-size: 11px; color: #64748b; text-align: center;">
+      <p style="margin: 0 0 4px 0;">Thank you for staying with us at ${companyName}!</p>
+      <p style="margin: 0;">For inquiries or assistance, please reach out to our front desk.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
 
 export default function CommercialBookingsPage() {
   const { currentCompany, currentCompanyUser } = useAuth();
@@ -41,6 +123,22 @@ export default function CommercialBookingsPage() {
   const [checkinOpen, setCheckinOpen] = useState(false);
   const [extendModalBooking, setExtendModalBooking] = useState<CommercialBooking | null>(null);
   const [folioBooking, setFolioBooking] = useState<CommercialBooking | null>(null);
+  const [detailModalBooking, setDetailModalBooking] = useState<CommercialBooking | null>(null);
+  const [shareModalDoc, setShareModalDoc] = useState<{
+    isOpen: boolean;
+    documentTitle: string;
+    documentType?: string;
+    documentHtml?: string;
+    documentUrl?: string;
+    fileNameBase?: string;
+    ownerName?: string;
+    ownerEmail?: string;
+    defaultSubject?: string;
+    defaultMessage?: string;
+  }>({
+    isOpen: false,
+    documentTitle: "",
+  });
 
   const loadData = async () => {
     setLoading(true);
@@ -198,10 +296,14 @@ export default function CommercialBookingsPage() {
                 filteredBookings.map((b) => {
                   const isStayActive = b.bookingStatus === "checked_in" || b.bookingStatus === "extended";
                   return (
-                    <tr key={b.id} className="hover:bg-surface-elevated/40 transition">
+                    <tr
+                      key={b.id}
+                      onClick={() => setDetailModalBooking(b)}
+                      className="hover:bg-surface-elevated/70 transition cursor-pointer group"
+                    >
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-extrabold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-md">
+                          <span className="font-mono text-xs font-extrabold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-md group-hover:bg-blue-600 group-hover:text-white transition">
                             {b.bookingCode}
                           </span>
                         </div>
@@ -211,7 +313,7 @@ export default function CommercialBookingsPage() {
                       </td>
 
                       <td className="px-4 py-3.5">
-                        <p className="font-bold text-foreground">{b.guestName}</p>
+                        <p className="font-bold text-foreground group-hover:text-blue-600 transition">{b.guestName}</p>
                         <div className="flex items-center gap-2 text-xs text-muted mt-0.5">
                           <Phone size={12} />
                           <span>{b.guestPhone}</span>
@@ -276,11 +378,27 @@ export default function CommercialBookingsPage() {
 
                       <td className="px-4 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDetailModalBooking(b);
+                            }}
+                            className="flex items-center gap-1 rounded-lg border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted hover:text-blue-600 hover:border-blue-500/40 transition"
+                            title="View & Edit Booking Details"
+                          >
+                            <Eye size={13} />
+                            <span className="hidden sm:inline">Details</span>
+                          </button>
+
                           {isStayActive && (
                             <>
                               <button
                                 type="button"
-                                onClick={() => setExtendModalBooking(b)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExtendModalBooking(b);
+                                }}
                                 className="flex items-center gap-1 rounded-lg border border-purple-500/30 bg-purple-500/10 px-2.5 py-1 text-xs font-semibold text-purple-600 hover:bg-purple-500/20"
                                 title="Extend Stay"
                               >
@@ -290,7 +408,10 @@ export default function CommercialBookingsPage() {
 
                               <button
                                 type="button"
-                                onClick={() => handleCheckout(b)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCheckout(b);
+                                }}
                                 className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-500/20"
                                 title="Check Out Guest"
                               >
@@ -302,7 +423,10 @@ export default function CommercialBookingsPage() {
 
                           <button
                             type="button"
-                            onClick={() => setFolioBooking(b)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFolioBooking(b);
+                            }}
                             className="rounded-lg border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted hover:text-foreground"
                             title="View Folio / Receipt"
                           >
@@ -318,6 +442,15 @@ export default function CommercialBookingsPage() {
           </table>
         </div>
       </div>
+
+      {/* Booking Details & Edit Modal */}
+      <CommercialBookingDetailModal
+        isOpen={Boolean(detailModalBooking)}
+        booking={detailModalBooking}
+        rooms={rooms}
+        onClose={() => setDetailModalBooking(null)}
+        onSuccess={loadData}
+      />
 
       {/* Checkin Modal */}
       <CheckinModal
@@ -381,15 +514,59 @@ export default function CommercialBookingsPage() {
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => window.print()}
-                className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-blue-700"
+                onClick={() => {
+                  const html = buildFolioHtml(folioBooking, currentCompany?.name || "Champions Court");
+                  downloadPdfDocument(html, `folio-${folioBooking.bookingCode}`);
+                }}
+                className="rounded-xl border border-border-color px-4 py-2 text-xs font-bold text-foreground hover:bg-surface-elevated transition-all"
               >
-                Print Guest Receipt
+                Download PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const html = buildFolioHtml(folioBooking, currentCompany?.name || "Champions Court");
+                  setShareModalDoc({
+                    isOpen: true,
+                    documentTitle: `Guest Folio & Receipt - #${folioBooking.bookingCode} (${folioBooking.guestName})`,
+                    documentType: "Receipt",
+                    documentHtml: html,
+                    fileNameBase: `receipt-${folioBooking.bookingCode}-${folioBooking.guestName.replace(/\s+/g, "_")}`,
+                    ownerName: folioBooking.guestName,
+                    ownerEmail: folioBooking.guestEmail || "",
+                    defaultSubject: `Folio Receipt #${folioBooking.bookingCode} - ${currentCompany?.name || "Champions Court"}`,
+                    defaultMessage: `Dear ${folioBooking.guestName},\n\nPlease find attached your official guest folio and payment receipt for your stay in Room ${folioBooking.roomNumber}.`,
+                  });
+                }}
+                className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-sky-700 transition-all"
+              >
+                Email / Share
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition-all"
+              >
+                Print
               </button>
             </div>
           </div>
         </div>
       )}
+
+      <DocumentShareModal
+        isOpen={shareModalDoc.isOpen}
+        onClose={() => setShareModalDoc((prev) => ({ ...prev, isOpen: false }))}
+        documentTitle={shareModalDoc.documentTitle}
+        documentType={shareModalDoc.documentType}
+        documentHtml={shareModalDoc.documentHtml}
+        documentUrl={shareModalDoc.documentUrl}
+        fileNameBase={shareModalDoc.fileNameBase}
+        ownerName={shareModalDoc.ownerName}
+        ownerEmail={shareModalDoc.ownerEmail}
+        defaultSubject={shareModalDoc.defaultSubject}
+        defaultMessage={shareModalDoc.defaultMessage}
+      />
     </div>
   );
 }

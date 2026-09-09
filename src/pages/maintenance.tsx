@@ -4,13 +4,13 @@ import { ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal } from "@/components/modal";
 import { useAuth } from "@/lib/auth";
-import { fetchMaintenanceOverviewData } from "@/lib/data";
+import { fetchMaintenanceOverviewData, isValidUuid } from "@/lib/data";
 import { fetchAdminInfo } from "@/lib/storage";
 import { supabase } from "@/lib/supabase";
 import type { MaintenanceOverviewData } from "@/lib/types";
 
 export default function MaintenancePage() {
-  const { user } = useAuth();
+  const { user, currentCompany } = useAuth();
   const [data, setData] = useState<MaintenanceOverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,9 +45,16 @@ export default function MaintenancePage() {
     try {
       const admin = await fetchAdminInfo(user?.email ?? undefined);
       const executorName = admin.fullName || user?.email || "Admin";
-      const payload: Record<string, unknown> = { description: form.description, category: form.category, priority: form.priority, status: "open" };
-      if (form.property_id) payload.property_id = form.property_id;
-      payload.executed_by_name = executorName;
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      const payload: Record<string, unknown> = {
+        description: form.description,
+        category: form.category,
+        priority: form.priority,
+        status: "open",
+        executed_by_name: executorName,
+        company_id: compId,
+      };
+      if (form.property_id && isValidUuid(form.property_id)) payload.property_id = form.property_id;
       const { error: err } = await supabase.from("maintenance").insert(payload);
       if (err) throw err;
       setModalOpen(false); setForm({ property_id: "", category: "general", priority: "medium", description: "" }); reload();

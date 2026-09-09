@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
-import { Modal, ConfirmDialog } from "@/components/modal";
-import { fetchProperties } from "@/lib/data";
+import { Modal } from "@/components/modal";
+import { PinPromptDialog } from "@/components/pin-dialog";
+import { fetchProperties, isValidUuid, fetchPropertyFloors, savePropertyFloors, generateUuid } from "@/lib/data";
+import { uploadFileToBucket } from "@/lib/storage";
 import { supabase } from "@/lib/supabase";
 import type { PropertyRow } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
-import { Plus, Download, Pencil, Trash, ChevronRight, Building2, BedDouble } from "lucide-react";
+import { Plus, Download, Pencil, Trash, ChevronRight, Building2, BedDouble, X, Layers, Image as ImageIcon, Loader2 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 
 function formatCurrency(amount: number) {
@@ -44,6 +46,20 @@ export default function PropertiesPage() {
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<PropertyRow | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Floors state
+  const [formFloors, setFormFloors] = useState<string[]>(["Ground Floor", "1st Floor", "2nd Floor"]);
+  const [newFloorInput, setNewFloorInput] = useState("");
+
+  // Photos state
+  const [formPhotos, setFormPhotos] = useState<string[]>([]);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // PIN security states
+  const [pinDialogForProperty, setPinDialogForProperty] = useState(false);
+  const [photoToDeleteIndex, setPhotoToDeleteIndex] = useState<number | null>(null);
+  const [pinDialogForPhoto, setPinDialogForPhoto] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,6 +109,8 @@ export default function PropertiesPage() {
   const openAdd = () => {
     setEditingId(null);
     setForm(emptyForm);
+    setFormFloors(["Ground Floor", "1st Floor", "2nd Floor"]);
+    setFormPhotos([]);
     setModalOpen(true);
   };
 
@@ -108,14 +126,72 @@ export default function PropertiesPage() {
       defaultRoomPrice: row.defaultRoomPrice || 0,
       defaultBedBreakfast: row.defaultBedBreakfast || 0,
     });
+    setFormPhotos(row.photos || []);
+    fetchPropertyFloors(currentCompany.id, row.id).then(setFormFloors);
     setModalOpen(true);
+  };
+
+  const handleAddFloor = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = newFloorInput.trim();
+    if (!trimmed) return;
+    if (!formFloors.includes(trimmed)) {
+      setFormFloors([...formFloors, trimmed]);
+    }
+    setNewFloorInput("");
+  };
+
+  const handleRemoveFloor = (floorToRemove: string) => {
+    if (formFloors.length <= 1) {
+      alert("Property must have at least one floor.");
+      return;
+    }
+    setFormFloors(formFloors.filter((f) => f !== floorToRemove));
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploadingPhoto(true);
+    try {
+      const targetId = editingId || "prop-photo";
+      const newUrls: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const url = await uploadFileToBucket("property-photos", targetId, files[i]);
+        newUrls.push(url);
+      }
+      setFormPhotos((prev) => [...prev, ...newUrls]);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to upload photo");
+    } finally {
+      setUploadingPhoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const promptDeletePhoto = (index: number) => {
+    setPhotoToDeleteIndex(index);
+    setPinDialogForPhoto(true);
+  };
+
+  const confirmDeletePhoto = async () => {
+    if (photoToDeleteIndex === null) return;
+    const updated = formPhotos.filter((_, i) => i !== photoToDeleteIndex);
+    setFormPhotos(updated);
+    if (editingId && isValidUuid(editingId)) {
+      try {
+        await supabase.from("properties").update({ photos: updated }).eq("id", editingId);
+      } catch {}
+      localStorage.setItem(`cc_prop_photos_${editingId}`, JSON.stringify(updated));
+    }
+    setPhotoToDeleteIndex(null);
   };
 
   const onSave = async () => {
     if (!form.name.trim()) return;
     setSaving(true);
     try {
-      const payload = {
+      const payload: Record<string, any> = {
         name: form.name,
         type: form.type,
         address: form.address,
@@ -124,16 +200,55 @@ export default function PropertiesPage() {
         total_rooms: form.totalRooms,
         default_room_price: form.defaultRoomPrice,
         default_bed_breakfast: form.defaultBedBreakfast,
-        company_id: currentCompany.id,
+        company_id: currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null,
       };
 
+      if (formPhotos.length > 0) {
+        payload.photos = formPhotos;
+      }
+
+      let savedId = editingId;
       if (editingId) {
         const { error: err } = await supabase.from("properties").update(payload).eq("id", editingId);
-        if (err) throw err;
+        if (err) {
+          if (err.message && err.message.includes("photos")) {
+            delete payload.photos;
+            const { error: err2 } = await supabase.from("properties").update(payload).eq("id", editingId);
+            if (err2) throw err2;
+          } else {
+            throw err;
+          }
+        }
       } else {
-        const { error: err } = await supabase.from("properties").insert(payload);
-        if (err) throw err;
+        savedId = generateUuid();
+        const { data, error: err } = await supabase
+          .from("properties")
+          .insert({ id: savedId, ...payload })
+          .select("id")
+          .maybeSingle();
+        if (err) {
+          if (err.message && err.message.includes("photos")) {
+            delete payload.photos;
+            const { data: d2, error: err2 } = await supabase
+              .from("properties")
+              .insert({ id: savedId, ...payload })
+              .select("id")
+              .maybeSingle();
+            if (err2) throw err2;
+            if (d2?.id) savedId = d2.id;
+          } else {
+            throw err;
+          }
+        } else if (data?.id) {
+          savedId = data.id;
+        }
       }
+
+      if (savedId) {
+        await savePropertyFloors(currentCompany.id, savedId, formFloors);
+        localStorage.setItem(`cc_prop_photos_${savedId}`, JSON.stringify(formPhotos));
+      }
+
       setModalOpen(false);
       reload();
     } catch (e) {
@@ -143,7 +258,12 @@ export default function PropertiesPage() {
     }
   };
 
-  const onDelete = async () => {
+  const handleTriggerDeleteProperty = (row: PropertyRow) => {
+    setDeleteTarget(row);
+    setPinDialogForProperty(true);
+  };
+
+  const confirmDeleteProperty = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
@@ -273,7 +393,7 @@ export default function PropertiesPage() {
                               icon={Trash}
                               label="Delete"
                               variant="danger"
-                              onClick={(e) => { e.stopPropagation(); setDeleteTarget(row); }}
+                              onClick={(e) => { e.stopPropagation(); handleTriggerDeleteProperty(row); }}
                             />
                             <div className="ml-2 pl-2 border-l border-border-color/40">
                               <ChevronRight size={18} className="text-muted/40 group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
@@ -336,26 +456,83 @@ export default function PropertiesPage() {
           </div>
 
           {["hotel", "motel", "lodge", "guest_house", "commercial"].includes(form.type) ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1 block font-medium text-foreground">Total Number of Rooms</label>
-                <input
-                  type="number"
-                  value={form.totalRooms}
-                  onChange={(e) => setForm({ ...form, totalRooms: Number(e.target.value) })}
-                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"
-                />
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block font-medium text-foreground">Total Number of Rooms</label>
+                  <input
+                    type="number"
+                    value={form.totalRooms}
+                    onChange={(e) => setForm({ ...form, totalRooms: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block font-medium text-foreground">Default Rate (ZAR/Night)</label>
+                  <input
+                    type="number"
+                    value={form.defaultRoomPrice}
+                    onChange={(e) => setForm({ ...form, defaultRoomPrice: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block font-medium text-foreground">Default Rate (ZAR/Night)</label>
-                <input
-                  type="number"
-                  value={form.defaultRoomPrice}
-                  onChange={(e) => setForm({ ...form, defaultRoomPrice: Number(e.target.value) })}
-                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"
-                />
+
+              {/* Floors Configuration */}
+              <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-foreground flex items-center gap-1.5">
+                    <Layers size={14} className="text-blue-600" />
+                    <span>Configured Floors / Levels ({formFloors.length})</span>
+                  </label>
+                  <span className="text-[10px] text-muted">Dropdown options for room creation</span>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {formFloors.map((fl) => (
+                    <span
+                      key={fl}
+                      className="inline-flex items-center gap-1 rounded-lg bg-surface border border-border-color px-2.5 py-1 text-xs font-semibold text-foreground shadow-xs"
+                    >
+                      <span>{fl}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFloor(fl)}
+                        className="text-muted hover:text-red-500 rounded p-0.5 transition"
+                        title={`Remove ${fl}`}
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="text"
+                    value={newFloorInput}
+                    onChange={(e) => setNewFloorInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddFloor(e);
+                      }
+                    }}
+                    placeholder="e.g. 3rd Floor, Penthouse, Basement"
+                    className="flex-1 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs text-foreground outline-none focus:border-blue-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddFloor}
+                    disabled={!newFloorInput.trim()}
+                    className="flex items-center gap-1 rounded-lg bg-surface border border-border-color px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated disabled:opacity-40"
+                  >
+                    <Plus size={13} />
+                    <span>Add Floor</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            </>
           ) : (
             <div>
               <label className="mb-1 block font-medium text-foreground">Monthly Rent (ZAR)</label>
@@ -367,6 +544,56 @@ export default function PropertiesPage() {
               />
             </div>
           )}
+
+          {/* Property Photos Section */}
+          <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-foreground flex items-center gap-1.5">
+                <ImageIcon size={14} className="text-emerald-600" />
+                <span>Property Photos ({formPhotos.length})</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handlePhotoUpload}
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  id="property-photo-upload"
+                />
+                <label
+                  htmlFor="property-photo-upload"
+                  className={`inline-flex items-center gap-1.5 cursor-pointer rounded-lg bg-surface border border-border-color px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-surface-elevated shadow-xs ${
+                    uploadingPhoto ? "opacity-50 pointer-events-none" : ""
+                  }`}
+                >
+                  {uploadingPhoto ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                  <span>{uploadingPhoto ? "Uploading..." : "Upload Photos"}</span>
+                </label>
+              </div>
+            </div>
+
+            {formPhotos.length === 0 ? (
+              <p className="text-[11px] text-muted italic py-1">No pictures uploaded yet for this property.</p>
+            ) : (
+              <div className="grid grid-cols-4 gap-2 pt-1">
+                {formPhotos.map((url, idx) => (
+                  <div key={idx} className="group relative aspect-video rounded-lg overflow-hidden border border-border-color bg-black/10">
+                    <img src={url} alt={`Property ${idx + 1}`} className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => promptDeletePhoto(idx)}
+                      className="absolute top-1 right-1 rounded-md bg-black/70 p-1 text-white hover:bg-red-600 opacity-0 group-hover:opacity-100 transition shadow-sm"
+                      title="Delete photo (Requires PIN)"
+                    >
+                      <Trash size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div className="flex justify-end gap-2 pt-2">
             <button
@@ -388,14 +615,32 @@ export default function PropertiesPage() {
         </div>
       </Modal>
 
-      <ConfirmDialog
-        open={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={onDelete}
-        title="Delete Property"
-        message={`Delete "${deleteTarget?.name}"? This cannot be undone.`}
-        confirmLabel="Delete"
-        loading={deleting}
+      {/* PIN-Protected Property Deletion Dialog */}
+      <PinPromptDialog
+        isOpen={pinDialogForProperty}
+        onClose={() => {
+          setPinDialogForProperty(false);
+          setDeleteTarget(null);
+        }}
+        onSuccess={confirmDeleteProperty}
+        title={`Delete Property "${deleteTarget?.name}"`}
+        description="Security PIN verification required. This will permanently remove this property and all associated rooms and records."
+        actionLabel="Verify PIN & Delete Property"
+        actionVariant="danger"
+      />
+
+      {/* PIN-Protected Photo Deletion Dialog */}
+      <PinPromptDialog
+        isOpen={pinDialogForPhoto}
+        onClose={() => {
+          setPinDialogForPhoto(false);
+          setPhotoToDeleteIndex(null);
+        }}
+        onSuccess={confirmDeletePhoto}
+        title="Delete Property Photo"
+        description="Security PIN verification required. Please enter your PIN to permanently remove this picture."
+        actionLabel="Verify PIN & Delete Photo"
+        actionVariant="danger"
       />
     </ModulePage>
   );

@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
-import { fetchContractsData } from "@/lib/data";
-import { verifyAdminPin } from "@/lib/data";
+import { fetchContractsData, verifyAdminPin, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
-import { fetchCompanyInfo, fetchAdminInfo, uploadPdfFromHtml, createPdfAttachmentFromUrl, downloadHtmlDocument } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, uploadPdfFromHtml, createPdfAttachmentFromUrl, downloadHtmlDocument, downloadPdfDocument, downloadPdfFromUrl } from "@/lib/storage";
+import { DocumentShareModal } from "@/components/document-share-modal";
 import { buildProfessionalContractHtml } from "@/lib/document-templates";
 import type { ContractSection } from "@/lib/document-templates";
 import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
@@ -232,8 +232,6 @@ async function ensureMainContractTemplateInDb(): Promise<{ ok: true } | { ok: fa
         category: "residential",
         content: MAIN_CONTRACT_SECTIONS.map((section) => `${section.title}\n${section.content}`).join("\n\n"),
         description: MAIN_CONTRACT_DESCRIPTION,
-        monthly_rent: 4500,
-        deposit_amount: 4500,
         is_default: true,
       })
       .select("id")
@@ -261,7 +259,8 @@ async function ensureMainContractTemplateInDb(): Promise<{ ok: true } | { ok: fa
   const { error: insertSectionsError } = await supabase.from("contract_template_sections").insert(
     MAIN_CONTRACT_SECTIONS.map((section, index) => ({
       template_id: templateId,
-      sort_order: index,
+      section_key: `sec_${index + 1}`,
+      order_index: index,
       title: section.title,
       content: section.content,
     })),
@@ -379,7 +378,7 @@ function RichTextEditor({
 /* ── component ── */
 
 export default function ContractsPage() {
-  const { user } = useAuth();
+  const { user, currentCompany } = useAuth();
   const templateSeedWarningShownRef = useRef(false);
 
   /* ── tab state ── */
@@ -404,6 +403,21 @@ export default function ContractsPage() {
   const [tenantContacts, setTenantContacts] = useState<TenantContact[]>([]);
   const [contractDocumentUrlById, setContractDocumentUrlById] = useState<Record<string, string>>({});
   const [contractSectionsById, setContractSectionsById] = useState<Record<string, ContractSection[]>>({});
+  const [shareModalDoc, setShareModalDoc] = useState<{
+    isOpen: boolean;
+    documentTitle: string;
+    documentType?: string;
+    documentHtml?: string;
+    documentUrl?: string;
+    fileNameBase?: string;
+    ownerName?: string;
+    ownerEmail?: string;
+    defaultSubject?: string;
+    defaultMessage?: string;
+  }>({
+    isOpen: false,
+    documentTitle: "",
+  });
 
   /* ── templates state ── */
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
@@ -427,7 +441,7 @@ export default function ContractsPage() {
           supabase.from("properties").select("id, name").order("name"),
           supabase.from("tenants").select("id, full_name, email, phone, whatsapp_number").order("full_name"),
           supabase.from("contracts").select("id, document_url, title"),
-          supabase.from("contract_sections").select("contract_id, sort_order, title, content").order("sort_order"),
+          supabase.from("contract_sections").select("contract_id, order_index, title, content").order("order_index"),
         ]);
         if (!cancelled) {
           if (props) setProperties(props.map((p) => ({ id: String(p.id), name: String(p.name) })));
@@ -475,8 +489,8 @@ export default function ContractsPage() {
           alert(`Could not auto-create Main Contract template: ${seedResult.message}. You can run web/docs/seed-main-contract-template.sql in Supabase SQL Editor.`);
         }
         const [{ data: tpls }, { data: tplSections }] = await Promise.all([
-          supabase.from("contract_templates").select("id, title, description, monthly_rent, deposit_amount, is_default").order("created_at", { ascending: false }),
-          supabase.from("contract_template_sections").select("template_id, sort_order, title, content").order("sort_order"),
+          supabase.from("contract_templates").select("id, title, description, is_default").order("created_at", { ascending: false }),
+          supabase.from("contract_template_sections").select("template_id, order_index, title, content").order("order_index"),
         ]);
         if (!cancelled && tpls) {
           const sectionMap: Record<string, ContractSection[]> = {};
@@ -489,8 +503,8 @@ export default function ContractsPage() {
             id: String(t.id),
             title: String(t.title),
             description: String(t.description ?? ""),
-            monthlyRent: Number(t.monthly_rent ?? 0),
-            depositAmount: Number(t.deposit_amount ?? 0),
+            monthlyRent: 0,
+            depositAmount: 0,
             isDefault: Boolean(t.is_default),
             sections: sectionMap[String(t.id)] ?? [],
           })));
@@ -594,6 +608,9 @@ export default function ContractsPage() {
       };
       if (form.tenant_id) payload.tenant_id = form.tenant_id;
       if (form.property_id) payload.property_id = form.property_id;
+      if (currentCompany?.id && isValidUuid(currentCompany.id)) {
+        payload.company_id = currentCompany.id;
+      }
 
       let contractId = editingId;
       if (editingId) {
@@ -613,7 +630,8 @@ export default function ContractsPage() {
           const { error: secErr } = await supabase.from("contract_sections").insert(
             validSections.map((s, i) => ({
               contract_id: contractId,
-              sort_order: i,
+              section_key: `sec_${i + 1}`,
+              order_index: i,
               title: s.title,
               content: s.content,
             })),
@@ -694,8 +712,14 @@ export default function ContractsPage() {
   const onDownload = async (row: ContractRow) => {
     setPrintingId(row.id);
     try {
+      const fileNameBase = `contract-${row.tenantName.replace(/\s+/g, "-").toLowerCase()}`;
+      const existingUrl = contractDocumentUrlById[row.id];
+      if (existingUrl && existingUrl.startsWith("http") && existingUrl.toLowerCase().includes(".pdf")) {
+        await downloadPdfFromUrl(existingUrl, fileNameBase);
+        return;
+      }
       const html = await ensureGeneratedDocument(row);
-      downloadHtmlDocument(html, `contract-${row.tenantName.replace(/\s+/g, "-").toLowerCase()}.html`);
+      downloadPdfDocument(html, fileNameBase);
     } catch (e) { alert(e instanceof Error ? e.message : "Could not download contract."); }
     finally { setPrintingId(null); }
   };
@@ -703,31 +727,27 @@ export default function ContractsPage() {
   const onSendEmail = async (row: ContractRow) => {
     try {
       const tenant = getTenantContact(row);
-      if (!tenant?.email) { alert("Tenant email is missing."); return; }
       const documentHtml = await generateContractHtml(row);
       const pdfUrl = await ensureShareableDocumentUrl(contractDocumentUrlById[row.id] ?? "", documentHtml, `contract-${row.id}.pdf`);
-      await supabase.from("contracts").update({ document_url: pdfUrl }).eq("id", row.id);
-      setContractDocumentUrlById((prev) => ({ ...prev, [row.id]: pdfUrl }));
-      const attachment = await createPdfAttachmentFromUrl(pdfUrl, `contract-${row.id}.pdf`);
-      const company = await fetchCompanyInfo();
-      const subject = `Lease Contract - ${row.propertyName}`;
-      const bodyText = `Please find your lease contract for ${row.propertyName}. The contract period is ${row.startDate} to ${row.endDate} with a monthly rent of ${formatCurrency(row.monthlyRent)}.`;
-      const emailHtml = wrapDocumentInEmailHtml({
-        recipientName: row.tenantName,
-        subject,
-        bodyText,
+      if (pdfUrl) {
+        await supabase.from("contracts").update({ document_url: pdfUrl }).eq("id", row.id);
+        setContractDocumentUrlById((prev) => ({ ...prev, [row.id]: pdfUrl }));
+      }
+      setShareModalDoc({
+        isOpen: true,
+        documentTitle: `Lease Contract - ${row.propertyName} (${row.tenantName})`,
+        documentType: "Contract",
         documentHtml,
-        companyName: company?.companyName,
+        documentUrl: pdfUrl,
+        fileNameBase: `contract-${row.tenantName.replace(/\s+/g, "_")}`,
+        ownerName: row.tenantName,
+        ownerEmail: tenant?.email || "",
+        defaultSubject: `Lease Contract - ${row.propertyName}`,
+        defaultMessage: `Dear ${row.tenantName},\n\nPlease find your lease contract for ${row.propertyName} attached. The contract period is ${row.startDate} to ${row.endDate} with a monthly rent of ${formatCurrency(row.monthlyRent)}.`,
       });
-      const result = await sendEmailViaApi({
-        to: tenant.email,
-        subject,
-        html: emailHtml,
-        attachments: [attachment],
-      });
-      if (!result.success) throw new Error(result.error || "Email API request failed.");
-      alert("Contract sent via email successfully!");
-    } catch (e) { alert(e instanceof Error ? e.message : "Could not send email."); }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not prepare contract for sharing.");
+    }
   };
 
   const onSendWhatsApp = async (row: ContractRow) => {
@@ -784,14 +804,15 @@ export default function ContractsPage() {
         .map((section) => `${section.title}\n${section.content}`)
         .join("\n\n");
 
-      const payload = {
+      const payload: Record<string, unknown> = {
         title: templateForm.title,
         category: "residential",
         content: templateContent || templateForm.description || "Template content",
         description: templateForm.description,
-        monthly_rent: templateForm.monthly_rent,
-        deposit_amount: templateForm.deposit_amount,
       };
+      if (currentCompany?.id && isValidUuid(currentCompany.id)) {
+        payload.company_id = currentCompany.id;
+      }
 
       let templateId = editingTemplateId;
       if (editingTemplateId) {
@@ -811,7 +832,8 @@ export default function ContractsPage() {
           const { error: secErr } = await supabase.from("contract_template_sections").insert(
             validSections.map((s, i) => ({
               template_id: templateId,
-              sort_order: i,
+              section_key: `sec_${i + 1}`,
+              order_index: i,
               title: s.title,
               content: s.content,
             })),
@@ -1400,6 +1422,20 @@ export default function ContractsPage() {
       {/* ═══════════ DELETE DIALOGS ═══════════ */}
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Contract" message={`Delete contract for ${deleteTarget?.tenantName}?`} confirmLabel="Delete" loading={deleting} />
       <ConfirmDialog open={!!deleteTemplateTarget} onClose={() => setDeleteTemplateTarget(null)} onConfirm={onDeleteTemplate} title="Delete Template" message={`Delete template "${deleteTemplateTarget?.title}"? This cannot be undone.`} confirmLabel="Delete" loading={deletingTemplate} />
+
+      <DocumentShareModal
+        isOpen={shareModalDoc.isOpen}
+        onClose={() => setShareModalDoc((prev) => ({ ...prev, isOpen: false }))}
+        documentTitle={shareModalDoc.documentTitle}
+        documentType={shareModalDoc.documentType}
+        documentHtml={shareModalDoc.documentHtml}
+        documentUrl={shareModalDoc.documentUrl}
+        fileNameBase={shareModalDoc.fileNameBase}
+        ownerName={shareModalDoc.ownerName}
+        ownerEmail={shareModalDoc.ownerEmail}
+        defaultSubject={shareModalDoc.defaultSubject}
+        defaultMessage={shareModalDoc.defaultMessage}
+      />
     </ModulePage>
   );
 }

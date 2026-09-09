@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
-import { fetchTenantsData } from "@/lib/data";
+import { fetchTenantsData, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
-import { fetchCompanyInfo, fetchAdminInfo, uploadPdfFromHtml, createPdfAttachmentFromUrl, downloadHtmlDocument } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, uploadPdfFromHtml, createPdfAttachmentFromUrl, downloadHtmlDocument, downloadPdfDocument, downloadPdfFromUrl } from "@/lib/storage";
+import { DocumentShareModal } from "@/components/document-share-modal";
 import { buildProfessionalInvoiceHtml, buildProfessionalContractHtml } from "@/lib/document-templates";
 import type { ContractSection } from "@/lib/document-templates";
 import { sendEmail, sendWhatsApp } from "@/lib/notifications";
@@ -140,7 +141,7 @@ async function buildInvoiceHtmlProfessional(
 }
 
 export default function TenantsPage() {
-  const { user } = useAuth();
+  const { user, currentCompany } = useAuth();
 
   const [tenants, setTenants] = useState<TenantRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -177,6 +178,21 @@ export default function TenantsPage() {
   const [sharingInvoiceId, setSharingInvoiceId] = useState<string | null>(null);
   const [tenantContracts, setTenantContracts] = useState<TenantContractRow[]>([]);
   const [contractActionId, setContractActionId] = useState<string | null>(null);
+  const [shareModalDoc, setShareModalDoc] = useState<{
+    isOpen: boolean;
+    documentTitle: string;
+    documentType?: string;
+    documentHtml?: string;
+    documentUrl?: string;
+    fileNameBase?: string;
+    ownerName?: string;
+    ownerEmail?: string;
+    defaultSubject?: string;
+    defaultMessage?: string;
+  }>({
+    isOpen: false,
+    documentTitle: "",
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -282,15 +298,22 @@ export default function TenantsPage() {
     setSaving(true);
 
     try {
+      const parts = form.full_name.trim().split(/\s+/);
+      const firstName = parts[0] || "";
+      const surname = parts.slice(1).join(" ") || parts[0] || "";
+
       const payload: Record<string, unknown> = {
-        full_name: form.full_name,
-        id_number: form.id_number,
-        phone: form.phone,
-        email: form.email,
+        full_name: form.full_name.trim(),
+        first_name: firstName,
+        surname: surname,
+        id_number: form.id_number.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim(),
         tenure_status: form.tenure_status,
+        company_id: currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null,
       };
 
-      if (form.property_id) {
+      if (form.property_id && isValidUuid(form.property_id)) {
         payload.property_id = form.property_id;
         payload.tenure_start_date = new Date().toISOString().slice(0, 10);
       }
@@ -393,9 +416,9 @@ export default function TenantsPage() {
       if (contractIds.length > 0) {
         const { data: cs } = await supabase
           .from("contract_sections")
-          .select("contract_id, sort_order, title, content")
+          .select("contract_id, order_index, title, content")
           .in("contract_id", contractIds)
-          .order("sort_order");
+          .order("order_index");
         if (cs) {
           contractSectionsMap = {};
           cs.forEach((s) => {
@@ -521,10 +544,10 @@ export default function TenantsPage() {
 
     try {
       const payload: Record<string, unknown> = {
-        property_id: detailsPropertyId || null,
+        property_id: (detailsPropertyId && isValidUuid(detailsPropertyId)) ? detailsPropertyId : null,
       };
 
-      if (detailsPropertyId) {
+      if (detailsPropertyId && isValidUuid(detailsPropertyId)) {
         payload.tenure_start_date = new Date().toISOString().slice(0, 10);
       }
 
@@ -554,8 +577,8 @@ export default function TenantsPage() {
       return;
     }
 
-    if (!detailsPropertyId) {
-      alert("Assign tenant to a property first.");
+    if (!detailsPropertyId || !isValidUuid(detailsPropertyId)) {
+      alert("Assign tenant to a valid property first.");
       return;
     }
 
@@ -589,6 +612,7 @@ export default function TenantsPage() {
 
       const totalAmount = selectedPayments.reduce((sum, payment) => sum + payment.amountPaid, 0);
       const dueDate = new Date().toISOString().slice(0, 10);
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
 
       const { data: createdInvoice, error: createError } = await supabase
         .from("invoices")
@@ -599,6 +623,7 @@ export default function TenantsPage() {
           due_date: dueDate,
           total_amount: totalAmount,
           status: "paid",
+          company_id: compId,
         })
         .select("id")
         .single();
@@ -610,6 +635,7 @@ export default function TenantsPage() {
           invoice_id: createdInvoice.id,
           description: `Payment on ${payment.paymentDate} recorded by ${payment.recordedBy}`,
           amount: payment.amountPaid,
+          company_id: compId,
         })),
       );
 
@@ -680,23 +706,20 @@ export default function TenantsPage() {
     if (!detailsRow) return;
 
     try {
-      if (invoice.pdfUrl && invoice.pdfUrl.startsWith("http")) {
-        const link = document.createElement("a");
-        link.href = invoice.pdfUrl;
-        link.download = `invoice-${invoice.id}.pdf`;
-        link.click();
+      const fileNameBase = `invoice-${detailsRow.fullName.replace(/\s+/g, "_")}-${invoice.month}`;
+      if (invoice.pdfUrl && invoice.pdfUrl.startsWith("http") && invoice.pdfUrl.toLowerCase().includes(".pdf")) {
+        await downloadPdfFromUrl(invoice.pdfUrl, fileNameBase);
         return;
       }
 
-      // Check if we have stored HTML
       if (invoice.pdfUrl && invoice.pdfUrl.startsWith("<")) {
-        downloadHtmlDocument(invoice.pdfUrl, `invoice-${invoice.id}.html`);
+        downloadPdfDocument(invoice.pdfUrl, fileNameBase);
         return;
       }
 
       const paymentDates = await getInvoicePaymentDates(invoice.id);
       const html = await buildInvoiceHtmlProfessional(invoice, detailsRow.fullName, detailsPropertyName, paymentDates, user?.email ?? undefined);
-      downloadHtmlDocument(html, `invoice-${invoice.id}.html`);
+      downloadPdfDocument(html, fileNameBase);
     } catch (downloadError) {
       alert(downloadError instanceof Error ? downloadError.message : "Could not download invoice.");
     }
@@ -709,12 +732,12 @@ export default function TenantsPage() {
     paymentDates: string[],
   ) => {
     const { error: logError } = await supabase.from("audit_log").insert({
-      user_email: user?.email ?? null,
+      user_email: user?.email || "admin@championscourt.co.za",
       user_name: user?.email ?? "Admin",
       action: "invoice_shared",
       entity_type: "invoice_share",
-      entity_id: tenantId,
-      entity_name: invoiceId,
+      entity_id: isValidUuid(tenantId) ? tenantId : null,
+      company_id: currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null,
       details: {
         channel,
         invoice_id: invoiceId,
@@ -735,7 +758,6 @@ export default function TenantsPage() {
     try {
       const paymentDates = await getInvoicePaymentDates(invoice.id);
       const paymentsLabel = paymentDates.length ? paymentDates.join(", ") : "linked dates unavailable";
-      const messageText = `Invoice ${invoice.month} (${formatCurrency(invoice.amount)}), payments made on ${paymentsLabel}.`;
 
       // Build professional invoice HTML for email attachment
       const invoiceHtml = await buildInvoiceHtmlProfessional(
@@ -745,35 +767,25 @@ export default function TenantsPage() {
         paymentDates,
         user?.email ?? undefined,
       );
-      const company = await fetchCompanyInfo();
 
       if (channel === "email") {
-        if (!detailsRow.email) {
-          alert("Tenant email is missing.");
-          return;
-        }
-
-        const subject = `Invoice ${invoice.month} - ${detailsRow.fullName}`;
         const pdfUrl = await ensureShareableDocumentUrl(invoice.pdfUrl, invoiceHtml, `invoice-${invoice.id}.pdf`);
-        await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoice.id);
-        const attachment = await createPdfAttachmentFromUrl(pdfUrl, `invoice-${invoice.id}.pdf`);
-        const result = await sendEmail({
-          to: detailsRow.email,
-          recipientName: detailsRow.fullName,
-          subject,
-          bodyText: `Please find your invoice for <strong>${invoice.month}</strong> attached below. The total amount due is <strong>${formatCurrency(invoice.amount)}</strong>. Payments recorded on ${paymentsLabel}.`,
-          documentHtml: invoiceHtml,
-          attachmentFilename: attachment.filename,
-          companyName: company?.companyName,
-          attachmentContentBase64: attachment.contentBase64,
-          attachmentContentType: attachment.contentType,
-        });
-
-        if (result.sent) {
-          alert("Invoice sent via email successfully!");
-        } else if (result.fallback) {
-          // Fallback mailto was opened
+        if (pdfUrl && pdfUrl !== invoice.pdfUrl) {
+          await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoice.id);
         }
+        setShareModalDoc({
+          isOpen: true,
+          documentTitle: `Invoice #${invoice.id.slice(0, 8)} (${invoice.month})`,
+          documentType: "Invoice",
+          documentHtml: invoiceHtml,
+          documentUrl: pdfUrl,
+          fileNameBase: `invoice-${detailsRow.fullName.replace(/\s+/g, "_")}-${invoice.month}`,
+          ownerName: detailsRow.fullName,
+          ownerEmail: detailsRow.email || "",
+          defaultSubject: `Invoice ${invoice.month} - ${detailsRow.fullName}`,
+          defaultMessage: `Dear ${detailsRow.fullName},\n\nPlease find your rental invoice for ${invoice.month} attached in the amount of ${formatCurrency(invoice.amount)}.`,
+        });
+        return;
       } else {
         const phone = sanitizePhoneToWhatsApp(detailsRow.phone ?? "");
         if (!phone) {
@@ -850,15 +862,13 @@ export default function TenantsPage() {
 
   const downloadContract = async (contract: TenantContractRow) => {
     try {
-      if (contract.documentUrl && contract.documentUrl.startsWith("http")) {
-        const link = document.createElement("a");
-        link.href = contract.documentUrl;
-        link.download = `contract-${contract.id}.pdf`;
-        link.click();
+      const fileNameBase = `contract-${contract.title.replace(/\s+/g, "-")}`;
+      if (contract.documentUrl && contract.documentUrl.startsWith("http") && contract.documentUrl.toLowerCase().includes(".pdf")) {
+        await downloadPdfFromUrl(contract.documentUrl, fileNameBase);
         return;
       }
       const html = await buildContractHtmlForTenant(contract);
-      downloadHtmlDocument(html, `contract-${contract.title.replace(/\s+/g, "-")}.html`);
+      downloadPdfDocument(html, fileNameBase);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Could not download contract.");
     }
@@ -870,28 +880,25 @@ export default function TenantsPage() {
     try {
       const messageText = `${contract.title} for ${contract.propertyName}: ${formatDate(contract.startDate)} – ${formatDate(contract.endDate)}, Monthly rent ${formatCurrency(contract.monthlyRent)}.`;
       const contractHtml = await buildContractHtmlForTenant(contract);
-      const company = await fetchCompanyInfo();
 
       if (channel === "email") {
-        if (!detailsRow.email) { alert("Tenant email is missing."); return; }
-        const subject = `${contract.title} - ${detailsRow.fullName}`;
         const pdfUrl = await ensureShareableDocumentUrl(contract.documentUrl, contractHtml, `contract-${contract.id}.pdf`);
-        await supabase.from("contracts").update({ document_url: pdfUrl }).eq("id", contract.id);
-        const attachment = await createPdfAttachmentFromUrl(pdfUrl, `contract-${contract.id}.pdf`);
-        const result = await sendEmail({
-          to: detailsRow.email,
-          recipientName: detailsRow.fullName,
-          subject,
-          bodyText: `Please find your lease agreement <strong>"${contract.title}"</strong> for <strong>${contract.propertyName}</strong> attached below. The contract period is ${formatDate(contract.startDate)} to ${formatDate(contract.endDate)} with a monthly rent of <strong>${formatCurrency(contract.monthlyRent)}</strong>.`,
-          documentHtml: contractHtml,
-          attachmentFilename: attachment.filename,
-          companyName: company?.companyName,
-          attachmentContentBase64: attachment.contentBase64,
-          attachmentContentType: attachment.contentType,
-        });
-        if (result.sent) {
-          alert("Contract sent via email successfully!");
+        if (pdfUrl && pdfUrl !== contract.documentUrl) {
+          await supabase.from("contracts").update({ document_url: pdfUrl }).eq("id", contract.id);
         }
+        setShareModalDoc({
+          isOpen: true,
+          documentTitle: `${contract.title} - ${detailsRow.fullName}`,
+          documentType: "Contract",
+          documentHtml: contractHtml,
+          documentUrl: pdfUrl,
+          fileNameBase: `contract-${contract.title.replace(/\s+/g, "_")}`,
+          ownerName: detailsRow.fullName,
+          ownerEmail: detailsRow.email || "",
+          defaultSubject: `${contract.title} - ${detailsRow.fullName}`,
+          defaultMessage: `Dear ${detailsRow.fullName},\n\nPlease find your lease agreement "${contract.title}" for ${contract.propertyName} attached. The contract period is ${formatDate(contract.startDate)} to ${formatDate(contract.endDate)} with a monthly rent of ${formatCurrency(contract.monthlyRent)}.`,
+        });
+        return;
       } else {
         const phone = sanitizePhoneToWhatsApp(detailsRow.phone ?? "");
         if (!phone) { alert("Tenant phone is missing."); return; }
@@ -1372,6 +1379,20 @@ export default function TenantsPage() {
           </div>
         )}
       </SideDrawer>
+
+      <DocumentShareModal
+        isOpen={shareModalDoc.isOpen}
+        onClose={() => setShareModalDoc((prev) => ({ ...prev, isOpen: false }))}
+        documentTitle={shareModalDoc.documentTitle}
+        documentType={shareModalDoc.documentType}
+        documentHtml={shareModalDoc.documentHtml}
+        documentUrl={shareModalDoc.documentUrl}
+        fileNameBase={shareModalDoc.fileNameBase}
+        ownerName={shareModalDoc.ownerName}
+        ownerEmail={shareModalDoc.ownerEmail}
+        defaultSubject={shareModalDoc.defaultSubject}
+        defaultMessage={shareModalDoc.defaultMessage}
+      />
     </ModulePage>
   );
 }

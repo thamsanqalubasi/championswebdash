@@ -210,22 +210,95 @@ export function htmlToStorableString(html: string): string {
 
 /**
  * Fetch company settings used for document generation.
+ * Automatically queries the active company from public.companies so that
+ * invoices, contracts, receipts, and reports dynamically render with that
+ * company's unique name, logo, address, and payment instructions.
  */
-export async function fetchCompanyInfo(): Promise<CompanyInfo> {
-  const { data, error } = await supabase
-    .from("company_settings")
-    .select("company_name, logo_url, address, tax_rate, payment_instructions")
-    .limit(1)
-    .maybeSingle();
+export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo> {
+  let targetId = companyId;
 
-  if (error) throw error;
+  if (!targetId && typeof localStorage !== "undefined") {
+    try {
+      const saved = localStorage.getItem("cc_selected_company");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.id) targetId = parsed.id;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (targetId) {
+    try {
+      const { data: comp, error: compErr } = await supabase
+        .from("companies")
+        .select("name, logo_url, address, tax_rate, payment_instructions")
+        .eq("id", targetId)
+        .maybeSingle();
+
+      if (!compErr && comp) {
+        return {
+          companyName: String(comp.name ?? "Champions Court"),
+          logoUrl: String(comp.logo_url ?? ""),
+          address: String(comp.address ?? ""),
+          taxRate: Number(comp.tax_rate ?? 15),
+          paymentInstructions: String(comp.payment_instructions ?? ""),
+        };
+      }
+    } catch {
+      // ignore
+    }
+
+    // Also check saved localStorage fallback if database query returned empty
+    if (typeof localStorage !== "undefined") {
+      try {
+        const saved = localStorage.getItem("cc_selected_company");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.name) {
+            return {
+              companyName: String(parsed.name),
+              logoUrl: String(parsed.logoUrl || ""),
+              address: String(parsed.address || ""),
+              taxRate: Number(parsed.taxRate || 15),
+              paymentInstructions: String(parsed.paymentInstructions || ""),
+            };
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // Fallback to company_settings
+  try {
+    const { data, error } = await supabase
+      .from("company_settings")
+      .select("company_name, logo_url, address, tax_rate, payment_instructions")
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && data) {
+      return {
+        companyName: String(data.company_name ?? "Champions Court"),
+        logoUrl: String(data.logo_url ?? ""),
+        address: String(data.address ?? ""),
+        taxRate: Number(data.tax_rate ?? 15),
+        paymentInstructions: String(data.payment_instructions ?? ""),
+      };
+    }
+  } catch {
+    // ignore
+  }
 
   return {
-    companyName: String(data?.company_name ?? "Champions Court"),
-    logoUrl: String(data?.logo_url ?? ""),
-    address: String(data?.address ?? ""),
-    taxRate: Number(data?.tax_rate ?? 15),
-    paymentInstructions: String(data?.payment_instructions ?? ""),
+    companyName: "Champions Court Hospitality",
+    logoUrl: "",
+    address: "Johannesburg, South Africa",
+    taxRate: 15,
+    paymentInstructions: "Please refer to standard EFT instructions.",
   };
 }
 
@@ -283,4 +356,40 @@ export function downloadHtmlDocument(html: string, filename: string): void {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Download HTML converted to a true PDF file.
+ */
+export function downloadPdfDocument(html: string, fileNameBase: string): void {
+  const file = createPdfFileFromHtml(html, fileNameBase);
+  const url = URL.createObjectURL(file);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = file.name;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Download a PDF from an existing URL or fallback to opening it.
+ */
+export async function downloadPdfFromUrl(url: string, fileNameBase: string): Promise<void> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Could not fetch PDF URL.");
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = `${fileNameBase.replace(/\.pdf$/i, "")}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(blobUrl);
+  } catch {
+    window.open(url, "_blank");
+  }
 }

@@ -5,11 +5,12 @@ import { Modal } from "@/components/modal";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ImageGallery } from "@/components/image-gallery";
 import { supabase } from "@/lib/supabase";
-import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, uploadPdfFromHtml, createPdfAttachmentFromUrl, downloadHtmlDocument } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, uploadPdfFromHtml, createPdfAttachmentFromUrl, downloadHtmlDocument, downloadPdfDocument, downloadPdfFromUrl } from "@/lib/storage";
 import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
 import { useAuth } from "@/lib/auth";
 import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
-import { verifyAdminPin } from "@/lib/data";
+import { verifyAdminPin, isValidUuid } from "@/lib/data";
+import { DocumentShareModal } from "@/components/document-share-modal";
 import { billStatusMeta, frequencyLabel, type BillFrequency, type BillRow } from "@/lib/bills";
 import {
   ArrowLeft,
@@ -149,7 +150,7 @@ function DetailStat({ label, value, icon: Icon, colorClass = "text-foreground" }
 
 export default function PropertyDetailsPage() {
   const { propertyId } = useParams<{ propertyId: string }>();
-  const { user } = useAuth();
+  const { user, currentCompany } = useAuth();
 
   const [property, setProperty] = useState<PropertyDetails | null>(null);
   const [assignedTenants, setAssignedTenants] = useState<AssignedTenant[]>([]);
@@ -184,6 +185,23 @@ export default function PropertyDetailsPage() {
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [deletingPhoto, setDeletingPhoto] = useState(false);
+
+  // Document share / email modal
+  const [shareModalDoc, setShareModalDoc] = useState<{
+    isOpen: boolean;
+    documentTitle: string;
+    documentType?: string;
+    documentHtml?: string;
+    documentUrl?: string;
+    fileNameBase?: string;
+    ownerName?: string;
+    ownerEmail?: string;
+    defaultSubject?: string;
+    defaultMessage?: string;
+  }>({
+    isOpen: false,
+    documentTitle: "",
+  });
   const [billPaymentTarget, setBillPaymentTarget] = useState<PropertyBill | null>(null);
   const [billPaymentStatus, setBillPaymentStatus] = useState<"paid" | "pending">("paid");
   const [billPaidAmount, setBillPaidAmount] = useState(0);
@@ -206,19 +224,19 @@ export default function PropertyDetailsPage() {
 
       try {
         const loadBillSchedules = async () => {
-          const withFrequency = await supabase
+          const res = await supabase
             .from("property_bill_schedules")
-            .select("id, title, property_id, amount, due_day, frequency, created_at")
+            .select("id, name, property_id, amount, due_day, created_at")
             .eq("property_id", propertyId)
             .eq("is_active", true)
-            .order("title");
+            .order("name");
 
-          if (!withFrequency.error) {
-            return withFrequency.data ?? [];
-          }
-
-          if (!isFrequencyColumnMissing(withFrequency.error)) {
-            throw withFrequency.error;
+          if (!res.error && res.data) {
+            return res.data.map((row) => ({
+              ...row,
+              title: row.name,
+              frequency: "monthly" as const,
+            }));
           }
 
           const fallback = await supabase
@@ -229,7 +247,7 @@ export default function PropertyDetailsPage() {
             .order("title");
 
           if (fallback.error) throw fallback.error;
-          return (fallback.data ?? []).map((row) => ({ ...row, frequency: "monthly" }));
+          return (fallback.data ?? []).map((row) => ({ ...row, frequency: "monthly" as const }));
         };
 
         const [propertyResult, assignedTenantsResult, unassignedTenantsResult, invoicesResult, maintenanceResult, billSchedules, billMonthlyResult] =
@@ -263,9 +281,8 @@ export default function PropertyDetailsPage() {
             loadBillSchedules(),
             supabase
               .from("property_monthly_bills")
-              .select("schedule_id, month, due_date, amount, status, paid_at")
-              .eq("property_id", propertyId)
-              .order("due_date", { ascending: false }),
+              .select("schedule_id, month, amount, status, paid_date")
+              .order("month", { ascending: false }),
           ]);
 
         if (propertyResult.error) throw propertyResult.error;
@@ -333,10 +350,10 @@ export default function PropertyDetailsPage() {
           const monthlyRows = (billMonthlyResult.data ?? []).map((row) => ({
             scheduleId: String(row.schedule_id ?? ""),
             month: String(row.month ?? ""),
-            dueDate: String(row.due_date ?? ""),
+            dueDate: "",
             amount: Number(row.amount ?? 0),
             status: String(row.status ?? "pending"),
-            paidAt: row.paid_at ? String(row.paid_at) : "",
+            paidAt: row.paid_date ? String(row.paid_date) : "",
           }));
 
           const monthlyBySchedule = new Map<string, typeof monthlyRows>();
@@ -556,14 +573,16 @@ export default function PropertyDetailsPage() {
       }
 
       const dueDate = `${month}-01`;
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
 
       const { error: createError } = await supabase.from("invoices").insert({
         tenant_id: tenant.id,
         property_id: propertyId,
         month,
         total_amount: property.monthlyRent,
-        status: "draft",
+        status: "unpaid",
         due_date: dueDate,
+        company_id: compId,
       });
 
       if (createError) throw createError;
@@ -628,33 +647,27 @@ export default function PropertyDetailsPage() {
 
   const sendInvoiceEmail = async (invoice: PropertyInvoice) => {
     const tenant = assignedTenants.find((item) => item.id === invoice.tenantId);
-    if (!tenant?.email) { alert("No tenant email address available."); return; }
     try {
       const html = await buildInvoiceHtml(invoice);
       const pdfUrl = await ensureShareableDocumentUrl(invoice.pdfUrl, html, `invoice-${invoice.id}.pdf`);
       if (pdfUrl && pdfUrl !== invoice.pdfUrl) {
         await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoice.id);
       }
-      const attachment = await createPdfAttachmentFromUrl(pdfUrl, `invoice-${invoice.id}.pdf`);
-      const company = await fetchCompanyInfo();
-      const subject = `Invoice ${invoice.month} - ${property?.name ?? "Property"}`;
-      const bodyText = `Please find your invoice for ${invoice.month} attached below. The total amount due is ${formatCurrency(invoice.amount)}.`;
-      const emailHtml = wrapDocumentInEmailHtml({
-        recipientName: tenant.fullName,
-        subject,
-        bodyText,
+      setShareModalDoc({
+        isOpen: true,
+        documentTitle: `Invoice #${invoice.id.slice(0, 8)} (${invoice.month})`,
+        documentType: "Invoice",
         documentHtml: html,
-        companyName: company.companyName,
+        documentUrl: pdfUrl,
+        fileNameBase: `invoice-${invoice.tenantName.replace(/\s+/g, "_")}-${invoice.month}`,
+        ownerName: invoice.tenantName,
+        ownerEmail: tenant?.email || "",
+        defaultSubject: `Invoice ${invoice.month} - ${property?.name ?? currentCompany?.name ?? "Champions Court"}`,
+        defaultMessage: `Dear ${invoice.tenantName},\n\nPlease find your rental invoice for ${invoice.month} attached. The total amount due is ${formatCurrency(invoice.amount)}.`,
       });
-      const result = await sendEmailViaApi({
-        to: tenant.email,
-        subject,
-        html: emailHtml,
-        attachments: [attachment],
-      });
-      if (!result.success) throw new Error(result.error || "Email API request failed.");
-      alert("Invoice sent via email successfully!");
-    } catch (e) { alert(e instanceof Error ? e.message : "Could not send email."); }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not prepare invoice for sharing.");
+    }
   };
 
   const sendInvoiceWhatsApp = async (invoice: PropertyInvoice) => {
@@ -698,26 +711,26 @@ export default function PropertyDetailsPage() {
   };
 
   const setInvoiceProcessed = async (invoice: PropertyInvoice) => {
-    const targetStatus = "sent";
     try {
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
       const { error: updateError } = await supabase
         .from("invoices")
-        .update({ status: targetStatus })
+        .update({ updated_at: new Date().toISOString() })
         .eq("id", invoice.id);
       if (updateError) throw updateError;
 
       const actorName = user?.email ?? "Admin";
       await supabase.from("audit_log").insert({
-        user_email: user?.email ?? null,
+        user_email: user?.email || "admin@championscourt.co.za",
         user_name: actorName,
         action: "invoice_status_updated",
         entity_type: "invoice",
-        entity_id: invoice.id,
-        entity_name: invoice.tenantName,
+        entity_id: isValidUuid(invoice.id) ? invoice.id : null,
+        company_id: compId,
         details: {
+          tenant_name: invoice.tenantName,
           previous_status: invoice.status,
           new_status: "processed",
-          stored_status: targetStatus,
           month: invoice.month,
           amount: invoice.amount,
           property_id: propertyId,
@@ -733,19 +746,17 @@ export default function PropertyDetailsPage() {
 
   const downloadInvoice = async (invoice: PropertyInvoice) => {
     try {
-      if (invoice.pdfUrl && invoice.pdfUrl.startsWith("http")) {
-        const link = document.createElement("a");
-        link.href = invoice.pdfUrl;
-        link.download = `invoice-${invoice.id}.pdf`;
-        link.click();
+      const fileNameBase = `invoice-${invoice.tenantName.replace(/\s+/g, "_")}-${invoice.month}`;
+      if (invoice.pdfUrl && invoice.pdfUrl.startsWith("http") && invoice.pdfUrl.toLowerCase().includes(".pdf")) {
+        await downloadPdfFromUrl(invoice.pdfUrl, fileNameBase);
         return;
       }
       if (invoice.pdfUrl && invoice.pdfUrl.startsWith("<")) {
-        downloadHtmlDocument(invoice.pdfUrl, `invoice-${invoice.id}.html`);
+        downloadPdfDocument(invoice.pdfUrl, fileNameBase);
         return;
       }
       const html = await buildInvoiceHtml(invoice);
-      downloadHtmlDocument(html, `invoice-${invoice.id}.html`);
+      downloadPdfDocument(html, fileNameBase);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Could not download invoice.");
     }
@@ -791,68 +802,44 @@ export default function PropertyDetailsPage() {
       const previousStatus = String(existingMonthly?.status ?? billPaymentTarget.status ?? "pending");
       const newAmount = Number(billPaymentStatus === "paid" ? billPaidAmount : billPaymentTarget.amount);
 
-      const monthlyPayload = {
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      const monthlyPayload: Record<string, unknown> = {
         schedule_id: billPaymentTarget.id,
-        property_id: billPaymentTarget.propertyId,
         month: monthKey,
-        due_date: dueDate,
         amount: newAmount,
         status: billPaymentStatus,
-        paid_at: billPaymentStatus === "paid" ? `${billPaidDate}T12:00:00.000Z` : null,
-        executed_by_name: executorName,
+        paid_date: billPaymentStatus === "paid" ? billPaidDate : null,
+        company_id: compId,
       };
 
-      const monthlyPayloadFallback = {
-        schedule_id: billPaymentTarget.id,
-        property_id: billPaymentTarget.propertyId,
-        month: monthKey,
-        due_date: dueDate,
-        amount: newAmount,
-        status: billPaymentStatus,
-        paid_at: billPaymentStatus === "paid" ? `${billPaidDate}T12:00:00.000Z` : null,
-      };
+      let activeMonthlyId = existingMonthly?.id;
 
       if (existingMonthly?.id) {
         const { error: updateError } = await supabase
           .from("property_monthly_bills")
           .update(monthlyPayload)
           .eq("id", existingMonthly.id);
-        if (updateError) {
-          if (isExecutedByNameColumnMissing(updateError)) {
-            const { error: fallbackError } = await supabase
-              .from("property_monthly_bills")
-              .update(monthlyPayloadFallback)
-              .eq("id", existingMonthly.id);
-            if (fallbackError) throw fallbackError;
-          } else {
-            throw updateError;
-          }
-        }
+        if (updateError) throw updateError;
       } else {
-        const { error: insertError } = await supabase
+        const { data: createdBill, error: insertError } = await supabase
           .from("property_monthly_bills")
-          .insert(monthlyPayload);
-        if (insertError) {
-          if (isExecutedByNameColumnMissing(insertError)) {
-            const { error: fallbackError } = await supabase
-              .from("property_monthly_bills")
-              .insert(monthlyPayloadFallback);
-            if (fallbackError) throw fallbackError;
-          } else {
-            throw insertError;
-          }
-        }
+          .insert(monthlyPayload)
+          .select("id")
+          .single();
+        if (insertError) throw insertError;
+        if (createdBill?.id) activeMonthlyId = createdBill.id;
       }
 
       const actorName = user?.email ?? "Admin";
       await supabase.from("audit_log").insert({
-        user_email: user?.email ?? null,
+        user_email: user?.email || "admin@championscourt.co.za",
         user_name: actorName,
         action: "bill_payment_updated",
         entity_type: "property_monthly_bill",
-        entity_id: existingMonthly?.id ?? null,
-        entity_name: billPaymentTarget.name,
+        entity_id: activeMonthlyId && isValidUuid(activeMonthlyId) ? activeMonthlyId : null,
+        company_id: compId,
         details: {
+          bill_name: billPaymentTarget.name,
           property_id: billPaymentTarget.propertyId,
           schedule_id: billPaymentTarget.id,
           month: monthKey,
@@ -1002,8 +989,19 @@ export default function PropertyDetailsPage() {
               {/* Maintenance List Section */}
               <section className="rounded-2xl border border-border-color bg-surface overflow-hidden">
                 <header className="px-6 py-4 border-b border-border-color/50 bg-surface-elevated/30 flex items-center justify-between">
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-muted/60">Maintenance Log</h3>
-                  <Wrench size={16} className="text-muted/40" />
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-muted/60">Maintenance Log</h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to={`/maintenance/work-orders?create=1&propertyId=${property.id}`}
+                      className="flex items-center gap-1 text-xs font-semibold text-amber-600 hover:text-amber-700 bg-amber-500/10 hover:bg-amber-500/20 px-2.5 py-1 rounded-lg transition-colors"
+                      title="New Work Order for this property"
+                    >
+                      <Wrench size={13} />
+                      <span>+ Work Order</span>
+                    </Link>
+                  </div>
                 </header>
                 <div className="p-6">
                   {maintenance.length === 0 ? (
@@ -1106,9 +1104,8 @@ export default function PropertyDetailsPage() {
                     </div>
                     <ChevronRight size={16} className="text-muted/30 group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
                   </Link>
-                  <button
-                    type="button"
-                    onClick={() => {}}
+                  <Link
+                    to={`/maintenance/work-orders?create=1&propertyId=${property.id}`}
                     className="flex items-center justify-between w-full p-3 rounded-xl hover:bg-surface-elevated/50 transition-colors group"
                   >
                     <div className="flex items-center gap-3">
@@ -1118,7 +1115,7 @@ export default function PropertyDetailsPage() {
                       <span className="text-sm font-bold text-foreground">Open Work Order</span>
                     </div>
                     <ChevronRight size={16} className="text-muted/30 group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
-                  </button>
+                  </Link>
                 </div>
               </section>
             </aside>
@@ -1270,6 +1267,20 @@ export default function PropertyDetailsPage() {
       </Modal>
 
       <ImageGallery images={property?.photos ?? []} currentIndex={galleryIndex} open={galleryOpen} onClose={() => setGalleryOpen(false)} onNavigate={setGalleryIndex} onDelete={deletePhoto} deleting={deletingPhoto} />
+
+      <DocumentShareModal
+        isOpen={shareModalDoc.isOpen}
+        onClose={() => setShareModalDoc((prev) => ({ ...prev, isOpen: false }))}
+        documentTitle={shareModalDoc.documentTitle}
+        documentType={shareModalDoc.documentType}
+        documentHtml={shareModalDoc.documentHtml}
+        documentUrl={shareModalDoc.documentUrl}
+        fileNameBase={shareModalDoc.fileNameBase}
+        ownerName={shareModalDoc.ownerName}
+        ownerEmail={shareModalDoc.ownerEmail}
+        defaultSubject={shareModalDoc.defaultSubject}
+        defaultMessage={shareModalDoc.defaultMessage}
+      />
     </ModulePage>
   );
 }

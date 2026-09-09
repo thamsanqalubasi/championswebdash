@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
-import { fetchInventoryData } from "@/lib/data";
+import { fetchInventoryData, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
 import type { InventoryItemRow } from "@/lib/types";
 
 import { 
@@ -49,6 +50,7 @@ function StatCard({ label, value, detail, icon: Icon, colorClass = "text-foregro
 }
 
 export default function InventoryPage() {
+  const { currentCompany } = useAuth();
   const [items, setItems] = useState<InventoryItemRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -110,7 +112,18 @@ export default function InventoryPage() {
   const onSave = async () => {
     setSaving(true);
     try {
-      const payload = { name: form.name, category: form.category, quantity: form.quantity, unit: form.unit, min_stock_level: form.min_stock_level, unit_cost: form.unit_cost, supplier: form.supplier, location: form.location };
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      const payload: Record<string, unknown> = {
+        name: form.name.trim(),
+        category: form.category,
+        quantity: form.quantity,
+        unit: form.unit,
+        min_stock_level: form.min_stock_level,
+        unit_cost: form.unit_cost,
+        supplier: form.supplier,
+        location: form.location,
+        company_id: compId,
+      };
       if (editingId) {
         const { error: err } = await supabase.from("maintenance_inventory").update(payload).eq("id", editingId);
         if (err) throw err;

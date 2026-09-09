@@ -29,9 +29,92 @@ import type {
   WorkOrderRow,
 } from "./types";
 import { supabase } from "./supabase";
+import {
+  sendEmailViaApi,
+  wrapStaffInvitationEmailHtml,
+  wrapStaffPasswordResetEmailHtml,
+} from "./notifications";
 
 function toNumber(value: unknown) {
   return Number(value ?? 0) || 0;
+}
+
+export function isValidUuid(id?: string | null): boolean {
+  if (!id) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
+export function generateUuid(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      // fallback
+    }
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+export function mapDepartmentToDb(dept: string): string {
+  const d = dept.toLowerCase();
+  if (d === "accountant" || d === "finance") return "finance";
+  if (d === "human_resources" || d === "hr") return "hr";
+  if (d === "front_desk" || d === "frontdesk") return "front_desk";
+  if (d === "maintenance") return "maintenance";
+  if (d === "housekeeping") return "housekeeping";
+  if (d === "kitchen") return "kitchen";
+  if (d === "it") return "it";
+  if (d === "procurement") return "procurement";
+  if (d === "audit") return "audit";
+  if (d === "manager") return "manager";
+  return "admin";
+}
+
+export function mapRoleLevelToDb(role: string): string {
+  if (role === "super_admin") return "super_admin";
+  if (role === "admin") return "admin";
+  if (role === "manager") return "manager";
+  return "staff";
+}
+
+export async function ensureDbUser(email: string, fullName?: string): Promise<string | null> {
+  try {
+    const { data: existing } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (existing?.id) {
+      return existing.id;
+    }
+
+    const parts = (fullName || "Staff Member").trim().split(" ");
+    const firstName = parts[0] || "Staff";
+    const lastName = parts.slice(1).join(" ") || "Member";
+
+    const { data: created, error } = await supabase
+      .from("users")
+      .insert({
+        email,
+        first_name: firstName,
+        last_name: lastName,
+        role: "maintainer",
+      })
+      .select("id")
+      .single();
+
+    if (!error && created?.id) {
+      return created.id;
+    }
+  } catch (err) {
+    console.warn("Could not ensure db user", err);
+  }
+  return null;
 }
 
 // --------------------------------------------------------------------------------------
@@ -69,9 +152,9 @@ export const MOCK_COMPANIES: Company[] = [
 
 export const MOCK_COMPANY_USERS: CompanyUser[] = [
   {
-    id: "u0000000-0000-0000-0000-000000000001",
+    id: "b0000000-0000-0000-0000-000000000001",
     companyId: "a0000000-0000-0000-0000-000000000001",
-    userId: "user-admin-01",
+    userId: "c0000000-0000-0000-0000-000000000001",
     email: "admin@championscourt.co.za",
     fullName: "Thamsanqa Lubasi (Super Admin)",
     department: "admin",
@@ -82,9 +165,9 @@ export const MOCK_COMPANY_USERS: CompanyUser[] = [
     createdAt: "2026-01-01T00:00:00Z",
   },
   {
-    id: "u0000000-0000-0000-0000-000000000002",
+    id: "b0000000-0000-0000-0000-000000000002",
     companyId: "a0000000-0000-0000-0000-000000000001",
-    userId: "user-frontdesk-01",
+    userId: "c0000000-0000-0000-0000-000000000002",
     email: "frontdesk@championscourt.co.za",
     fullName: "Nomsa Dlamini",
     department: "front_desk",
@@ -95,9 +178,9 @@ export const MOCK_COMPANY_USERS: CompanyUser[] = [
     createdAt: "2026-01-05T00:00:00Z",
   },
   {
-    id: "u0000000-0000-0000-0000-000000000003",
+    id: "b0000000-0000-0000-0000-000000000003",
     companyId: "a0000000-0000-0000-0000-000000000001",
-    userId: "user-maint-01",
+    userId: "c0000000-0000-0000-0000-000000000003",
     email: "maintenance@championscourt.co.za",
     fullName: "Sipho Khumalo",
     department: "maintenance",
@@ -108,9 +191,9 @@ export const MOCK_COMPANY_USERS: CompanyUser[] = [
     createdAt: "2026-01-10T00:00:00Z",
   },
   {
-    id: "u0000000-0000-0000-0000-000000000004",
+    id: "b0000000-0000-0000-0000-000000000004",
     companyId: "a0000000-0000-0000-0000-000000000001",
-    userId: "user-acc-01",
+    userId: "c0000000-0000-0000-0000-000000000004",
     email: "accounts@championscourt.co.za",
     fullName: "Lerato Mokoena",
     department: "accountant",
@@ -121,9 +204,9 @@ export const MOCK_COMPANY_USERS: CompanyUser[] = [
     createdAt: "2026-01-12T00:00:00Z",
   },
   {
-    id: "u0000000-0000-0000-0000-000000000005",
+    id: "b0000000-0000-0000-0000-000000000005",
     companyId: "a0000000-0000-0000-0000-000000000001",
-    userId: "user-hr-01",
+    userId: "c0000000-0000-0000-0000-000000000005",
     email: "hr@championscourt.co.za",
     fullName: "Precious Ndlovu",
     department: "human_resources",
@@ -134,9 +217,9 @@ export const MOCK_COMPANY_USERS: CompanyUser[] = [
     createdAt: "2026-01-15T00:00:00Z",
   },
   {
-    id: "u0000000-0000-0000-0000-000000000006",
+    id: "b0000000-0000-0000-0000-000000000006",
     companyId: "a0000000-0000-0000-0000-000000000001",
-    userId: "user-audit-01",
+    userId: "c0000000-0000-0000-0000-000000000006",
     email: "audit@championscourt.co.za",
     fullName: "Farai Moyo",
     department: "audit",
@@ -150,7 +233,7 @@ export const MOCK_COMPANY_USERS: CompanyUser[] = [
 
 export const MOCK_COMMERCIAL_ROOMS: CommercialRoom[] = [
   {
-    id: "room-101",
+    id: "d0000000-0000-0000-0000-000000000101",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
     propertyName: "Grand Champions Safari Lodge & Hotel",
@@ -169,7 +252,7 @@ export const MOCK_COMMERCIAL_ROOMS: CommercialRoom[] = [
     notes: "Garden view with king size bed.",
   },
   {
-    id: "room-102",
+    id: "d0000000-0000-0000-0000-000000000102",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
     propertyName: "Grand Champions Safari Lodge & Hotel",
@@ -188,7 +271,7 @@ export const MOCK_COMMERCIAL_ROOMS: CommercialRoom[] = [
     notes: "Honeymoon luxury suite with mountain view.",
   },
   {
-    id: "room-103",
+    id: "d0000000-0000-0000-0000-000000000103",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
     propertyName: "Grand Champions Safari Lodge & Hotel",
@@ -207,7 +290,7 @@ export const MOCK_COMMERCIAL_ROOMS: CommercialRoom[] = [
     notes: "Guest checked out at 10:30. Turnover clean requested.",
   },
   {
-    id: "room-201",
+    id: "d0000000-0000-0000-0000-000000000201",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
     propertyName: "Grand Champions Safari Lodge & Hotel",
@@ -226,7 +309,7 @@ export const MOCK_COMMERCIAL_ROOMS: CommercialRoom[] = [
     notes: "Reserved for corporate arrival at 16:00.",
   },
   {
-    id: "room-202",
+    id: "d0000000-0000-0000-0000-000000000202",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
     propertyName: "Grand Champions Safari Lodge & Hotel",
@@ -248,11 +331,11 @@ export const MOCK_COMMERCIAL_ROOMS: CommercialRoom[] = [
 
 export const MOCK_COMMERCIAL_BOOKINGS: CommercialBooking[] = [
   {
-    id: "booking-001",
+    id: "e0000000-0000-0000-0000-000000000001",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
     propertyName: "Grand Champions Safari Lodge & Hotel",
-    roomId: "room-101",
+    roomId: "d0000000-0000-0000-0000-000000000101",
     roomNumber: "Room 101",
     roomType: "deluxe",
     bookingCode: "BK-SAFARI-9821-K8",
@@ -282,11 +365,11 @@ export const MOCK_COMMERCIAL_BOOKINGS: CommercialBooking[] = [
 
 export const MOCK_HOUSEKEEPING: HousekeepingSchedule[] = [
   {
-    id: "clean-001",
+    id: "f0000000-0000-0000-0000-000000000001",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
     propertyName: "Grand Champions Safari Lodge & Hotel",
-    roomId: "room-103",
+    roomId: "d0000000-0000-0000-0000-000000000103",
     roomNumber: "Room 103",
     cleanerName: "Maria Sithole",
     cleaningType: "turnover_clean",
@@ -298,11 +381,11 @@ export const MOCK_HOUSEKEEPING: HousekeepingSchedule[] = [
     createdAt: new Date().toISOString(),
   },
   {
-    id: "clean-002",
+    id: "f0000000-0000-0000-0000-000000000002",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
     propertyName: "Grand Champions Safari Lodge & Hotel",
-    roomId: "room-101",
+    roomId: "d0000000-0000-0000-0000-000000000101",
     roomNumber: "Room 101",
     cleanerName: "Grace Mabena",
     cleaningType: "daily_tidy",
@@ -317,11 +400,11 @@ export const MOCK_HOUSEKEEPING: HousekeepingSchedule[] = [
 
 export const MOCK_ROOM_SERVICE: RoomServiceSchedule[] = [
   {
-    id: "rs-001",
+    id: "f1000000-0000-0000-0000-000000000001",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
     propertyName: "Grand Champions Safari Lodge & Hotel",
-    roomId: "room-101",
+    roomId: "d0000000-0000-0000-0000-000000000101",
     roomNumber: "Room 101",
     guestName: "Arthur Pendelton",
     serviceType: "breakfast_delivery",
@@ -658,6 +741,69 @@ export async function createCompany(company: Partial<Company>): Promise<Company>
   return newCompany;
 }
 
+export async function fetchCompanyBySlug(slug: string): Promise<Company | null> {
+  const cleanSlug = slug.trim().toLowerCase();
+  try {
+    const { data, error } = await supabase
+      .from("companies")
+      .select("*")
+      .eq("slug", cleanSlug)
+      .maybeSingle();
+
+    if (!error && data) {
+      return {
+        id: data.id,
+        name: data.name,
+        slug: data.slug,
+        logoUrl: data.logo_url,
+        logoBucketPath: data.logo_bucket_path,
+        address: data.address,
+        phone: data.phone,
+        email: data.email,
+        taxRate: toNumber(data.tax_rate),
+        currency: data.currency || "ZAR",
+        defaultDueDay: data.default_due_day,
+        paymentInstructions: data.payment_instructions,
+        createdAt: data.created_at,
+      };
+    }
+
+    // Check by ID if UUID was passed as slug
+    if (isValidUuid(cleanSlug)) {
+      const { data: byId } = await supabase
+        .from("companies")
+        .select("*")
+        .eq("id", cleanSlug)
+        .maybeSingle();
+
+      if (byId) {
+        return {
+          id: byId.id,
+          name: byId.name,
+          slug: byId.slug,
+          logoUrl: byId.logo_url,
+          logoBucketPath: byId.logo_bucket_path,
+          address: byId.address,
+          phone: byId.phone,
+          email: byId.email,
+          taxRate: toNumber(byId.tax_rate),
+          currency: byId.currency || "ZAR",
+          defaultDueDay: byId.default_due_day,
+          paymentInstructions: byId.payment_instructions,
+          createdAt: byId.created_at,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("Could not fetch company by slug from supabase", err);
+  }
+
+  const mockMatch = MOCK_COMPANIES.find(
+    (c) => (c.slug && c.slug.toLowerCase() === cleanSlug) || c.id === cleanSlug
+  );
+  return mockMatch || null;
+}
+
 export async function fetchCompanyUsers(companyId: string = MOCK_COMPANIES[0].id): Promise<CompanyUser[]> {
   try {
     const { data, error } = await supabase
@@ -690,32 +836,57 @@ export async function fetchCompanyUsers(companyId: string = MOCK_COMPANIES[0].id
 }
 
 export async function createCompanyUser(user: Partial<CompanyUser>): Promise<CompanyUser> {
+  const companyId = user.companyId || MOCK_COMPANIES[0].id;
+  const email = user.email || "newuser@domain.com";
+  const fullName = user.fullName || "New Staff Member";
+  const department = user.department || "front_desk";
+  const jobTitle = user.jobTitle || "Front Desk - Receptionist";
+  const roleLevel = user.roleLevel || "staff";
+  const permissions = user.permissions || {};
+
+  let validUserId = user.userId;
+  if (!isValidUuid(validUserId)) {
+    const dbUserId = await ensureDbUser(email, fullName);
+    validUserId = dbUserId || generateUuid();
+  }
+
   const newUser: CompanyUser = {
-    id: `cu-${Date.now()}`,
-    companyId: user.companyId || MOCK_COMPANIES[0].id,
-    userId: user.userId || `user-${Date.now()}`,
-    email: user.email || "newuser@domain.com",
-    fullName: user.fullName || "New Staff Member",
-    department: user.department || "front_desk",
-    jobTitle: user.jobTitle || "Front Desk - Receptionist",
-    roleLevel: user.roleLevel || "staff",
-    permissions: user.permissions || {},
+    id: generateUuid(),
+    companyId,
+    userId: validUserId,
+    email,
+    fullName,
+    department,
+    jobTitle,
+    roleLevel,
+    permissions,
     isActive: true,
     createdAt: new Date().toISOString(),
   };
 
   try {
-    await supabase.from("company_users").insert({
-      company_id: newUser.companyId,
-      user_id: newUser.userId,
-      department: newUser.department,
-      job_title: newUser.jobTitle,
-      role_level: newUser.roleLevel,
-      permissions: newUser.permissions,
-      is_active: newUser.isActive,
-    });
-  } catch {
-    // ignore
+    const dbDept = mapDepartmentToDb(department);
+    const dbRole = mapRoleLevelToDb(roleLevel);
+
+    const { data, error } = await supabase
+      .from("company_users")
+      .insert({
+        company_id: companyId,
+        user_id: validUserId,
+        department: dbDept,
+        job_title: jobTitle,
+        role_level: dbRole,
+        permissions,
+        is_active: true,
+      })
+      .select("id")
+      .single();
+
+    if (!error && data) {
+      newUser.id = data.id;
+    }
+  } catch (err) {
+    console.warn("Could not insert company user in Supabase", err);
   }
 
   MOCK_COMPANY_USERS.push(newUser);
@@ -724,15 +895,153 @@ export async function createCompanyUser(user: Partial<CompanyUser>): Promise<Com
 
 export async function deleteCompanyUser(id: string): Promise<boolean> {
   try {
-    await supabase.from("company_users").delete().eq("id", id);
-  } catch {
-    // ignore
+    if (isValidUuid(id)) {
+      await supabase.from("company_users").delete().eq("id", id);
+    }
+  } catch (err) {
+    console.warn("Could not delete company user in Supabase", err);
   }
   const idx = MOCK_COMPANY_USERS.findIndex((u) => u.id === id);
   if (idx !== -1) {
     MOCK_COMPANY_USERS.splice(idx, 1);
   }
   return true;
+}
+
+export async function updateCompanyUser(
+  id: string,
+  updates: Partial<CompanyUser>
+): Promise<CompanyUser | null> {
+  const user = MOCK_COMPANY_USERS.find((u) => u.id === id);
+
+  try {
+    if (isValidUuid(id)) {
+      const payload: Record<string, any> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (updates.department !== undefined) payload.department = mapDepartmentToDb(updates.department);
+      if (updates.jobTitle !== undefined) payload.job_title = updates.jobTitle;
+      if (updates.roleLevel !== undefined) payload.role_level = mapRoleLevelToDb(updates.roleLevel);
+      if (updates.permissions !== undefined) payload.permissions = updates.permissions;
+      if (updates.isActive !== undefined) payload.is_active = updates.isActive;
+
+      await supabase.from("company_users").update(payload).eq("id", id);
+
+      if (updates.fullName && user?.userId) {
+        const parts = updates.fullName.trim().split(" ");
+        const firstName = parts[0] || "Staff";
+        const lastName = parts.slice(1).join(" ") || "Member";
+        await supabase
+          .from("users")
+          .update({ first_name: firstName, last_name: lastName })
+          .eq("id", user.userId);
+      }
+    }
+  } catch (err) {
+    console.warn("Could not update company user in Supabase", err);
+  }
+
+  if (user) {
+    Object.assign(user, updates);
+  }
+  return user || null;
+}
+
+/**
+ * Dispatches an official branded invitation email to a newly added staff member,
+ * containing that company's unique login / password setup link.
+ */
+export async function sendStaffInvitation(opts: {
+  company: Company;
+  targetUser: {
+    fullName: string;
+    email: string;
+    department: string;
+    jobTitle: string;
+  };
+  inviter: {
+    fullName: string;
+    jobTitle: string;
+  };
+}): Promise<{ success: boolean; error?: string }> {
+  const { company, targetUser, inviter } = opts;
+  const companySlug = company.slug || company.id;
+  const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:5173";
+  const inviteUrl = `${origin}/c/${companySlug}/set-password?email=${encodeURIComponent(targetUser.email)}&action=invite`;
+
+  const html = wrapStaffInvitationEmailHtml({
+    recipientName: targetUser.fullName,
+    companyName: company.name,
+    companyLogo: company.logoUrl,
+    jobTitle: targetUser.jobTitle,
+    department: targetUser.department,
+    inviteUrl,
+    invitedByName: `${inviter.fullName} (${inviter.jobTitle})`,
+  });
+
+  const res = await sendEmailViaApi({
+    to: targetUser.email,
+    subject: `Invitation to join ${company.name} Staff Portal`,
+    html,
+  });
+
+  await logAuditEvent({
+    companyId: company.id,
+    action: "STAFF_INVITATION_SENT",
+    entityType: "company_user",
+    entityName: `${targetUser.fullName} (${targetUser.email})`,
+    actorName: inviter.fullName,
+    details: `Sent company login invitation to ${targetUser.email} with link: ${inviteUrl}`,
+  });
+
+  return res;
+}
+
+/**
+ * Triggers a staff password reset by Admin, IT, or Department Manager.
+ * Sends a branded password reset link pointing to the company's unique reset portal.
+ */
+export async function triggerStaffPasswordReset(opts: {
+  company: Company;
+  targetUser: {
+    fullName: string;
+    email: string;
+  };
+  requester: {
+    fullName: string;
+    jobTitle: string;
+  };
+}): Promise<{ success: boolean; error?: string }> {
+  const { company, targetUser, requester } = opts;
+  const companySlug = company.slug || company.id;
+  const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:5173";
+  const resetUrl = `${origin}/c/${companySlug}/set-password?email=${encodeURIComponent(targetUser.email)}&action=reset`;
+
+  const html = wrapStaffPasswordResetEmailHtml({
+    recipientName: targetUser.fullName,
+    companyName: company.name,
+    companyLogo: company.logoUrl,
+    resetUrl,
+    requestedByName: requester.fullName,
+    requestedByRole: requester.jobTitle,
+  });
+
+  const res = await sendEmailViaApi({
+    to: targetUser.email,
+    subject: `Password Reset Request - ${company.name} Staff Account`,
+    html,
+  });
+
+  await logAuditEvent({
+    companyId: company.id,
+    action: "STAFF_PASSWORD_RESET_TRIGGERED",
+    entityType: "company_user",
+    entityName: `${targetUser.fullName} (${targetUser.email})`,
+    actorName: requester.fullName,
+    details: `Password reset link triggered by ${requester.fullName} (${requester.jobTitle}) for ${targetUser.email}. Reset URL: ${resetUrl}`,
+  });
+
+  return res;
 }
 
 export async function fetchCommercialRooms(
@@ -783,27 +1092,87 @@ export async function fetchCommercialRooms(
 }
 
 export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise<CommercialRoom> {
-  const existingIdx = MOCK_COMMERCIAL_ROOMS.findIndex((r) => r.id === room.id);
+  const companyId = room.companyId || MOCK_COMPANIES[0].id;
+  const propertyId = room.propertyId || MOCK_COMMERCIAL_ROOMS[0].propertyId;
+  const roomNumber = room.roomNumber || "Room 100";
+  const roomType = room.roomType || "standard";
+  const floor = room.floor || "Ground Floor";
+  const status = room.status || "available";
+  const capacityAdults = room.capacityAdults ?? 2;
+  const capacityChildren = room.capacityChildren ?? 0;
+  const amenities = room.amenities || ["wifi", "tv", "ac"];
+  const photos = room.photos || [];
+  const pricePerNight = room.pricePerNight ?? 1000;
+  const priceBedBreakfast = room.priceBedBreakfast ?? 1300;
+  const priceBedLunch = room.priceBedLunch ?? 1600;
+  const priceFullBoard = room.priceFullBoard ?? 2000;
+  const notes = room.notes || "";
+
+  let id = room.id;
+  const isExisting = isValidUuid(id);
+  if (!id || !isExisting) {
+    id = generateUuid();
+  }
+
   const updatedRoom: CommercialRoom = {
-    id: room.id || `room-${Date.now()}`,
-    companyId: room.companyId || MOCK_COMPANIES[0].id,
-    propertyId: room.propertyId || MOCK_COMMERCIAL_ROOMS[0].propertyId,
+    id,
+    companyId,
+    propertyId,
     propertyName: room.propertyName || "Grand Champions Safari Lodge & Hotel",
-    roomNumber: room.roomNumber || "Room 100",
-    roomType: room.roomType || "standard",
-    floor: room.floor || "Ground Floor",
-    status: room.status || "available",
-    capacityAdults: room.capacityAdults ?? 2,
-    capacityChildren: room.capacityChildren ?? 0,
-    amenities: room.amenities || ["wifi", "tv", "ac"],
-    photos: room.photos || [],
-    pricePerNight: room.pricePerNight ?? 1000,
-    priceBedBreakfast: room.priceBedBreakfast ?? 1300,
-    priceBedLunch: room.priceBedLunch ?? 1600,
-    priceFullBoard: room.priceFullBoard ?? 2000,
-    notes: room.notes || "",
+    roomNumber,
+    roomType,
+    floor,
+    status,
+    capacityAdults,
+    capacityChildren,
+    amenities,
+    photos,
+    pricePerNight,
+    priceBedBreakfast,
+    priceBedLunch,
+    priceFullBoard,
+    notes,
   };
 
+  try {
+    if (isValidUuid(companyId) && isValidUuid(propertyId)) {
+      const payload = {
+        company_id: companyId,
+        property_id: propertyId,
+        room_number: roomNumber,
+        room_type: roomType,
+        floor,
+        status,
+        capacity_adults: capacityAdults,
+        capacity_children: capacityChildren,
+        amenities,
+        photos,
+        price_per_night: pricePerNight,
+        price_bed_breakfast: priceBedBreakfast,
+        price_bed_lunch: priceBedLunch,
+        price_full_board: priceFullBoard,
+        notes,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (isExisting) {
+        await supabase.from("commercial_rooms").update(payload).eq("id", id);
+      } else {
+        const { data, error } = await supabase
+          .from("commercial_rooms")
+          .insert({ id, ...payload })
+          .select()
+          .single();
+        if (!error && data) {
+          updatedRoom.id = data.id;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Could not save commercial room to Supabase", err);
+  }
+
+  const existingIdx = MOCK_COMMERCIAL_ROOMS.findIndex((r) => r.id === updatedRoom.id);
   if (existingIdx !== -1) {
     MOCK_COMMERCIAL_ROOMS[existingIdx] = updatedRoom;
   } else {
@@ -821,6 +1190,35 @@ export async function setUniformRoomPricing(
     priceFullBoard: number;
   }
 ): Promise<boolean> {
+  try {
+    if (isValidUuid(propertyId)) {
+      await Promise.all([
+        supabase
+          .from("properties")
+          .update({
+            uniform_room_pricing: true,
+            default_room_price: prices.pricePerNight,
+            default_bed_breakfast: prices.priceBedBreakfast,
+            default_bed_lunch: prices.priceBedLunch,
+            default_full_board: prices.priceFullBoard,
+          })
+          .eq("id", propertyId),
+        supabase
+          .from("commercial_rooms")
+          .update({
+            price_per_night: prices.pricePerNight,
+            price_bed_breakfast: prices.priceBedBreakfast,
+            price_bed_lunch: prices.priceBedLunch,
+            price_full_board: prices.priceFullBoard,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("property_id", propertyId),
+      ]);
+    }
+  } catch (err) {
+    console.warn("Could not set uniform room pricing in Supabase", err);
+  }
+
   MOCK_COMMERCIAL_ROOMS.forEach((r) => {
     if (r.propertyId === propertyId) {
       r.pricePerNight = prices.pricePerNight;
@@ -906,9 +1304,10 @@ export async function createInstantCheckin(params: {
   notes?: string;
 }): Promise<CommercialBooking> {
   const bookingCode = generateInstantBookingCode("BK");
+  const newBookingId = generateUuid();
 
   const newBooking: CommercialBooking = {
-    id: `booking-${Date.now()}`,
+    id: newBookingId,
     companyId: params.companyId,
     propertyId: params.propertyId,
     propertyName: params.propertyName,
@@ -930,7 +1329,7 @@ export async function createInstantCheckin(params: {
     depositAmount: params.depositAmount,
     amountPaid: params.amountPaid,
     paymentMethod: params.paymentMethod,
-    paymentStatus: params.amountPaid >= params.totalAmount ? "paid" : "partial",
+    paymentStatus: params.amountPaid >= params.totalAmount ? "paid" : "partially_paid",
     bookingStatus: "checked_in",
     isExtended: false,
     extensionHistory: [],
@@ -938,6 +1337,48 @@ export async function createInstantCheckin(params: {
     notes: params.notes || "",
     createdAt: new Date().toISOString(),
   };
+
+  try {
+    if (isValidUuid(params.companyId) && isValidUuid(params.propertyId) && isValidUuid(params.roomId)) {
+      const { data, error } = await supabase
+        .from("commercial_bookings")
+        .insert({
+          id: newBookingId,
+          company_id: params.companyId,
+          property_id: params.propertyId,
+          room_id: params.roomId,
+          booking_code: bookingCode,
+          guest_name: params.guestName,
+          guest_email: params.guestEmail || null,
+          guest_phone: params.guestPhone,
+          guest_id_number: params.guestIdNumber || null,
+          meal_plan: params.mealPlan,
+          check_in_date: params.checkInDate.slice(0, 10),
+          check_out_date: params.checkOutDate.slice(0, 10),
+          actual_check_in: new Date().toISOString(),
+          status: "checked_in",
+          rate_per_night: params.ratePerNight,
+          total_amount: params.totalAmount,
+          paid_amount: params.amountPaid,
+          payment_status: params.amountPaid >= params.totalAmount ? "paid" : "partially_paid",
+          payment_method: params.paymentMethod,
+          special_requests: params.notes || null,
+        })
+        .select()
+        .single();
+
+      if (!error && data) {
+        newBooking.id = data.id;
+      }
+
+      await supabase
+        .from("commercial_rooms")
+        .update({ status: "occupied", updated_at: new Date().toISOString() })
+        .eq("id", params.roomId);
+    }
+  } catch (err) {
+    console.warn("Could not insert commercial booking in Supabase", err);
+  }
 
   MOCK_COMMERCIAL_BOOKINGS.unshift(newBooking);
   const room = MOCK_COMMERCIAL_ROOMS.find((r) => r.id === params.roomId);
@@ -963,6 +1404,78 @@ export async function verifyAndCheckinBookingCode(
   actorName: string
 ): Promise<{ success: boolean; booking?: CommercialBooking; error?: string }> {
   const normalizedCode = bookingCode.trim().toUpperCase();
+
+  try {
+    const { data: dbBooking, error: fetchErr } = await supabase
+      .from("commercial_bookings")
+      .select("*, properties(name), commercial_rooms(room_number, room_type)")
+      .eq("booking_code", normalizedCode)
+      .maybeSingle();
+
+    if (!fetchErr && dbBooking) {
+      await Promise.all([
+        supabase
+          .from("commercial_bookings")
+          .update({
+            status: "checked_in",
+            actual_check_in: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", dbBooking.id),
+        supabase
+          .from("commercial_rooms")
+          .update({ status: "occupied", updated_at: new Date().toISOString() })
+          .eq("id", dbBooking.room_id),
+      ]);
+
+      const booking: CommercialBooking = {
+        id: dbBooking.id,
+        companyId: dbBooking.company_id,
+        propertyId: dbBooking.property_id,
+        propertyName: dbBooking.properties?.name || "Lodge Property",
+        roomId: dbBooking.room_id,
+        roomNumber: dbBooking.commercial_rooms?.room_number || "Room",
+        roomType: dbBooking.commercial_rooms?.room_type || "standard",
+        bookingCode: dbBooking.booking_code,
+        guestName: dbBooking.guest_name,
+        guestPhone: dbBooking.guest_phone,
+        guestEmail: dbBooking.guest_email || "",
+        guestIdNumber: dbBooking.guest_id_number || "",
+        checkInDate: dbBooking.check_in_date,
+        checkOutDate: dbBooking.check_out_date,
+        actualCheckIn: new Date().toISOString(),
+        mealPlan: dbBooking.meal_plan,
+        nights: 1,
+        ratePerNight: toNumber(dbBooking.rate_per_night),
+        totalAmount: toNumber(dbBooking.total_amount),
+        depositAmount: 0,
+        amountPaid: toNumber(dbBooking.paid_amount),
+        paymentMethod: dbBooking.payment_method || "card",
+        paymentStatus: dbBooking.payment_status,
+        bookingStatus: "checked_in",
+        isExtended: false,
+        extensionHistory: [],
+        checkedInByName: actorName,
+        notes: dbBooking.special_requests || "",
+        createdAt: dbBooking.created_at,
+      };
+
+      await logAuditEvent({
+        companyId: booking.companyId,
+        action: "ONLINE_CODE_CHECKIN",
+        entityType: "commercial_booking",
+        entityId: booking.id,
+        entityName: `${booking.guestName} (${booking.roomNumber})`,
+        actorName,
+        details: `Checked in verified online booking ${booking.bookingCode} for guest ${booking.guestName}.`,
+      });
+
+      return { success: true, booking };
+    }
+  } catch (err) {
+    console.warn("Supabase lookup failed for booking code, checking local mock", err);
+  }
+
   let booking = MOCK_COMMERCIAL_BOOKINGS.find(
     (b) => b.bookingCode.toUpperCase() === normalizedCode
   );
@@ -1002,31 +1515,55 @@ export async function extendCommercialBooking(params: {
   notes?: string;
 }): Promise<boolean> {
   const booking = MOCK_COMMERCIAL_BOOKINGS.find((b) => b.id === params.bookingId);
-  if (!booking) return false;
 
-  const previousCheckOut = booking.checkOutDate;
-  booking.checkOutDate = params.newCheckOutDate;
-  booking.nights += params.additionalNights;
-  booking.totalAmount += params.additionalCost;
-  booking.isExtended = true;
-  booking.bookingStatus = "extended";
+  try {
+    if (isValidUuid(params.bookingId)) {
+      const { data: cur } = await supabase
+        .from("commercial_bookings")
+        .select("total_amount, check_out_date")
+        .eq("id", params.bookingId)
+        .maybeSingle();
 
-  booking.extensionHistory.push({
-    extendedAt: new Date().toISOString(),
-    previousCheckOutDate: previousCheckOut,
-    newCheckOutDate: params.newCheckOutDate,
-    additionalNights: params.additionalNights,
-    additionalCost: params.additionalCost,
-    extendedBy: params.actorName,
-    notes: params.notes,
-  });
+      const newTotal = (toNumber(cur?.total_amount) || (booking?.totalAmount || 0)) + params.additionalCost;
+
+      await supabase
+        .from("commercial_bookings")
+        .update({
+          check_out_date: params.newCheckOutDate.slice(0, 10),
+          total_amount: newTotal,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", params.bookingId);
+    }
+  } catch (err) {
+    console.warn("Could not extend booking in Supabase", err);
+  }
+
+  if (booking) {
+    const previousCheckOut = booking.checkOutDate;
+    booking.checkOutDate = params.newCheckOutDate;
+    booking.nights += params.additionalNights;
+    booking.totalAmount += params.additionalCost;
+    booking.isExtended = true;
+    booking.bookingStatus = "extended";
+
+    booking.extensionHistory.push({
+      extendedAt: new Date().toISOString(),
+      previousCheckOutDate: previousCheckOut,
+      newCheckOutDate: params.newCheckOutDate,
+      additionalNights: params.additionalNights,
+      additionalCost: params.additionalCost,
+      extendedBy: params.actorName,
+      notes: params.notes,
+    });
+  }
 
   await logAuditEvent({
-    companyId: booking.companyId,
+    companyId: booking?.companyId,
     action: "EXTEND_BOOKING",
     entityType: "commercial_booking",
-    entityId: booking.id,
-    entityName: `${booking.guestName} (${booking.roomNumber})`,
+    entityId: params.bookingId,
+    entityName: booking ? `${booking.guestName} (${booking.roomNumber})` : params.bookingId,
     actorName: params.actorName,
     details: `Extended stay by ${params.additionalNights} nights to ${params.newCheckOutDate}. Added cost: R${params.additionalCost}.`,
   });
@@ -1038,51 +1575,436 @@ export async function checkoutCommercialBooking(
   bookingId: string,
   actorName: string
 ): Promise<boolean> {
-  const booking = MOCK_COMMERCIAL_BOOKINGS.find((b) => b.id === bookingId);
-  if (!booking) return false;
+  let booking = MOCK_COMMERCIAL_BOOKINGS.find((b) => b.id === bookingId);
 
-  booking.bookingStatus = "checked_out";
-  booking.actualCheckOut = new Date().toISOString();
+  try {
+    if (isValidUuid(bookingId)) {
+      const { data: dbBooking } = await supabase
+        .from("commercial_bookings")
+        .select("*, properties(name), commercial_rooms(room_number)")
+        .eq("id", bookingId)
+        .maybeSingle();
 
-  const room = MOCK_COMMERCIAL_ROOMS.find((r) => r.id === booking.roomId);
-  if (room) {
-    room.status = "cleaning_needed";
+      if (dbBooking) {
+        await Promise.all([
+          supabase
+            .from("commercial_bookings")
+            .update({
+              status: "checked_out",
+              actual_check_out: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", bookingId),
+          supabase
+            .from("commercial_rooms")
+            .update({ status: "cleaning_needed", updated_at: new Date().toISOString() })
+            .eq("id", dbBooking.room_id),
+          supabase
+            .from("housekeeping_schedules")
+            .insert({
+              company_id: dbBooking.company_id,
+              property_id: dbBooking.property_id,
+              room_id: dbBooking.room_id,
+              task_type: "turnover",
+              status: "pending",
+              priority: "high",
+              scheduled_date: new Date().toISOString().slice(0, 10),
+              notes: `Turnover cleaning after checkout of ${dbBooking.guest_name}.`,
+            }),
+        ]);
+      }
+    }
+  } catch (err) {
+    console.warn("Could not checkout booking in Supabase", err);
   }
 
-  MOCK_HOUSEKEEPING.unshift({
-    id: `clean-${Date.now()}`,
-    companyId: booking.companyId,
-    propertyId: booking.propertyId,
-    propertyName: booking.propertyName,
-    roomId: booking.roomId,
-    roomNumber: booking.roomNumber,
-    cleanerName: "Housekeeping Team",
-    cleaningType: "turnover_clean",
-    status: "pending",
-    scheduledDate: new Date().toISOString().slice(0, 10),
-    shift: "turnover",
-    priority: "high",
-    notes: `Turnover cleaning after checkout of ${booking.guestName}.`,
-    createdAt: new Date().toISOString(),
-  });
+  if (booking) {
+    booking.bookingStatus = "checked_out";
+    booking.actualCheckOut = new Date().toISOString();
+
+    const room = MOCK_COMMERCIAL_ROOMS.find((r) => r.id === booking.roomId);
+    if (room) {
+      room.status = "cleaning_needed";
+    }
+
+    MOCK_HOUSEKEEPING.unshift({
+      id: generateUuid(),
+      companyId: booking.companyId,
+      propertyId: booking.propertyId,
+      propertyName: booking.propertyName,
+      roomId: booking.roomId,
+      roomNumber: booking.roomNumber,
+      cleanerName: "Housekeeping Team",
+      cleaningType: "turnover_clean",
+      status: "pending",
+      scheduledDate: new Date().toISOString().slice(0, 10),
+      shift: "turnover",
+      priority: "high",
+      notes: `Turnover cleaning after checkout of ${booking.guestName}.`,
+      createdAt: new Date().toISOString(),
+    });
+  }
 
   await logAuditEvent({
-    companyId: booking.companyId,
+    companyId: booking?.companyId,
     action: "CHECKOUT_GUEST",
     entityType: "commercial_booking",
-    entityId: booking.id,
-    entityName: `${booking.guestName} (${booking.roomNumber})`,
+    entityId: bookingId,
+    entityName: booking ? `${booking.guestName} (${booking.roomNumber})` : bookingId,
     actorName,
-    details: `Completed checkout for ${booking.guestName} from ${booking.roomNumber}. Room flagged for turnover cleaning.`,
+    details: `Completed checkout for ${booking?.guestName || "Guest"} from ${booking?.roomNumber || "Room"}. Room flagged for turnover cleaning.`,
   });
 
   return true;
 }
 
+export async function deleteCommercialRoom(roomId: string): Promise<boolean> {
+  try {
+    if (isValidUuid(roomId)) {
+      const { error } = await supabase.from("commercial_rooms").delete().eq("id", roomId);
+      if (error) throw error;
+    }
+  } catch (err) {
+    console.warn("Could not delete commercial room from Supabase", err);
+  }
+
+  const idx = MOCK_COMMERCIAL_ROOMS.findIndex((r) => r.id === roomId);
+  if (idx !== -1) {
+    MOCK_COMMERCIAL_ROOMS.splice(idx, 1);
+  }
+  return true;
+}
+
+export async function updateCommercialBooking(
+  bookingId: string,
+  updates: Partial<CommercialBooking>
+): Promise<CommercialBooking | null> {
+  const booking = MOCK_COMMERCIAL_BOOKINGS.find((b) => b.id === bookingId);
+
+  try {
+    if (isValidUuid(bookingId)) {
+      const payload: Record<string, any> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (updates.guestName !== undefined) payload.guest_name = updates.guestName;
+      if (updates.guestPhone !== undefined) payload.guest_phone = updates.guestPhone;
+      if (updates.guestEmail !== undefined) payload.guest_email = updates.guestEmail;
+      if (updates.guestIdNumber !== undefined) payload.guest_id_number = updates.guestIdNumber;
+      if (updates.roomId !== undefined) payload.room_id = updates.roomId;
+      if (updates.checkInDate !== undefined) payload.check_in_date = updates.checkInDate.slice(0, 10);
+      if (updates.checkOutDate !== undefined) payload.check_out_date = updates.checkOutDate.slice(0, 10);
+      if (updates.mealPlan !== undefined) payload.meal_plan = updates.mealPlan;
+      if (updates.nights !== undefined) payload.nights = updates.nights;
+      if (updates.ratePerNight !== undefined) payload.rate_per_night = updates.ratePerNight;
+      if (updates.totalAmount !== undefined) payload.total_amount = updates.totalAmount;
+      if (updates.depositAmount !== undefined) payload.deposit_amount = updates.depositAmount;
+      if (updates.amountPaid !== undefined) {
+        payload.amount_paid = updates.amountPaid;
+        payload.paid_amount = updates.amountPaid;
+      }
+      if (updates.paymentMethod !== undefined) payload.payment_method = updates.paymentMethod;
+      if (updates.paymentStatus !== undefined) payload.payment_status = updates.paymentStatus;
+      if (updates.bookingStatus !== undefined) {
+        payload.booking_status = updates.bookingStatus;
+      }
+      if (updates.notes !== undefined) {
+        payload.notes = updates.notes;
+      }
+
+      await supabase.from("commercial_bookings").update(payload).eq("id", bookingId);
+
+      // Handle room re-assignment
+      if (updates.roomId && updates.roomId !== booking?.roomId) {
+        if (booking?.roomId) {
+          await supabase.from("commercial_rooms").update({ status: "available" }).eq("id", booking.roomId);
+          const oldRm = MOCK_COMMERCIAL_ROOMS.find((r) => r.id === booking.roomId);
+          if (oldRm) oldRm.status = "available";
+        }
+        if (updates.bookingStatus === "checked_in" || updates.bookingStatus === "extended" || (!updates.bookingStatus && (booking?.bookingStatus === "checked_in" || booking?.bookingStatus === "extended"))) {
+          await supabase.from("commercial_rooms").update({ status: "occupied" }).eq("id", updates.roomId);
+          const newRm = MOCK_COMMERCIAL_ROOMS.find((r) => r.id === updates.roomId);
+          if (newRm) newRm.status = "occupied";
+        }
+      }
+
+      // Handle booking status change on room
+      if (updates.bookingStatus === "checked_out") {
+        const targetRoomId = updates.roomId || booking?.roomId;
+        if (targetRoomId) {
+          await supabase.from("commercial_rooms").update({ status: "cleaning_needed" }).eq("id", targetRoomId);
+          const rm = MOCK_COMMERCIAL_ROOMS.find((r) => r.id === targetRoomId);
+          if (rm) rm.status = "cleaning_needed";
+        }
+      } else if (updates.bookingStatus === "cancelled") {
+        const targetRoomId = updates.roomId || booking?.roomId;
+        if (targetRoomId) {
+          await supabase.from("commercial_rooms").update({ status: "available" }).eq("id", targetRoomId);
+          const rm = MOCK_COMMERCIAL_ROOMS.find((r) => r.id === targetRoomId);
+          if (rm) rm.status = "available";
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Could not update commercial booking in Supabase", err);
+  }
+
+  if (booking) {
+    Object.assign(booking, updates);
+    if (updates.roomId) {
+      const targetRoom = MOCK_COMMERCIAL_ROOMS.find((r) => r.id === updates.roomId);
+      if (targetRoom) {
+        booking.roomNumber = targetRoom.roomNumber;
+        booking.roomType = targetRoom.roomType;
+        booking.propertyName = targetRoom.propertyName;
+        booking.propertyId = targetRoom.propertyId;
+      }
+    }
+  }
+
+  return booking || null;
+}
+
+// --------------------------------------------------------------------------------------
+// PROPERTY FLOORS PERSISTENCE
+// --------------------------------------------------------------------------------------
+export async function fetchPropertyFloors(companyId: string, propertyId: string): Promise<string[]> {
+  if (propertyId) {
+    const stored = localStorage.getItem(`cc_property_floors_${propertyId}`);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+  }
+
+  try {
+    if (isValidUuid(propertyId)) {
+      const { data } = await supabase
+        .from("commercial_rooms")
+        .select("floor")
+        .eq("property_id", propertyId);
+      if (data && data.length > 0) {
+        const distinct = Array.from(
+          new Set(data.map((r) => r.floor).filter((f): f is string => Boolean(f && f.trim())))
+        );
+        if (distinct.length > 0) {
+          localStorage.setItem(`cc_property_floors_${propertyId}`, JSON.stringify(distinct));
+          return distinct;
+        }
+      }
+    }
+  } catch {}
+
+  return ["Ground Floor", "1st Floor", "2nd Floor"];
+}
+
+export async function savePropertyFloors(companyId: string, propertyId: string, floors: string[]): Promise<void> {
+  const clean = Array.from(new Set(floors.map((f) => f.trim()).filter(Boolean)));
+  if (clean.length === 0) clean.push("Ground Floor");
+  localStorage.setItem(`cc_property_floors_${propertyId}`, JSON.stringify(clean));
+}
+
+// --------------------------------------------------------------------------------------
+// SECURITY PIN CRYPTOGRAPHIC HELPERS & ACCESS CONTROL
+// --------------------------------------------------------------------------------------
+export async function hashPin(pin: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(pin.trim());
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export async function hasUserPin(userIdOrEmail: string): Promise<boolean> {
+  if (!userIdOrEmail) return false;
+  if (localStorage.getItem(`cc_user_pin_${userIdOrEmail}`)) return true;
+
+  try {
+    let query = supabase.from("users").select("signature_pincode_hash");
+    if (isValidUuid(userIdOrEmail)) {
+      query = query.eq("id", userIdOrEmail);
+    } else {
+      query = query.eq("email", userIdOrEmail);
+    }
+    const { data } = await query.maybeSingle();
+    if (data?.signature_pincode_hash) {
+      localStorage.setItem(`cc_user_pin_${userIdOrEmail}`, data.signature_pincode_hash);
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+export async function verifyUserPin(userIdOrEmail: string, pin: string): Promise<boolean> {
+  if (!pin || !userIdOrEmail) return false;
+  const hashed = await hashPin(pin);
+
+  const cachedHash = localStorage.getItem(`cc_user_pin_${userIdOrEmail}`);
+  if (cachedHash && cachedHash === hashed) {
+    return true;
+  }
+
+  try {
+    let query = supabase.from("users").select("signature_pincode_hash");
+    if (isValidUuid(userIdOrEmail)) {
+      query = query.eq("id", userIdOrEmail);
+    } else {
+      query = query.eq("email", userIdOrEmail);
+    }
+    const { data, error } = await query.maybeSingle();
+    if (!error && data?.signature_pincode_hash) {
+      localStorage.setItem(`cc_user_pin_${userIdOrEmail}`, data.signature_pincode_hash);
+      return data.signature_pincode_hash === hashed;
+    }
+  } catch (err) {
+    console.warn("Could not verify PIN against database", err);
+  }
+
+  // Demo fallback for initial setup if no PIN yet
+  if (!cachedHash) {
+    const demoDefaultHash = await hashPin("1234");
+    if (hashed === demoDefaultHash) return true;
+  }
+
+  return false;
+}
+
+export async function setUserPin(
+  userIdOrEmail: string,
+  newPin: string,
+  oldPin?: string
+): Promise<{ ok: boolean; message?: string }> {
+  if (!newPin || newPin.trim().length < 4) {
+    return { ok: false, message: "New PIN must be at least 4 digits" };
+  }
+
+  const alreadyHasPin = await hasUserPin(userIdOrEmail);
+  if (alreadyHasPin) {
+    if (!oldPin) {
+      return { ok: false, message: "Please enter your current PIN to change it." };
+    }
+    const isOldValid = await verifyUserPin(userIdOrEmail, oldPin);
+    if (!isOldValid) {
+      return { ok: false, message: "Incorrect current PIN entered." };
+    }
+  }
+
+  const hashed = await hashPin(newPin);
+  const now = new Date().toISOString();
+
+  try {
+    let query = supabase.from("users").update({
+      signature_pincode_hash: hashed,
+      signature_updated_at: now,
+    });
+    if (isValidUuid(userIdOrEmail)) {
+      query = query.eq("id", userIdOrEmail);
+    } else {
+      query = query.eq("email", userIdOrEmail);
+    }
+    const { error } = await query;
+    if (error) {
+      console.warn("Could not update PIN in database", error);
+    }
+  } catch (err) {
+    console.warn("Database update error for PIN", err);
+  }
+
+  localStorage.setItem(`cc_user_pin_${userIdOrEmail}`, hashed);
+  return { ok: true };
+}
+
+export async function resetUserPinByPrivilege(
+  actor: { roleLevel?: string; department?: string; email?: string },
+  targetUser: { id: string; email: string; roleLevel?: string; department?: string },
+  newPin: string
+): Promise<{ ok: boolean; message?: string }> {
+  if (!newPin || newPin.trim().length < 4) {
+    return { ok: false, message: "PIN must be at least 4 digits" };
+  }
+
+  const isActorSuperAdminOrAdmin =
+    actor.roleLevel === "super_admin" ||
+    actor.roleLevel === "admin" ||
+    actor.department === "admin";
+  const isActorIT = actor.department === "it";
+  const isActorManager = actor.roleLevel === "manager" || actor.department === "manager";
+
+  if (!isActorSuperAdminOrAdmin && !isActorIT && !isActorManager) {
+    return { ok: false, message: "Unauthorized: You do not have rights to reset PINs." };
+  }
+
+  if (isActorManager && !isActorSuperAdminOrAdmin && !isActorIT) {
+    if (
+      targetUser.roleLevel === "super_admin" ||
+      targetUser.roleLevel === "admin" ||
+      targetUser.department === "admin"
+    ) {
+      return { ok: false, message: "Managers cannot reset PINs for Administrators." };
+    }
+  }
+
+  const hashed = await hashPin(newPin);
+  const now = new Date().toISOString();
+
+  try {
+    let query = supabase.from("users").update({
+      signature_pincode_hash: hashed,
+      signature_updated_at: now,
+    });
+    if (isValidUuid(targetUser.id)) {
+      query = query.eq("id", targetUser.id);
+    } else {
+      query = query.eq("email", targetUser.email);
+    }
+    await query;
+  } catch (err) {
+    console.warn("Could not reset PIN in DB", err);
+  }
+
+  localStorage.setItem(`cc_user_pin_${targetUser.id}`, hashed);
+  localStorage.setItem(`cc_user_pin_${targetUser.email}`, hashed);
+
+  return { ok: true };
+}
+
 export async function fetchHousekeepingSchedules(
   companyId: string = MOCK_COMPANIES[0].id
 ): Promise<HousekeepingSchedule[]> {
-  return MOCK_HOUSEKEEPING;
+  try {
+    let query = supabase
+      .from("housekeeping_schedules")
+      .select("*, properties(name), commercial_rooms(room_number)");
+
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+
+    const { data, error } = await query.order("scheduled_date", { ascending: false });
+    if (!error && data && data.length > 0) {
+      return data.map((h) => ({
+        id: h.id,
+        companyId: h.company_id,
+        propertyId: h.property_id,
+        propertyName: h.properties?.name || "Grand Champions Safari Lodge",
+        roomId: h.room_id,
+        roomNumber: h.commercial_rooms?.room_number || "Room",
+        cleanerName: "Housekeeping Team",
+        cleaningType: h.task_type === "turnover" ? "turnover_clean" : (h.task_type === "daily_clean" ? "daily_tidy" : "deep_clean"),
+        status: h.status === "completed" ? "completed" : (h.status === "inspected" ? "verified" : (h.status === "in_progress" ? "in_progress" : "pending")),
+        scheduledDate: h.scheduled_date,
+        shift: "morning",
+        priority: h.priority === "urgent" || h.priority === "high" ? "high" : "normal",
+        notes: h.notes || "",
+        createdAt: h.created_at,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock housekeeping", err);
+  }
+
+  return MOCK_HOUSEKEEPING.filter((h) => h.companyId === companyId || !h.companyId);
 }
 
 export async function updateHousekeepingStatus(
@@ -1090,6 +2012,34 @@ export async function updateHousekeepingStatus(
   status: HousekeepingSchedule["status"],
   actorName: string
 ): Promise<boolean> {
+  try {
+    if (isValidUuid(id)) {
+      const dbStatus = status === "verified" ? "inspected" : (status === "completed" ? "completed" : (status === "in_progress" ? "in_progress" : "pending"));
+      const updatePayload: Record<string, unknown> = {
+        status: dbStatus,
+      };
+      if (status === "completed" || status === "verified") {
+        updatePayload.completed_at = new Date().toISOString();
+      }
+
+      const { data: schedule } = await supabase
+        .from("housekeeping_schedules")
+        .update(updatePayload)
+        .eq("id", id)
+        .select("room_id")
+        .maybeSingle();
+
+      if ((status === "completed" || status === "verified") && schedule?.room_id) {
+        await supabase
+          .from("commercial_rooms")
+          .update({ status: "available", updated_at: new Date().toISOString() })
+          .eq("id", schedule.room_id);
+      }
+    }
+  } catch (err) {
+    console.warn("Could not update housekeeping in Supabase", err);
+  }
+
   const item = MOCK_HOUSEKEEPING.find((h) => h.id === id);
   if (item) {
     item.status = status;
@@ -1107,16 +2057,54 @@ export async function updateHousekeepingStatus(
 export async function fetchRoomServiceSchedules(
   companyId: string = MOCK_COMPANIES[0].id
 ): Promise<RoomServiceSchedule[]> {
+  try {
+    let query = supabase
+      .from("room_service_schedules")
+      .select("*, properties(name), commercial_rooms(room_number)");
+
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+
+    const { data, error } = await query.order("scheduled_for", { ascending: false });
+    if (!error && data && data.length > 0) {
+      return data.map((rs) => ({
+        id: rs.id,
+        companyId: rs.company_id,
+        propertyId: rs.property_id,
+        propertyName: rs.properties?.name || "Grand Champions Safari Lodge",
+        roomId: rs.room_id,
+        roomNumber: rs.commercial_rooms?.room_number || "Room",
+        guestName: "In-house Guest",
+        serviceType: rs.service_type === "meal_delivery" ? "breakfast_delivery" : "custom",
+        items: Array.isArray(rs.items) ? rs.items : [],
+        scheduledTime: rs.scheduled_for,
+        status: rs.status === "delivered" ? "delivered" : (rs.status === "preparing" || rs.status === "out_for_delivery" ? "in_progress" : "requested"),
+        cost: toNumber(rs.total_charge),
+        deliveredAt: rs.delivered_at,
+        notes: rs.special_instructions || "",
+        createdAt: rs.created_at,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock room service", err);
+  }
+
   return MOCK_ROOM_SERVICE.filter((rs) => rs.companyId === companyId || !rs.companyId);
 }
 
 export async function createRoomServiceOrder(order: Partial<RoomServiceSchedule>): Promise<RoomServiceSchedule> {
+  const companyId = order.companyId || MOCK_COMPANIES[0].id;
+  const propertyId = order.propertyId || MOCK_COMMERCIAL_ROOMS[0].propertyId;
+  const roomId = order.roomId || MOCK_COMMERCIAL_ROOMS[0].id;
+  const newId = generateUuid();
+
   const newOrder: RoomServiceSchedule = {
-    id: `rs-${Date.now()}`,
-    companyId: order.companyId || MOCK_COMPANIES[0].id,
-    propertyId: order.propertyId || MOCK_COMMERCIAL_ROOMS[0].propertyId,
+    id: newId,
+    companyId,
+    propertyId,
     propertyName: order.propertyName || "Grand Champions Safari Lodge & Hotel",
-    roomId: order.roomId || MOCK_COMMERCIAL_ROOMS[0].id,
+    roomId,
     roomNumber: order.roomNumber || "Room 101",
     guestName: order.guestName || "In-house Guest",
     serviceType: order.serviceType || "breakfast_delivery",
@@ -1128,28 +2116,83 @@ export async function createRoomServiceOrder(order: Partial<RoomServiceSchedule>
     createdAt: new Date().toISOString(),
   };
 
+  try {
+    if (isValidUuid(companyId) && isValidUuid(propertyId) && isValidUuid(roomId)) {
+      const { data, error } = await supabase
+        .from("room_service_schedules")
+        .insert({
+          id: newId,
+          company_id: companyId,
+          property_id: propertyId,
+          room_id: roomId,
+          service_type: "meal_delivery",
+          items: newOrder.items,
+          status: "pending",
+          total_charge: newOrder.cost,
+          scheduled_for: newOrder.scheduledTime,
+          special_instructions: newOrder.notes || null,
+        })
+        .select()
+        .single();
+
+      if (!error && data) {
+        newOrder.id = data.id;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not insert room service in Supabase", err);
+  }
+
   MOCK_ROOM_SERVICE.unshift(newOrder);
   return newOrder;
 }
 
 export async function fetchSalaryScales(companyId: string = MOCK_COMPANIES[0].id): Promise<SalaryScale[]> {
+  try {
+    let query = supabase.from("hr_salary_scales").select("*");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("department");
+    if (!error && data && data.length > 0) {
+      return data.map((s) => ({
+        id: s.id,
+        companyId: s.company_id,
+        department: s.department as DepartmentType,
+        jobTitle: s.job_title,
+        gradeLevel: "Standard",
+        minSalary: toNumber(s.base_salary_min),
+        midSalary: (toNumber(s.base_salary_min) + toNumber(s.base_salary_max)) / 2,
+        maxSalary: toNumber(s.base_salary_max),
+        housingAllowance: 1500,
+        transportAllowance: 1000,
+        medicalAllowance: 800,
+        taxDeductionPct: 15.0,
+        pensionDeductionPct: 5.0,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock salary scales", err);
+  }
   return MOCK_SALARY_SCALES;
 }
 
 export async function saveSalaryScale(scale: Partial<SalaryScale>): Promise<SalaryScale> {
-  const existingIdx = MOCK_SALARY_SCALES.findIndex(
-    (s) => s.department === scale.department && s.jobTitle === scale.jobTitle
-  );
+  const companyId = scale.companyId || MOCK_COMPANIES[0].id;
+  const department = scale.department || "front_desk";
+  const jobTitle = scale.jobTitle || "Front Desk - Staff";
+  const minSalary = scale.minSalary ?? 12000;
+  const maxSalary = scale.maxSalary ?? 18000;
 
   const updated: SalaryScale = {
-    id: scale.id || `scale-${Date.now()}`,
-    companyId: scale.companyId || MOCK_COMPANIES[0].id,
-    department: scale.department || "front_desk",
-    jobTitle: scale.jobTitle || "Front Desk - Staff",
+    id: scale.id || generateUuid(),
+    companyId,
+    department,
+    jobTitle,
     gradeLevel: scale.gradeLevel || "Band B1",
-    minSalary: scale.minSalary ?? 12000,
-    midSalary: scale.midSalary ?? 15000,
-    maxSalary: scale.maxSalary ?? 18000,
+    minSalary,
+    midSalary: scale.midSalary ?? ((minSalary + maxSalary) / 2),
+    maxSalary,
     housingAllowance: scale.housingAllowance ?? 1500,
     transportAllowance: scale.transportAllowance ?? 1000,
     medicalAllowance: scale.medicalAllowance ?? 800,
@@ -1157,6 +2200,29 @@ export async function saveSalaryScale(scale: Partial<SalaryScale>): Promise<Sala
     pensionDeductionPct: scale.pensionDeductionPct ?? 5.0,
   };
 
+  try {
+    if (isValidUuid(companyId)) {
+      const dbDept = mapDepartmentToDb(department);
+      await supabase.from("hr_salary_scales").upsert(
+        {
+          company_id: companyId,
+          department: dbDept,
+          job_title: jobTitle,
+          base_salary_min: minSalary,
+          base_salary_max: maxSalary,
+          currency: "ZAR",
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "company_id,department,job_title" }
+      );
+    }
+  } catch (err) {
+    console.warn("Could not save salary scale in Supabase", err);
+  }
+
+  const existingIdx = MOCK_SALARY_SCALES.findIndex(
+    (s) => s.department === department && s.jobTitle === jobTitle
+  );
   if (existingIdx !== -1) {
     MOCK_SALARY_SCALES[existingIdx] = updated;
   } else {
@@ -1166,6 +2232,55 @@ export async function saveSalaryScale(scale: Partial<SalaryScale>): Promise<Sala
 }
 
 export async function fetchPayslips(companyId: string = MOCK_COMPANIES[0].id, payPeriod?: string): Promise<Payslip[]> {
+  try {
+    let query = supabase
+      .from("hr_payslips")
+      .select("*, users(first_name, last_name, email)");
+
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    if (payPeriod) {
+      const parts = payPeriod.split("-");
+      if (parts.length === 2) {
+        query = query.eq("period_year", parseInt(parts[0])).eq("period_month", parseInt(parts[1]));
+      }
+    }
+
+    const { data, error } = await query.order("created_at", { ascending: false });
+    if (!error && data && data.length > 0) {
+      return data.map((p) => {
+        const fullName = `${p.users?.first_name || ""} ${p.users?.last_name || ""}`.trim() || p.users?.email || "Employee";
+        return {
+          id: p.id,
+          companyId: p.company_id,
+          userId: p.user_id,
+          employeeName: fullName,
+          jobTitle: "Staff",
+          department: "front_desk" as DepartmentType,
+          payPeriod: `${p.period_year}-${String(p.period_month).padStart(2, "0")}`,
+          basicSalary: toNumber(p.gross_salary),
+          allowances: {
+            overtime: toNumber(p.overtime_amount),
+            bonuses: toNumber(p.bonus_amount),
+          },
+          grossPay: toNumber(p.gross_salary),
+          deductions: {
+            payeTax: toNumber(p.tax_amount),
+            uif: toNumber(p.uif_amount),
+          },
+          netPay: toNumber(p.net_salary),
+          status: p.payment_status as "draft" | "approved" | "paid",
+          paymentMethod: "bank_transfer",
+          paidAt: p.paid_at,
+          notes: p.notes,
+          createdAt: p.created_at,
+        };
+      });
+    }
+  } catch (err) {
+    console.warn("Falling back to mock payslips", err);
+  }
   return MOCK_PAYSLIPS;
 }
 
@@ -1185,11 +2300,18 @@ export async function generatePayslip(params: {
   const grossPay = params.basicSalary + totalAllowances;
   const totalDeductions = Object.values(params.deductions).reduce((a, b) => a + b, 0);
   const netPay = grossPay - totalDeductions;
+  const newId = generateUuid();
+
+  let validUserId = params.userId;
+  if (!isValidUuid(validUserId)) {
+    const dbUserId = await ensureDbUser(`${params.employeeName.toLowerCase().replace(/\s+/g, ".")}@championscourt.co.za`, params.employeeName);
+    validUserId = dbUserId || generateUuid();
+  }
 
   const newPayslip: Payslip = {
-    id: `pay-${Date.now()}`,
+    id: newId,
     companyId: params.companyId,
-    userId: params.userId,
+    userId: validUserId,
     employeeName: params.employeeName,
     jobTitle: params.jobTitle,
     department: params.department,
@@ -1204,6 +2326,44 @@ export async function generatePayslip(params: {
     generatedByName: params.generatedByName,
     createdAt: new Date().toISOString(),
   };
+
+  try {
+    if (isValidUuid(params.companyId) && isValidUuid(validUserId)) {
+      const periodParts = params.payPeriod.split("-");
+      const year = parseInt(periodParts[0]) || 2026;
+      const month = parseInt(periodParts[1]) || 8;
+
+      const { data, error } = await supabase
+        .from("hr_payslips")
+        .upsert(
+          {
+            id: newId,
+            company_id: params.companyId,
+            user_id: validUserId,
+            period_year: year,
+            period_month: month,
+            gross_salary: grossPay,
+            deductions: totalDeductions,
+            net_salary: netPay,
+            tax_amount: params.deductions.payeTax || 0,
+            uif_amount: params.deductions.uif || 0,
+            overtime_amount: params.allowances.overtime || 0,
+            bonus_amount: params.allowances.bonuses || 0,
+            payment_status: "draft",
+            notes: `Generated by ${params.generatedByName}`,
+          },
+          { onConflict: "company_id,user_id,period_month,period_year" }
+        )
+        .select()
+        .single();
+
+      if (!error && data) {
+        newPayslip.id = data.id;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not insert payslip in Supabase", err);
+  }
 
   MOCK_PAYSLIPS.unshift(newPayslip);
 
@@ -1221,19 +2381,81 @@ export async function generatePayslip(params: {
 }
 
 export async function fetchEmployeeContractTemplates(companyId: string = MOCK_COMPANIES[0].id): Promise<EmployeeContractTemplate[]> {
+  try {
+    let query = supabase.from("hr_employee_contract_templates").select("*");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("created_at", { ascending: false });
+    if (!error && data && data.length > 0) {
+      return data.map((t) => ({
+        id: t.id,
+        companyId: t.company_id,
+        title: t.title,
+        department: t.department,
+        templateBody: t.description || "",
+        standardLeaveDays: 21,
+        probationMonths: 3,
+        workingHoursPerWeek: 40,
+        isDefault: t.is_active ?? true,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock contract templates", err);
+  }
   return MOCK_EMPLOYEE_TEMPLATES;
 }
 
 export async function fetchEmployeeContracts(companyId: string = MOCK_COMPANIES[0].id): Promise<EmployeeContract[]> {
+  try {
+    let query = supabase
+      .from("hr_employee_contracts")
+      .select("*, users(first_name, last_name, email)");
+
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("created_at", { ascending: false });
+    if (!error && data && data.length > 0) {
+      return data.map((c) => ({
+        id: c.id,
+        companyId: c.company_id,
+        userId: c.user_id,
+        templateId: c.template_id || undefined,
+        employeeName: `${c.users?.first_name || ""} ${c.users?.last_name || ""}`.trim() || c.users?.email || "Employee",
+        department: c.department as DepartmentType,
+        jobTitle: c.job_title,
+        startDate: c.start_date,
+        endDate: c.end_date || undefined,
+        isPermanent: c.employment_type === "permanent",
+        monthlySalary: toNumber(c.basic_salary),
+        leaveDaysPerYear: 21,
+        status: c.status as any,
+        signedAt: c.signed_by_employee_at || undefined,
+        signedByEmployee: Boolean(c.signed_by_employee_at),
+        createdAt: c.created_at,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock employee contracts", err);
+  }
   return MOCK_EMPLOYEE_CONTRACTS;
 }
 
 export async function createEmployeeContract(contract: Partial<EmployeeContract>): Promise<EmployeeContract> {
+  const companyId = contract.companyId || MOCK_COMPANIES[0].id;
+  const newId = generateUuid();
+  let validUserId = contract.userId;
+  if (!isValidUuid(validUserId)) {
+    const dbUserId = await ensureDbUser(`${(contract.employeeName || "staff").toLowerCase().replace(/\s+/g, ".")}@championscourt.co.za`, contract.employeeName);
+    validUserId = dbUserId || generateUuid();
+  }
+
   const newCon: EmployeeContract = {
-    id: `emp-con-${Date.now()}`,
-    companyId: contract.companyId || MOCK_COMPANIES[0].id,
-    userId: contract.userId || `user-${Date.now()}`,
-    templateId: contract.templateId || "tmpl-001",
+    id: newId,
+    companyId,
+    userId: validUserId,
+    templateId: contract.templateId || undefined,
     employeeName: contract.employeeName || "Employee Name",
     department: contract.department || "front_desk",
     jobTitle: contract.jobTitle || "Front Desk - Receptionist",
@@ -1247,19 +2469,86 @@ export async function createEmployeeContract(contract: Partial<EmployeeContract>
     createdAt: new Date().toISOString(),
   };
 
+  try {
+    if (isValidUuid(companyId) && isValidUuid(validUserId)) {
+      const dbDept = mapDepartmentToDb(newCon.department);
+      const { data, error } = await supabase
+        .from("hr_employee_contracts")
+        .insert({
+          id: newId,
+          company_id: companyId,
+          user_id: validUserId,
+          template_id: isValidUuid(contract.templateId) ? contract.templateId : null,
+          job_title: newCon.jobTitle,
+          department: dbDept,
+          employment_type: newCon.isPermanent ? "permanent" : "fixed_term",
+          start_date: newCon.startDate,
+          basic_salary: newCon.monthlySalary,
+          working_hours: "40 hours per week",
+          status: "active",
+          signed_by_employee_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (!error && data) {
+        newCon.id = data.id;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not insert employee contract in Supabase", err);
+  }
+
   MOCK_EMPLOYEE_CONTRACTS.unshift(newCon);
   return newCon;
 }
 
 export async function fetchLeaveRecords(companyId: string = MOCK_COMPANIES[0].id): Promise<LeaveRecord[]> {
+  try {
+    let query = supabase
+      .from("hr_leave_records")
+      .select("*, users(first_name, last_name, email)");
+
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("created_at", { ascending: false });
+    if (!error && data && data.length > 0) {
+      return data.map((l) => ({
+        id: l.id,
+        companyId: l.company_id,
+        userId: l.user_id,
+        employeeName: `${l.users?.first_name || ""} ${l.users?.last_name || ""}`.trim() || l.users?.email || "Employee",
+        department: "front_desk" as DepartmentType,
+        leaveType: l.leave_type as any,
+        startDate: l.start_date,
+        endDate: l.end_date,
+        daysCount: l.days_count,
+        reason: l.reason || "",
+        status: l.status as any,
+        reviewedAt: l.approved_at || undefined,
+        createdAt: l.created_at,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock leave records", err);
+  }
   return MOCK_LEAVE_RECORDS;
 }
 
 export async function requestLeave(record: Partial<LeaveRecord>): Promise<LeaveRecord> {
+  const companyId = record.companyId || MOCK_COMPANIES[0].id;
+  const newId = generateUuid();
+  let validUserId = record.userId;
+  if (!isValidUuid(validUserId)) {
+    const dbUserId = await ensureDbUser(`${(record.employeeName || "staff").toLowerCase().replace(/\s+/g, ".")}@championscourt.co.za`, record.employeeName);
+    validUserId = dbUserId || generateUuid();
+  }
+
   const newLeave: LeaveRecord = {
-    id: `leave-${Date.now()}`,
-    companyId: record.companyId || MOCK_COMPANIES[0].id,
-    userId: record.userId || "user-01",
+    id: newId,
+    companyId,
+    userId: validUserId,
     employeeName: record.employeeName || "Employee",
     department: record.department || "front_desk",
     leaveType: record.leaveType || "annual",
@@ -1271,6 +2560,35 @@ export async function requestLeave(record: Partial<LeaveRecord>): Promise<LeaveR
     createdAt: new Date().toISOString(),
   };
 
+  try {
+    if (isValidUuid(companyId) && isValidUuid(validUserId)) {
+      const allowedLeave = ["annual", "sick", "maternity", "family_responsibility", "unpaid", "study"];
+      const lType = allowedLeave.includes(newLeave.leaveType) ? newLeave.leaveType : "annual";
+
+      const { data, error } = await supabase
+        .from("hr_leave_records")
+        .insert({
+          id: newId,
+          company_id: companyId,
+          user_id: validUserId,
+          leave_type: lType,
+          start_date: newLeave.startDate,
+          end_date: newLeave.endDate,
+          days_count: newLeave.daysCount,
+          reason: newLeave.reason || null,
+          status: "pending",
+        })
+        .select()
+        .single();
+
+      if (!error && data) {
+        newLeave.id = data.id;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not insert leave record in Supabase", err);
+  }
+
   MOCK_LEAVE_RECORDS.unshift(newLeave);
   return newLeave;
 }
@@ -1280,6 +2598,20 @@ export async function updateLeaveStatus(
   status: "approved" | "rejected",
   reviewerName: string
 ): Promise<boolean> {
+  try {
+    if (isValidUuid(id)) {
+      await supabase
+        .from("hr_leave_records")
+        .update({
+          status,
+          approved_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+    }
+  } catch (err) {
+    console.warn("Could not update leave status in Supabase", err);
+  }
+
   const item = MOCK_LEAVE_RECORDS.find((l) => l.id === id);
   if (item) {
     item.status = status;
@@ -1297,10 +2629,12 @@ export async function logAuditEvent(event: {
   entityName: string;
   actorName: string;
   details: string;
+  userEmail?: string;
 }): Promise<void> {
+  const compId = event.companyId || MOCK_COMPANIES[0].id;
   const row: AuditEventRow = {
     id: `audit-${Date.now()}`,
-    companyId: event.companyId || MOCK_COMPANIES[0].id,
+    companyId: compId,
     createdAt: new Date().toISOString(),
     action: event.action,
     entityType: event.entityType,
@@ -1311,23 +2645,56 @@ export async function logAuditEvent(event: {
   };
 
   try {
-    await supabase.from("audit_log").insert({
-      company_id: row.companyId,
-      action: row.action,
-      entity_type: row.entityType,
-      entity_id: row.entityId || null,
-      entity_name: row.entityName,
-      actor_name: row.actorName,
-      details: { summary: row.details },
-    });
-  } catch {
-    // fallback
+    const payload: Record<string, unknown> = {
+      action: event.action,
+      entity_type: event.entityType,
+      user_email: event.userEmail || "admin@championscourt.co.za",
+      user_name: event.actorName || "System Admin",
+      details: {
+        summary: event.details,
+        entity_name: event.entityName,
+        original_entity_id: event.entityId,
+      },
+    };
+
+    if (isValidUuid(compId)) {
+      payload.company_id = compId;
+    }
+    if (isValidUuid(event.entityId)) {
+      payload.entity_id = event.entityId;
+    }
+
+    await supabase.from("audit_log").insert(payload);
+  } catch (err) {
+    console.warn("Could not insert audit log to Supabase", err);
   }
 
   MOCK_AUDIT_TRAIL.unshift(row);
 }
 
 export async function fetchAuditEvents(companyId: string = MOCK_COMPANIES[0].id): Promise<AuditEventRow[]> {
+  try {
+    let query = supabase.from("audit_log").select("*");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("created_at", { ascending: false }).limit(200);
+    if (!error && data && data.length > 0) {
+      return data.map((row) => ({
+        id: row.id,
+        companyId: row.company_id || companyId,
+        createdAt: row.created_at,
+        action: row.action,
+        entityType: row.entity_type,
+        entityId: row.entity_id || (row.details && typeof row.details === "object" ? (row.details as any).original_entity_id : "") || "",
+        entityName: (row.details && typeof row.details === "object" ? (row.details as any).entity_name : "") || row.entity_type,
+        actorName: row.user_name || row.user_email || "System",
+        details: (row.details && typeof row.details === "object" ? (row.details as any).summary : typeof row.details === "string" ? row.details : "") || JSON.stringify(row.details || {}),
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock audit trail", err);
+  }
   return MOCK_AUDIT_TRAIL;
 }
 
@@ -1480,6 +2847,27 @@ export async function fetchProperties(companyId: string = MOCK_COMPANIES[0].id):
 }
 
 export async function fetchTenants(companyId: string = MOCK_COMPANIES[0].id): Promise<TenantRow[]> {
+  try {
+    let query = supabase.from("tenants").select("*, properties(name)");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("created_at", { ascending: false });
+    if (!error && data && data.length > 0) {
+      return data.map((t) => ({
+        id: t.id,
+        companyId: t.company_id || companyId,
+        fullName: t.full_name,
+        propertyName: t.properties?.name || "Unassigned Property",
+        phone: t.phone || "",
+        email: t.email || "",
+        tenureStatus: t.tenure_status || "active",
+        rentStatus: t.rent_status || "unpaid",
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock tenants", err);
+  }
   return [
     {
       id: "ten-001",
@@ -1495,6 +2883,27 @@ export async function fetchTenants(companyId: string = MOCK_COMPANIES[0].id): Pr
 }
 
 export async function fetchInvoices(companyId: string = MOCK_COMPANIES[0].id): Promise<InvoiceRow[]> {
+  try {
+    let query = supabase.from("invoices").select("*, tenants(full_name), properties(name)");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("created_at", { ascending: false });
+    if (!error && data && data.length > 0) {
+      return data.map((inv) => ({
+        id: inv.id,
+        companyId: inv.company_id || companyId,
+        tenantName: inv.tenants?.full_name || "Unknown Tenant",
+        propertyName: inv.properties?.name || "Unknown Property",
+        month: inv.month,
+        dueDate: inv.due_date,
+        totalAmount: toNumber(inv.total_amount),
+        status: inv.status,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock invoices", err);
+  }
   return [
     {
       id: "inv-001",
@@ -1546,6 +2955,29 @@ export async function fetchMaintenanceOverview(companyId: string = MOCK_COMPANIE
 }
 
 export async function fetchWorkOrders(companyId: string = MOCK_COMPANIES[0].id): Promise<WorkOrderRow[]> {
+  try {
+    let query = supabase.from("maintenance").select("*, properties(name), maintainers(name)");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("created_at", { ascending: false });
+    if (!error && data && data.length > 0) {
+      return data.map((w) => ({
+        id: w.id,
+        companyId: w.company_id || companyId,
+        propertyName: w.properties?.name || "Unassigned Property",
+        providerName: w.maintainers?.name || "Internal Staff",
+        category: w.category || "general",
+        priority: w.priority || "medium",
+        status: w.status || "open",
+        scheduledDate: w.scheduled_date || "",
+        estimatedCost: toNumber(w.estimated_cost),
+        actualCost: toNumber(w.actual_cost),
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock work orders", err);
+  }
   return [
     {
       id: "wo-001",
@@ -1563,6 +2995,27 @@ export async function fetchWorkOrders(companyId: string = MOCK_COMPANIES[0].id):
 }
 
 export async function fetchProviders(companyId: string = MOCK_COMPANIES[0].id): Promise<ProviderRow[]> {
+  try {
+    let query = supabase.from("maintainers").select("*");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("name");
+    if (!error && data && data.length > 0) {
+      return data.map((p) => ({
+        id: p.id,
+        companyId: p.company_id || companyId,
+        name: p.name,
+        phone: p.phone,
+        specialization: p.specialization,
+        rate: toNumber(p.rate),
+        totalJobs: p.total_jobs || 0,
+        totalPaid: toNumber(p.total_paid),
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock providers", err);
+  }
   return [
     {
       id: "prov-001",
@@ -1578,6 +3031,28 @@ export async function fetchProviders(companyId: string = MOCK_COMPANIES[0].id): 
 }
 
 export async function fetchInspections(companyId: string = MOCK_COMPANIES[0].id): Promise<InspectionRow[]> {
+  try {
+    let query = supabase.from("inspections").select("*, properties(name), tenants(full_name)");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("scheduled_date", { ascending: false });
+    if (!error && data && data.length > 0) {
+      return data.map((insp) => ({
+        id: insp.id,
+        companyId: insp.company_id || companyId,
+        propertyName: insp.properties?.name || "Unassigned Property",
+        tenantName: insp.tenants?.full_name || "Commercial Operations",
+        type: insp.type || "routine",
+        status: insp.status || "scheduled",
+        scheduledDate: insp.scheduled_date || "",
+        completedDate: insp.completed_date || "",
+        inspectorName: insp.inspector_name || "Staff Inspector",
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock inspections", err);
+  }
   return [
     {
       id: "insp-001",
@@ -1594,6 +3069,29 @@ export async function fetchInspections(companyId: string = MOCK_COMPANIES[0].id)
 }
 
 export async function fetchPreventiveTasks(companyId: string = MOCK_COMPANIES[0].id): Promise<PreventiveTaskRow[]> {
+  try {
+    let query = supabase.from("preventive_maintenance").select("*, properties(name), maintainers(name)");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("next_due");
+    if (!error && data && data.length > 0) {
+      return data.map((t) => ({
+        id: t.id,
+        companyId: t.company_id || companyId,
+        propertyName: t.properties?.name || "Grand Champions Safari Lodge",
+        providerName: t.maintainers?.name || "Maintenance Staff",
+        title: t.title,
+        category: t.category,
+        frequency: t.frequency,
+        status: t.status,
+        nextDue: t.next_due,
+        estimatedCost: toNumber(t.estimated_cost),
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock preventive tasks", err);
+  }
   return [
     {
       id: "prev-001",
@@ -1611,6 +3109,29 @@ export async function fetchPreventiveTasks(companyId: string = MOCK_COMPANIES[0]
 }
 
 export async function fetchInventoryItems(companyId: string = MOCK_COMPANIES[0].id): Promise<InventoryItemRow[]> {
+  try {
+    let query = supabase.from("maintenance_inventory").select("*");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("name");
+    if (!error && data && data.length > 0) {
+      return data.map((item) => ({
+        id: item.id,
+        companyId: item.company_id || companyId,
+        name: item.name,
+        category: item.category,
+        quantity: item.quantity,
+        unit: item.unit,
+        minStockLevel: item.min_stock_level,
+        unitCost: toNumber(item.unit_cost),
+        supplier: item.supplier || "",
+        location: item.location || "",
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock inventory", err);
+  }
   return [
     {
       id: "inv-item-01",
@@ -1640,6 +3161,30 @@ export async function fetchInventoryItems(companyId: string = MOCK_COMPANIES[0].
 }
 
 export async function fetchContracts(companyId: string = MOCK_COMPANIES[0].id): Promise<ContractRow[]> {
+  try {
+    let query = supabase.from("contracts").select("*, tenants(full_name), properties(name)");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("created_at", { ascending: false });
+    if (!error && data && data.length > 0) {
+      return data.map((c) => ({
+        id: c.id,
+        companyId: c.company_id || companyId,
+        title: c.title,
+        tenantName: c.tenants?.full_name || "Unknown Tenant",
+        propertyName: c.properties?.name || "Unknown Property",
+        startDate: c.start_date,
+        endDate: c.end_date,
+        monthlyRent: toNumber(c.monthly_rent),
+        depositAmount: toNumber(c.deposit_amount),
+        notes: c.notes || "",
+        status: c.status,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock contracts", err);
+  }
   return [
     {
       id: "con-001",

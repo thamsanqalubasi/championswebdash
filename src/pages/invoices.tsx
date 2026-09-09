@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog } from "@/components/modal";
-import { fetchInvoicesData } from "@/lib/data";
+import { fetchInvoicesData, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
-import { fetchCompanyInfo, fetchAdminInfo } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, downloadPdfDocument, downloadPdfFromUrl } from "@/lib/storage";
 import { buildProfessionalInvoiceHtml, buildUnifiedInvoiceHtml } from "@/lib/document-templates";
 import type { InvoiceRow } from "@/lib/types";
+import { DocumentShareModal } from "@/components/document-share-modal";
+import { Mail, Download, FileText, Send } from "lucide-react";
 
 type PeriodFilter = "this_month" | "last_2_months" | "last_3_months";
 
@@ -79,7 +81,7 @@ async function openUnifiedInvoiceDocument(
 }
 
 export default function InvoicesPage() {
-  const { user } = useAuth();
+  const { user, currentCompany } = useAuth();
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -98,6 +100,18 @@ export default function InvoicesPage() {
 
   const INVOICES_PAGE_SIZE = 8;
   const [invoicesLimit, setInvoicesLimit] = useState(INVOICES_PAGE_SIZE);
+  const [shareModalDoc, setShareModalDoc] = useState<{
+    isOpen: boolean;
+    documentTitle: string;
+    documentType: string;
+    documentHtml?: string;
+    documentUrl?: string;
+    fileNameBase?: string;
+    ownerName?: string;
+    ownerEmail?: string;
+    defaultSubject?: string;
+    defaultMessage?: string;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -307,6 +321,7 @@ export default function InvoicesPage() {
           return;
         }
 
+        const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
         const { error: createError } = await supabase.from("invoices").insert({
           tenant_id: transaction.tenantId,
           property_id: transaction.propertyId,
@@ -314,6 +329,7 @@ export default function InvoicesPage() {
           due_date: transaction.paymentDate,
           total_amount: transaction.amountPaid,
           status: "paid",
+          company_id: compId,
         });
 
         if (createError) throw createError;
@@ -326,11 +342,14 @@ export default function InvoicesPage() {
       openUnifiedInvoiceDocument(selectedTransactions, user?.email ?? undefined);
 
       const totalAmountPaid = selectedTransactions.reduce((sum, row) => sum + row.amountPaid, 0);
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
 
       const { error: auditError } = await supabase.from("audit_log").insert({
+        user_email: user?.email || "admin@championscourt.co.za",
+        user_name: user?.email ?? "Admin",
         action: "unified_invoice_generated",
         entity_type: "tenant_rent_payment",
-        entity_name: selectedCollector,
+        company_id: compId,
         details: {
           transaction_ids: selectedTransactions.map((row) => row.id),
           collector_name: selectedCollector,
@@ -444,6 +463,107 @@ export default function InvoicesPage() {
     } catch (viewError) {
       alert(viewError instanceof Error ? viewError.message : "Could not view invoice.");
       previewWindow.close();
+    }
+  };
+
+  const getInvoiceHtmlAndUrl = async (row: InvoiceRow): Promise<{ html: string; url: string; tenantEmail: string }> => {
+    let html = "";
+    let url = "";
+
+    try {
+      const { data: invoiceData } = await supabase
+        .from("invoices")
+        .select("pdf_url")
+        .eq("id", row.id)
+        .maybeSingle();
+
+      const pdfUrl = String(invoiceData?.pdf_url ?? "");
+      if (pdfUrl.startsWith("http")) {
+        url = pdfUrl;
+      } else if (pdfUrl.startsWith("<")) {
+        html = pdfUrl;
+      }
+    } catch {
+      // fallback
+    }
+
+    if (!html && !url) {
+      const { data: items } = await supabase
+        .from("invoice_items")
+        .select("description, amount")
+        .eq("invoice_id", row.id);
+
+      const [company, admin] = await Promise.all([
+        fetchCompanyInfo(),
+        fetchAdminInfo(user?.email ?? undefined),
+      ]);
+
+      const lineItems = (items ?? []).map((item) => ({
+        description: String(item.description ?? ""),
+        amount: Number(item.amount ?? 0),
+      }));
+
+      if (lineItems.length === 0) {
+        lineItems.push({ description: `Rent payment for ${row.month}`, amount: row.totalAmount });
+      }
+
+      html = buildProfessionalInvoiceHtml(
+        {
+          invoiceId: row.id,
+          tenantName: row.tenantName,
+          propertyName: row.propertyName,
+          month: row.month,
+          dueDate: row.dueDate,
+          status: row.status,
+          lineItems,
+        },
+        company,
+        admin
+      );
+
+      try {
+        await supabase.from("invoices").update({ pdf_url: html }).eq("id", row.id);
+      } catch {
+        // ignore
+      }
+    }
+
+    let tenantEmail = "";
+    if (row.tenantId) {
+      try {
+        const { data: t } = await supabase.from("tenants").select("email").eq("id", row.tenantId).maybeSingle();
+        if (t?.email) tenantEmail = t.email;
+      } catch {
+        // ignore
+      }
+    }
+
+    return { html, url, tenantEmail };
+  };
+
+  const handleOpenShare = async (row: InvoiceRow) => {
+    const { html, url, tenantEmail } = await getInvoiceHtmlAndUrl(row);
+    setShareModalDoc({
+      isOpen: true,
+      documentTitle: `Invoice #${row.id.slice(0, 8)} (${row.month})`,
+      documentType: "Invoice",
+      documentHtml: html,
+      documentUrl: url,
+      fileNameBase: `invoice-${row.tenantName.replace(/\s+/g, "_")}-${row.month}`,
+      ownerName: row.tenantName,
+      ownerEmail: tenantEmail,
+      defaultSubject: `Invoice ${row.month} - ${row.propertyName || currentCompany?.name || "Champions Court"}`,
+      defaultMessage: `Dear ${row.tenantName},\n\nPlease find your rental invoice for ${row.month} in the amount of ${formatCurrency(row.totalAmount)}.`,
+    });
+  };
+
+  const handleDownloadRowPdf = async (row: InvoiceRow) => {
+    const { html, url } = await getInvoiceHtmlAndUrl(row);
+    const base = `invoice-${row.tenantName.replace(/\s+/g, "_")}-${row.month}`;
+    if (url && url.startsWith("http")) {
+      await downloadPdfFromUrl(url, base);
+    } else if (html) {
+      downloadPdfDocument(html, base);
     }
   };
 
@@ -566,6 +686,24 @@ export default function InvoicesPage() {
                               className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
                             >
                               View
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleOpenShare(row)}
+                              className="flex items-center gap-1 rounded-md border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-500/20 transition"
+                              title="Email to Owner, Staff, or Custom Email"
+                            >
+                              <Mail size={12} />
+                              <span>Email</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDownloadRowPdf(row)}
+                              className="flex items-center gap-1 rounded-md border border-border-color px-2 py-1 text-xs text-foreground hover:bg-surface-elevated transition"
+                              title="Download as PDF"
+                            >
+                              <Download size={12} />
+                              <span>PDF</span>
                             </button>
                             {row.status !== "paid" && (
                               <button
@@ -720,6 +858,23 @@ export default function InvoicesPage() {
         confirmLabel="Delete"
         loading={deleting}
       />
+
+      {shareModalDoc && (
+        <DocumentShareModal
+          isOpen={shareModalDoc.isOpen}
+          onClose={() => setShareModalDoc(null)}
+          documentTitle={shareModalDoc.documentTitle}
+          documentType={shareModalDoc.documentType}
+          documentHtml={shareModalDoc.documentHtml}
+          documentUrl={shareModalDoc.documentUrl}
+          fileNameBase={shareModalDoc.fileNameBase}
+          ownerName={shareModalDoc.ownerName}
+          ownerEmail={shareModalDoc.ownerEmail}
+          defaultSubject={shareModalDoc.defaultSubject}
+          defaultMessage={shareModalDoc.defaultMessage}
+          onSuccess={reload}
+        />
+      )}
     </ModulePage>
   );
 }

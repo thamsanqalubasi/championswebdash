@@ -194,9 +194,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             className="flex w-full items-center justify-between gap-3 rounded-xl bg-surface-elevated/80 p-3.5 shadow-sm ring-1 ring-border-color/50 text-left transition hover:bg-surface-elevated"
           >
             <div className="flex items-center gap-3 min-w-0">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-md">
-                <Building2 size={20} />
-              </div>
+              {currentCompany.logoUrl ? (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-color bg-surface-elevated p-0.5 shadow-md">
+                  <img src={currentCompany.logoUrl} alt={currentCompany.name} className="h-full w-full object-contain" />
+                </div>
+              ) : (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-md font-black text-sm">
+                  {currentCompany.name ? currentCompany.name.charAt(0) : <Building2 size={20} />}
+                </div>
+              )}
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-600 dark:text-blue-400">
                   {currentCompanyUser.jobTitle}
@@ -341,9 +347,20 @@ export function AppShell({ children }: { children: ReactNode }) {
           />
           <div className="absolute left-0 top-0 h-full w-[86%] max-w-sm overflow-y-auto border-r border-border-color bg-surface p-4">
             <div className="mb-4 flex items-center justify-between border-b border-border-color pb-3">
-              <div>
-                <p className="text-[10px] font-bold uppercase text-blue-600">{currentCompanyUser.jobTitle}</p>
-                <h2 className="text-sm font-bold truncate">{currentCompany.name}</h2>
+              <div className="flex items-center gap-2.5 min-w-0">
+                {currentCompany.logoUrl ? (
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-color bg-surface-elevated p-0.5">
+                    <img src={currentCompany.logoUrl} alt={currentCompany.name} className="h-full w-full object-contain" />
+                  </div>
+                ) : (
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white font-black text-xs">
+                    {currentCompany.name ? currentCompany.name.charAt(0) : <Building2 size={16} />}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase text-blue-600">{currentCompanyUser.jobTitle}</p>
+                  <h2 className="text-sm font-bold truncate">{currentCompany.name}</h2>
+                </div>
               </div>
               <button
                 type="button"
