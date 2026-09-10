@@ -672,7 +672,7 @@ export const MOCK_EMPLOYEE_CONTRACTS: EmployeeContract[] = [
   {
     id: "emp-con-001",
     companyId: "a0000000-0000-0000-0000-000000000001",
-    userId: "user-frontdesk-01",
+    userId: "c0000000-0000-0000-0000-000000000002",
     templateId: "tmpl-001",
     employeeName: "Nomsa Dlamini",
     department: "front_desk",
@@ -685,6 +685,77 @@ export const MOCK_EMPLOYEE_CONTRACTS: EmployeeContract[] = [
     signedAt: "2026-01-05T09:00:00Z",
     signedByEmployee: true,
     createdAt: "2026-01-05T08:30:00Z",
+  },
+  {
+    id: "emp-con-002",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    userId: "c0000000-0000-0000-0000-000000000003",
+    templateId: "tmpl-001",
+    employeeName: "Sipho Khumalo",
+    department: "maintenance",
+    jobTitle: "Maintenance - Manager",
+    startDate: "2026-03-28",
+    endDate: "2026-09-28", // Expiring in 18 days!
+    isPermanent: false,
+    monthlySalary: 34000,
+    leaveDaysPerYear: 18,
+    status: "active",
+    signedAt: "2026-03-28T10:00:00Z",
+    signedByEmployee: true,
+    createdAt: "2026-03-28T09:00:00Z",
+  },
+  {
+    id: "emp-con-003",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    userId: "c0000000-0000-0000-0000-000000000004",
+    templateId: "tmpl-001",
+    employeeName: "Lerato Mokoena",
+    department: "accountant",
+    jobTitle: "Accountant - Manager",
+    startDate: "2026-01-15",
+    endDate: "2026-10-15", // Expiring in 35 days!
+    isPermanent: false,
+    monthlySalary: 42000,
+    leaveDaysPerYear: 24,
+    status: "active",
+    signedAt: "2026-01-15T11:00:00Z",
+    signedByEmployee: true,
+    createdAt: "2026-01-15T10:00:00Z",
+  },
+  {
+    id: "emp-con-004",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    userId: "c0000000-0000-0000-0000-000000000006",
+    templateId: "tmpl-001",
+    employeeName: "Farai Moyo",
+    department: "audit",
+    jobTitle: "Audit - Auditor",
+    startDate: "2025-09-05",
+    endDate: "2026-09-05", // Expired 5 days ago!
+    isPermanent: false,
+    monthlySalary: 28000,
+    leaveDaysPerYear: 18,
+    status: "active",
+    signedAt: "2025-09-05T09:00:00Z",
+    signedByEmployee: true,
+    createdAt: "2025-09-05T08:00:00Z",
+  },
+  {
+    id: "emp-con-005",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    userId: "c0000000-0000-0000-0000-000000000005",
+    templateId: "tmpl-001",
+    employeeName: "Precious Ndlovu",
+    department: "human_resources",
+    jobTitle: "HR - Manager",
+    startDate: "2026-01-15",
+    isPermanent: true,
+    monthlySalary: 36000,
+    leaveDaysPerYear: 24,
+    status: "active",
+    signedAt: "2026-01-15T09:00:00Z",
+    signedByEmployee: true,
+    createdAt: "2026-01-15T08:00:00Z",
   },
 ];
 
@@ -2411,6 +2482,13 @@ export async function generatePayslip(params: {
   deductions: Record<string, number>;
   generatedByName: string;
 }): Promise<Payslip> {
+  const user = MOCK_COMPANY_USERS.find(
+    (u) => u.userId === params.userId || u.id === params.userId || u.fullName === params.employeeName
+  );
+  if (user && user.isActive === false) {
+    throw new Error("Payroll and payslips can only be generated for active employees.");
+  }
+
   const totalAllowances = Object.values(params.allowances).reduce((a, b) => a + b, 0);
   const grossPay = params.basicSalary + totalAllowances;
   const totalDeductions = Object.values(params.deductions).reduce((a, b) => a + b, 0);
@@ -2616,6 +2694,231 @@ export async function createEmployeeContract(contract: Partial<EmployeeContract>
 
   MOCK_EMPLOYEE_CONTRACTS.unshift(newCon);
   return newCon;
+}
+
+export async function extendEmployeeContract(
+  contractId: string,
+  newEndDate: string,
+  extendedByName: string,
+  salaryAdjustment?: number,
+  notes?: string
+): Promise<EmployeeContract | null> {
+  const contract = MOCK_EMPLOYEE_CONTRACTS.find((c) => c.id === contractId);
+  const previousEndDate = contract?.endDate;
+
+  try {
+    if (isValidUuid(contractId)) {
+      const updatePayload: Record<string, any> = {
+        end_date: newEndDate,
+        status: "active",
+        updated_at: new Date().toISOString(),
+      };
+      if (salaryAdjustment !== undefined && salaryAdjustment > 0) {
+        updatePayload.basic_salary = salaryAdjustment;
+      }
+      await supabase.from("hr_employee_contracts").update(updatePayload).eq("id", contractId);
+    }
+  } catch (err) {
+    console.warn("Could not extend contract in Supabase", err);
+  }
+
+  if (contract) {
+    contract.endDate = newEndDate;
+    contract.status = "active";
+    if (salaryAdjustment !== undefined && salaryAdjustment > 0) {
+      contract.monthlySalary = salaryAdjustment;
+    }
+    if (!contract.extensionHistory) contract.extensionHistory = [];
+    contract.extensionHistory.push({
+      previousEndDate,
+      newEndDate,
+      extendedAt: new Date().toISOString(),
+      extendedByName,
+      salaryAdjustment,
+      notes,
+    });
+  }
+  return contract || null;
+}
+
+export async function terminateEmployeeContract(
+  contractId: string,
+  terminatedByName: string,
+  reason: string,
+  deactivateEmployee: boolean = true
+): Promise<EmployeeContract | null> {
+  const contract = MOCK_EMPLOYEE_CONTRACTS.find((c) => c.id === contractId);
+
+  try {
+    if (isValidUuid(contractId)) {
+      await supabase
+        .from("hr_employee_contracts")
+        .update({
+          status: "terminated",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", contractId);
+    }
+  } catch (err) {
+    console.warn("Could not terminate contract in Supabase", err);
+  }
+
+  if (contract) {
+    contract.status = "terminated";
+    contract.terminatedAt = new Date().toISOString();
+    contract.terminatedByName = terminatedByName;
+    contract.terminationReason = reason;
+
+    if (deactivateEmployee && contract.userId) {
+      const user = MOCK_COMPANY_USERS.find(
+        (u) => u.userId === contract.userId || u.id === contract.userId
+      );
+      if (user) {
+        user.isActive = false;
+        user.deactivationReason = "contract_ended";
+        user.deactivationDate = new Date().toISOString().slice(0, 10);
+        user.deactivationNotes = reason;
+      }
+    }
+  }
+  return contract || null;
+}
+
+export async function deactivateEmployeeUser(
+  userId: string,
+  reason: "resigned" | "terminated" | "deceased" | "contract_ended" | "other" | string,
+  notes: string = "",
+  effectiveDate: string = new Date().toISOString().slice(0, 10)
+): Promise<boolean> {
+  try {
+    if (isValidUuid(userId)) {
+      await supabase
+        .from("company_users")
+        .update({
+          is_active: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", userId);
+    }
+  } catch (err) {
+    console.warn("Could not deactivate employee in Supabase", err);
+  }
+
+  const user = MOCK_COMPANY_USERS.find((u) => u.id === userId || u.userId === userId);
+  if (user) {
+    user.isActive = false;
+    user.deactivationReason = reason;
+    user.deactivationDate = effectiveDate;
+    user.deactivationNotes = notes;
+  }
+  return true;
+}
+
+export async function reactivateEmployeeUser(userId: string): Promise<boolean> {
+  try {
+    if (isValidUuid(userId)) {
+      await supabase
+        .from("company_users")
+        .update({
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", userId);
+    }
+  } catch (err) {
+    console.warn("Could not reactivate employee in Supabase", err);
+  }
+
+  const user = MOCK_COMPANY_USERS.find((u) => u.id === userId || u.userId === userId);
+  if (user) {
+    user.isActive = true;
+    user.deactivationReason = undefined;
+    user.deactivationDate = undefined;
+    user.deactivationNotes = undefined;
+  }
+  return true;
+}
+
+export async function massGeneratePayroll(params: {
+  companyId: string;
+  payPeriod: string;
+  generatedByName: string;
+}): Promise<{
+  generated: Payslip[];
+  skippedInactiveCount: number;
+}> {
+  const users = await fetchCompanyUsers(params.companyId);
+  const salaryScales = await fetchSalaryScales(params.companyId);
+  const contracts = await fetchEmployeeContracts(params.companyId);
+
+  // STRICT RULE: Payroll and payslip can ONLY be generated for active employees
+  const activeUsers = users.filter((u) => u.isActive !== false);
+  const skippedInactiveCount = users.length - activeUsers.length;
+
+  const generated: Payslip[] = [];
+
+  for (const u of activeUsers) {
+    // Skip if already generated for this exact period
+    const existing = MOCK_PAYSLIPS.find(
+      (p) =>
+        (p.userId === u.userId || p.employeeName === u.fullName) &&
+        p.payPeriod === params.payPeriod
+    );
+    if (existing) {
+      continue;
+    }
+
+    const contract = contracts.find((c) => c.userId === u.userId);
+    const scale = salaryScales.find(
+      (s) =>
+        s.jobTitle.toLowerCase() === u.jobTitle.toLowerCase() ||
+        s.department === u.department
+    );
+
+    const basic = contract?.monthlySalary || scale?.midSalary || scale?.minSalary || 15000;
+    const house = scale?.housingAllowance ?? 1500;
+    const trans = scale?.transportAllowance ?? 1000;
+    const med = scale?.medicalAllowance ?? 800;
+
+    const gross = basic + house + trans + med;
+    const paye = (basic + house + trans) * 0.15;
+    const pension = basic * 0.05;
+    const uif = Math.min(basic * 0.01, 177.12);
+    const net = gross - (paye + pension + uif);
+
+    const newPayslip: Payslip = {
+      id: generateUuid(),
+      companyId: params.companyId,
+      userId: u.userId,
+      employeeName: u.fullName,
+      jobTitle: u.jobTitle,
+      department: u.department,
+      payPeriod: params.payPeriod,
+      basicSalary: basic,
+      allowances: {
+        housing: house,
+        transport: trans,
+        medical: med,
+      },
+      grossPay: gross,
+      deductions: {
+        payeTax: paye,
+        pension,
+        uif,
+      },
+      netPay: net,
+      status: "paid",
+      paymentMethod: "bank_transfer",
+      paidAt: new Date().toISOString(),
+      generatedByName: params.generatedByName,
+      createdAt: new Date().toISOString(),
+    };
+
+    MOCK_PAYSLIPS.unshift(newPayslip);
+    generated.push(newPayslip);
+  }
+
+  return { generated, skippedInactiveCount };
 }
 
 export async function fetchLeaveRecords(companyId: string = MOCK_COMPANIES[0].id): Promise<LeaveRecord[]> {

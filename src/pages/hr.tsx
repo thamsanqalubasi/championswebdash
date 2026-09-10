@@ -27,6 +27,16 @@ import {
   CreditCard,
   Receipt,
   UserCheck,
+  UserX,
+  AlertTriangle,
+  RefreshCw,
+  Sparkles,
+  Timer,
+  Hourglass,
+  ShieldAlert,
+  CalendarClock,
+  UserMinus,
+  RotateCcw,
 } from "lucide-react";
 import {
   fetchCompanyUsers,
@@ -37,6 +47,11 @@ import {
   fetchEmployeeContracts,
   fetchEmployeeContractTemplates,
   createEmployeeContract,
+  extendEmployeeContract,
+  terminateEmployeeContract,
+  deactivateEmployeeUser,
+  reactivateEmployeeUser,
+  massGeneratePayroll,
   fetchLeaveRecords,
   requestLeave,
   updateLeaveStatus,
@@ -57,7 +72,7 @@ import { fetchCompanyInfo, openDocumentPreview } from "@/lib/storage";
 export default function HRPage() {
   const { currentCompany, currentCompanyUser, isManager, isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<
-    "directory" | "salaries" | "payslips" | "history" | "contracts" | "leave"
+    "directory" | "payslips" | "history" | "expiring" | "contracts" | "salaries" | "leave"
   >("directory");
 
   const [users, setUsers] = useState<CompanyUser[]>([]);
@@ -71,9 +86,40 @@ export default function HRPage() {
   // Employee details modal state
   const [selectedEmployee, setSelectedEmployee] = useState<CompanyUser | null>(null);
 
+  // Employee deactivation modal state
+  const [deactivatingEmployee, setDeactivatingEmployee] = useState<CompanyUser | null>(null);
+  const [deactivationReason, setDeactivationReason] = useState<
+    "resigned" | "terminated" | "deceased" | "contract_ended" | "other"
+  >("resigned");
+  const [deactivationNotes, setDeactivationNotes] = useState("");
+  const [deactivationEffectiveDate, setDeactivationEffectiveDate] = useState(
+    new Date().toISOString().slice(0, 10)
+  );
+
+  // Contract extension modal state
+  const [extendingContract, setExtendingContract] = useState<EmployeeContract | null>(null);
+  const [extensionEndDate, setExtensionEndDate] = useState("");
+  const [extensionSalary, setExtensionSalary] = useState<number>(0);
+  const [extensionNotes, setExtensionNotes] = useState("");
+
+  // Contract immediate termination modal state
+  const [terminatingContract, setTerminatingContract] = useState<EmployeeContract | null>(null);
+  const [contractTerminationReason, setContractTerminationReason] = useState("Contract ended by mutual agreement");
+  const [deactivateEmployeeOnContractEnd, setDeactivateEmployeeOnContractEnd] = useState(true);
+
+  // Mass Payroll Run Modal
+  const [massPayrollModalOpen, setMassPayrollModalOpen] = useState(false);
+  const [massPayPeriod, setMassPayPeriod] = useState("2026-09");
+  const [massPayrollRunning, setMassPayrollRunning] = useState(false);
+
   // Directory filters
   const [directorySearch, setDirectorySearch] = useState("");
   const [directoryDept, setDirectoryDept] = useState("all");
+  const [directoryStatusFilter, setDirectoryStatusFilter] = useState<"all" | "active" | "inactive">("all");
+
+  // Expiring contracts custom duration filter
+  const [expiringDurationDays, setExpiringDurationDays] = useState<number>(30);
+  const [isCustomExpiringDuration, setIsCustomExpiringDuration] = useState(false);
 
   // Payslips filters
   const [payslipSearch, setPayslipSearch] = useState("");
@@ -85,7 +131,7 @@ export default function HRPage() {
   // Printing state indicator
   const [printingSlipId, setPrintingSlipId] = useState<string | null>(null);
 
-  // Payslip Modal State
+  // Single Payslip Modal State
   const [payslipModalOpen, setPayslipModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [payPeriod, setPayPeriod] = useState("2026-08");
@@ -118,7 +164,9 @@ export default function HRPage() {
     setContracts(cons);
     setTemplates(tmpls);
     setLeaveRecords(lvs);
-    if (usrs.length > 0 && !selectedUserId) setSelectedUserId(usrs[0].id);
+    // Set default selected active user
+    const activeFirst = usrs.find((u) => u.isActive !== false);
+    if (activeFirst && !selectedUserId) setSelectedUserId(activeFirst.id);
     setLoading(false);
   };
 
@@ -126,10 +174,18 @@ export default function HRPage() {
     loadData();
   }, [currentCompany.id]);
 
+  // Active employees list (strictly enforced)
+  const activeEmployees = useMemo(() => {
+    return users.filter((u) => u.isActive !== false);
+  }, [users]);
+
+  const inactiveEmployees = useMemo(() => {
+    return users.filter((u) => u.isActive === false);
+  }, [users]);
+
   // Handle printing official payslip in a new browser tab with company branding
   const handlePrintOfficialPayslip = async (slip: Payslip) => {
     setPrintingSlipId(slip.id);
-    // Open a blank window synchronously before async calls to prevent browser popup blocking
     const printTab = window.open("about:blank", "_blank");
     try {
       let company = await fetchCompanyInfo(currentCompany.id);
@@ -165,9 +221,13 @@ export default function HRPage() {
     }
   };
 
+  // Open single payslip modal for active employee
   const openPayslipModalForEmployee = (employee: CompanyUser) => {
+    if (employee.isActive === false) {
+      alert("Cannot generate payslip: This employee is deactivated/inactive.");
+      return;
+    }
     setSelectedUserId(employee.id);
-    // Check if there is a salary scale matching their job title or department
     const scale = salaryScales.find(
       (s) => s.jobTitle.toLowerCase() === employee.jobTitle.toLowerCase() || s.department === employee.department
     );
@@ -180,37 +240,169 @@ export default function HRPage() {
     setPayslipModalOpen(true);
   };
 
+  // Generate single payslip (Strict active check)
   const handleGeneratePayslip = async (e: React.FormEvent) => {
     e.preventDefault();
-    const u = users.find((usr) => usr.id === selectedUserId) || users[0];
-    if (!u) return;
+    const u = users.find((usr) => usr.id === selectedUserId) || activeEmployees[0];
+    if (!u) {
+      alert("Please select an employee.");
+      return;
+    }
+    if (u.isActive === false) {
+      alert("Error: Payroll and payslips can ONLY be generated for active employees.");
+      return;
+    }
 
-    const slip = await generatePayslip({
-      companyId: currentCompany.id,
-      userId: u.userId,
-      employeeName: u.fullName,
-      jobTitle: u.jobTitle,
-      department: u.department,
-      payPeriod,
-      basicSalary,
-      allowances: {
-        housing: housingAllowance,
-        transport: transportAllowance,
-        medical: medicalAllowance,
-      },
-      deductions: {
-        paye_tax: (basicSalary + housingAllowance + transportAllowance) * 0.15,
-        pension: basicSalary * 0.05,
-        uif: Math.min(basicSalary * 0.01, 177.12),
-      },
-      generatedByName: currentCompanyUser.fullName,
-    });
+    try {
+      const slip = await generatePayslip({
+        companyId: currentCompany.id,
+        userId: u.userId,
+        employeeName: u.fullName,
+        jobTitle: u.jobTitle,
+        department: u.department,
+        payPeriod,
+        basicSalary,
+        allowances: {
+          housing: housingAllowance,
+          transport: transportAllowance,
+          medical: medicalAllowance,
+        },
+        deductions: {
+          paye_tax: (basicSalary + housingAllowance + transportAllowance) * 0.15,
+          pension: basicSalary * 0.05,
+          uif: Math.min(basicSalary * 0.01, 177.12),
+        },
+        generatedByName: currentCompanyUser.fullName,
+      });
 
-    setPayslipModalOpen(false);
-    setPreviewPayslip(slip);
-    loadData();
+      setPayslipModalOpen(false);
+      setPreviewPayslip(slip);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || "Failed to generate payslip.");
+    }
   };
 
+  // Mass generate payroll for all active employees
+  const handleRunMassPayroll = async () => {
+    setMassPayrollRunning(true);
+    try {
+      const result = await massGeneratePayroll({
+        companyId: currentCompany.id,
+        payPeriod: massPayPeriod,
+        generatedByName: currentCompanyUser.fullName,
+      });
+
+      alert(
+        `✅ Mass Payroll Run Completed!\n\n• Generated: ${result.generated.length} payslips for active employees\n• Excluded: ${result.skippedInactiveCount} inactive/deactivated personnel\n• Pay Period: ${massPayPeriod}`
+      );
+      setMassPayrollModalOpen(false);
+      await loadData();
+      setActiveTab("payslips");
+    } catch (err: any) {
+      console.error(err);
+      alert("Error executing mass payroll run: " + (err.message || "Unknown error"));
+    } finally {
+      setMassPayrollRunning(false);
+    }
+  };
+
+  // Deactivate employee confirmation
+  const handleConfirmDeactivation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deactivatingEmployee) return;
+
+    await deactivateEmployeeUser(
+      deactivatingEmployee.id,
+      deactivationReason,
+      deactivationNotes,
+      deactivationEffectiveDate
+    );
+
+    setDeactivatingEmployee(null);
+    setDeactivationNotes("");
+    if (selectedEmployee?.id === deactivatingEmployee.id) {
+      setSelectedEmployee({
+        ...selectedEmployee,
+        isActive: false,
+        deactivationReason,
+        deactivationDate: deactivationEffectiveDate,
+        deactivationNotes,
+      });
+    }
+    await loadData();
+  };
+
+  // Reactivate employee
+  const handleReactivateEmployee = async (employee: CompanyUser) => {
+    if (!confirm(`Reactivate ${employee.fullName}? They will become eligible for payroll and system access again.`)) {
+      return;
+    }
+    await reactivateEmployeeUser(employee.id);
+    if (selectedEmployee?.id === employee.id) {
+      setSelectedEmployee({
+        ...selectedEmployee,
+        isActive: true,
+        deactivationReason: undefined,
+        deactivationDate: undefined,
+        deactivationNotes: undefined,
+      });
+    }
+    await loadData();
+  };
+
+  // Open contract extension modal
+  const openExtendContractModal = (contract: EmployeeContract) => {
+    setExtendingContract(contract);
+    // Default to +6 months from current end date or today
+    const baseDate = contract.endDate ? new Date(contract.endDate) : new Date();
+    baseDate.setMonth(baseDate.getMonth() + 6);
+    setExtensionEndDate(baseDate.toISOString().slice(0, 10));
+    setExtensionSalary(contract.monthlySalary);
+    setExtensionNotes("");
+  };
+
+  // Submit contract extension
+  const handleConfirmExtension = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!extendingContract) return;
+
+    await extendEmployeeContract(
+      extendingContract.id,
+      extensionEndDate,
+      currentCompanyUser.fullName,
+      extensionSalary,
+      extensionNotes
+    );
+
+    setExtendingContract(null);
+    await loadData();
+  };
+
+  // Open contract immediate termination modal
+  const openTerminateContractModal = (contract: EmployeeContract) => {
+    setTerminatingContract(contract);
+    setContractTerminationReason("Contract ended immediately by HR review");
+    setDeactivateEmployeeOnContractEnd(true);
+  };
+
+  // Submit contract immediate termination
+  const handleConfirmContractTermination = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!terminatingContract) return;
+
+    await terminateEmployeeContract(
+      terminatingContract.id,
+      currentCompanyUser.fullName,
+      contractTerminationReason,
+      deactivateEmployeeOnContractEnd
+    );
+
+    setTerminatingContract(null);
+    await loadData();
+  };
+
+  // Leave submission
   const handleLeaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const d1 = new Date(leaveStartDate);
@@ -253,9 +445,96 @@ export default function HRPage() {
         u.email.toLowerCase().includes(directorySearch.toLowerCase()) ||
         u.jobTitle.toLowerCase().includes(directorySearch.toLowerCase());
       const matchesDept = directoryDept === "all" || u.department === directoryDept;
-      return matchesSearch && matchesDept;
+      const matchesStatus =
+        directoryStatusFilter === "all" ||
+        (directoryStatusFilter === "active" && u.isActive !== false) ||
+        (directoryStatusFilter === "inactive" && u.isActive === false);
+      return matchesSearch && matchesDept && matchesStatus;
     });
-  }, [users, directorySearch, directoryDept]);
+  }, [users, directorySearch, directoryDept, directoryStatusFilter]);
+
+  // Helper for contract countdown
+  const getContractCountdown = (c: EmployeeContract) => {
+    if (c.isPermanent || !c.endDate) {
+      return { isPermanent: true, daysRemaining: 9999, label: "Permanent Tenure", colorClass: "bg-blue-500/10 text-blue-600 border-blue-500/20" };
+    }
+    const end = new Date(c.endDate);
+    const now = new Date();
+    // Normalize to dates
+    const diffTime = end.getTime() - now.getTime();
+    const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (daysRemaining < 0) {
+      return {
+        isPermanent: false,
+        daysRemaining,
+        label: `Expired ${Math.abs(daysRemaining)} days ago`,
+        colorClass: "bg-red-500/10 text-red-600 border-red-500/30 font-extrabold",
+        urgency: "expired",
+      };
+    }
+    if (daysRemaining === 0) {
+      return {
+        isPermanent: false,
+        daysRemaining,
+        label: "Expires Today",
+        colorClass: "bg-red-600 text-white animate-pulse font-extrabold",
+        urgency: "critical",
+      };
+    }
+    if (daysRemaining <= 14) {
+      return {
+        isPermanent: false,
+        daysRemaining,
+        label: `⚠️ Critical: ${daysRemaining} days left`,
+        colorClass: "bg-red-500/15 text-red-600 border-red-500/30 font-bold",
+        urgency: "critical",
+      };
+    }
+    if (daysRemaining <= 30) {
+      return {
+        isPermanent: false,
+        daysRemaining,
+        label: `⏳ Expiring: ${daysRemaining} days left`,
+        colorClass: "bg-amber-500/15 text-amber-600 border-amber-500/30 font-bold",
+        urgency: "warning",
+      };
+    }
+    if (daysRemaining <= 60) {
+      return {
+        isPermanent: false,
+        daysRemaining,
+        label: `📅 ${daysRemaining} days left (~2 mos)`,
+        colorClass: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
+        urgency: "moderate",
+      };
+    }
+    return {
+      isPermanent: false,
+      daysRemaining,
+      label: `✓ ${daysRemaining} days left`,
+      colorClass: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+      urgency: "good",
+    };
+  };
+
+  // Expiring contracts filtered by custom duration
+  const expiringContractsList = useMemo(() => {
+    return contracts
+      .filter((c) => {
+        if (c.isPermanent || !c.endDate || c.status === "terminated" || c.status === "expired") {
+          return false;
+        }
+        const countdown = getContractCountdown(c);
+        // Expired or expiring within selected duration
+        return countdown.daysRemaining <= expiringDurationDays;
+      })
+      .sort((a, b) => {
+        const da = a.endDate ? new Date(a.endDate).getTime() : 0;
+        const db = b.endDate ? new Date(b.endDate).getTime() : 0;
+        return da - db;
+      });
+  }, [contracts, expiringDurationDays]);
 
   // Filtered payslips for payroll view
   const filteredPayslips = useMemo(() => {
@@ -295,7 +574,7 @@ export default function HRPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Top Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -303,15 +582,15 @@ export default function HRPage() {
               Human Resources & Payroll Administration
             </h1>
             <span className="rounded-full bg-blue-500/10 px-2.5 py-0.5 text-xs font-bold text-blue-600">
-              {users.length} Personnel
+              {activeEmployees.length} Active / {users.length} Total Personnel
             </span>
           </div>
           <p className="text-sm text-muted">
-            Manage organization employees, salary scales, payslip generation, salary disbursements history, and leave tracking.
+            Manage personnel directory, contract countdowns & extensions, mass payroll runs, payslips, and staff lifecycle.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setLeaveModalOpen(true)}
@@ -322,14 +601,32 @@ export default function HRPage() {
           </button>
 
           {(isAdmin || isManager) && (
-            <button
-              type="button"
-              onClick={() => setPayslipModalOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition-colors"
-            >
-              <DollarSign size={15} />
-              <span>Generate Payslip</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setMassPayrollModalOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:from-emerald-700 hover:to-teal-700 transition"
+                title="Mass generate payslips for all active employees"
+              >
+                <Sparkles size={15} />
+                <span>Mass Generate Payroll</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeEmployees.length === 0) {
+                    alert("No active employees available to generate payslips for.");
+                    return;
+                  }
+                  setPayslipModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition"
+              >
+                <DollarSign size={15} />
+                <span>Issue Payslip</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -347,6 +644,37 @@ export default function HRPage() {
         >
           <Users size={16} />
           Employees Directory ({users.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("expiring")}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
+            activeTab === "expiring"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-muted hover:bg-surface-elevated hover:text-foreground"
+          }`}
+        >
+          <Hourglass size={16} />
+          <span>Expiring Contracts</span>
+          {expiringContractsList.length > 0 && (
+            <span className="rounded-full bg-red-500 px-2 py-0.2 text-[10px] font-extrabold text-white">
+              {expiringContractsList.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("contracts")}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
+            activeTab === "contracts"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-muted hover:bg-surface-elevated hover:text-foreground"
+          }`}
+        >
+          <FileSignature size={16} />
+          All Contracts ({contracts.length})
         </button>
 
         <button
@@ -372,7 +700,7 @@ export default function HRPage() {
           }`}
         >
           <History size={16} />
-          Salary History ({availablePeriods.length} Periods)
+          Salary History ({availablePeriods.length} Runs)
         </button>
 
         <button
@@ -390,19 +718,6 @@ export default function HRPage() {
 
         <button
           type="button"
-          onClick={() => setActiveTab("contracts")}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
-            activeTab === "contracts"
-              ? "bg-blue-600 text-white shadow-sm"
-              : "text-muted hover:bg-surface-elevated hover:text-foreground"
-          }`}
-        >
-          <FileSignature size={16} />
-          Employee Contracts ({contracts.length})
-        </button>
-
-        <button
-          type="button"
           onClick={() => setActiveTab("leave")}
           className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
             activeTab === "leave"
@@ -415,13 +730,13 @@ export default function HRPage() {
         </button>
       </div>
 
-      {/* TAB 1: EMPLOYEE DIRECTORY (LIST VIEW & CLICKABLE ROW) */}
+      {/* TAB 1: EMPLOYEE DIRECTORY (WITH DEACTIVATION & STATUS FILTER) */}
       {activeTab === "directory" && (
         <div className="space-y-4">
           {/* Controls Bar */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-surface p-4 rounded-2xl border border-border-color shadow-sm">
-            <div className="flex flex-1 items-center gap-3">
-              <div className="relative flex-1 max-w-md">
+            <div className="flex flex-1 flex-wrap items-center gap-3">
+              <div className="relative flex-1 min-w-[240px] max-w-md">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                 <input
                   type="text"
@@ -448,11 +763,21 @@ export default function HRPage() {
                   <option value="manager">Management</option>
                   <option value="admin">Administration</option>
                 </select>
+
+                <select
+                  value={directoryStatusFilter}
+                  onChange={(e) => setDirectoryStatusFilter(e.target.value as any)}
+                  className="rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs font-semibold text-foreground focus:border-blue-600 focus:outline-none"
+                >
+                  <option value="all">All Statuses ({users.length})</option>
+                  <option value="active">Active Staff Only ({activeEmployees.length})</option>
+                  <option value="inactive">Deactivated Only ({inactiveEmployees.length})</option>
+                </select>
               </div>
             </div>
 
             <div className="text-xs font-semibold text-muted">
-              Showing <span className="text-foreground">{filteredUsers.length}</span> of {users.length} employees
+              Showing <span className="text-foreground">{filteredUsers.length}</span> of {users.length} personnel
             </div>
           </div>
 
@@ -462,102 +787,171 @@ export default function HRPage() {
               <thead className="border-b border-border-color bg-surface-elevated/70 text-[11px] font-bold uppercase tracking-wider text-muted">
                 <tr>
                   <th className="px-5 py-4">Employee</th>
-                  <th className="px-5 py-4">Contact</th>
-                  <th className="px-5 py-4">Department</th>
-                  <th className="px-5 py-4">Job Title</th>
-                  <th className="px-5 py-4">Role Level</th>
-                  <th className="px-5 py-4">Status</th>
+                  <th className="px-5 py-4">Department & Role</th>
+                  <th className="px-5 py-4">Contract / Tenure</th>
+                  <th className="px-5 py-4">Status & Reason</th>
                   <th className="px-5 py-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border-color text-foreground">
                 {filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-muted">
+                    <td colSpan={5} className="py-12 text-center text-muted">
                       No employees match your search criteria.
                     </td>
                   </tr>
                 ) : (
-                  filteredUsers.map((u) => (
-                    <tr
-                      key={u.id}
-                      onClick={() => setSelectedEmployee(u)}
-                      className="cursor-pointer hover:bg-surface-elevated/60 transition-colors group"
-                    >
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600 font-bold text-sm shadow-inner group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                            {u.fullName.charAt(0).toUpperCase()}
+                  filteredUsers.map((u) => {
+                    const isActive = u.isActive !== false;
+                    const contract = contracts.find((c) => c.userId === u.userId || c.userId === u.id);
+                    const countdown = contract ? getContractCountdown(contract) : null;
+
+                    return (
+                      <tr
+                        key={u.id}
+                        onClick={() => setSelectedEmployee(u)}
+                        className={`cursor-pointer transition-colors group ${
+                          isActive
+                            ? "hover:bg-surface-elevated/60"
+                            : "bg-surface-elevated/20 opacity-80 hover:bg-surface-elevated/50"
+                        }`}
+                      >
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-bold text-sm shadow-inner transition-colors ${
+                                isActive
+                                  ? "bg-blue-600/10 text-blue-600 group-hover:bg-blue-600 group-hover:text-white"
+                                  : "bg-red-500/10 text-red-500"
+                              }`}
+                            >
+                              {u.fullName.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-bold text-foreground group-hover:text-blue-600 transition-colors">
+                                  {u.fullName}
+                                </p>
+                                {!isActive && (
+                                  <span className="rounded bg-red-500/10 px-1.5 py-0.2 text-[9px] font-extrabold text-red-600 uppercase">
+                                    Deactivated
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-muted">{u.email}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-bold text-foreground group-hover:text-blue-600 transition-colors">
-                              {u.fullName}
-                            </p>
-                            <p className="text-[11px] text-muted">ID: {u.id.slice(0, 8)}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 text-xs">
-                        <div className="flex items-center gap-1.5 text-muted">
-                          <Mail size={13} />
-                          <span>{u.email}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="inline-flex items-center rounded-full bg-surface-elevated px-2.5 py-1 text-xs font-semibold text-foreground capitalize border border-border-color/60">
-                          {u.department.replace(/_/g, " ")}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4 font-semibold text-foreground text-xs">
-                        {u.jobTitle}
-                      </td>
-                      <td className="px-5 py-4">
-                        <span
-                          className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                            u.roleLevel === "super_admin" || u.roleLevel === "admin"
-                              ? "bg-purple-500/10 text-purple-600 border border-purple-500/20"
-                              : u.roleLevel === "manager"
-                              ? "bg-blue-500/10 text-blue-600 border border-blue-500/20"
-                              : "bg-gray-500/10 text-muted border border-border-color"
-                          }`}
-                        >
-                          {u.roleLevel.replace(/_/g, " ")}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          Active
-                        </span>
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedEmployee(u);
-                            }}
-                            className="rounded-lg border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-muted hover:text-foreground hover:border-blue-500 transition-colors"
-                          >
-                            View Details
-                          </button>
-                          {(isAdmin || isManager) && (
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <p className="font-semibold text-foreground text-xs">{u.jobTitle}</p>
+                          <span className="text-[11px] text-muted capitalize">
+                            {u.department.replace(/_/g, " ")} · {u.roleLevel.replace(/_/g, " ")}
+                          </span>
+                        </td>
+
+                        <td className="px-5 py-4 text-xs">
+                          {contract ? (
+                            <div>
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
+                                  countdown?.colorClass
+                                }`}
+                              >
+                                {countdown?.label}
+                              </span>
+                              <p className="text-[10px] text-muted mt-0.5">
+                                {contract.isPermanent
+                                  ? "Permanent Indefinite"
+                                  : `Term: ${contract.startDate} → ${contract.endDate}`}
+                              </p>
+                            </div>
+                          ) : (
+                            <span className="text-muted text-xs italic">Standard Staff Agreement</span>
+                          )}
+                        </td>
+
+                        <td className="px-5 py-4">
+                          {isActive ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              Active Personnel
+                            </span>
+                          ) : (
+                            <div>
+                              <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 border border-red-500/20 px-2 py-0.5 text-[10px] font-bold text-red-600 uppercase">
+                                {u.deactivationReason?.replace(/_/g, " ") || "Deactivated"}
+                              </span>
+                              {u.deactivationDate && (
+                                <p className="text-[10px] text-muted mt-0.5">Effective: {u.deactivationDate}</p>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="px-5 py-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                openPayslipModalForEmployee(u);
+                                setSelectedEmployee(u);
                               }}
-                              className="rounded-lg bg-blue-600/10 px-3 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-600 hover:text-white transition-colors"
+                              className="rounded-lg border border-border-color bg-surface-elevated px-2.5 py-1 text-xs font-semibold text-muted hover:text-foreground hover:border-blue-500 transition-colors"
                             >
-                              Issue Slip
+                              Profile
                             </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+
+                            {(isAdmin || isManager) && (
+                              <>
+                                {isActive ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openPayslipModalForEmployee(u);
+                                      }}
+                                      className="rounded-lg bg-blue-600/10 px-2.5 py-1 text-xs font-bold text-blue-600 hover:bg-blue-600 hover:text-white transition-colors"
+                                      title="Generate individual payslip"
+                                    >
+                                      Issue Slip
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setDeactivatingEmployee(u);
+                                        setDeactivationReason("resigned");
+                                        setDeactivationNotes("");
+                                      }}
+                                      className="rounded-lg border border-red-500/30 bg-red-500/5 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-600 hover:text-white transition-colors"
+                                      title="Deactivate employee with official reason"
+                                    >
+                                      Deactivate
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleReactivateEmployee(u);
+                                    }}
+                                    className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-600 hover:bg-emerald-600 hover:text-white transition-colors"
+                                  >
+                                    <RotateCcw size={12} />
+                                    <span>Reactivate</span>
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -565,7 +959,263 @@ export default function HRPage() {
         </div>
       )}
 
-      {/* TAB 2: PAYSLIPS & PAYROLL (IMPROVED PRESENTATION) */}
+      {/* TAB 2: EXPIRING CONTRACTS (CUSTOM DURATION & COUNTDOWN) */}
+      {activeTab === "expiring" && (
+        <div className="space-y-6">
+          {/* Duration Selector Bar */}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-surface p-5 rounded-2xl border border-border-color shadow-sm">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-red-500/10 px-2.5 py-0.5 text-xs font-bold text-red-600 uppercase">
+                  HR Contract Review Alert
+                </span>
+                <span className="text-xs text-muted">Fixed-term expirations countdown</span>
+              </div>
+              <h2 className="text-xl font-black text-foreground mt-1">
+                Contracts Expiring within {expiringDurationDays} Days ({expiringContractsList.length})
+              </h2>
+              <p className="text-xs text-muted mt-0.5">
+                Extend contracts with customized terms or end agreements immediately with automatic directory deactivation.
+              </p>
+            </div>
+
+            {/* Custom Duration Selector */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold text-muted mr-1">Review Horizon:</span>
+              {[7, 14, 30, 60, 90].map((days) => (
+                <button
+                  key={days}
+                  type="button"
+                  onClick={() => {
+                    setExpiringDurationDays(days);
+                    setIsCustomExpiringDuration(false);
+                  }}
+                  className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                    expiringDurationDays === days && !isCustomExpiringDuration
+                      ? "bg-blue-600 text-white shadow"
+                      : "border border-border-color bg-surface-elevated text-muted hover:text-foreground"
+                  }`}
+                >
+                  {days} Days
+                </button>
+              ))}
+
+              <div className="flex items-center gap-1.5 pl-2 border-l border-border-color">
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={expiringDurationDays}
+                  onChange={(e) => {
+                    setExpiringDurationDays(Math.max(1, Number(e.target.value)));
+                    setIsCustomExpiringDuration(true);
+                  }}
+                  className="w-16 rounded-lg border border-border-color bg-surface-elevated px-2 py-1 text-xs text-foreground font-bold text-center focus:border-blue-600 focus:outline-none"
+                />
+                <span className="text-xs font-semibold text-muted">Custom Days</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Expiring Contracts Table */}
+          <div className="rounded-2xl border border-border-color bg-surface overflow-hidden shadow-sm">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-border-color bg-surface-elevated/70 text-[11px] font-bold uppercase tracking-wider text-muted">
+                <tr>
+                  <th className="px-5 py-4">Employee</th>
+                  <th className="px-5 py-4">Position & Dept</th>
+                  <th className="px-5 py-4">Contract Period</th>
+                  <th className="px-5 py-4">Countdown Remaining</th>
+                  <th className="px-5 py-4">Monthly Salary</th>
+                  <th className="px-5 py-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-color text-foreground">
+                {expiringContractsList.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-muted">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <CheckCircle2 size={32} className="text-emerald-500" />
+                        <p className="font-bold text-foreground">No contracts expiring within {expiringDurationDays} days.</p>
+                        <p className="text-xs text-muted">All active staff contracts are within valid compliance periods.</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  expiringContractsList.map((c) => {
+                    const countdown = getContractCountdown(c);
+                    return (
+                      <tr key={c.id} className="hover:bg-surface-elevated/40 transition-colors">
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600 font-bold text-sm">
+                              {c.employeeName.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="font-bold text-foreground">{c.employeeName}</p>
+                              <p className="text-[11px] font-mono text-muted">Ref #{c.id.slice(0, 8)}</p>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <p className="font-semibold text-foreground text-xs">{c.jobTitle}</p>
+                          <span className="text-[11px] text-muted capitalize">
+                            {c.department.replace(/_/g, " ")}
+                          </span>
+                        </td>
+
+                        <td className="px-5 py-4 text-xs font-mono">
+                          <p className="text-muted">Start: {c.startDate}</p>
+                          <p className="font-bold text-foreground">End: {c.endDate || "N/A"}</p>
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-extrabold ${countdown.colorClass}`}
+                          >
+                            <Timer size={13} />
+                            <span>{countdown.label}</span>
+                          </span>
+                        </td>
+
+                        <td className="px-5 py-4 font-bold text-foreground text-xs">
+                          R{c.monthlySalary.toLocaleString()} /mo
+                        </td>
+
+                        <td className="px-5 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openExtendContractModal(c)}
+                              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition"
+                            >
+                              <RefreshCw size={13} />
+                              <span>Extend</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => openTerminateContractModal(c)}
+                              className="flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-600 hover:text-white transition"
+                            >
+                              <XCircle size={13} />
+                              <span>End Now</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: ALL CONTRACTS */}
+      {activeTab === "contracts" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-surface p-4 rounded-2xl border border-border-color shadow-sm">
+            <div>
+              <h3 className="font-bold text-foreground">Organization Employee Agreements</h3>
+              <p className="text-xs text-muted">Fixed-term and permanent contracts with live tenure tracking.</p>
+            </div>
+            <span className="text-xs font-semibold text-muted">
+              {contracts.filter((c) => c.isPermanent).length} Permanent ·{" "}
+              {contracts.filter((c) => !c.isPermanent).length} Fixed-Term
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {contracts.map((c) => {
+              const countdown = getContractCountdown(c);
+              const isTerminated = c.status === "terminated" || c.status === "expired";
+
+              return (
+                <div key={c.id} className="rounded-2xl border border-border-color bg-surface p-5 shadow-sm space-y-3">
+                  <div className="flex items-start justify-between border-b border-border-color pb-2">
+                    <div>
+                      <h3 className="font-bold text-foreground text-sm">{c.employeeName}</h3>
+                      <p className="text-xs text-muted">{c.jobTitle} ({c.department})</p>
+                    </div>
+                    <span
+                      className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase ${countdown.colorClass}`}
+                    >
+                      {countdown.label}
+                    </span>
+                  </div>
+
+                  <div className="text-xs space-y-1.5 text-muted">
+                    <div className="flex justify-between">
+                      <span>Tenure Type:</span>
+                      <span className="font-bold text-foreground">
+                        {c.isPermanent ? "Permanent Indefinite" : "Fixed-Term Contract"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Commenced:</span>
+                      <span className="font-mono text-foreground">{c.startDate}</span>
+                    </div>
+                    {!c.isPermanent && (
+                      <div className="flex justify-between">
+                        <span>Expiration Date:</span>
+                        <span className="font-mono font-bold text-foreground">{c.endDate}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span>Monthly Compensation:</span>
+                      <span className="font-bold text-emerald-600">R{c.monthlySalary.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Leave Allowance:</span>
+                      <span className="text-foreground">{c.leaveDaysPerYear} Days/Year</span>
+                    </div>
+                  </div>
+
+                  {c.extensionHistory && c.extensionHistory.length > 0 && (
+                    <div className="rounded-lg bg-surface-elevated p-2 text-[11px] text-muted space-y-1">
+                      <p className="font-bold text-foreground text-[10px] uppercase tracking-wider">
+                        Renewal History ({c.extensionHistory.length})
+                      </p>
+                      {c.extensionHistory.map((h, i) => (
+                        <p key={i}>
+                          Extended to <b className="text-blue-600">{h.newEndDate}</b> by {h.extendedByName}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {!isTerminated && !c.isPermanent && (
+                    <div className="pt-2 flex items-center justify-end gap-2 border-t border-border-color">
+                      <button
+                        type="button"
+                        onClick={() => openExtendContractModal(c)}
+                        className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:underline"
+                      >
+                        <RefreshCw size={12} />
+                        <span>Extend Contract</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => openTerminateContractModal(c)}
+                        className="flex items-center gap-1 text-xs font-bold text-red-600 hover:underline ml-2"
+                      >
+                        <XCircle size={12} />
+                        <span>End Immediately</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: PAYSLIPS & PAYROLL (ACTIVE PERSONNEL ONLY) */}
       {activeTab === "payslips" && (
         <div className="space-y-6">
           {/* Payroll KPI Cards */}
@@ -580,7 +1230,7 @@ export default function HRPage() {
               <p className="text-2xl font-black text-emerald-600">
                 R{payrollMetrics.totalNet.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </p>
-              <p className="text-[11px] text-muted">Direct to employee accounts</p>
+              <p className="text-[11px] text-muted">Disbursed to active employee accounts</p>
             </div>
 
             <div className="rounded-2xl border border-border-color bg-surface p-5 shadow-sm space-y-1">
@@ -611,13 +1261,17 @@ export default function HRPage() {
 
             <div className="rounded-2xl border border-border-color bg-surface p-5 shadow-sm space-y-1">
               <div className="flex items-center justify-between text-muted">
-                <span className="text-xs font-bold uppercase tracking-wider">Payroll Records</span>
+                <span className="text-xs font-bold uppercase tracking-wider">Eligible Active Staff</span>
                 <div className="rounded-xl bg-purple-500/10 p-2 text-purple-600">
                   <FileText size={18} />
                 </div>
               </div>
-              <p className="text-2xl font-black text-foreground">{payrollMetrics.count} Payslips</p>
-              <p className="text-[11px] text-muted">All active periods processed</p>
+              <p className="text-2xl font-black text-foreground">
+                {activeEmployees.length} Staff
+              </p>
+              <p className="text-[11px] text-muted">
+                {inactiveEmployees.length} Deactivated excluded
+              </p>
             </div>
           </div>
 
@@ -650,14 +1304,25 @@ export default function HRPage() {
             </div>
 
             {(isAdmin || isManager) && (
-              <button
-                type="button"
-                onClick={() => setPayslipModalOpen(true)}
-                className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow hover:bg-blue-700 transition"
-              >
-                <Plus size={14} />
-                <span>Issue New Payslip</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMassPayrollModalOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-xs font-bold text-white shadow hover:from-emerald-700 hover:to-teal-700 transition"
+                >
+                  <Sparkles size={14} />
+                  <span>Mass Payroll Run</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPayslipModalOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow hover:bg-blue-700 transition"
+                >
+                  <Plus size={14} />
+                  <span>Single Payslip</span>
+                </button>
+              </div>
             )}
           </div>
 
@@ -754,10 +1419,9 @@ export default function HRPage() {
         </div>
       )}
 
-      {/* TAB 3: SALARY HISTORY & PAST PAYMENTS */}
+      {/* TAB 5: SALARY HISTORY */}
       {activeTab === "history" && (
         <div className="space-y-6">
-          {/* Period Selector Tabs */}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -793,7 +1457,6 @@ export default function HRPage() {
             })}
           </div>
 
-          {/* Historical Summary Banner */}
           <div className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
@@ -834,7 +1497,6 @@ export default function HRPage() {
             </div>
           </div>
 
-          {/* Historical Transactions Table */}
           <div className="rounded-2xl border border-border-color bg-surface overflow-hidden shadow-sm">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-border-color bg-surface-elevated/70 text-[11px] font-bold uppercase tracking-wider text-muted">
@@ -923,7 +1585,7 @@ export default function HRPage() {
         </div>
       )}
 
-      {/* TAB 4: SALARY SCALES */}
+      {/* TAB 6: SALARY SCALES */}
       {activeTab === "salaries" && (
         <div className="rounded-2xl border border-border-color bg-surface overflow-hidden shadow-sm">
           <table className="w-full text-left text-sm">
@@ -963,41 +1625,7 @@ export default function HRPage() {
         </div>
       )}
 
-      {/* TAB 5: CONTRACTS */}
-      {activeTab === "contracts" && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {contracts.map((c) => (
-              <div key={c.id} className="rounded-2xl border border-border-color bg-surface p-5 shadow-sm space-y-3">
-                <div className="flex items-center justify-between border-b border-border-color pb-2">
-                  <h3 className="font-bold text-foreground">{c.employeeName}</h3>
-                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 uppercase">
-                    {c.status}
-                  </span>
-                </div>
-                <div className="text-xs space-y-1 text-muted">
-                  <p><b className="text-foreground">Position:</b> {c.jobTitle} ({c.department})</p>
-                  <p><b className="text-foreground">Commenced:</b> {c.startDate}</p>
-                  <p><b className="text-foreground">Monthly Salary:</b> R{c.monthlySalary.toLocaleString()}</p>
-                  <p><b className="text-foreground">Annual Leave:</b> {c.leaveDaysPerYear} Days/Year</p>
-                </div>
-                <div className="pt-2 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => alert(`Showing full employment contract for ${c.employeeName}`)}
-                    className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:underline"
-                  >
-                    <FileText size={13} />
-                    <span>View Contract Document</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 6: LEAVE TRACKING */}
+      {/* TAB 7: LEAVE TRACKING */}
       {activeTab === "leave" && (
         <div className="rounded-2xl border border-border-color bg-surface overflow-hidden shadow-sm">
           <table className="w-full text-left text-sm">
@@ -1067,22 +1695,414 @@ export default function HRPage() {
         </div>
       )}
 
-      {/* EMPLOYEE DETAILS MODAL */}
+      {/* MASS PAYROLL RUN MODAL */}
+      {massPayrollModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-border-color pb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600">
+                  <Sparkles size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Mass Payroll Run (Batch Generator)</h3>
+                  <p className="text-xs text-muted">Generate official salary payslips for all active personnel</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMassPayrollModalOpen(false)}
+                className="text-muted hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block font-bold text-foreground">Pay Period (YYYY-MM) *</label>
+                <input
+                  type="text"
+                  value={massPayPeriod}
+                  onChange={(e) => setMassPayPeriod(e.target.value)}
+                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground font-mono font-bold focus:border-blue-600 focus:outline-none"
+                  placeholder="2026-09"
+                />
+              </div>
+
+              {/* Active vs Inactive calculation review */}
+              <div className="rounded-xl border border-border-color bg-surface-elevated p-4 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted font-medium">Eligible Active Employees:</span>
+                  <span className="font-extrabold text-emerald-600 flex items-center gap-1">
+                    <CheckCircle2 size={14} />
+                    {activeEmployees.length} Staff
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between border-t border-border-color/50 pt-2">
+                  <span className="text-muted font-medium">Excluded Inactive/Deactivated:</span>
+                  <span className="font-bold text-red-600 flex items-center gap-1">
+                    <UserX size={14} />
+                    {inactiveEmployees.length} Staff Excluded
+                  </span>
+                </div>
+
+                {inactiveEmployees.length > 0 && (
+                  <div className="rounded-lg bg-red-500/10 p-2.5 text-[11px] text-red-700 dark:text-red-400 space-y-1">
+                    <p className="font-bold">Excluded Deactivated Personnel:</p>
+                    {inactiveEmployees.map((inact) => (
+                      <p key={inact.id} className="truncate">
+                        • {inact.fullName} ({inact.deactivationReason || "Inactive"})
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-lg bg-blue-500/10 p-3 text-[11px] text-blue-600 space-y-1">
+                <p className="font-bold flex items-center gap-1">
+                  <ShieldCheck size={14} />
+                  Strict Active Compliance
+                </p>
+                <p>
+                  Payslips will only be created for employees with active status. Salaries are automatically pulled from each employee's contract or assigned salary scale.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-color">
+                <button
+                  type="button"
+                  onClick={() => setMassPayrollModalOpen(false)}
+                  className="rounded-xl border border-border-color px-4 py-2 font-semibold text-muted hover:bg-surface-elevated"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRunMassPayroll}
+                  disabled={massPayrollRunning || activeEmployees.length === 0}
+                  className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2 font-bold text-white shadow hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 transition"
+                >
+                  {massPayrollRunning ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>Generating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={14} />
+                      <span>Execute Payroll for {activeEmployees.length} Staff</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EMPLOYEE DEACTIVATION MODAL */}
+      {deactivatingEmployee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-red-500/30 bg-surface p-6 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-border-color pb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/10 text-red-600">
+                  <UserMinus size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Deactivate Employee</h3>
+                  <p className="text-xs text-muted">{deactivatingEmployee.fullName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeactivatingEmployee(null)}
+                className="text-muted hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmDeactivation} className="space-y-3">
+              <div className="rounded-lg bg-red-500/10 p-3 text-[11px] text-red-700 dark:text-red-400">
+                <p className="font-bold">⚠️ Important System Rule:</p>
+                <p>
+                  Once deactivated, this employee will be blocked from future payroll generation and payslip calculation.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1 block font-bold text-foreground">Reason for Deactivation *</label>
+                <select
+                  value={deactivationReason}
+                  onChange={(e) => setDeactivationReason(e.target.value as any)}
+                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground font-semibold focus:border-red-500 focus:outline-none capitalize"
+                >
+                  <option value="resigned">Resigned (Voluntary resignation)</option>
+                  <option value="terminated">Let Go / Terminated (Dismissal / Redundancy)</option>
+                  <option value="contract_ended">Contract Ended (Fixed-term completion)</option>
+                  <option value="deceased">Deceased</option>
+                  <option value="other">Other Reason</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block font-bold text-foreground">Effective Date *</label>
+                <input
+                  type="date"
+                  value={deactivationEffectiveDate}
+                  onChange={(e) => setDeactivationEffectiveDate(e.target.value)}
+                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-red-500 focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block font-bold text-foreground">Notes & Handover Comments</label>
+                <textarea
+                  rows={3}
+                  value={deactivationNotes}
+                  onChange={(e) => setDeactivationNotes(e.target.value)}
+                  placeholder="Optional exit notes, reason details, or reference numbers..."
+                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-red-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-color">
+                <button
+                  type="button"
+                  onClick={() => setDeactivatingEmployee(null)}
+                  className="rounded-xl border border-border-color px-4 py-2 font-semibold text-muted hover:bg-surface-elevated"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-red-600 px-5 py-2 font-bold text-white hover:bg-red-700 shadow"
+                >
+                  Confirm Deactivation
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EXTEND CONTRACT MODAL */}
+      {extendingContract && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-border-color pb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600">
+                  <RefreshCw size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Extend Fixed-Term Contract</h3>
+                  <p className="text-xs text-muted">{extendingContract.employeeName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExtendingContract(null)}
+                className="text-muted hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmExtension} className="space-y-4">
+              <div className="rounded-xl border border-border-color bg-surface-elevated p-3 text-xs space-y-1 text-muted">
+                <p>
+                  Current Expiration Date: <b className="text-foreground">{extendingContract.endDate || "N/A"}</b>
+                </p>
+                <p>
+                  Current Salary: <b className="text-emerald-600">R{extendingContract.monthlySalary.toLocaleString()}</b>
+                </p>
+              </div>
+
+              {/* Quick Preset Buttons */}
+              <div>
+                <label className="mb-1 block font-bold text-foreground">Quick Extension Presets</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { label: "+3 Mos", mos: 3 },
+                    { label: "+6 Mos", mos: 6 },
+                    { label: "+1 Year", mos: 12 },
+                    { label: "+2 Years", mos: 24 },
+                  ].map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => {
+                        const d = extendingContract.endDate ? new Date(extendingContract.endDate) : new Date();
+                        d.setMonth(d.getMonth() + p.mos);
+                        setExtensionEndDate(d.toISOString().slice(0, 10));
+                      }}
+                      className="rounded-lg border border-border-color bg-surface-elevated py-1.5 text-xs font-semibold hover:border-blue-500 hover:text-blue-600 transition"
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block font-bold text-foreground">New Expiration End Date *</label>
+                <input
+                  type="date"
+                  value={extensionEndDate}
+                  onChange={(e) => setExtensionEndDate(e.target.value)}
+                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block font-bold text-foreground">Monthly Salary on Renewal (ZAR)</label>
+                <input
+                  type="number"
+                  value={extensionSalary}
+                  onChange={(e) => setExtensionSalary(Number(e.target.value))}
+                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block font-bold text-foreground">Renewal Addendum Notes</label>
+                <textarea
+                  rows={2}
+                  value={extensionNotes}
+                  onChange={(e) => setExtensionNotes(e.target.value)}
+                  placeholder="e.g. Approved extension following satisfactory performance review."
+                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-color">
+                <button
+                  type="button"
+                  onClick={() => setExtendingContract(null)}
+                  className="rounded-xl border border-border-color px-4 py-2 font-semibold text-muted hover:bg-surface-elevated"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-blue-600 px-5 py-2 font-bold text-white hover:bg-blue-700 shadow"
+                >
+                  Apply Contract Extension
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* END CONTRACT IMMEDIATELY MODAL */}
+      {terminatingContract && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-red-500/30 bg-surface p-6 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-border-color pb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/10 text-red-600">
+                  <AlertTriangle size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">End Contract Immediately</h3>
+                  <p className="text-xs text-muted">{terminatingContract.employeeName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTerminatingContract(null)}
+                className="text-muted hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmContractTermination} className="space-y-4">
+              <div className="rounded-lg bg-red-500/10 p-3 text-[11px] text-red-700 dark:text-red-400">
+                <p className="font-bold">⚠️ Warning:</p>
+                <p>
+                  This action will terminate the employee agreement effective today ({new Date().toISOString().slice(0, 10)}).
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1 block font-bold text-foreground">Termination Reason *</label>
+                <input
+                  type="text"
+                  value={contractTerminationReason}
+                  onChange={(e) => setContractTerminationReason(e.target.value)}
+                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-red-500 focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center gap-2 rounded-lg bg-surface-elevated p-3 border border-border-color">
+                <input
+                  type="checkbox"
+                  id="deactivateUserCheck"
+                  checked={deactivateEmployeeOnContractEnd}
+                  onChange={(e) => setDeactivateEmployeeOnContractEnd(e.target.checked)}
+                  className="h-4 w-4 rounded border-border-color text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor="deactivateUserCheck" className="text-xs font-semibold text-foreground cursor-pointer">
+                  Also deactivate this employee in organization directory (Reason: Contract Ended)
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-color">
+                <button
+                  type="button"
+                  onClick={() => setTerminatingContract(null)}
+                  className="rounded-xl border border-border-color px-4 py-2 font-semibold text-muted hover:bg-surface-elevated"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-red-600 px-5 py-2 font-bold text-white hover:bg-red-700 shadow"
+                >
+                  Terminate Contract Immediately
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EMPLOYEE DETAILS MODAL (WITH DEACTIVATION STATUS) */}
       {selectedEmployee && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-2xl rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-5 text-xs max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
+            {/* Header */}
             <div className="flex items-start justify-between border-b border-border-color pb-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white font-extrabold text-xl shadow-md">
+                <div
+                  className={`flex h-14 w-14 items-center justify-center rounded-2xl font-extrabold text-xl shadow-md ${
+                    selectedEmployee.isActive !== false ? "bg-blue-600 text-white" : "bg-red-500/20 text-red-500"
+                  }`}
+                >
                   {selectedEmployee.fullName.charAt(0).toUpperCase()}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-lg font-black text-foreground">{selectedEmployee.fullName}</h2>
-                    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600">
-                      Active
-                    </span>
+                    {selectedEmployee.isActive !== false ? (
+                      <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600">
+                        Active
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-600 uppercase">
+                        Deactivated ({selectedEmployee.deactivationReason || "Inactive"})
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-muted">{selectedEmployee.email}</p>
                 </div>
@@ -1095,6 +2115,23 @@ export default function HRPage() {
                 ✕
               </button>
             </div>
+
+            {/* Deactivation Banner if inactive */}
+            {selectedEmployee.isActive === false && (
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3.5 space-y-1 text-red-700 dark:text-red-400">
+                <p className="font-bold flex items-center gap-1.5">
+                  <UserX size={15} />
+                  <span>Personnel Deactivated</span>
+                </p>
+                <p className="text-xs">
+                  Reason: <b className="capitalize">{selectedEmployee.deactivationReason?.replace(/_/g, " ") || "Other"}</b>
+                  {selectedEmployee.deactivationDate && ` · Effective: ${selectedEmployee.deactivationDate}`}
+                </p>
+                {selectedEmployee.deactivationNotes && (
+                  <p className="text-[11px] italic">Notes: "{selectedEmployee.deactivationNotes}"</p>
+                )}
+              </div>
+            )}
 
             {/* Profile Grid */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1128,32 +2165,33 @@ export default function HRPage() {
 
               <div className="rounded-xl border border-border-color bg-surface-elevated p-4 space-y-2">
                 <h4 className="font-bold text-foreground text-xs uppercase tracking-wider text-muted">
-                  Remuneration & Scale
+                  Contract & Tenure
                 </h4>
                 {(() => {
-                  const scale = salaryScales.find(
-                    (s) =>
-                      s.jobTitle.toLowerCase() === selectedEmployee.jobTitle.toLowerCase() ||
-                      s.department === selectedEmployee.department
+                  const contract = contracts.find(
+                    (c) => c.userId === selectedEmployee.userId || c.userId === selectedEmployee.id
                   );
-                  if (!scale) {
-                    return <p className="text-muted text-xs">Custom salary structure applies.</p>;
+                  if (!contract) {
+                    return <p className="text-muted text-xs">Standard staff employment agreement.</p>;
                   }
+                  const countdown = getContractCountdown(contract);
                   return (
                     <div className="space-y-1 text-xs">
                       <div className="flex justify-between">
-                        <span className="text-muted">Grade Level:</span>
-                        <span className="font-mono font-bold text-foreground">{scale.gradeLevel}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted">Salary Range:</span>
+                        <span className="text-muted">Tenure:</span>
                         <span className="font-bold text-foreground">
-                          R{scale.minSalary.toLocaleString()} - R{scale.maxSalary.toLocaleString()}
+                          {contract.isPermanent ? "Permanent Indefinite" : "Fixed-Term Contract"}
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted">Target Mid:</span>
-                        <span className="font-semibold text-blue-600">R{scale.midSalary.toLocaleString()}</span>
+                        <span className="text-muted">Countdown:</span>
+                        <span className={`font-bold rounded px-1.5 py-0.2 text-[10px] ${countdown.colorClass}`}>
+                          {countdown.label}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted">Monthly Salary:</span>
+                        <span className="font-bold text-emerald-600">R{contract.monthlySalary.toLocaleString()}</span>
                       </div>
                     </div>
                   );
@@ -1224,29 +2262,65 @@ export default function HRPage() {
                 onClick={() => setSelectedEmployee(null)}
                 className="rounded-xl border border-border-color px-4 py-2 font-semibold text-muted hover:bg-surface-elevated hover:text-foreground transition"
               >
-                Close Profile
+                Close
               </button>
 
-              {(isAdmin || isManager) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const emp = selectedEmployee;
-                    setSelectedEmployee(null);
-                    openPayslipModalForEmployee(emp);
-                  }}
-                  className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 font-bold text-white shadow hover:bg-blue-700 transition"
-                >
-                  <DollarSign size={14} />
-                  <span>Generate Payslip for {selectedEmployee.fullName}</span>
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {(isAdmin || isManager) && (
+                  <>
+                    {selectedEmployee.isActive !== false ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const emp = selectedEmployee;
+                            setDeactivatingEmployee(emp);
+                            setDeactivationReason("resigned");
+                            setDeactivationNotes("");
+                          }}
+                          className="rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2 font-semibold text-red-600 hover:bg-red-600 hover:text-white transition"
+                        >
+                          Deactivate Employee
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const emp = selectedEmployee;
+                            setSelectedEmployee(null);
+                            openPayslipModalForEmployee(emp);
+                          }}
+                          className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 font-bold text-white shadow hover:bg-blue-700 transition"
+                        >
+                          <DollarSign size={14} />
+                          <span>Generate Payslip</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-xs text-muted italic mr-2">
+                          🔒 Cannot generate payslip for deactivated personnel
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleReactivateEmployee(selectedEmployee)}
+                          className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 font-bold text-white shadow hover:bg-emerald-700 transition"
+                        >
+                          <RotateCcw size={14} />
+                          <span>Reactivate Personnel</span>
+                        </button>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Generate Payslip Modal */}
+      {/* SINGLE PAYSLIP GENERATION MODAL (ACTIVE ONLY) */}
       {payslipModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-4 text-xs">
@@ -1259,7 +2333,7 @@ export default function HRPage() {
 
             <form onSubmit={handleGeneratePayslip} className="space-y-4">
               <div>
-                <label className="mb-1 block font-medium text-foreground">Select Employee *</label>
+                <label className="mb-1 block font-medium text-foreground">Select Active Employee *</label>
                 <select
                   value={selectedUserId}
                   onChange={(e) => {
@@ -1282,12 +2356,15 @@ export default function HRPage() {
                   }}
                   className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
                 >
-                  {users.map((u) => (
+                  {activeEmployees.map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.fullName} ({u.jobTitle})
                     </option>
                   ))}
                 </select>
+                <p className="text-[10px] text-muted mt-1">
+                  ✓ Only active employees are listed ({activeEmployees.length} eligible). Deactivated staff cannot receive payslips.
+                </p>
               </div>
 
               <div>
@@ -1360,7 +2437,7 @@ export default function HRPage() {
         </div>
       )}
 
-      {/* Leave Request Modal */}
+      {/* LEAVE REQUEST MODAL */}
       {leaveModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-4 text-xs">
@@ -1442,7 +2519,7 @@ export default function HRPage() {
         </div>
       )}
 
-      {/* Payslip View Modal */}
+      {/* PAYSLIP VIEW MODAL */}
       {previewPayslip && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-4">

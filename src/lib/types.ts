@@ -97,6 +97,9 @@ export type CompanyUser = {
   roleLevel: RoleLevel;
   permissions: Record<string, boolean>;
   isActive: boolean;
+  deactivationReason?: "resigned" | "terminated" | "deceased" | "contract_ended" | "other" | string;
+  deactivationDate?: string;
+  deactivationNotes?: string;
   createdAt: string;
 };
 
@@ -325,6 +328,17 @@ export type EmployeeContract = {
   signedAt?: string;
   signedByEmployee: boolean;
   createdAt: string;
+  extensionHistory?: {
+    previousEndDate?: string;
+    newEndDate: string;
+    extendedAt: string;
+    extendedByName: string;
+    salaryAdjustment?: number;
+    notes?: string;
+  }[];
+  terminatedAt?: string;
+  terminatedByName?: string;
+  terminationReason?: string;
 };
 
 export type LeaveRecord = {
