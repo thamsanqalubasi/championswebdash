@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
@@ -295,9 +295,19 @@ export default function ShowcasePage() {
                         <div><span className="text-lg font-bold text-blue-700">{formatCurrency(p.monthly_rent||0)}</span><span className="text-xs text-muted">/month</span></div>
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${p.status==="vacant"?"bg-green-100 text-green-700":"bg-orange-100 text-orange-700"}`}>{p.status==="vacant"?"Available":"Occupied"}</span>
                       </div>
-                      <button type="button" onClick={() => toggleRentalVisibility(p)} className={`w-full flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold transition ${p.is_published ? "border-orange-300 text-orange-600 hover:bg-orange-50" : "border-green-400 bg-green-50 text-green-700 hover:bg-green-100"}`}>
-                        {p.is_published ? <><EyeOff size={14}/> Remove from Portal</> : <><Eye size={14}/> Show on Portal</>}
-                      </button>
+                      {p.is_published ? (
+                        <button type="button" onClick={() => toggleRentalVisibility(p)} className="w-full flex items-center justify-center gap-2 rounded-xl border border-orange-300 px-3 py-2 text-sm font-bold text-orange-600 hover:bg-orange-50 transition">
+                          <EyeOff size={14}/> Unpublish
+                        </button>
+                      ) : p.status === "vacant" ? (
+                        <button type="button" onClick={() => toggleRentalVisibility(p)} className="w-full flex items-center justify-center gap-2 rounded-xl border border-green-400 bg-green-50 px-3 py-2 text-sm font-bold text-green-700 hover:bg-green-100 transition">
+                          <Eye size={14}/> Publish
+                        </button>
+                      ) : (
+                        <div className="w-full flex items-center justify-center gap-2 rounded-xl border border-border-color px-3 py-2 text-sm text-muted cursor-not-allowed opacity-60">
+                          <EyeOff size={14}/> Occupied — cannot publish
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
