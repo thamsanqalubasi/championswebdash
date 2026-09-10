@@ -1,5 +1,5 @@
-﻿import { Outlet, Link } from "react-router-dom";
-import { Home, LogIn, User, Building2 } from "lucide-react";
+import { Outlet, Link } from "react-router-dom";
+import { Home, LogIn, User, Building2, Lock } from "lucide-react";
 
 export default function PortalLayout() {
   return (
@@ -20,6 +20,9 @@ export default function PortalLayout() {
               </Link>
               <Link to="/portal/login" className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 transition">
                 <LogIn size={15}/> Sign In
+              </Link>
+              <Link to="/dashboard" className="flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 transition">
+                <Lock size={15}/> Company Login
               </Link>
             </div>
           </div>
