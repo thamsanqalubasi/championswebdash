@@ -74,10 +74,10 @@ export default function LoginPage() {
     }
   };
 
-  const portalName = company ? company.name : "Champions Court";
+  const portalName = company ? company.name : "Pambabook";
   const portalSubtitle = company
     ? "Dedicated Staff & Operations Portal"
-    : "Hospitality & Multi-Tenant Property Management";
+    : "Smart Hospitality & Property Management Platform";
   const setPasswordPath = companySlug
     ? `/c/${companySlug}/set-password`
     : "/set-password";

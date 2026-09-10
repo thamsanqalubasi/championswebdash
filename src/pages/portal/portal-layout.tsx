@@ -7,9 +7,9 @@ export default function PortalLayout() {
       <nav className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 backdrop-blur-sm shadow-sm">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="flex h-16 items-center justify-between">
-            <Link to="/portal" className="flex items-center gap-2 font-bold text-lg text-blue-700">
-              <Building2 size={22} />
-              <span>Property Portal</span>
+            <Link to="/portal" className="flex items-center gap-2 font-black text-xl text-blue-700 tracking-tight">
+              <Building2 size={24} className="text-blue-600" />
+              <span>Pambabook</span>
             </Link>
             <div className="flex items-center gap-2 sm:gap-4">
               <Link to="/portal" className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-blue-700 transition">
@@ -32,8 +32,8 @@ export default function PortalLayout() {
         <Outlet />
       </main>
       <footer className="border-t border-gray-200 bg-gray-50 py-8 text-center text-sm text-gray-500">
-        <p>&copy; {new Date().getFullYear()} Property Portal. All rights reserved.</p>
-        <p className="mt-1 text-xs">Powered by Champions Web Platform</p>
+        <p className="font-semibold text-gray-700">&copy; {new Date().getFullYear()} Pambabook. All rights reserved.</p>
+        <p className="mt-1 text-xs text-gray-400">Pambabook Hospitality & Property Management Platform</p>
       </footer>
     </div>
   );
