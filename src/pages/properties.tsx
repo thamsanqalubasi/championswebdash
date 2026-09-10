@@ -137,6 +137,14 @@ export default function PropertiesPage() {
   };
 
   const handleTogglePublish = async (row: PropertyRow) => {
+    if (isHospitality(row.type)) {
+      alert("Hospitality properties cannot be published as a whole. Please publish specific room types under Showcase → Room Bookings.");
+      return;
+    }
+    if (row.status !== "vacant" && !row.isPublished) {
+      alert("Occupied properties cannot be published. Only vacant properties can be published to the portal.");
+      return;
+    }
     setPublishingId(row.id);
     try { const nv=!row.isPublished; await supabase.from("properties").update({is_published:nv}).eq("id",row.id); setProperties((prev)=>prev.map((p)=>p.id===row.id?{...p,isPublished:nv}:p)); }
     catch{} finally{setPublishingId(null);}
@@ -193,7 +201,9 @@ export default function PropertiesPage() {
                         <td className="px-6 py-4" onClick={(e)=>e.stopPropagation()}>
                           <TableRowActions>
                             <TableActionButton icon={Eye} label="View" onClick={()=>setViewTarget(row)}/>
-                            <TableActionButton icon={row.isPublished?EyeOff:Globe} label={row.isPublished?"Unpublish":"Publish"} onClick={()=>handleTogglePublish(row)} disabled={publishingId===row.id}/>
+                            {!hosp && (row.isPublished || row.status === "vacant") && (
+                              <TableActionButton icon={row.isPublished?EyeOff:Globe} label={row.isPublished?"Unpublish":"Publish"} onClick={()=>handleTogglePublish(row)} disabled={publishingId===row.id}/>
+                            )}
                             <TableActionButton icon={Pencil} label="Edit" onClick={()=>openEdit(row)}/>
                             <TableActionButton icon={Trash} label="Delete" variant="danger" onClick={()=>handleTriggerDeleteProperty(row)}/>
                             <div className="ml-2 pl-2 border-l border-border-color/40"><ChevronRight size={18} className="text-muted/40 group-hover:text-foreground transition-all" onClick={()=>navigate(`/properties/${row.id}`)}/></div>
@@ -228,7 +238,9 @@ export default function PropertiesPage() {
             <div className="flex items-center justify-between pt-2 border-t border-border-color">
               <button type="button" onClick={()=>{setViewTarget(null);navigate(`/properties/${viewTarget.id}`);}} className="rounded-xl border border-border-color px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-elevated transition">Full Details →</button>
               <div className="flex gap-2">
-                <button type="button" onClick={()=>handleTogglePublish(viewTarget)} disabled={publishingId===viewTarget.id} className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${viewTarget.isPublished?"bg-orange-500/10 text-orange-600 hover:bg-orange-500/20":"bg-green-500/10 text-green-600 hover:bg-green-500/20"}`}>{viewTarget.isPublished?"Unpublish":"Publish to Portal"}</button>
+                {!isHospitality(viewTarget.type) && (viewTarget.isPublished || viewTarget.status === "vacant") && (
+                  <button type="button" onClick={()=>handleTogglePublish(viewTarget)} disabled={publishingId===viewTarget.id} className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${viewTarget.isPublished?"bg-orange-500/10 text-orange-600 hover:bg-orange-500/20":"bg-green-500/10 text-green-600 hover:bg-green-500/20"}`}>{viewTarget.isPublished?"Unpublish":"Publish to Portal"}</button>
+                )}
                 <button type="button" onClick={()=>{const t=viewTarget;setViewTarget(null);openEdit(t);}} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 transition">Edit Property</button>
               </div>
             </div>

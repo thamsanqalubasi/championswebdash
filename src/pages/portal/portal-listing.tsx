@@ -35,26 +35,37 @@ export default function PortalListingPage() {
 
   async function loadReviews(propId: string, isRoomType: boolean, parentPropId?: string) {
     try {
-      // First try to fetch reviews matching this direct ID (either property_id or room_type_listing_id)
-      let query = supabase.from("listing_reviews").select("*");
-      if (isRoomType) {
-        if (parentPropId) {
-          query = query.or(`property_id.eq.${parentPropId},room_type_listing_id.eq.${propId},property_id.eq.${propId}`);
-        } else {
-          query = query.or(`room_type_listing_id.eq.${propId},property_id.eq.${propId}`);
-        }
-      } else {
-        query = query.eq("property_id", propId);
+      // 1. Query reviews that belong to this listing (by property_id or room_type_listing_id)
+      const targetIds = [propId, parentPropId].filter(Boolean) as string[];
+      const { data: rv, error } = await supabase
+        .from("listing_reviews")
+        .select("*")
+        .in("property_id", targetIds)
+        .order("created_at", { ascending: false });
+
+      if (!error && rv && rv.length > 0) {
+        setReviews(rv as Review[]);
+        return;
       }
 
-      const { data: rv, error } = await query.order("created_at", { ascending: false });
-      if (!error && rv) {
-        setReviews(rv as Review[]);
-      } else {
-        // Fallback without or filter if schema lacks room_type_listing_id
-        const { data: fallbackRv } = await supabase.from("listing_reviews").select("*").eq("property_id", parentPropId || propId).order("created_at", { ascending: false });
-        if (fallbackRv) setReviews(fallbackRv as Review[]);
+      // 2. If no direct match by property_id, check for reviews with room_type_listing_id or any reviews with null property_id
+      const { data: allRevs } = await supabase
+        .from("listing_reviews")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (allRevs && allRevs.length > 0) {
+        const matched = allRevs.filter((r: any) => 
+          (r.room_type_listing_id && r.room_type_listing_id === propId) ||
+          (r.property_id && targetIds.includes(r.property_id)) ||
+          (!r.property_id && !r.room_type_listing_id) // show unassigned general reviews on listings
+        );
+        if (matched.length > 0) {
+          setReviews(matched as Review[]);
+          return;
+        }
       }
+      setReviews([]);
     } catch {
       setReviews([]);
     }
