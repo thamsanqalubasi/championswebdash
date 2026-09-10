@@ -31,6 +31,27 @@ export type PropertyRow = {
   isPublished?: boolean;
 };
 
+export type RoomTypeListing = {
+  id: string;
+  companyId: string;
+  propertyId: string;
+  propertyName?: string;
+  typeKey: string;           // 'family' | 'executive' | 'deluxe' | 'suite' | 'standard' | 'twin' | 'single'
+  displayName: string;       // "Family Suite"
+  adultsCapacity: number;
+  kidsCapacity: number;
+  totalRoomsOfType: number;  // how many physical rooms of this type exist
+  priceRoomOnly: number;
+  priceBedBreakfast: number;
+  priceFullBoard: number;
+  photos: string[];
+  description: string;
+  amenities: string[];
+  isActive: boolean;
+  sortOrder: number;
+  createdAt?: string;
+};
+
 export type Company = {
   id: string;
   name: string;

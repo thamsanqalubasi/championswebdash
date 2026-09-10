@@ -86,6 +86,7 @@ const allNavSections: NavSection[] = [
   {
     title: "Customer Portal",
     items: [
+      { label: "Room Showcases", href: "/room-showcases", icon: BedDouble, departments: ["admin", "manager", "front_desk"] },
       { label: "Enquiries & Tickets", href: "/enquiries", icon: Inbox, departments: ["admin", "manager", "front_desk", "accountant"] },
       { label: "Public Portal", href: "/portal", icon: Globe },
       { label: "Agent Portal", href: "/portal/agent", icon: Briefcase },
