@@ -159,46 +159,64 @@ export async function uploadFileToBucket(
   const extension = file.name.includes(".") ? file.name.split(".").pop() : "bin";
   const path = `${folder}/${Date.now()}.${extension}`;
 
-  // Attempt upload; if bucket doesn't exist, create it and retry once
+  // First attempt
   let uploadResult = await supabase.storage
     .from(bucket)
     .upload(path, file, { upsert: true });
 
-  if (uploadResult.error && /bucket.*not found/i.test(uploadResult.error.message)) {
-    // Auto-create the bucket as public
-    await supabase.storage.createBucket(bucket, { public: true });
-    // Retry the upload
+  if (uploadResult.error && /bucket.*not found|not found/i.test(uploadResult.error.message)) {
+    // Try to auto-create the bucket (works if service role is available)
+    const { error: createError } = await supabase.storage.createBucket(bucket, {
+      public: true,
+      fileSizeLimit: 10485760, // 10MB
+    });
+
+    if (createError && !/already exists/i.test(createError.message)) {
+      // Bucket creation failed — likely need Supabase dashboard setup
+      throw new Error(
+        `Storage bucket "${bucket}" not found. Please go to your Supabase Dashboard → Storage → Create a new bucket named "${bucket}" and set it to Public.`
+      );
+    }
+
+    // Retry upload after bucket creation
     uploadResult = await supabase.storage
       .from(bucket)
       .upload(path, file, { upsert: true });
   }
 
-  if (uploadResult.error) throw uploadResult.error;
+  if (uploadResult.error) {
+    if (/bucket.*not found|not found/i.test(uploadResult.error.message)) {
+      throw new Error(
+        `Storage bucket "${bucket}" not found. In Supabase Dashboard → Storage, create a public bucket named "${bucket}".`
+      );
+    }
+    throw uploadResult.error;
+  }
 
   // Try public URL first
   const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(path);
   const publicUrl = publicUrlData.publicUrl;
 
-  // Verify the public URL works by sending a HEAD request
+  // Verify the public URL works
   try {
     const check = await fetch(publicUrl, { method: "HEAD" });
     if (check.ok) return publicUrl;
   } catch {
-    // Public URL not accessible — fall through to signed URL
+    // Not accessible — fall through to signed URL
   }
 
-  // Fallback: create a signed URL valid for 10 years
+  // Fallback: signed URL valid for 10 years
   const { data: signedData, error: signedError } = await supabase.storage
     .from(bucket)
     .createSignedUrl(path, 60 * 60 * 24 * 365 * 10);
 
   if (signedError || !signedData?.signedUrl) {
-    // Return public URL anyway — admin can fix bucket policies later
     return publicUrl;
   }
 
   return signedData.signedUrl;
 }
+
 
 /**
  * Save an HTML document string to a database column.
