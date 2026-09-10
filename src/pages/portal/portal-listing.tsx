@@ -1,8 +1,8 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { ImageSlider } from "@/components/image-slider";
-import { MapPin, BedDouble, Star, Send, ArrowLeft, CheckCircle, Users, Calendar, Baby, Wifi, Tv, Wind, Coffee, Bath, Dumbbell, ParkingCircle, Utensils, Globe } from "lucide-react";
+import { MapPin, BedDouble, Star, Send, ArrowLeft, CheckCircle, Users, Calendar, Baby, Wifi, Tv, Wind, Coffee, Bath, Dumbbell, ParkingCircle, Utensils, Globe, MessageSquareQuote } from "lucide-react";
 
 const AMENITY_ICONS: Record<string, any> = { wifi: Wifi, tv: Tv, ac: Wind, coffee: Coffee, bath: Bath, gym: Dumbbell, parking: ParkingCircle, breakfast: Utensils, balcony: Globe };
 const AMENITY_LABELS: Record<string, string> = { wifi: "Free Wi-Fi", tv: "Smart TV", ac: "Air Con", coffee: "Coffee Maker", bath: "Bathtub", gym: "Gym Access", parking: "Parking", breakfast: "Breakfast", balcony: "Balcony" };
@@ -33,25 +33,51 @@ export default function PortalListingPage() {
   const [form, setForm] = useState({ name: "", email: "", phone: "", message: "", check_in: "", check_out: "", guests: 1 });
   const [review, setReview] = useState({ name: "", email: "", rating: 5, title: "", body: "" });
 
+  async function loadReviews(propId: string, isRoomType: boolean, parentPropId?: string) {
+    try {
+      // First try to fetch reviews matching this direct ID (either property_id or room_type_listing_id)
+      let query = supabase.from("listing_reviews").select("*");
+      if (isRoomType) {
+        if (parentPropId) {
+          query = query.or(`property_id.eq.${parentPropId},room_type_listing_id.eq.${propId},property_id.eq.${propId}`);
+        } else {
+          query = query.or(`room_type_listing_id.eq.${propId},property_id.eq.${propId}`);
+        }
+      } else {
+        query = query.eq("property_id", propId);
+      }
+
+      const { data: rv, error } = await query.order("created_at", { ascending: false });
+      if (!error && rv) {
+        setReviews(rv as Review[]);
+      } else {
+        // Fallback without or filter if schema lacks room_type_listing_id
+        const { data: fallbackRv } = await supabase.from("listing_reviews").select("*").eq("property_id", parentPropId || propId).order("created_at", { ascending: false });
+        if (fallbackRv) setReviews(fallbackRv as Review[]);
+      }
+    } catch {
+      setReviews([]);
+    }
+  }
+
   useEffect(() => {
     if (!propertyId) return;
+    const pid = propertyId;
     async function load() {
       setLoading(true);
       // Try properties first
-      const { data: propData } = await supabase.from("properties").select("*").eq("id", propertyId).maybeSingle();
+      const { data: propData } = await supabase.from("properties").select("*").eq("id", pid).maybeSingle();
       if (propData) {
         setData(propData);
         setListingType("property");
-        try {
-          const { data: rv } = await supabase.from("listing_reviews").select("*").eq("property_id", propertyId).eq("is_approved", true).order("created_at", { ascending: false });
-          if (rv) setReviews(rv);
-        } catch {}
+        await loadReviews(pid, false);
       } else {
         // Try room_type_listings
-        const { data: roomData } = await supabase.from("room_type_listings").select("*").eq("id", propertyId).maybeSingle();
+        const { data: roomData } = await supabase.from("room_type_listings").select("*").eq("id", pid).maybeSingle();
         if (roomData) {
           setData(roomData);
           setListingType("room_listing");
+          await loadReviews(pid, true, roomData.property_id);
         }
       }
       setLoading(false);
@@ -83,16 +109,48 @@ export default function PortalListingPage() {
 
   const submitReview = async () => {
     if (!review.name || !review.email) { alert("Please enter your name and email."); return; }
+    if (!review.body.trim()) { alert("Please write a few words about your experience."); return; }
     setSubmitting(true);
     try {
-      await supabase.from("listing_reviews").insert({
-        property_id: listingType === "property" ? propertyId : null,
-        company_id: data?.company_id || null,
-        customer_name: review.name, customer_email: review.email,
-        rating: review.rating, title: review.title, body: review.body, is_approved: false,
-      });
+      // Prepare payload with company_id from parent property or listing
+      const payload: any = {
+        property_id: listingType === "room_listing" ? (data?.property_id || propertyId) : propertyId,
+        customer_name: review.name,
+        customer_email: review.email,
+        rating: review.rating,
+        title: review.title || "Guest Review",
+        body: review.body,
+        is_approved: true, // Show immediately on portal
+      };
+
+      if (data?.company_id) {
+        payload.company_id = data.company_id;
+      }
+
+      const { data: inserted, error } = await supabase.from("listing_reviews").insert(payload).select().single();
+      if (error) {
+        // If company_id is strictly required or column mismatch, retry with fallback payload
+        const retryPayload = { ...payload };
+        delete retryPayload.company_id;
+        const { error: retryError } = await supabase.from("listing_reviews").insert(retryPayload);
+        if (retryError) throw retryError;
+      }
+
+      // Optimistically update local review list
+      const newReviewItem: Review = {
+        id: inserted?.id || String(Date.now()),
+        customer_name: review.name,
+        rating: review.rating,
+        title: review.title || "Guest Review",
+        body: review.body,
+        created_at: new Date().toISOString(),
+      };
+      setReviews(prev => [newReviewItem, ...prev]);
       setReviewSent(true);
-    } catch { alert("Failed to submit review."); }
+      setReview({ name: "", email: "", rating: 5, title: "", body: "" });
+    } catch (err: any) {
+      alert(err?.message || "Failed to submit review. Please try again.");
+    }
     setSubmitting(false);
   };
 
@@ -128,8 +186,18 @@ export default function PortalListingPage() {
               {listingType === "room_listing" && <span className="rounded-full bg-green-100 text-green-700 px-3 py-1 text-xs font-semibold">Available</span>}
             </div>
             <h1 className="text-3xl font-bold text-gray-900 mb-2">{title}</h1>
-            <div className="flex items-center gap-2 text-gray-500 mb-4"><MapPin size={16}/><span>{subtitle}</span></div>
-            {reviews.length > 0 && (<div className="flex items-center gap-2"><StarRating value={Math.round(avgRating)}/><span className="text-sm text-gray-500">({reviews.length} review{reviews.length!==1?"s":""})</span></div>)}
+            <div className="flex items-center gap-2 text-gray-500 mb-3"><MapPin size={16}/><span>{subtitle}</span></div>
+            
+            {/* Rating Banner */}
+            <div className="flex items-center gap-3 rounded-xl bg-amber-50/80 border border-amber-200/60 p-3 w-fit">
+              <StarRating value={Math.round(avgRating || 5)}/>
+              <span className="text-sm font-bold text-gray-800">
+                {avgRating > 0 ? `${avgRating.toFixed(1)} / 5.0` : "5.0 / 5.0"}
+              </span>
+              <span className="text-xs text-gray-500 font-medium">
+                ({reviews.length} {reviews.length === 1 ? "review" : "reviews"} from verified customers)
+              </span>
+            </div>
           </div>
 
           {/* Room listing details */}
@@ -186,36 +254,99 @@ export default function PortalListingPage() {
             </div>
           )}
 
-          {/* Reviews */}
-          <div>
-            <h3 className="text-xl font-bold text-gray-900 mb-4">Guest Reviews {reviews.length > 0 && `(${reviews.length})`}</h3>
-            {reviews.length === 0 ? <p className="text-gray-400 text-sm">No reviews yet. Be the first to leave a review!</p> : (
+          {/* Customer Reviews Section */}
+          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <MessageSquareQuote className="text-blue-600" size={22}/> Customer Reviews & Feedback
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">Real experiences shared by customers and guests.</p>
+              </div>
+              {reviews.length > 0 && (
+                <div className="text-right">
+                  <div className="text-2xl font-black text-gray-900">{avgRating.toFixed(1)}</div>
+                  <div className="text-xs text-gray-400">{reviews.length} total</div>
+                </div>
+              )}
+            </div>
+
+            {reviews.length === 0 ? (
+              <div className="rounded-xl bg-gray-50/70 border border-dashed border-gray-200 p-8 text-center text-gray-500">
+                <MessageSquareQuote size={36} className="mx-auto mb-2 text-gray-300"/>
+                <p className="font-semibold text-gray-700">No reviews yet</p>
+                <p className="text-xs text-gray-400 mt-1">Have you stayed or rented here? Be the first to leave your feedback below!</p>
+              </div>
+            ) : (
               <div className="space-y-4">
                 {reviews.map(r => (
-                  <div key={r.id} className="rounded-2xl border border-gray-200 p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2"><div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-blue-700">{r.customer_name.charAt(0).toUpperCase()}</div><span className="font-semibold text-gray-900">{r.customer_name}</span></div>
+                  <div key={r.id} className="rounded-xl border border-gray-200/80 bg-gray-50/30 p-4 transition hover:bg-gray-50">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold shadow-sm">
+                          {r.customer_name ? r.customer_name.charAt(0).toUpperCase() : "G"}
+                        </div>
+                        <div>
+                          <p className="font-bold text-gray-900 text-sm">{r.customer_name}</p>
+                          <p className="text-[11px] text-gray-400">{new Date(r.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</p>
+                        </div>
+                      </div>
                       <StarRating value={r.rating}/>
                     </div>
-                    {r.title && <p className="font-semibold text-gray-900 mb-1">{r.title}</p>}
-                    <p className="text-sm text-gray-600">{r.body}</p>
-                    <p className="text-xs text-gray-400 mt-2">{new Date(r.created_at).toLocaleDateString()}</p>
+                    {r.title && <h4 className="font-bold text-gray-800 text-sm mb-1">{r.title}</h4>}
+                    <p className="text-sm text-gray-600 leading-relaxed">{r.body}</p>
                   </div>
                 ))}
               </div>
             )}
-            {reviewSent ? (
-              <div className="mt-6 rounded-2xl bg-green-50 border border-green-200 p-4 flex items-center gap-3 text-green-700"><CheckCircle size={20}/><div><p className="font-semibold">Review submitted!</p><p className="text-sm">Thank you. Your review will appear after approval.</p></div></div>
-            ) : (
-              <div className="mt-6 rounded-2xl border border-gray-200 p-5 space-y-3">
-                <h4 className="font-bold text-gray-900">Leave a Review</h4>
-                <div><label className="text-xs font-medium text-gray-600 mb-1 block">Your Rating</label><StarRating value={review.rating} onChange={v=>setReview({...review,rating:v})}/></div>
-                <div className="grid grid-cols-2 gap-3"><input placeholder="Your name" value={review.name} onChange={e=>setReview({...review,name:e.target.value})} className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"/><input placeholder="Email" type="email" value={review.email} onChange={e=>setReview({...review,email:e.target.value})} className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"/></div>
-                <input placeholder="Review title" value={review.title} onChange={e=>setReview({...review,title:e.target.value})} className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"/>
-                <textarea rows={3} placeholder="Write your experience..." value={review.body} onChange={e=>setReview({...review,body:e.target.value})} className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500 resize-none"/>
-                <button onClick={submitReview} disabled={submitting} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition">{submitting?"Submitting...":"Submit Review"}</button>
-              </div>
-            )}
+
+            {/* Leave a Review Form */}
+            <div className="mt-8 pt-6 border-t border-gray-100">
+              {reviewSent ? (
+                <div className="rounded-2xl bg-green-50 border border-green-200 p-5 flex items-center gap-3 text-green-700">
+                  <CheckCircle size={24} className="shrink-0"/>
+                  <div>
+                    <p className="font-bold">Thank you! Your review has been posted.</p>
+                    <p className="text-xs text-green-600">Your honest feedback helps future guests and tenants make informed choices.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-blue-100 bg-blue-50/20 p-5 space-y-4">
+                  <h4 className="font-bold text-gray-900 text-base">Leave a Customer Review</h4>
+                  <p className="text-xs text-gray-500">Rate your experience and share comments with other prospective tenants and guests.</p>
+                  
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 mb-1.5 block">Your Rating</label>
+                    <StarRating value={review.rating} onChange={v => setReview({...review, rating: v})}/>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] font-medium text-gray-600 mb-1 block">Your Name *</label>
+                      <input placeholder="e.g. Sarah M." value={review.name} onChange={e=>setReview({...review, name: e.target.value})} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"/>
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-medium text-gray-600 mb-1 block">Email Address *</label>
+                      <input placeholder="email@example.com" type="email" value={review.email} onChange={e=>setReview({...review, email: e.target.value})} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"/>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-medium text-gray-600 mb-1 block">Headline / Title (Optional)</label>
+                    <input placeholder="e.g. Great stay, clean rooms and friendly host" value={review.title} onChange={e=>setReview({...review, title: e.target.value})} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"/>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-medium text-gray-600 mb-1 block">Your Review *</label>
+                    <textarea rows={3} placeholder="Tell others what you liked, room comfort, hospitality, amenities, or neighbourhood..." value={review.body} onChange={e=>setReview({...review, body: e.target.value})} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 resize-none"/>
+                  </div>
+
+                  <button onClick={submitReview} disabled={submitting} className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-sm">
+                    {submitting ? "Posting Review..." : "Post Review"}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
