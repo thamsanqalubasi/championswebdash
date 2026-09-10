@@ -784,3 +784,218 @@ export function buildBalanceSheetHtml(
 </body>
 </html>`;
 }
+
+export function buildProfessionalPayslipHtml(
+  payslip: {
+    id: string;
+    employeeName: string;
+    jobTitle: string;
+    department: string;
+    payPeriod: string;
+    basicSalary: number;
+    allowances: Record<string, number | undefined>;
+    grossPay: number;
+    deductions: Record<string, number | undefined>;
+    netPay: number;
+    paymentMethod?: string;
+    generatedByName?: string;
+    createdAt?: string;
+  },
+  company: CompanyInfo
+): string {
+  const companyLogoHtml = company.logoUrl
+    ? `<img src="${esc(company.logoUrl)}" alt="${esc(company.companyName)}" style="height:60px; max-width:180px; object-fit:contain;" />`
+    : `<div style="font-size:24px; font-weight:900; color:#1e3a8a; letter-spacing:-0.5px;">${esc(company.companyName)}</div>`;
+
+  const allowanceEntries = Object.entries(payslip.allowances || {}).filter(([_, v]) => Number(v) > 0);
+  const deductionEntries = Object.entries(payslip.deductions || {}).filter(([_, v]) => Number(v) > 0);
+
+  const totalAllowances = allowanceEntries.reduce((sum, [_, v]) => sum + Number(v), 0);
+  const totalDeductions = deductionEntries.reduce((sum, [_, v]) => sum + Number(v), 0);
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Official Payslip - ${esc(payslip.employeeName)} (${esc(payslip.payPeriod)})</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; background: #fff; padding: 40px 24px; }
+    .payslip-container { max-width: 780px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; padding: 36px; box-shadow: 0 4px 20px rgba(0,0,0,0.04); }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 20px; margin-bottom: 24px; }
+    .badge { display: inline-block; background: #1e40af; color: #fff; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; padding: 4px 10px; border-radius: 6px; margin-bottom: 6px; }
+    .meta-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .meta-item label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 2px; }
+    .meta-item p { font-size: 14px; font-weight: 700; color: #0f172a; }
+    .tables-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f1f5f9; text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; border-bottom: 1px solid #cbd5e1; }
+    td { padding: 9px 12px; border-bottom: 1px solid #f1f5f9; }
+    .amount { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+    .subtotal-row { font-weight: 700; background: #f8fafc; border-top: 1px solid #cbd5e1; }
+    .net-box { background: linear-gradient(135deg, #1e3a8a, #2563eb); color: #fff; border-radius: 12px; padding: 20px 24px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+    .net-label { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.9; }
+    .net-amount { font-size: 28px; font-weight: 900; font-family: monospace; }
+    .sig-area { display: flex; justify-content: space-between; margin-top: 36px; padding-top: 16px; }
+    .sig-col { width: 42%; border-top: 1px solid #64748b; padding-top: 8px; font-size: 12px; }
+    .footer-note { text-align: center; font-size: 11px; color: #94a3b8; margin-top: 32px; border-top: 1px solid #f1f5f9; padding-top: 12px; }
+    .no-print { display: flex; justify-content: space-between; align-items: center; background: #0f172a; color: #fff; padding: 12px 24px; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .print-btn { background: #2563eb; color: #fff; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: background 0.15s; }
+    .print-btn:hover { background: #1d4ed8; }
+    .close-btn { background: #334155; color: #e2e8f0; border: none; padding: 8px 14px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
+    .close-btn:hover { background: #475569; }
+    @media print {
+      body { padding: 0; background: #fff; }
+      .no-print { display: none !important; }
+      .payslip-container { border: none !important; box-shadow: none !important; padding: 0 !important; }
+      @page { margin: 1.5cm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="payslip-container">
+    <div class="no-print">
+      <div>
+        <div style="font-weight: 800; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+          <span>Official Company Payslip</span>
+          <span style="font-size: 11px; background: #1e293b; padding: 2px 8px; border-radius: 4px; color: #93c5fd;">Ready to Print / PDF</span>
+        </div>
+        <div style="font-size: 12px; color: #94a3b8; margin-top: 2px;">Use the button on the right or press Ctrl+P to save as PDF</div>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <button class="print-btn" onclick="window.print()">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
+          Print / Save as PDF
+        </button>
+        <button class="close-btn" onclick="window.close()">Close Window</button>
+      </div>
+    </div>
+
+    <div class="header">
+      <div>
+        ${companyLogoHtml}
+        <p style="font-size:12px; color:#64748b; margin-top:6px;">${esc(company.address || "South Africa")}</p>
+      </div>
+      <div style="text-align:right;">
+        <span class="badge">Official Salary Slip</span>
+        <div style="font-size:18px; font-weight:800; color:#0f172a; margin-top:4px;">Period: ${esc(payslip.payPeriod)}</div>
+        <p style="font-size:11px; color:#64748b; margin-top:2px;">Ref #${esc(payslip.id.slice(0, 10).toUpperCase())}</p>
+      </div>
+    </div>
+
+    <div class="meta-box">
+      <div>
+        <div class="meta-item">
+          <label>Employee Name</label>
+          <p>${esc(payslip.employeeName)}</p>
+        </div>
+        <div class="meta-item" style="margin-top:8px;">
+          <label>Designation / Role</label>
+          <p>${esc(payslip.jobTitle)}</p>
+        </div>
+      </div>
+      <div>
+        <div class="meta-item">
+          <label>Department</label>
+          <p style="text-transform:capitalize;">${esc(payslip.department.replace(/_/g, " "))}</p>
+        </div>
+        <div class="meta-item" style="margin-top:8px;">
+          <label>Disbursement Method</label>
+          <p style="text-transform:uppercase;">${esc(payslip.paymentMethod || "Direct Bank Transfer")}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="tables-grid">
+      <!-- Earnings -->
+      <div style="border:1px solid #e2e8f0; border-radius:10px; overflow:hidden;">
+        <table>
+          <thead>
+            <tr>
+              <th>Earnings</th>
+              <th class="amount">Amount (ZAR)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Basic Salary</td>
+              <td class="amount">R${Number(payslip.basicSalary).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+            </tr>
+            ${allowanceEntries.map(([k, v]) => `
+              <tr>
+                <td style="text-transform:capitalize;">${esc(k.replace(/_/g, " "))} Allowance</td>
+                <td class="amount">R${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              </tr>
+            `).join("")}
+            <tr class="subtotal-row">
+              <td>Total Gross Earnings</td>
+              <td class="amount" style="color:#1e3a8a;">R${Number(payslip.grossPay).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Deductions -->
+      <div style="border:1px solid #e2e8f0; border-radius:10px; overflow:hidden;">
+        <table>
+          <thead>
+            <tr>
+              <th>Statutory Deductions</th>
+              <th class="amount">Amount (ZAR)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${deductionEntries.length === 0 ? `
+              <tr>
+                <td colspan="2" style="text-align:center; color:#94a3b8; font-style:italic;">No deductions recorded</td>
+              </tr>
+            ` : deductionEntries.map(([k, v]) => `
+              <tr>
+                <td style="text-transform:capitalize;">${esc(k.replace(/([A-Z])/g, ' $1').toLowerCase())}</td>
+                <td class="amount" style="color:#dc2626;">-R${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              </tr>
+            `).join("")}
+            <tr class="subtotal-row">
+              <td>Total Deductions</td>
+              <td class="amount" style="color:#dc2626;">-R${Number(totalDeductions || (payslip.grossPay - payslip.netPay)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="net-box">
+      <div>
+        <div class="net-label">Net Take-Home Pay</div>
+        <div style="font-size:11px; opacity:0.8; margin-top:2px;">Credited directly to employee account</div>
+      </div>
+      <div class="net-amount">R${Number(payslip.netPay).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+    </div>
+
+    <div class="sig-area">
+      <div class="sig-col">
+        <p style="font-weight:700; color:#0f172a;">Prepared & Authorized by:</p>
+        <p style="color:#64748b; margin-top:2px;">${esc(payslip.generatedByName || company.companyName + " HR")}</p>
+      </div>
+      <div class="sig-col" style="text-align:right;">
+        <p style="font-weight:700; color:#0f172a;">Employee Acknowledgment:</p>
+        <p style="color:#64748b; margin-top:2px;">${esc(payslip.employeeName)}</p>
+      </div>
+    </div>
+
+    <div class="footer-note">
+      This is a confidential computer-generated payslip issued by ${esc(company.companyName)}. No physical signature required.
+    </div>
+  </div>
+  <script>
+    window.addEventListener('load', () => {
+      // Auto-trigger print dialog when opened in new tab
+      setTimeout(() => {
+        try { window.print(); } catch (e) { console.log(e); }
+      }, 350);
+    });
+  </script>
+</body>
+</html>`;
+}
+
