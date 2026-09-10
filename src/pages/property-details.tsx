@@ -281,7 +281,8 @@ export default function PropertyDetailsPage() {
             loadBillSchedules(),
             supabase
               .from("property_monthly_bills")
-              .select("schedule_id, month, amount, status, paid_date")
+              .select("schedule_id, month, amount, status, paid_at")
+              .eq("property_id", propertyId)
               .order("month", { ascending: false }),
           ]);
 
@@ -353,7 +354,7 @@ export default function PropertyDetailsPage() {
             dueDate: "",
             amount: Number(row.amount ?? 0),
             status: String(row.status ?? "pending"),
-            paidAt: row.paid_date ? String(row.paid_date) : "",
+            paidAt: row.paid_at ? String(row.paid_at) : "",
           }));
 
           const monthlyBySchedule = new Map<string, typeof monthlyRows>();

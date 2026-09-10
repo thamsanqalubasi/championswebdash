@@ -158,6 +158,8 @@ export default function TenantsPage() {
   const [deleteTarget, setDeleteTarget] = useState<TenantRow | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const [viewTenantTarget, setViewTenantTarget] = useState<TenantRow | null>(null);
+
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
 
   const [detailsRow, setDetailsRow] = useState<TenantRow | null>(null);
@@ -1012,6 +1014,11 @@ export default function TenantsPage() {
                       <td className="px-6 py-4">
                         <TableRowActions>
                           <TableActionButton
+                            icon={Eye}
+                            label="View"
+                            onClick={() => setViewTenantTarget(row)}
+                          />
+                          <TableActionButton
                             icon={Pencil}
                             label="Edit"
                             onClick={() => openEdit(row)}
@@ -1394,6 +1401,77 @@ export default function TenantsPage() {
         defaultSubject={shareModalDoc.defaultSubject}
         defaultMessage={shareModalDoc.defaultMessage}
       />
+
+      {/* View Tenant Profile Modal */}
+      <Modal
+        open={Boolean(viewTenantTarget)}
+        onClose={() => setViewTenantTarget(null)}
+        title={`View Tenant — ${viewTenantTarget?.fullName ?? ""}`}
+      >
+        {viewTenantTarget && (
+          <div className="space-y-6">
+            {/* Details grid */}
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60 mb-1">Full Name</p>
+                <p className="font-bold text-foreground">{viewTenantTarget.fullName || "—"}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60 mb-1">Phone</p>
+                <div className="flex items-center gap-1.5 font-medium text-foreground">
+                  <Phone size={13} className="text-muted/50" />
+                  <span>{viewTenantTarget.phone || "—"}</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60 mb-1">Email</p>
+                <div className="flex items-center gap-1.5 font-medium text-foreground">
+                  <Mail size={13} className="text-muted/50" />
+                  <span>{viewTenantTarget.email || "—"}</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60 mb-1">Property Assigned</p>
+                <div className="flex items-center gap-1.5 font-medium text-foreground">
+                  <MapPin size={13} className="text-muted/50" />
+                  <span>{viewTenantTarget.propertyName || "Unassigned"}</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60 mb-1">Tenure Status</p>
+                <StatusBadge status={viewTenantTarget.tenureStatus} />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60 mb-1">Rent Status</p>
+                <StatusBadge status={viewTenantTarget.rentStatus} />
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center justify-end gap-2 pt-4 border-t border-border-color/50">
+              <button
+                type="button"
+                onClick={() => setViewTenantTarget(null)}
+                className="rounded-md border border-border-color px-4 py-2 text-sm hover:bg-surface-elevated transition-colors"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = viewTenantTarget;
+                  setViewTenantTarget(null);
+                  openEdit(target);
+                }}
+                className="flex items-center gap-2 rounded-md bg-foreground px-4 py-2 text-sm font-bold text-surface hover:opacity-90 transition-all"
+              >
+                <Pencil size={14} />
+                Edit Tenant
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </ModulePage>
   );
 }

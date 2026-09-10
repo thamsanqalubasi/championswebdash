@@ -2790,6 +2790,8 @@ export async function fetchProperties(companyId: string = MOCK_COMPANIES[0].id):
         name: p.name,
         type: p.type,
         address: p.address || "",
+        city: p.city || "",
+        country: p.country || "",
         status: p.status,
         monthlyRent: toNumber(p.monthly_rent),
         totalRooms: p.total_rooms,
@@ -2799,6 +2801,7 @@ export async function fetchProperties(companyId: string = MOCK_COMPANIES[0].id):
         defaultBedLunch: toNumber(p.default_bed_lunch),
         defaultFullBoard: toNumber(p.default_full_board),
         photos: p.photos || [],
+        isPublished: p.is_published || false,
       }));
     }
   } catch {

@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, Outlet, useLocation, useParams } from "react-router-dom";
+﻿import { Routes, Route, Navigate, Outlet, useLocation, useParams } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { AppShell } from "@/components/app-shell";
 import LoginPage from "@/pages/login";
@@ -28,6 +28,12 @@ import CompaniesPage from "@/pages/companies";
 import ContractsPage from "@/pages/contracts";
 import SettingsPage from "@/pages/settings";
 import AuditTrailPage from "@/pages/audit-trail";
+import EnquiriesPage from "@/pages/enquiries";
+import PortalLayout from "@/pages/portal/portal-layout";
+import PortalHomePage from "@/pages/portal/portal-home";
+import PortalListingPage from "@/pages/portal/portal-listing";
+import PortalLoginPage from "@/pages/portal/portal-login";
+import CustomerDashboardPage from "@/pages/portal/customer-dashboard";
 
 function CompanySlugRedirect() {
   const { companySlug } = useParams<{ companySlug: string }>();
@@ -71,6 +77,14 @@ export function AppRouter() {
       <Route path="/c/:companySlug/login" element={<LoginPage />} />
       <Route path="/c/:companySlug/set-password" element={<SetPasswordPage />} />
 
+      {/* Public Customer Portal Routes */}
+      <Route path="/portal" element={<PortalLayout />}>
+        <Route index element={<PortalHomePage />} />
+        <Route path="listing/:propertyId" element={<PortalListingPage />} />
+        <Route path="login" element={<PortalLoginPage />} />
+        <Route path="dashboard" element={<CustomerDashboardPage />} />
+      </Route>
+
       <Route element={<ProtectedLayout />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/commercial-bookings" element={<CommercialBookingsPage />} />
@@ -96,6 +110,7 @@ export function AppRouter() {
         <Route path="/contracts" element={<ContractsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/audit-trail" element={<AuditTrailPage />} />
+        <Route path="/enquiries" element={<EnquiriesPage />} />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

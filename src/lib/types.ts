@@ -17,6 +17,8 @@ export type PropertyRow = {
   name: string;
   type: PropertyType;
   address: string;
+  city?: string;
+  country?: string;
   status: PropertyStatus;
   monthlyRent: number;
   totalRooms?: number;
@@ -26,6 +28,7 @@ export type PropertyRow = {
   defaultBedLunch?: number;
   defaultFullBoard?: number;
   photos?: string[];
+  isPublished?: boolean;
 };
 
 export type Company = {

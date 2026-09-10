@@ -26,6 +26,8 @@ import {
   Layers,
   ChevronDown,
   Building,
+  Inbox,
+  Globe,
   type LucideIcon,
 } from "lucide-react";
 import type { DepartmentType } from "@/lib/types";
@@ -79,6 +81,13 @@ const allNavSections: NavSection[] = [
     title: "Human Resources",
     items: [
       { label: "HR & Payroll", href: "/hr", icon: Briefcase, departments: ["admin", "human_resources", "manager"] },
+    ],
+  },
+  {
+    title: "Customer Portal",
+    items: [
+      { label: "Enquiries & Tickets", href: "/enquiries", icon: Inbox, departments: ["admin", "manager", "front_desk", "accountant"] },
+      { label: "Public Portal", href: "/portal", icon: Globe },
     ],
   },
   {
