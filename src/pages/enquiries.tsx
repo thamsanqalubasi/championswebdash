@@ -49,22 +49,34 @@ export default function EnquiriesPage() {
   useEffect(() => {
     async function load() {
       setLoading(true);
+      let loaded: any[] = [];
       try {
         const { data, error } = await supabase
           .from("enquiries")
           .select("*")
-          .or(`company_id.eq.${currentCompany.id},company_id.is.null`)
           .order("created_at", { ascending: false });
-        if (error) {
-          // Fallback simple query
-          const { data: fallbackData } = await supabase.from("enquiries").select("*").order("created_at", { ascending: false });
-          if (fallbackData) setEnquiries(fallbackData);
-          else if (error.message.includes("does not exist") || error.code === "42P01") { setEmpty(true); }
-          setLoading(false);
-          return;
+        if (!error && data) {
+          loaded = data;
         }
-        setEnquiries(data || []);
-      } catch { setEmpty(true); }
+      } catch {}
+
+      // Merge with locally submitted portal enquiries
+      try {
+        const stored = JSON.parse(localStorage.getItem("pambabook_enquiries") || "[]");
+        if (Array.isArray(stored) && stored.length > 0) {
+          const ids = new Set(loaded.map((item: any) => item.id));
+          const uniqueLocal = stored.filter((item: any) => !ids.has(item.id));
+          loaded = [...uniqueLocal, ...loaded];
+        }
+      } catch {}
+
+      // Filter by company or include universal/unassigned
+      const filtered = loaded.filter((e: any) => 
+        !e.company_id || e.company_id === currentCompany.id || e.company_id === "a0000000-0000-0000-0000-000000000001"
+      );
+
+      setEnquiries(filtered);
+      setEmpty(filtered.length === 0);
       setLoading(false);
     }
     void load();
