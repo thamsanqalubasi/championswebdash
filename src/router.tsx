@@ -1,4 +1,4 @@
-﻿import { Routes, Route, Navigate, Outlet, useLocation, useParams } from "react-router-dom";
+import { Routes, Route, Navigate, Outlet, useLocation, useParams } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { AppShell } from "@/components/app-shell";
 import LoginPage from "@/pages/login";
@@ -34,6 +34,7 @@ import PortalHomePage from "@/pages/portal/portal-home";
 import PortalListingPage from "@/pages/portal/portal-listing";
 import PortalLoginPage from "@/pages/portal/portal-login";
 import CustomerDashboardPage from "@/pages/portal/customer-dashboard";
+import AgentPortalPage from "@/pages/portal/agent-portal";
 
 function CompanySlugRedirect() {
   const { companySlug } = useParams<{ companySlug: string }>();
@@ -83,6 +84,7 @@ export function AppRouter() {
         <Route path="listing/:propertyId" element={<PortalListingPage />} />
         <Route path="login" element={<PortalLoginPage />} />
         <Route path="dashboard" element={<CustomerDashboardPage />} />
+        <Route path="agent" element={<AgentPortalPage />} />
       </Route>
 
       <Route element={<ProtectedLayout />}>
@@ -113,8 +115,8 @@ export function AppRouter() {
         <Route path="/enquiries" element={<EnquiriesPage />} />
       </Route>
 
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/" element={<Navigate to="/portal" replace />} />
+      <Route path="*" element={<Navigate to="/portal" replace />} />
     </Routes>
   );
 }

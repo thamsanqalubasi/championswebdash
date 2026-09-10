@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState, Fragment } from "react";
+﻿import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { fetchContractsData, verifyAdminPin, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
 import { fetchCompanyInfo, fetchAdminInfo, uploadPdfFromHtml, createPdfAttachmentFromUrl, downloadHtmlDocument, downloadPdfDocument, downloadPdfFromUrl } from "@/lib/storage";
 import { DocumentShareModal } from "@/components/document-share-modal";
 import { buildProfessionalContractHtml } from "@/lib/document-templates";
@@ -62,9 +63,7 @@ type TemplateRow = {
 
 /* ── helpers ── */
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "NAD", maximumFractionDigits: 0 }).format(amount);
-}
+// formatCurrency is provided by useCurrency() hook inside the component
 
 async function ensureShareableDocumentUrl(existingUrl: string, html: string, filename: string) {
   if (existingUrl && existingUrl.startsWith("http") && existingUrl.toLowerCase().includes(".pdf")) {
@@ -379,6 +378,7 @@ function RichTextEditor({
 
 export default function ContractsPage() {
   const { user, currentCompany } = useAuth();
+  const { format: formatCurrency } = useCurrency();
   const templateSeedWarningShownRef = useRef(false);
 
   /* ── tab state ── */
@@ -1439,3 +1439,5 @@ export default function ContractsPage() {
     </ModulePage>
   );
 }
+
+

@@ -623,25 +623,72 @@ export default function SettingsPage() {
           </div>
 
           <div>
-            <label className="mb-1 block font-medium text-foreground">Company Profile Logo / Image URL</label>
+            <label className="mb-2 block font-medium text-foreground flex items-center gap-1.5">
+              <Upload size={13} className="text-blue-500" />
+              Company Logo
+            </label>
+            {/* Current logo preview */}
+            {companyForm.logo_url && (
+              <div className="mb-3 flex items-center gap-4 rounded-xl border border-border-color bg-surface-elevated/40 p-3">
+                <img
+                  src={companyForm.logo_url}
+                  alt="Current Logo"
+                  className="h-16 w-16 object-contain rounded-lg border border-border-color bg-white p-1"
+                  onError={(e) => ((e.target as HTMLElement).style.display = "none")}
+                />
+                <div>
+                  <p className="text-xs font-semibold text-foreground">Current logo</p>
+                  <p className="text-[11px] text-muted mt-0.5">Appears on invoices, contracts, receipts, and the portal</p>
+                </div>
+              </div>
+            )}
+            {/* File Upload */}
+            <div className="flex items-center gap-3">
+              <label
+                htmlFor="logo-file-upload"
+                className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border-color bg-surface-elevated px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-elevated/70 transition ${logoUploading ? "opacity-60 pointer-events-none" : ""}`}
+              >
+                <Upload size={15} className="text-blue-500" />
+                {logoUploading ? "Uploading..." : companyForm.logo_url ? "Change Logo" : "Upload Logo"}
+              </label>
+              <input
+                id="logo-file-upload"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setLogoUploading(true);
+                  try {
+                    const url = await uploadFileToBucket("company-logos", currentCompany.id, file);
+                    setCompanyForm({ ...companyForm, logo_url: url });
+                  } catch (err) {
+                    alert(err instanceof Error ? err.message : "Upload failed");
+                  } finally {
+                    setLogoUploading(false);
+                    e.target.value = "";
+                  }
+                }}
+              />
+              {companyForm.logo_url && (
+                <button
+                  type="button"
+                  onClick={() => setCompanyForm({ ...companyForm, logo_url: "" })}
+                  className="rounded-lg px-3 py-2 text-sm text-red-500 hover:bg-red-500/10 transition"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            <p className="mt-2 text-[11px] text-muted">Or paste a URL below:</p>
             <input
               type="url"
               placeholder="https://example.com/logo.png"
               value={companyForm.logo_url}
               onChange={(e) => setCompanyForm({ ...companyForm, logo_url: e.target.value })}
-              className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600 font-mono text-xs"
+              className="mt-1.5 w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600 font-mono text-xs"
             />
-            {companyForm.logo_url && (
-              <div className="mt-2 flex items-center gap-3 rounded-lg border border-border-color bg-surface-elevated/40 p-2">
-                <img
-                  src={companyForm.logo_url}
-                  alt="Logo Preview"
-                  className="h-10 w-10 object-contain rounded border border-border-color bg-white"
-                  onError={(e) => ((e.target as HTMLElement).style.display = "none")}
-                />
-                <span className="text-[11px] text-muted">Preview: will appear on invoices, contracts, and login portal</span>
-              </div>
-            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

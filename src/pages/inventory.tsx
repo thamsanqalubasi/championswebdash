@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { fetchInventoryData, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
 import type { InventoryItemRow } from "@/lib/types";
 
 import { 
@@ -26,9 +27,7 @@ import {
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "NAD", maximumFractionDigits: 0 }).format(amount);
-}
+// formatCurrency is provided by useCurrency() hook inside the component
 
 const emptyForm = { name: "", category: "general", quantity: 0, unit: "pcs", min_stock_level: 0, unit_cost: 0, supplier: "", location: "" };
 
@@ -51,6 +50,7 @@ function StatCard({ label, value, detail, icon: Icon, colorClass = "text-foregro
 
 export default function InventoryPage() {
   const { currentCompany } = useAuth();
+  const { format: formatCurrency } = useCurrency();
   const [items, setItems] = useState<InventoryItemRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -380,3 +380,5 @@ export default function InventoryPage() {
     </ModulePage>
   );
 }
+
+

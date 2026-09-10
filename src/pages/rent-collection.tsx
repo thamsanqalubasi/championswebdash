@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState, Fragment } from "react";
+﻿import { useEffect, useMemo, useState, Fragment } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
 import { supabase } from "@/lib/supabase";
 import { isValidUuid } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
 import { fetchCompanyInfo, fetchAdminInfo, downloadHtmlDocument, downloadPdfDocument, downloadPdfFromUrl, uploadPdfFromHtml, createPdfAttachmentFromUrl } from "@/lib/storage";
 import { DocumentShareModal } from "@/components/document-share-modal";
 import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
@@ -109,6 +110,7 @@ function StatCard({ label, value, detail, icon: Icon, colorClass = "text-foregro
 
 export default function RentCollectionPage() {
   const { user, currentCompany } = useAuth();
+  const { format: formatCurrency } = useCurrency();
   const [tenants, setTenants] = useState<RentTenantRow[]>([]);
   const [paymentsByTenant, setPaymentsByTenant] = useState<Record<string, TenantPaymentHistoryRow[]>>({});
   const [invoiceById, setInvoiceById] = useState<Record<string, InvoiceLite>>({});
@@ -732,3 +734,5 @@ export default function RentCollectionPage() {
     </ModulePage>
   );
 }
+
+

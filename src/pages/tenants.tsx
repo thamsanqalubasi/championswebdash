@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { fetchTenantsData, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
 import { fetchCompanyInfo, fetchAdminInfo, uploadPdfFromHtml, createPdfAttachmentFromUrl, downloadHtmlDocument, downloadPdfDocument, downloadPdfFromUrl } from "@/lib/storage";
 import { DocumentShareModal } from "@/components/document-share-modal";
 import { buildProfessionalInvoiceHtml, buildProfessionalContractHtml } from "@/lib/document-templates";
@@ -142,6 +143,7 @@ async function buildInvoiceHtmlProfessional(
 
 export default function TenantsPage() {
   const { user, currentCompany } = useAuth();
+  const { format: formatCurrency } = useCurrency();
 
   const [tenants, setTenants] = useState<TenantRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1475,3 +1477,4 @@ export default function TenantsPage() {
     </ModulePage>
   );
 }
+

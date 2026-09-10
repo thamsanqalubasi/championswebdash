@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
@@ -6,6 +6,7 @@ import { Modal, ConfirmDialog } from "@/components/modal";
 import { supabase } from "@/lib/supabase";
 import { verifyAdminPin, isValidUuid } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
 import { fetchAdminInfo } from "@/lib/storage";
 import { billStatusMeta, frequencyLabel, type BillFrequency, type BillRow, type BillStatus } from "@/lib/bills";
 
@@ -53,9 +54,7 @@ const emptyForm: BillForm = {
   adminPin: "",
 };
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "NAD", maximumFractionDigits: 0 }).format(amount);
-}
+// formatCurrency is provided by useCurrency() hook inside the component
 
 function statusToneClass(tone: "paid" | "overdue" | "upcoming") {
   if (tone === "paid") return "text-green-600";
@@ -87,6 +86,7 @@ function isFrequencyColumnMissing(error: unknown) {
 
 export default function BillsPage() {
   const { user, currentCompany } = useAuth();
+  const { format: formatCurrency } = useCurrency();
   const [searchParams, setSearchParams] = useSearchParams();
   const [bills, setBills] = useState<BillRow[]>([]);
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
@@ -589,3 +589,5 @@ export default function BillsPage() {
     </ModulePage>
   );
 }
+
+

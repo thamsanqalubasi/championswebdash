@@ -1,8 +1,7 @@
-﻿import { Outlet, Link, useNavigate } from "react-router-dom";
-import { Home, LogIn, User, Building2 } from "lucide-react";
+﻿import { Outlet, Link } from "react-router-dom";
+import { Home, LogIn, User, Building2, Briefcase } from "lucide-react";
 
 export default function PortalLayout() {
-  const navigate = useNavigate();
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col">
       <nav className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 backdrop-blur-sm shadow-sm">
@@ -12,17 +11,20 @@ export default function PortalLayout() {
               <Building2 size={22} />
               <span>Property Portal</span>
             </Link>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
               <Link to="/portal" className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-blue-700 transition">
-                <Home size={15}/> Listings
+                <Home size={15}/> <span className="hidden sm:inline">Listings</span>
+              </Link>
+              <Link to="/portal/agent" className="flex items-center gap-1.5 text-sm font-medium text-amber-600 hover:text-amber-700 transition border border-amber-200 rounded-lg px-3 py-1.5 bg-amber-50 hover:bg-amber-100">
+                <Briefcase size={15}/> <span>Agents</span>
               </Link>
               <Link to="/portal/dashboard" className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-blue-700 transition">
-                <User size={15}/> My Account
+                <User size={15}/> <span className="hidden sm:inline">My Account</span>
               </Link>
-              <Link to="/portal/login" className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition">
+              <Link to="/portal/login" className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 transition">
                 <LogIn size={15}/> Sign In
               </Link>
-              <Link to="/dashboard" className="text-xs text-gray-400 hover:text-gray-600 transition">Admin →</Link>
+              <Link to="/dashboard" className="hidden sm:block text-xs text-gray-400 hover:text-gray-600 transition border-l border-gray-200 pl-4">Admin →</Link>
             </div>
           </div>
         </div>

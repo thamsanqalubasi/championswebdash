@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
@@ -12,10 +12,10 @@ import type { PropertyRow } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import { Plus, Pencil, Trash, ChevronRight, Building2, BedDouble, X, Layers, Image as ImageIcon, Loader2, Eye, Globe, EyeOff, MapPin, DollarSign } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
+import { useCurrency } from "@/lib/currency";
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(amount);
-}
+
+
 
 const HOSPITALITY_TYPES = ["hotel", "motel", "lodge", "guest_house", "commercial"];
 const RENTAL_TYPES = ["house", "apartment", "storage"];
@@ -26,6 +26,7 @@ const emptyForm = { name: "", type: "lodge", address: "", city: "", country: "",
 export default function PropertiesPage() {
   const navigate = useNavigate();
   const { currentCompany } = useAuth();
+  const { format: formatCurrency } = useCurrency();
   const [properties, setProperties] = useState<PropertyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { fetchInvoicesData, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
 import { fetchCompanyInfo, fetchAdminInfo, downloadPdfDocument, downloadPdfFromUrl } from "@/lib/storage";
 import { buildProfessionalInvoiceHtml, buildUnifiedInvoiceHtml } from "@/lib/document-templates";
 import type { InvoiceRow } from "@/lib/types";
@@ -82,6 +83,7 @@ async function openUnifiedInvoiceDocument(
 
 export default function InvoicesPage() {
   const { user, currentCompany } = useAuth();
+  const { format: formatCurrency } = useCurrency();
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -885,3 +887,5 @@ export default function InvoicesPage() {
     </ModulePage>
   );
 }
+
+

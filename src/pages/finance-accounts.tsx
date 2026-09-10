@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { ErrorState, LoadingState } from "@/components/data-state";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
 import { fetchAdminInfo, fetchCompanyInfo, downloadPdfDocument } from "@/lib/storage";
 import { DocumentShareModal } from "@/components/document-share-modal";
 import { Download, Mail, Eye } from "lucide-react";
@@ -48,9 +49,7 @@ const presetMonthOffsets: Record<TimePreset, number> = {
   last_60: 59,
 };
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "NAD", maximumFractionDigits: 0 }).format(amount);
-}
+// formatCurrency is provided by useCurrency() hook inside the component
 
 function firstDayOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
@@ -337,6 +336,7 @@ async function fetchMaintenanceRows(startDate: string, endDate: string): Promise
 
 export default function FinanceAccountsPage() {
   const { user, currentCompany } = useAuth();
+  const { format: formatCurrency } = useCurrency();
   const today = new Date();
 
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
@@ -921,3 +921,5 @@ export default function FinanceAccountsPage() {
     </ModulePage>
   );
 }
+
+
