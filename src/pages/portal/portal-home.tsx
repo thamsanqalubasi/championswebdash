@@ -1,7 +1,7 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import { MapPin, BedDouble, Home, Search, Star, ChevronLeft, ChevronRight } from "lucide-react";
+import { MapPin, BedDouble, Home, Search, Star, ChevronLeft, ChevronRight, Briefcase } from "lucide-react";
 
 type Listing = {
   id: string; name: string; type: string; address: string; city: string; country: string;
@@ -70,14 +70,19 @@ export default function PortalHomePage() {
       <div className="bg-gradient-to-br from-blue-700 via-blue-600 to-purple-700 py-20 px-4 text-center text-white">
         <h1 className="text-4xl sm:text-5xl font-bold mb-4 tracking-tight">Find Your Perfect Stay or Home</h1>
         <p className="text-lg text-blue-100 mb-8 max-w-2xl mx-auto">Browse available rooms, lodges, and rental properties. Book instantly or send an enquiry.</p>
-        <div className="mx-auto max-w-2xl flex gap-3 bg-white rounded-2xl p-2 shadow-2xl">
+        <div className="mx-auto max-w-2xl flex gap-3 bg-white rounded-2xl p-2 shadow-2xl mb-6">
           <div className="flex items-center gap-2 flex-1 px-3"><Search size={18} className="text-gray-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search city, country or property name..." className="flex-1 outline-none text-gray-800 text-sm"/></div>
           <select value={filter} onChange={e=>setFilter(e.target.value)} className="rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 outline-none focus:border-blue-500">
             <option value="all">All Types</option>
-            <option value="hospitality">🏨 Hotels & Lodges</option>
+            <option value="hospitality">🏨 Hotels &amp; Lodges</option>
             <option value="rental">🏠 Rental Homes</option>
           </select>
         </div>
+        {/* Agent portal shortcut */}
+        <Link to="/portal/agent" className="inline-flex items-center gap-2 rounded-2xl border-2 border-amber-400 bg-amber-500/20 px-6 py-3 text-sm font-bold text-white hover:bg-amber-500/40 transition">
+          <Briefcase size={18}/>
+          Are you an agent? View room types &amp; availability →
+        </Link>
       </div>
 
       <div className="mx-auto max-w-6xl px-4 py-12">
@@ -130,6 +135,27 @@ export default function PortalHomePage() {
               ))}
             </div>
           </section>
+        )}
+
+        {/* Agent Portal CTA Banner */}
+        {!loading && (
+          <div className="mt-16 rounded-3xl overflow-hidden bg-gradient-to-r from-slate-800 to-purple-900 text-white">
+            <div className="px-8 py-10 flex flex-col sm:flex-row items-center gap-6 justify-between">
+              <div className="flex items-center gap-5">
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-amber-500 shadow-lg">
+                  <Briefcase size={28}/>
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold mb-1">Are you a property agent?</h3>
+                  <p className="text-slate-300 text-sm max-w-md">Access the full agent portal to view all available room types, check real-time date and time availability, and submit booking requests on behalf of your clients.</p>
+                </div>
+              </div>
+              <Link to="/portal/agent" className="shrink-0 flex items-center gap-2 rounded-2xl bg-amber-500 px-7 py-3.5 text-sm font-bold text-white hover:bg-amber-400 transition shadow-lg whitespace-nowrap">
+                <Briefcase size={17}/>
+                Open Agent Portal →
+              </Link>
+            </div>
+          </div>
         )}
       </div>
     </div>
