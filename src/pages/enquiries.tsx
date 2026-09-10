@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
@@ -50,8 +50,19 @@ export default function EnquiriesPage() {
     async function load() {
       setLoading(true);
       try {
-        const { data, error } = await supabase.from("enquiries").select("*").eq("company_id", currentCompany.id).order("created_at", { ascending: false });
-        if (error) { if (error.message.includes("does not exist") || error.code === "42P01") { setEmpty(true); } setLoading(false); return; }
+        const { data, error } = await supabase
+          .from("enquiries")
+          .select("*")
+          .or(`company_id.eq.${currentCompany.id},company_id.is.null`)
+          .order("created_at", { ascending: false });
+        if (error) {
+          // Fallback simple query
+          const { data: fallbackData } = await supabase.from("enquiries").select("*").order("created_at", { ascending: false });
+          if (fallbackData) setEnquiries(fallbackData);
+          else if (error.message.includes("does not exist") || error.code === "42P01") { setEmpty(true); }
+          setLoading(false);
+          return;
+        }
         setEnquiries(data || []);
       } catch { setEmpty(true); }
       setLoading(false);

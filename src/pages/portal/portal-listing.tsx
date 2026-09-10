@@ -103,18 +103,40 @@ export default function PortalListingPage() {
     if (!form.name || !form.email) { alert("Please enter your name and email."); return; }
     setSubmitting(true);
     try {
+      const targetCompanyId = data?.company_id || data?.companyId || null;
       const payload: any = {
-        company_id: data?.company_id || null,
-        customer_name: form.name, customer_email: form.email, customer_phone: form.phone,
+        customer_name: form.name,
+        customer_email: form.email,
+        customer_phone: form.phone || "",
         type: isHosp ? "room_booking" : "rental_enquiry",
-        check_in_date: form.check_in || null, check_out_date: form.check_out || null,
-        guests: form.guests, message: form.message,
+        check_in_date: form.check_in || null,
+        check_out_date: form.check_out || null,
+        guests: form.guests,
+        message: form.message,
       };
-      if (listingType === "room_listing") payload.room_type_listing_id = propertyId;
-      else payload.property_id = propertyId;
-      await supabase.from("enquiries").insert(payload);
+
+      if (targetCompanyId) {
+        payload.company_id = targetCompanyId;
+      }
+      if (listingType === "room_listing") {
+        payload.room_type_listing_id = propertyId;
+        if (data?.property_id) payload.property_id = data.property_id;
+      } else {
+        payload.property_id = propertyId;
+      }
+
+      const { error: insertError } = await supabase.from("enquiries").insert(payload);
+      if (insertError) {
+        // Retry without room_type_listing_id in case column is not yet in table
+        const fallbackPayload = { ...payload };
+        delete fallbackPayload.room_type_listing_id;
+        const { error: retryError } = await supabase.from("enquiries").insert(fallbackPayload);
+        if (retryError) throw retryError;
+      }
       setEnquirySent(true);
-    } catch { alert("Failed to send enquiry. Please try again."); }
+    } catch (err: any) {
+      alert(err?.message || "Failed to send enquiry. Please try again.");
+    }
     setSubmitting(false);
   };
 
