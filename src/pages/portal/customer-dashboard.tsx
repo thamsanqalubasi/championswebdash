@@ -49,50 +49,53 @@ export default function CustomerDashboardPage() {
   const userName = session?.user?.user_metadata?.full_name || session?.user?.email || "Customer";
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10">
-      <div className="flex items-center justify-between mb-8">
+    <div className="mx-auto max-w-3xl px-4 py-6 sm:py-10 text-slate-900 dark:text-slate-100">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div className="flex items-center gap-4">
-          <div className="h-14 w-14 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-bold text-xl">{userName.charAt(0).toUpperCase()}</div>
-          <div><h1 className="text-xl font-bold text-gray-900">Welcome back</h1><p className="text-gray-500 text-sm">{userName}</p></div>
+          <div className="h-14 w-14 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-bold text-xl shrink-0 shadow-xs">{userName.charAt(0).toUpperCase()}</div>
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white">Welcome back</h1>
+            <p className="text-gray-500 dark:text-slate-400 text-sm truncate">{userName}</p>
+          </div>
         </div>
-        <div className="flex gap-3">
-          <Link to="/" className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"><Home size={15}/> Listings</Link>
-          <button onClick={handleSignOut} className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"><LogOut size={15}/> Sign Out</button>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Link to="/" className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3.5 py-2 text-sm font-medium text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800 shadow-xs transition"><Home size={15}/> Listings</Link>
+          <button onClick={handleSignOut} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3.5 py-2 text-sm font-medium text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800 shadow-xs transition"><LogOut size={15}/> Sign Out</button>
         </div>
       </div>
 
-      <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2"><MessageSquare size={18} className="text-blue-600"/> My Enquiries & Bookings</h2>
+      <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2"><MessageSquare size={18} className="text-blue-600 dark:text-blue-400"/> My Enquiries & Bookings</h2>
 
-      {loading && <div className="text-center py-10 text-gray-400">Loading your enquiries...</div>}
+      {loading && <div className="text-center py-10 text-gray-400 dark:text-slate-500">Loading your enquiries...</div>}
       {!loading && enquiries.length === 0 && (
-        <div className="text-center py-16 text-gray-400">
+        <div className="text-center py-16 text-gray-400 dark:text-slate-500">
           <MessageSquare size={48} className="mx-auto mb-3 opacity-30"/>
-          <p className="font-medium">No enquiries yet.</p>
+          <p className="font-medium text-gray-700 dark:text-slate-300">No enquiries yet.</p>
           <p className="text-sm mt-1">Browse listings and send an enquiry to get started.</p>
-          <Link to="/" className="mt-4 inline-block rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition">Browse Listings</Link>
+          <Link to="/" className="mt-4 inline-block rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 shadow-xs transition">Browse Listings</Link>
         </div>
       )}
 
       <div className="space-y-4">
         {enquiries.map(e => (
-          <div key={e.id} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div key={e.id} className="rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-xs">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
-                <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_COLORS[e.status] || "bg-gray-100 text-gray-600"}`}>{e.status.replace(/_/g," ")}</span>
-                <span className="ml-2 text-xs text-gray-400">{e.type.replace(/_/g," ")}</span>
+                <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_COLORS[e.status] || "bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300"}`}>{e.status.replace(/_/g," ")}</span>
+                <span className="ml-2 text-xs text-gray-400 dark:text-slate-500 capitalize">{e.type.replace(/_/g," ")}</span>
               </div>
-              <span className="text-xs text-gray-400"><Clock size={11} className="inline mr-1"/>{new Date(e.created_at).toLocaleDateString()}</span>
+              <span className="text-xs text-gray-400 dark:text-slate-500"><Clock size={11} className="inline mr-1"/>{new Date(e.created_at).toLocaleDateString()}</span>
             </div>
-            {e.message && <p className="text-sm text-gray-700 mb-3 bg-gray-50 rounded-xl p-3">{e.message}</p>}
+            {e.message && <p className="text-sm text-gray-700 dark:text-slate-300 mb-3 bg-gray-50 dark:bg-slate-800/80 rounded-xl p-3 leading-relaxed">{e.message}</p>}
             {(e.check_in_date || e.check_out_date) && (
-              <p className="text-xs text-gray-500 mb-3">Check-in: {e.check_in_date || "—"} → Check-out: {e.check_out_date || "—"}</p>
+              <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">Check-in: {e.check_in_date || "—"} → Check-out: {e.check_out_date || "—"}</p>
             )}
             {e.status === "open" || e.status === "in_progress" ? (
-              <button onClick={() => handleResolve(e.id)} className="flex items-center gap-2 rounded-xl bg-green-50 border border-green-200 px-4 py-2 text-sm font-semibold text-green-700 hover:bg-green-100 transition">
+              <button onClick={() => handleResolve(e.id)} className="flex items-center gap-2 rounded-xl bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800/40 px-4 py-2 text-sm font-semibold text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/50 transition">
                 <CheckCircle size={15}/> Problem Resolved
               </button>
             ) : e.status === "resolved" && (
-              <div className="flex items-center gap-2 text-sm text-green-600"><CheckCircle size={15}/> Resolved — Thank you!</div>
+              <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 font-medium"><CheckCircle size={15}/> Resolved — Thank you!</div>
             )}
           </div>
         ))}

@@ -367,40 +367,62 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* ── Right Panel: Header + Scrollable Main ── */}
       <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
         {/* Top Header — fixed, does NOT scroll */}
-        <header className="flex-shrink-0 z-20 border-b border-border-color bg-surface px-4 py-3 lg:px-6">
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Mobile menu button */}
-            <button type="button" onClick={() => setMobileMenuOpen(true)} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted lg:hidden">
-              <Menu size={16}/>
-            </button>
-
-            <div className="w-full min-w-0 lg:flex-1">
-              <input id="global-search" type="search" placeholder="Search rooms, bookings, guests, invoices, staff..."
-                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-foreground"/>
+        <header className="flex-shrink-0 z-20 border-b border-border-color bg-surface px-3 py-2.5 sm:px-4 sm:py-3 lg:px-6">
+          <div className="flex items-center justify-between gap-2 sm:gap-3 flex-wrap lg:flex-nowrap">
+            {/* Mobile menu button & Brand */}
+            <div className="flex items-center gap-2 lg:hidden min-w-0">
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(true)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-color bg-surface-elevated text-muted hover:text-foreground transition"
+                aria-label="Open mobile menu"
+              >
+                <Menu size={18}/>
+              </button>
+              <span className="text-xs font-bold truncate max-w-[130px] sm:max-w-[200px] text-foreground">{currentCompany.name}</span>
             </div>
 
-            <div className="flex w-full items-center gap-2 sm:w-auto">
-              <button type="button" onClick={() => setCheckinOpen(true)}
-                className="flex items-center gap-1.5 rounded-md border border-blue-600 bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition">
-                <KeyRound size={16}/><span>Check In</span>
+            {/* Action buttons on mobile/tablet/desktop */}
+            <div className="flex items-center gap-1.5 sm:gap-2 ml-auto lg:order-last">
+              <button
+                type="button"
+                onClick={() => setCheckinOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-blue-700 transition"
+              >
+                <KeyRound size={15}/><span>Check In</span>
               </button>
-              <Link to="/rent-collection"
-                className="flex items-center gap-1.5 rounded-md border border-emerald-600 bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 transition">
-                <DollarSign size={16}/><span>Collect Rent</span>
+              <Link
+                to="/rent-collection"
+                className="hidden sm:flex items-center gap-1.5 rounded-lg border border-emerald-600 bg-emerald-600 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-emerald-700 transition"
+              >
+                <DollarSign size={15}/><span>Collect Rent</span>
               </Link>
-              <ThemeToggle/>
-              <div className="max-w-[180px] flex-1 truncate px-1 py-2 text-xs font-medium text-muted sm:flex-none" title={userEmail}>{userEmail}</div>
-              <button type="button" onClick={onSignOut}
-                className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-xs font-medium text-muted hover:text-foreground">
+              <ThemeToggle variant="compact"/>
+              <div className="hidden xl:block max-w-[160px] truncate px-1 py-1 text-xs font-medium text-muted" title={userEmail}>{userEmail}</div>
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="rounded-lg border border-border-color bg-surface-elevated px-2.5 py-1.5 sm:py-2 text-xs font-medium text-muted hover:text-foreground transition"
+              >
                 Sign out
               </button>
+            </div>
+
+            {/* Global Search - wraps neatly below on mobile phones */}
+            <div className="order-last lg:order-none w-full lg:w-auto lg:flex-1 min-w-0 mt-1 lg:mt-0">
+              <input
+                id="global-search"
+                type="search"
+                placeholder="Search rooms, bookings, guests, invoices, staff..."
+                className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-1.5 sm:py-2 text-xs sm:text-sm outline-none focus:border-foreground transition"
+              />
             </div>
           </div>
         </header>
 
         {/* Main content — scrolls independently, content centred */}
         <main id="main-content" className="flex-1 overflow-y-auto bg-background">
-          <div className="mx-auto w-full max-w-7xl px-4 py-6 lg:px-6">
+          <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 lg:px-6">
             {children}
           </div>
         </main>
@@ -412,7 +434,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <button type="button" aria-label="Close menu" onClick={() => setMobileMenuOpen(false)} className="absolute inset-0 bg-black/50 backdrop-blur-xs"/>
-          <div className="absolute left-0 top-0 flex h-full w-[86%] max-w-sm flex-col border-r border-border-color bg-surface">
+          <div className="absolute left-0 top-0 flex h-full w-[86%] max-w-sm flex-col border-r border-border-color bg-surface shadow-2xl">
             <div className="flex items-center justify-between border-b border-border-color px-4 py-3">
               <div className="flex items-center gap-2.5 min-w-0">
                 {currentCompany.logoUrl ? (
@@ -431,6 +453,25 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
               <button type="button" onClick={() => setMobileMenuOpen(false)} className="rounded-md border border-border-color px-2.5 py-1 text-xs text-muted">Close</button>
             </div>
+
+            {/* Quick Actions in Mobile Drawer */}
+            <div className="p-3 border-b border-border-color/50 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => { setMobileMenuOpen(false); setCheckinOpen(true); }}
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2 text-xs font-bold text-white shadow-xs"
+              >
+                <KeyRound size={14} /> Check In
+              </button>
+              <Link
+                to="/rent-collection"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2 text-xs font-bold text-white shadow-xs"
+              >
+                <DollarSign size={14} /> Collect Rent
+              </Link>
+            </div>
+
             <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5" aria-label="Mobile navigation">
               {filteredNavSections.map((section) => (
                 <div key={section.title}>
@@ -443,6 +484,16 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
               ))}
             </nav>
+
+            <div className="p-3 border-t border-border-color space-y-2">
+              <ThemeToggle variant="menu-item" />
+              <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted">
+                <span className="truncate max-w-[180px]" title={userEmail}>{userEmail}</span>
+                <button type="button" onClick={onSignOut} className="text-red-500 font-semibold hover:underline">
+                  Sign Out
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
