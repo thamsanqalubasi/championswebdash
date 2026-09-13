@@ -90,7 +90,6 @@ export function AppRouter() {
         <Route path="listing/:propertyId" element={<PortalListingPage />} />
         <Route path="login" element={<PortalLoginPage />} />
         <Route path="dashboard" element={<CustomerDashboardPage />} />
-        <Route path="agent" element={<AgentPortalPage />} />
       </Route>
 
       <Route element={<ProtectedLayout />}>
@@ -125,6 +124,7 @@ export function AppRouter() {
         <Route path="/audit-trail" element={<AuditTrailPage />} />
         <Route path="/enquiries" element={<EnquiriesPage />} />
         <Route path="/room-showcases" element={<RoomShowcasesPage />} />
+        <Route path="/agent-mode" element={<AgentPortalPage />} />
       </Route>
 
       <Route path="/" element={<Navigate to="/portal" replace />} />

@@ -80,7 +80,7 @@ const allNavSections: NavSection[] = [
       { label: "Showcase", href: "/room-showcases", icon: BedDouble, departments: ["admin","manager","front_desk"] },
       { label: "Enquiries & Tickets", href: "/enquiries", icon: Inbox, departments: ["admin","manager","front_desk","accountant"] },
       { label: "Public Portal", href: "/portal", icon: Globe, departments: ["admin","manager","front_desk"] },
-      { label: "Agent Portal", href: "/portal/agent", icon: Briefcase, departments: ["admin","manager","front_desk"] },
+      { label: "Agent Mode", href: "/agent-mode", icon: Briefcase, departments: ["admin","manager","front_desk"] },
     ],
   },
   {
