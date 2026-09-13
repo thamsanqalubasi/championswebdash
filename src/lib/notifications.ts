@@ -19,9 +19,15 @@ export function wrapDocumentInEmailHtml(opts: {
   documentHtml: string;
   companyName?: string;
   companyEmail?: string;
+  companyLogo?: string;
 }) {
-  const { recipientName, subject, bodyText, documentHtml, companyName, companyEmail } = opts;
-  const company = companyName || "Paimbabook";
+  const { recipientName, subject, bodyText, documentHtml, companyName, companyEmail, companyLogo } = opts;
+  const company = (!companyName || companyName.toLowerCase().includes("champions"))
+    ? "Paimbabook Hospitality & Properties"
+    : companyName.trim();
+  const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
+    ? "https://paimbabook.com/paimbabook-logo.svg"
+    : companyLogo;
   const year = new Date().getFullYear();
 
   return `<!DOCTYPE html>
@@ -34,6 +40,7 @@ export function wrapDocumentInEmailHtml(opts: {
   body { margin: 0; padding: 0; background: #f4f6f8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1a1a2e; }
   .email-container { max-width: 640px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
   .email-header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 32px 28px; text-align: center; }
+  .email-header img { max-height: 48px; max-width: 220px; object-fit: contain; margin-bottom: 12px; display: inline-block; }
   .email-header h1 { color: #ffffff; font-size: 22px; margin: 0 0 4px; letter-spacing: 0.5px; }
   .email-header p { color: rgba(255,255,255,0.7); font-size: 13px; margin: 0; }
   .email-body { padding: 28px; }
@@ -54,8 +61,11 @@ export function wrapDocumentInEmailHtml(opts: {
 <div style="padding: 24px 12px;">
   <div class="email-container">
     <div class="email-header">
+      <div style="text-align: center; margin-bottom: 10px;">
+        <img src="${logo}" alt="${company}" />
+      </div>
       <h1>${company}</h1>
-      <p>Property Management</p>
+      <p>Hospitality &amp; Property Management</p>
     </div>
     <div class="email-body">
       <p class="greeting">Dear ${recipientName},</p>
@@ -93,13 +103,19 @@ export function wrapSignupWelcomeEmailHtml(opts: {
 }): string {
   const { recipientName, companyName, companySlug, adminEmail, portalLoginUrl, currency, country, companyLogo } = opts;
   const year = new Date().getFullYear();
+  const safeCompany = (!companyName || companyName.toLowerCase().includes("champions"))
+    ? "Paimbabook Hospitality & Properties"
+    : companyName.trim();
+  const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
+    ? "https://paimbabook.com/paimbabook-logo.svg"
+    : companyLogo;
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Welcome to ${companyName} - Organization Workspace Provisioned</title>
+<title>Welcome to ${safeCompany} - Organization Workspace Provisioned</title>
 <style>
   body { margin: 0; padding: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1e293b; }
   .wrapper { padding: 32px 16px; }
@@ -128,20 +144,22 @@ export function wrapSignupWelcomeEmailHtml(opts: {
 <div class="wrapper">
   <div class="card">
     <div class="header">
-      ${companyLogo ? `<img src="${companyLogo}" alt="${companyName}" style="max-height: 48px; margin-bottom: 12px;" />` : ""}
-      <h1>${companyName}</h1>
+      <div style="text-align: center; margin-bottom: 12px;">
+        <img src="${logo}" alt="${safeCompany}" style="max-height: 48px; max-width: 220px; object-fit: contain; display: inline-block;" />
+      </div>
+      <h1>${safeCompany}</h1>
       <p>Dedicated Enterprise Portal Provisioned</p>
     </div>
     <div class="content">
       <p class="greeting">Welcome ${recipientName},</p>
       <p class="body-text">
-        Congratulations! Your private organization tenant for <strong>${companyName}</strong> has been successfully provisioned and configured on the property management platform.
+        Congratulations! Your private organization tenant for <strong>${safeCompany}</strong> has been successfully provisioned and configured on the property management platform.
       </p>
 
       <div class="highlight-box">
         <div class="highlight-row">
           <span class="highlight-label">Organization:</span>
-          <span class="highlight-val">${companyName}</span>
+          <span class="highlight-val">${safeCompany}</span>
         </div>
         <div class="highlight-row">
           <span class="highlight-label">Dedicated Portal URL:</span>
@@ -181,7 +199,7 @@ export function wrapSignupWelcomeEmailHtml(opts: {
       </div>
     </div>
     <div class="footer">
-      &copy; ${year} ${companyName}. Multi-tenant Property Management SaaS.
+      &copy; ${year} ${safeCompany}. Multi-tenant Property Management SaaS.
     </div>
   </div>
 </div>
@@ -198,6 +216,12 @@ export function wrapPasswordChangeConfirmationEmailHtml(opts: {
   changeType?: "updated" | "initial_setup" | "reset";
 }): string {
   const { recipientName, userEmail, companyName, companyLogo, portalLoginUrl, changeType = "updated" } = opts;
+  const safeCompany = (!companyName || companyName.toLowerCase().includes("champions"))
+    ? "Paimbabook Hospitality & Properties"
+    : companyName.trim();
+  const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
+    ? "https://paimbabook.com/paimbabook-logo.svg"
+    : companyLogo;
   const year = new Date().getFullYear();
   const timestamp = new Date().toUTCString();
 
@@ -220,7 +244,7 @@ export function wrapPasswordChangeConfirmationEmailHtml(opts: {
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>${title} - ${companyName}</title>
+<title>${title} - ${safeCompany}</title>
 <style>
   body { margin: 0; padding: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1e293b; }
   .wrapper { padding: 32px 16px; }
@@ -247,14 +271,16 @@ export function wrapPasswordChangeConfirmationEmailHtml(opts: {
 <div class="wrapper">
   <div class="card">
     <div class="header">
-      ${companyLogo ? `<img src="${companyLogo}" alt="${companyName}" style="max-height: 42px; margin-bottom: 10px;" />` : ""}
+      <div style="text-align: center; margin-bottom: 12px;">
+        <img src="${logo}" alt="${safeCompany}" style="max-height: 48px; max-width: 220px; object-fit: contain; display: inline-block;" />
+      </div>
       <h1>${title}</h1>
       <p>${description}</p>
     </div>
     <div class="content">
       <p class="greeting">Hello ${recipientName},</p>
       <p class="body-text">
-        This is an official confirmation that the password for your account on <strong>${companyName}</strong> was successfully updated.
+        This is an official confirmation that the password for your account on <strong>${safeCompany}</strong> was successfully updated.
       </p>
 
       <div class="info-box">
@@ -264,7 +290,7 @@ export function wrapPasswordChangeConfirmationEmailHtml(opts: {
         </div>
         <div class="info-row">
           <span class="info-label">Organization:</span>
-          <span class="info-val">${companyName}</span>
+          <span class="info-val">${safeCompany}</span>
         </div>
         <div class="info-row">
           <span class="info-label">Timestamp:</span>
@@ -287,7 +313,7 @@ export function wrapPasswordChangeConfirmationEmailHtml(opts: {
       ` : ""}
     </div>
     <div class="footer">
-      &copy; ${year} ${companyName}. Account Security Notification.
+      &copy; ${year} ${safeCompany}. Account Security Notification.
     </div>
   </div>
 </div>
@@ -305,6 +331,12 @@ export function wrapStaffInvitationEmailHtml(opts: {
   invitedByName: string;
 }): string {
   const { recipientName, companyName, companyLogo, jobTitle, department, inviteUrl, invitedByName } = opts;
+  const safeCompany = (!companyName || companyName.toLowerCase().includes("champions"))
+    ? "Paimbabook Hospitality & Properties"
+    : companyName.trim();
+  const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
+    ? "https://paimbabook.com/paimbabook-logo.svg"
+    : companyLogo;
   const year = new Date().getFullYear();
 
   return `<!DOCTYPE html>
@@ -312,7 +344,7 @@ export function wrapStaffInvitationEmailHtml(opts: {
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Staff Account Invitation - ${companyName}</title>
+<title>Staff Account Invitation - ${safeCompany}</title>
 <style>
   body { margin: 0; padding: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1e293b; }
   .wrapper { padding: 32px 16px; }
@@ -341,19 +373,21 @@ export function wrapStaffInvitationEmailHtml(opts: {
 <div class="wrapper">
   <div class="card">
     <div class="header">
-      ${companyLogo ? `<img src="${companyLogo}" alt="${companyName}" class="logo" />` : ""}
-      <h1>${companyName}</h1>
-      <p>Staff Portal Access & Onboarding</p>
+      <div style="text-align: center; margin-bottom: 12px;">
+        <img src="${logo}" alt="${safeCompany}" style="max-height: 48px; max-width: 220px; object-fit: contain; display: inline-block;" />
+      </div>
+      <h1>${safeCompany}</h1>
+      <p>Staff Portal Access &amp; Onboarding</p>
     </div>
     <div class="content">
       <p class="greeting">Hello ${recipientName},</p>
       <p class="body-text">
-        You have been invited by <strong>${invitedByName}</strong> to join <strong>${companyName}</strong> on the property management platform.
+        You have been invited by <strong>${invitedByName}</strong> to join <strong>${safeCompany}</strong> on the property management platform.
       </p>
       <div class="highlight-box">
         <div class="highlight-row">
           <span class="highlight-label">Organization:</span>
-          <span class="highlight-val">${companyName}</span>
+          <span class="highlight-val">${safeCompany}</span>
         </div>
         <div class="highlight-row">
           <span class="highlight-label">Job Title:</span>
@@ -377,7 +411,7 @@ export function wrapStaffInvitationEmailHtml(opts: {
       </div>
     </div>
     <div class="footer">
-      &copy; ${year} ${companyName}. Powered by Enterprise Property Management SaaS.
+      &copy; ${year} ${safeCompany}. Powered by Enterprise Property Management SaaS.
     </div>
   </div>
 </div>
@@ -394,6 +428,12 @@ export function wrapStaffPasswordResetEmailHtml(opts: {
   requestedByRole: string;
 }): string {
   const { recipientName, companyName, companyLogo, resetUrl, requestedByName, requestedByRole } = opts;
+  const safeCompany = (!companyName || companyName.toLowerCase().includes("champions"))
+    ? "Paimbabook Hospitality & Properties"
+    : companyName.trim();
+  const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
+    ? "https://paimbabook.com/paimbabook-logo.svg"
+    : companyLogo;
   const year = new Date().getFullYear();
 
   return `<!DOCTYPE html>
@@ -401,7 +441,7 @@ export function wrapStaffPasswordResetEmailHtml(opts: {
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Password Reset - ${companyName}</title>
+<title>Password Reset - ${safeCompany}</title>
 <style>
   body { margin: 0; padding: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1e293b; }
   .wrapper { padding: 32px 16px; }
@@ -426,8 +466,10 @@ export function wrapStaffPasswordResetEmailHtml(opts: {
 <div class="wrapper">
   <div class="card">
     <div class="header">
-      ${companyLogo ? `<img src="${companyLogo}" alt="${companyName}" class="logo" />` : ""}
-      <h1>${companyName}</h1>
+      <div style="text-align: center; margin-bottom: 12px;">
+        <img src="${logo}" alt="${safeCompany}" style="max-height: 48px; max-width: 220px; object-fit: contain; display: inline-block;" />
+      </div>
+      <h1>${safeCompany}</h1>
       <p>Staff Account Security</p>
     </div>
     <div class="content">
@@ -448,7 +490,7 @@ export function wrapStaffPasswordResetEmailHtml(opts: {
       </div>
     </div>
     <div class="footer">
-      &copy; ${year} ${companyName}. Enterprise RBAC Security.
+      &copy; ${year} ${safeCompany}. Enterprise RBAC Security.
     </div>
   </div>
 </div>
@@ -460,8 +502,12 @@ export function wrapCustomerWelcomeEmailHtml(opts: {
   customerName: string;
   customerEmail: string;
   portalUrl: string;
+  companyLogo?: string;
 }): string {
-  const { customerName, customerEmail, portalUrl } = opts;
+  const { customerName, customerEmail, portalUrl, companyLogo } = opts;
+  const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
+    ? "https://paimbabook.com/paimbabook-logo.svg"
+    : companyLogo;
   const year = new Date().getFullYear();
 
   return `<!DOCTYPE html>
@@ -494,6 +540,9 @@ export function wrapCustomerWelcomeEmailHtml(opts: {
 <div class="wrapper">
   <div class="card">
     <div class="header">
+      <div style="text-align: center; margin-bottom: 12px;">
+        <img src="${logo}" alt="Paimbabook" style="max-height: 48px; max-width: 220px; object-fit: contain; display: inline-block;" />
+      </div>
       <h1>Paimbabook</h1>
       <p>Guest &amp; Tenant Customer Portal</p>
     </div>
@@ -632,6 +681,7 @@ export async function sendEmail(opts: {
   attachmentContentType?: string;
   companyName?: string;
   companyEmail?: string;
+  companyLogo?: string;
 }): Promise<{ sent: boolean; fallback: boolean }> {
   const emailHtml = wrapDocumentInEmailHtml(opts);
 

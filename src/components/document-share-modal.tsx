@@ -195,6 +195,8 @@ export function DocumentShareModal({
         bodyText: message,
         documentHtml: documentHtml || `<p>Please see the attached PDF document: ${documentTitle}</p>`,
         companyName: companyInfo.companyName,
+        companyLogo: companyInfo.logoUrl,
+        companyEmail: companyInfo.email,
       });
 
       const res = await sendEmailViaApi({

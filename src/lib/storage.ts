@@ -253,9 +253,42 @@ export function htmlToStorableString(html: string): string {
  * invoices, contracts, receipts, and reports dynamically render with that
  * company's unique name, logo, address, and payment instructions.
  */
+export const DEFAULT_PAIMBABOOK_LOGO = "https://paimbabook.com/paimbabook-logo.svg";
+
+function sanitizeCompanyInfo(info: {
+  companyName?: string | null;
+  logoUrl?: string | null;
+  address?: string | null;
+  taxRate?: number | null;
+  paymentInstructions?: string | null;
+  currency?: string | null;
+  email?: string | null;
+}): CompanyInfo {
+  const rawName = String(info.companyName ?? "").trim();
+  const companyName = (!rawName || rawName.toLowerCase().includes("champions"))
+    ? "Paimbabook Hospitality & Properties"
+    : rawName;
+
+  const rawLogo = String(info.logoUrl ?? "").trim();
+  const logoUrl = (!rawLogo || rawLogo.toLowerCase().includes("champions"))
+    ? DEFAULT_PAIMBABOOK_LOGO
+    : rawLogo;
+
+  return {
+    companyName,
+    logoUrl,
+    address: String(info.address ?? ""),
+    taxRate: Number(info.taxRate ?? 15),
+    paymentInstructions: String(info.paymentInstructions ?? ""),
+    currency: String(info.currency || "ZAR"),
+    email: info.email ? String(info.email) : undefined,
+  };
+}
+
 export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo> {
   let targetId = companyId;
 
+  // If no companyId passed, check active localStorage context
   if (!targetId && typeof localStorage !== "undefined") {
     try {
       const saved = localStorage.getItem("cc_selected_company");
@@ -272,19 +305,20 @@ export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo>
     try {
       const { data: comp, error: compErr } = await supabase
         .from("companies")
-        .select("name, logo_url, address, tax_rate, payment_instructions, currency")
+        .select("name, logo_url, address, tax_rate, payment_instructions, currency, email")
         .eq("id", targetId)
         .maybeSingle();
 
       if (!compErr && comp) {
-        return {
+        return sanitizeCompanyInfo({
           companyName: String(comp.name ?? "Paimbabook"),
           logoUrl: String(comp.logo_url ?? ""),
           address: String(comp.address ?? ""),
           taxRate: Number(comp.tax_rate ?? 15),
           paymentInstructions: String(comp.payment_instructions ?? ""),
           currency: String(comp.currency || "ZAR"),
-        };
+          email: comp.email ? String(comp.email) : undefined,
+        });
       }
     } catch {
       // ignore
@@ -297,14 +331,14 @@ export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo>
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed?.name) {
-            return {
+            return sanitizeCompanyInfo({
               companyName: String(parsed.name),
               logoUrl: String(parsed.logoUrl || ""),
               address: String(parsed.address || ""),
               taxRate: Number(parsed.taxRate || 15),
               paymentInstructions: String(parsed.paymentInstructions || ""),
               currency: String(parsed.currency || "ZAR"),
-            };
+            });
           }
         }
       } catch {
@@ -322,27 +356,27 @@ export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo>
       .maybeSingle();
 
     if (!error && data) {
-      return {
+      return sanitizeCompanyInfo({
         companyName: String(data.company_name ?? "Paimbabook"),
         logoUrl: String(data.logo_url ?? ""),
         address: String(data.address ?? ""),
         taxRate: Number(data.tax_rate ?? 15),
         paymentInstructions: String(data.payment_instructions ?? ""),
         currency: "ZAR",
-      };
+      });
     }
   } catch {
     // ignore
   }
 
-  return {
+  return sanitizeCompanyInfo({
     companyName: "Paimbabook Hospitality & Properties",
-    logoUrl: "",
+    logoUrl: DEFAULT_PAIMBABOOK_LOGO,
     address: "Johannesburg, South Africa",
     taxRate: 15,
     paymentInstructions: "Please refer to standard EFT instructions.",
     currency: "ZAR",
-  };
+  });
 }
 
 /**

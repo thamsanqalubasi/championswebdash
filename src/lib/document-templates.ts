@@ -48,6 +48,24 @@ function fmtDate(value: string) {
   return d.toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric" });
 }
 
+export const DEFAULT_PAIMBABOOK_LOGO = "https://paimbabook.com/paimbabook-logo.svg";
+
+export function resolveDocCompanyName(companyName?: string | null): string {
+  const trimmed = String(companyName ?? "").trim();
+  if (!trimmed || trimmed.toLowerCase().includes("champions")) {
+    return "Paimbabook Hospitality & Properties";
+  }
+  return trimmed;
+}
+
+export function resolveDocLogoUrl(logoUrl?: string | null): string {
+  const trimmed = String(logoUrl ?? "").trim();
+  if (!trimmed || trimmed.toLowerCase().includes("champions")) {
+    return DEFAULT_PAIMBABOOK_LOGO;
+  }
+  return trimmed;
+}
+
 /* ---------- types ---------- */
 
 export type CompanyInfo = {
@@ -57,6 +75,7 @@ export type CompanyInfo = {
   taxRate: number;
   paymentInstructions: string;
   currency?: string;
+  email?: string;
 };
 
 export type AdminInfo = {
@@ -169,9 +188,9 @@ export function buildProfessionalInvoiceHtml(
     : doc.status === "draft" ? "status-draft"
     : "status-pending";
 
-  const logoHtml = company.logoUrl
-    ? `<img src="${esc(company.logoUrl)}" alt="Company logo" class="company-logo" />`
-    : "";
+  const effectiveCompanyName = resolveDocCompanyName(company?.companyName);
+  const effectiveLogoUrl = resolveDocLogoUrl(company?.logoUrl);
+  const logoHtml = `<img src="${esc(effectiveLogoUrl)}" alt="${esc(effectiveCompanyName)} logo" class="company-logo" />`;
 
   const signatureHtml = admin.signatureUrl
     ? `<img src="${esc(admin.signatureUrl)}" alt="Admin signature" />`
@@ -200,8 +219,8 @@ export function buildProfessionalInvoiceHtml(
         <div class="header-left">
           ${logoHtml}
           <div>
-            <div class="company-name">${esc(company.companyName)}</div>
-            <div class="company-address">${esc(company.address)}</div>
+            <div class="company-name">${esc(effectiveCompanyName)}</div>
+            <div class="company-address">${esc(company?.address || "South Africa")}</div>
           </div>
         </div>
       </div>
@@ -308,9 +327,9 @@ export function buildProfessionalContractHtml(
     : doc.status === "terminated" ? "status-overdue"
     : "status-pending";
 
-  const logoHtml = company.logoUrl
-    ? `<img src="${esc(company.logoUrl)}" alt="Company logo" class="company-logo" />`
-    : "";
+  const effectiveCompanyName = resolveDocCompanyName(company?.companyName);
+  const effectiveLogoUrl = resolveDocLogoUrl(company?.logoUrl);
+  const logoHtml = `<img src="${esc(effectiveLogoUrl)}" alt="${esc(effectiveCompanyName)} logo" class="company-logo" />`;
 
   const signatureHtml = admin.signatureUrl
     ? `<img src="${esc(admin.signatureUrl)}" alt="Admin signature" />`
@@ -396,8 +415,8 @@ export function buildProfessionalContractHtml(
         <div class="header-left">
           ${logoHtml}
           <div>
-            <div class="company-name">${esc(company.companyName)}</div>
-            <div class="company-address">${esc(company.address)}</div>
+            <div class="company-name">${esc(effectiveCompanyName)}</div>
+            <div class="company-address">${esc(company?.address || "")}</div>
           </div>
         </div>
       </div>
@@ -497,9 +516,9 @@ export function buildUnifiedInvoiceHtml(
   const docCurrency = company.currency || "ZAR";
   const total = doc.transactions.reduce((sum, t) => sum + t.amountPaid, 0);
 
-  const logoHtml = company.logoUrl
-    ? `<img src="${esc(company.logoUrl)}" alt="Company logo" class="company-logo" />`
-    : "";
+  const effectiveCompanyName = resolveDocCompanyName(company?.companyName);
+  const effectiveLogoUrl = resolveDocLogoUrl(company?.logoUrl);
+  const logoHtml = `<img src="${esc(effectiveLogoUrl)}" alt="${esc(effectiveCompanyName)} logo" class="company-logo" />`;
 
   const signatureHtml = admin.signatureUrl
     ? `<img src="${esc(admin.signatureUrl)}" alt="Admin signature" />`
@@ -530,8 +549,8 @@ export function buildUnifiedInvoiceHtml(
         <div class="header-left">
           ${logoHtml}
           <div>
-            <div class="company-name">${esc(company.companyName)}</div>
-            <div class="company-address">${esc(company.address)}</div>
+            <div class="company-name">${esc(effectiveCompanyName)}</div>
+            <div class="company-address">${esc(company?.address || "South Africa")}</div>
           </div>
         </div>
       </div>
@@ -642,9 +661,9 @@ export function buildBalanceSheetHtml(
   admin: AdminInfo,
 ): string {
   const docCurrency = company.currency || "ZAR";
-  const logoHtml = company.logoUrl
-    ? `<img src="${esc(company.logoUrl)}" alt="Company logo" class="company-logo" />`
-    : "";
+  const effectiveCompanyName = resolveDocCompanyName(company?.companyName);
+  const effectiveLogoUrl = resolveDocLogoUrl(company?.logoUrl);
+  const logoHtml = `<img src="${esc(effectiveLogoUrl)}" alt="${esc(effectiveCompanyName)} logo" class="company-logo" />`;
 
   const signatureHtml = doc.includeSignature && admin.signatureUrl
     ? `<img src="${esc(admin.signatureUrl)}" alt="Admin signature" />`
@@ -695,8 +714,8 @@ export function buildBalanceSheetHtml(
         <div class="header-left">
           ${logoHtml}
           <div>
-            <div class="company-name">${esc(company.companyName)}</div>
-            <div class="company-address">${esc(company.address)}</div>
+            <div class="company-name">${esc(effectiveCompanyName)}</div>
+            <div class="company-address">${esc(company?.address || "")}</div>
           </div>
         </div>
       </div>
@@ -815,9 +834,12 @@ export function buildProfessionalPayslipHtml(
   company: CompanyInfo
 ): string {
   const docCurrency = company.currency || "ZAR";
-  const companyLogoHtml = company.logoUrl
-    ? `<img src="${esc(company.logoUrl)}" alt="${esc(company.companyName)}" style="height:60px; max-width:180px; object-fit:contain;" />`
-    : `<div style="font-size:24px; font-weight:900; color:#1e3a8a; letter-spacing:-0.5px;">${esc(company.companyName)}</div>`;
+  const effectiveCompanyName = resolveDocCompanyName(company?.companyName);
+  const effectiveLogoUrl = resolveDocLogoUrl(company?.logoUrl);
+  const companyLogoHtml = `<div style="display:flex; align-items:center; gap:12px;">
+    <img src="${esc(effectiveLogoUrl)}" alt="${esc(effectiveCompanyName)}" style="height:52px; max-width:180px; object-fit:contain;" />
+    <div style="font-size:22px; font-weight:900; color:#1e3a8a; letter-spacing:-0.5px;">${esc(effectiveCompanyName)}</div>
+  </div>`;
 
   const allowanceEntries = Object.entries(payslip.allowances || {}).filter(([_, v]) => Number(v) > 0);
   const deductionEntries = Object.entries(payslip.deductions || {}).filter(([_, v]) => Number(v) > 0);
@@ -1057,9 +1079,9 @@ export function buildExternalQuoteRequestHtml(data: ExternalQuoteRequestData): s
     </tr>
   `).join("");
 
-  const logoHtml = data.requestingCompanyLogo
-    ? `<img src="${data.requestingCompanyLogo}" alt="Logo" style="height: 52px; width: auto; object-fit: contain; border-radius: 6px;"/>`
-    : `<div style="height: 52px; width: 52px; background: #2563eb; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 900; color: white;">${esc(data.requestingCompanyName.charAt(0))}</div>`;
+  const effectiveCompanyName = resolveDocCompanyName(data.requestingCompanyName);
+  const effectiveLogoUrl = resolveDocLogoUrl(data.requestingCompanyLogo);
+  const logoHtml = `<img src="${esc(effectiveLogoUrl)}" alt="${esc(effectiveCompanyName)}" style="height: 52px; width: auto; object-fit: contain; border-radius: 6px;"/>`;
 
   return `<!DOCTYPE html>
 <html lang="en">

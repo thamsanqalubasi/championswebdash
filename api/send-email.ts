@@ -45,9 +45,12 @@ async function loadEmailSettingsFromSupabase(): Promise<EmailSettingsRow | null>
 }
 
 function toSender(fromName: string, fromEmail: string, fallback: string) {
+  let trimmedName = String(fromName ?? "").trim();
+  if (!trimmedName || trimmedName.toLowerCase().includes("champions")) {
+    trimmedName = "Paimbabook";
+  }
   const trimmedEmail = String(fromEmail ?? "").trim();
-  const trimmedName = String(fromName ?? "").trim() || "Paimbabook";
-  if (trimmedEmail && !trimmedEmail.toLowerCase().includes("resend.dev")) {
+  if (trimmedEmail && !trimmedEmail.toLowerCase().includes("resend.dev") && !trimmedEmail.toLowerCase().includes("champions")) {
     return `${trimmedName} <${trimmedEmail}>`;
   }
   return fallback;
@@ -85,7 +88,7 @@ async function sendWithResend(params: {
 }) {
   // Ensure sender uses verified domain paimbabook.com
   let sender = params.sender;
-  if (!sender || sender.toLowerCase().includes("resend.dev")) {
+  if (!sender || sender.toLowerCase().includes("resend.dev") || sender.toLowerCase().includes("champions")) {
     sender = "Paimbabook <noreply@paimbabook.com>";
   }
 
@@ -225,7 +228,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const configuredMethod = String(settings?.method || process.env.EMAIL_PROVIDER || "resend").toLowerCase();
   const method = String(requestedMethod || configuredMethod).toLowerCase();
 
-  const sender = from || toSender(String(settings?.from_name ?? ""), String(settings?.from_email ?? ""), process.env.EMAIL_FROM || "Paimbabook <noreply@paimbabook.com>");
+  let rawSender = from || toSender(String(settings?.from_name ?? ""), String(settings?.from_email ?? ""), process.env.EMAIL_FROM || "Paimbabook <noreply@paimbabook.com>");
+  if (!rawSender || rawSender.toLowerCase().includes("champions")) {
+    rawSender = "Paimbabook <noreply@paimbabook.com>";
+  }
+  const sender = rawSender;
+  const safeSubject = String(subject).replace(/champions\s*court(\s*hospitality\s*&?\s*properties)?/gi, "Paimbabook Hospitality & Properties").replace(/champions\s*court/gi, "Paimbabook");
+  const safeHtml = String(html).replace(/champions\s*court(\s*hospitality\s*&?\s*properties)?/gi, "Paimbabook Hospitality & Properties").replace(/champions\s*court/gi, "Paimbabook");
   const replyTo = String(settings?.reply_to ?? "").trim() || undefined;
   const normalizedAttachments: EmailAttachment[] = Array.isArray(attachments)
     ? (attachments as EmailAttachment[]).filter(
@@ -258,8 +267,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         apiKey: resendApiKey,
         sender,
         to,
-        subject,
-        html,
+        subject: safeSubject,
+        html: safeHtml,
         replyTo,
         attachments: normalizedAttachments,
       });
@@ -275,8 +284,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (method === "sendgrid") {
       const sendgridApiKey = String(settings?.sendgrid_api_key ?? process.env.SENDGRID_API_KEY ?? "").trim();
       if (!sendgridApiKey) {
-        const mailtoSubject = encodeURIComponent(subject);
-        const mailtoBody = encodeURIComponent("Please configure your SENDGRID_API_KEY in Settings > Email Delivery.\n\n" + subject);
+        const mailtoSubject = encodeURIComponent(safeSubject);
+        const mailtoBody = encodeURIComponent("Please configure your SENDGRID_API_KEY in Settings > Email Delivery.\n\n" + safeSubject);
         return res.status(409).json({
           error: "SENDGRID_API_KEY (or email_delivery_settings.sendgrid_api_key) not configured. Please set your API key in Settings > Email Delivery.",
           mailtoUrl: `mailto:${to}?subject=${mailtoSubject}&body=${mailtoBody}`,
@@ -287,8 +296,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         apiKey: sendgridApiKey,
         sender,
         to,
-        subject,
-        html,
+        subject: safeSubject,
+        html: safeHtml,
         replyTo,
         attachments: normalizedAttachments,
       });
@@ -305,8 +314,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const mailgunApiKey = String(settings?.mailgun_api_key ?? process.env.MAILGUN_API_KEY ?? "").trim();
       const mailgunDomain = String(settings?.mailgun_domain ?? process.env.MAILGUN_DOMAIN ?? "").trim();
       if (!mailgunApiKey || !mailgunDomain) {
-        const mailtoSubject = encodeURIComponent(subject);
-        const mailtoBody = encodeURIComponent("Please configure your MAILGUN_API_KEY in Settings > Email Delivery.\n\n" + subject);
+        const mailtoSubject = encodeURIComponent(safeSubject);
+        const mailtoBody = encodeURIComponent("Please configure your MAILGUN_API_KEY in Settings > Email Delivery.\n\n" + safeSubject);
         return res.status(409).json({
           error: "MAILGUN_API_KEY/MAILGUN_DOMAIN (or email_delivery_settings values) not configured. Please set in Settings > Email Delivery.",
           mailtoUrl: `mailto:${to}?subject=${mailtoSubject}&body=${mailtoBody}`,
@@ -318,8 +327,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         domain: mailgunDomain,
         sender,
         to,
-        subject,
-        html,
+        subject: safeSubject,
+        html: safeHtml,
         replyTo,
         attachments: normalizedAttachments,
       });
