@@ -1,298 +1,562 @@
-﻿import { useEffect, useState, useCallback } from "react";
-import { Link } from "react-router-dom";
-import { supabase } from "@/lib/supabase";
-import { MapPin, BedDouble, Home, ChevronLeft, ChevronRight, Briefcase, Users, Baby, Star, Calendar, Clock, CheckCircle, XCircle, Loader2, Send, Building2 } from "lucide-react";
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
+import { uploadFileToBucket } from '@/lib/storage';
+import { useAuth } from '@/lib/auth';
+import { 
+  Plus, Edit, Trash, Eye, EyeOff, Upload, X, Save, User, Building2, 
+  ChevronLeft, ChevronRight, MapPin, Phone, Mail, Camera, Home, 
+  DollarSign, Image as ImageIcon 
+} from 'lucide-react';
 
-type RoomShowcase = {
-  id: string; property_id: string; property_name: string; type_key: string;
-  display_name: string; adults_capacity: number; kids_capacity: number;
-  total_rooms_of_type: number; price_room_only: number; price_bed_breakfast: number;
-  price_full_board: number; photos: string[]; description: string; amenities: string[];
+type AgentListing = {
+  id: string;
+  companyId: string;
+  agentUserId: string;
+  name: string;
+  type: string;
+  listingType: 'rent' | 'sale';
+  address: string;
+  city: string;
+  country: string;
+  description: string;
+  bedrooms: number;
+  bathrooms: number;
+  areaSqm: number;
+  price: number;
+  photos: string[];
+  amenities: string[];
+  isPublished: boolean;
+  agentName: string;
+  agentEmail: string;
+  agentPhone: string;
+  agentWhatsapp: string;
+  agentPhotoUrl: string;
+  agentGender: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
-type Booking = { check_in_date: string; check_out_date: string; room_type_listing_id: string; status: string; };
-
-function PhotoSlider({ photos, name }: { photos: string[]; name: string }) {
-  const [idx, setIdx] = useState(0);
-  const safe = photos.filter(Boolean);
-  if (safe.length === 0) return (
-    <div className="aspect-video bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center">
-      <BedDouble size={40} className="text-slate-300" />
-    </div>
-  );
-  return (
-    <div className="relative aspect-[4/3] overflow-hidden group">
-      <img src={safe[idx]} alt={name} className="h-full w-full object-cover transition-all duration-500" />
-      {safe.length > 1 && (<>
-        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIdx(i => i > 0 ? i-1 : safe.length-1); }} className="absolute left-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition hover:bg-black/70"><ChevronLeft size={15}/></button>
-        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIdx(i => i < safe.length-1 ? i+1 : 0); }} className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition hover:bg-black/70"><ChevronRight size={15}/></button>
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
-          {safe.map((_,i) => (<div key={i} className={`h-1.5 rounded-full transition-all ${i===idx?"w-4 bg-white":"w-1.5 bg-white/50"}`}/>))}
-        </div>
-      </>)}
-    </div>
-  );
-}
-
-function AvailabilityChecker({ room, bookings }: { room: RoomShowcase; bookings: Booking[] }) {
-  const [checkIn, setCheckIn] = useState("");
-  const [checkOut, setCheckOut] = useState("");
-  const [checkInTime, setCheckInTime] = useState("14:00");
-  const [checkOutTime, setCheckOutTime] = useState("11:00");
-  const [availability, setAvailability] = useState<"unknown"|"available"|"partial"|"full">("unknown");
-  const [availableCount, setAvailableCount] = useState(0);
-  const [enquiring, setEnquiring] = useState(false);
-  const [enquireOpen, setEnquireOpen] = useState(false);
-  const [enquiryForm, setEnquiryForm] = useState({ name: "", email: "", phone: "", guests: 2, message: "" });
-  const [sent, setSent] = useState(false);
-
-  const checkAvailability = useCallback(() => {
-    if (!checkIn || !checkOut) { setAvailability("unknown"); return; }
-    const inDT = new Date(`${checkIn}T${checkInTime}`);
-    const outDT = new Date(`${checkOut}T${checkOutTime}`);
-    if (outDT <= inDT) { setAvailability("unknown"); return; }
-
-    const conflicting = bookings.filter(b => {
-      if (b.room_type_listing_id !== room.id) return false;
-      if (!["open","in_progress","confirmed"].includes(b.status)) return false;
-      if (!b.check_in_date || !b.check_out_date) return false;
-      const bIn = new Date(b.check_in_date);
-      const bOut = new Date(b.check_out_date);
-      return bIn < outDT && bOut > inDT;
-    });
-
-    const booked = conflicting.length;
-    const available = room.total_rooms_of_type - booked;
-    setAvailableCount(Math.max(0, available));
-    if (available <= 0) setAvailability("full");
-    else if (available < room.total_rooms_of_type) setAvailability("partial");
-    else setAvailability("available");
-  }, [checkIn, checkOut, checkInTime, checkOutTime, bookings, room]);
-
-  useEffect(() => { checkAvailability(); }, [checkAvailability]);
-
-  const today = new Date().toISOString().slice(0, 10);
-
-  const sendEnquiry = async () => {
-    if (!enquiryForm.name || !enquiryForm.email) { alert("Please enter your name and email."); return; }
-    setEnquiring(true);
-    try {
-      await supabase.from("enquiries").insert({
-        property_id: room.property_id,
-        room_type_listing_id: room.id,
-        customer_name: enquiryForm.name,
-        customer_email: enquiryForm.email,
-        customer_phone: enquiryForm.phone,
-        type: "room_booking",
-        check_in_date: checkIn || null,
-        check_out_date: checkOut || null,
-        guests: enquiryForm.guests,
-        message: `Room Type: ${room.display_name} (${room.adults_capacity} Adults, ${room.kids_capacity} Kids)\nCheck-in: ${checkIn} ${checkInTime}\nCheck-out: ${checkOut} ${checkOutTime}\n\n${enquiryForm.message}`,
-        status: "open",
-      });
-      setSent(true);
-      setEnquireOpen(false);
-    } catch { alert("Failed to send. Please try again."); }
-    setEnquiring(false);
-  };
-
-  return (
-    <div className="p-4 border-t border-gray-100 bg-gray-50">
-      <h4 className="text-xs font-bold text-gray-700 mb-3 flex items-center gap-1.5"><Calendar size={13} className="text-purple-600"/>Check Availability</h4>
-      <div className="grid grid-cols-2 gap-2 mb-2">
-        <div>
-          <label className="text-[10px] font-semibold text-gray-500 block mb-1">Check-in Date</label>
-          <input type="date" min={today} value={checkIn} onChange={e => setCheckIn(e.target.value)} className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-purple-500"/>
-        </div>
-        <div>
-          <label className="text-[10px] font-semibold text-gray-500 block mb-1">Check-out Date</label>
-          <input type="date" min={checkIn || today} value={checkOut} onChange={e => setCheckOut(e.target.value)} className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-purple-500"/>
-        </div>
-        <div>
-          <label className="text-[10px] font-semibold text-gray-500 block mb-1 flex items-center gap-1"><Clock size={9}/>Check-in Time</label>
-          <input type="time" value={checkInTime} onChange={e => setCheckInTime(e.target.value)} className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-purple-500"/>
-        </div>
-        <div>
-          <label className="text-[10px] font-semibold text-gray-500 block mb-1 flex items-center gap-1"><Clock size={9}/>Check-out Time</label>
-          <input type="time" value={checkOutTime} onChange={e => setCheckOutTime(e.target.value)} className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-purple-500"/>
-        </div>
-      </div>
-
-      {/* Availability result */}
-      {availability !== "unknown" && (
-        <div className={`mb-3 rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-2 ${availability === "full" ? "bg-red-50 text-red-700 border border-red-200" : "bg-green-50 text-green-700 border border-green-200"}`}>
-          {availability === "full" ? <XCircle size={14}/> : <CheckCircle size={14}/>}
-          {availability === "full" ? "Fully booked for these dates" :
-           availability === "partial" ? `${availableCount} of ${room.total_rooms_of_type} rooms still available` :
-           `All ${room.total_rooms_of_type} rooms available`}
-        </div>
-      )}
-
-      {sent ? (
-        <div className="rounded-xl bg-green-50 border border-green-200 px-3 py-2 text-xs font-semibold text-green-700 flex items-center gap-2"><CheckCircle size={13}/>Booking request sent! We will contact you soon.</div>
-      ) : enquireOpen ? (
-        <div className="space-y-2">
-          <div className="grid grid-cols-2 gap-2">
-            <input placeholder="Your name *" value={enquiryForm.name} onChange={e => setEnquiryForm({...enquiryForm,name:e.target.value})} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-purple-500"/>
-            <input placeholder="Email *" type="email" value={enquiryForm.email} onChange={e => setEnquiryForm({...enquiryForm,email:e.target.value})} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-purple-500"/>
-            <input placeholder="Phone" value={enquiryForm.phone} onChange={e => setEnquiryForm({...enquiryForm,phone:e.target.value})} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-purple-500"/>
-            <input type="number" min={1} placeholder="Guests" value={enquiryForm.guests} onChange={e => setEnquiryForm({...enquiryForm,guests:Number(e.target.value)})} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-purple-500"/>
-          </div>
-          <textarea rows={2} placeholder="Special requirements..." value={enquiryForm.message} onChange={e => setEnquiryForm({...enquiryForm,message:e.target.value})} className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-purple-500 resize-none"/>
-          <div className="flex gap-2">
-            <button onClick={() => setEnquireOpen(false)} className="flex-1 rounded-lg border border-gray-200 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100">Cancel</button>
-            <button onClick={sendEnquiry} disabled={enquiring} className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-purple-600 py-1.5 text-xs font-bold text-white hover:bg-purple-700 disabled:opacity-50"><Send size={11}/>{enquiring?"Sending...":"Send Request"}</button>
-          </div>
-        </div>
-      ) : (
-        <button onClick={() => setEnquireOpen(true)} disabled={availability === "full"} className="w-full rounded-xl bg-purple-600 py-2 text-xs font-bold text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition">
-          {availability === "full" ? "Fully Booked" : "Book This Room →"}
-        </button>
-      )}
-    </div>
-  );
-}
+const AMENITIES_OPTIONS = [
+  'wifi', 'parking', 'pool', 'garden', 'security', 
+  'ac', 'gym', 'balcony', 'furnished', 'pet_friendly'
+];
 
 export default function AgentPortalPage() {
-  const [roomShowcases, setRoomShowcases] = useState<RoomShowcase[]>([]);
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState(0);
+  const [listings, setListings] = useState<AgentListing[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterType, setFilterType] = useState("all");
+
+  const defaultFormData = {
+    name: '',
+    type: 'house',
+    listingType: 'sale' as 'rent' | 'sale',
+    price: 0,
+    address: '',
+    city: '',
+    country: '',
+    description: '',
+    bedrooms: 0,
+    bathrooms: 0,
+    areaSqm: 0,
+    amenities: [] as string[],
+    photos: [] as string[],
+  };
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formData, setFormData] = useState(defaultFormData);
+  const [formSaving, setFormSaving] = useState(false);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [uploadingProfilePic, setUploadingProfilePic] = useState(false);
+
+  const [profile, setProfile] = useState({
+    firstName: '',
+    lastName: '',
+    gender: 'other',
+    email: '',
+    phone: '',
+    whatsapp: '',
+    photoUrl: '',
+  });
+
+  const fetchListings = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.from('agent_listings').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      if (data) {
+        setListings(data.map((row: any) => ({
+          id: row.id,
+          companyId: row.company_id,
+          agentUserId: row.agent_user_id,
+          name: row.name,
+          type: row.type,
+          listingType: row.listing_type,
+          address: row.address,
+          city: row.city,
+          country: row.country,
+          description: row.description,
+          bedrooms: row.bedrooms,
+          bathrooms: row.bathrooms,
+          areaSqm: row.area_sqm,
+          price: row.price,
+          photos: row.photos || [],
+          amenities: row.amenities || [],
+          isPublished: row.is_published,
+          agentName: row.agent_name,
+          agentEmail: row.agent_email,
+          agentPhone: row.agent_phone,
+          agentWhatsapp: row.agent_whatsapp,
+          agentPhotoUrl: row.agent_photo_url,
+          agentGender: row.agent_gender,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        })));
+      }
+    } catch (e) {
+      console.error(e);
+      setListings([]);
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
+    fetchListings();
+    const savedProfile = localStorage.getItem('agent_profile');
+    if (savedProfile) {
       try {
-        const { data: rooms } = await supabase.from("room_type_listings").select("*").eq("is_active", true).order("sort_order").order("property_id");
-        if (rooms) setRoomShowcases(rooms as RoomShowcase[]);
-      } catch { setRoomShowcases([]); }
-      try {
-        const { data: bks } = await supabase.from("enquiries").select("check_in_date,check_out_date,room_type_listing_id,status").in("status", ["open","in_progress","confirmed"]).not("room_type_listing_id", "is", null);
-        if (bks) setBookings(bks as Booking[]);
-      } catch { setBookings([]); }
-      setLoading(false);
+        setProfile(JSON.parse(savedProfile));
+      } catch (e) {}
     }
-    void load();
   }, []);
 
-  // Group by property
-  const byProperty: Record<string, { name: string; rooms: RoomShowcase[] }> = {};
-  for (const r of roomShowcases) {
-    if (!byProperty[r.property_id]) byProperty[r.property_id] = { name: r.property_name || "Property", rooms: [] };
-    byProperty[r.property_id].rooms.push(r);
-  }
+  const saveProfile = () => {
+    localStorage.setItem('agent_profile', JSON.stringify(profile));
+    alert('Profile saved!');
+  };
 
-  const allTypes = [...new Set(roomShowcases.map(r => r.type_key))];
+  const handleEdit = (listing: AgentListing) => {
+    setEditingId(listing.id);
+    setFormData({
+      name: listing.name,
+      type: listing.type,
+      listingType: listing.listingType,
+      price: listing.price,
+      address: listing.address,
+      city: listing.city,
+      country: listing.country,
+      description: listing.description,
+      bedrooms: listing.bedrooms,
+      bathrooms: listing.bathrooms,
+      areaSqm: listing.areaSqm,
+      amenities: listing.amenities,
+      photos: listing.photos,
+    });
+    setActiveTab(1);
+  };
 
-  const filteredByProperty: typeof byProperty = {};
-  for (const [pid, { name, rooms }] of Object.entries(byProperty)) {
-    const filtered = filterType === "all" ? rooms : rooms.filter(r => r.type_key === filterType);
-    if (filtered.length > 0) filteredByProperty[pid] = { name, rooms: filtered };
-  }
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this listing?')) return;
+    try {
+      await supabase.from('agent_listings').delete().eq('id', id);
+      setListings(prev => prev.filter(l => l.id !== id));
+    } catch (e) {
+      console.error(e);
+      alert('Error deleting listing');
+    }
+  };
 
-  const AMENITY_LABELS: Record<string, string> = {
-    wifi: "Wi-Fi", tv: "Smart TV", ac: "Air Con", coffee: "Coffee", bath: "Bathtub",
-    gym: "Gym", parking: "Parking", breakfast: "Breakfast", balcony: "Balcony",
+  const handleTogglePublish = async (id: string, currentStatus: boolean, photosCount: number) => {
+    if (!currentStatus && photosCount < 4) {
+      alert('You need at least 4 photos to publish a listing.');
+      return;
+    }
+    try {
+      await supabase.from('agent_listings').update({ is_published: !currentStatus }).eq('id', id);
+      setListings(prev => prev.map(l => l.id === id ? { ...l, isPublished: !currentStatus } : l));
+    } catch (e) {
+      console.error(e);
+      alert('Error updating status');
+    }
+  };
+
+  const handlePhotosUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    setUploadingPhotos(true);
+    const newPhotos = [...formData.photos];
+    for (let i = 0; i < files.length; i++) {
+      try {
+        const url = await uploadFileToBucket('agent-listings', 'photos', files[i]);
+        if (url) newPhotos.push(url);
+      } catch (error) {
+        console.error('Error uploading photo', error);
+      }
+    }
+    setFormData(prev => ({ ...prev, photos: newPhotos }));
+    setUploadingPhotos(false);
+  };
+
+  const handleProfilePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingProfilePic(true);
+    try {
+      const url = await uploadFileToBucket('agent-listings', 'profiles', file);
+      if (url) setProfile(prev => ({ ...prev, photoUrl: url }));
+    } catch (error) {
+      console.error('Error uploading profile pic', error);
+    }
+    setUploadingProfilePic(false);
+  };
+
+  const removePhoto = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      photos: prev.photos.filter((_, i) => i !== index),
+    }));
+  };
+
+  const toggleAmenity = (amenity: string) => {
+    setFormData(prev => ({
+      ...prev,
+      amenities: prev.amenities.includes(amenity)
+        ? prev.amenities.filter(a => a !== amenity)
+        : [...prev.amenities, amenity],
+    }));
+  };
+
+  const saveListing = async () => {
+    setFormSaving(true);
+    try {
+      const payload = {
+        name: formData.name,
+        type: formData.type,
+        listing_type: formData.listingType,
+        price: formData.price,
+        address: formData.address,
+        city: formData.city,
+        country: formData.country,
+        description: formData.description,
+        bedrooms: formData.bedrooms,
+        bathrooms: formData.bathrooms,
+        area_sqm: formData.areaSqm,
+        amenities: formData.amenities,
+        photos: formData.photos,
+        is_published: editingId ? undefined : false, // Keep existing status if editing
+        agent_name: `${profile.firstName} ${profile.lastName}`.trim(),
+        agent_email: profile.email,
+        agent_phone: profile.phone,
+        agent_whatsapp: profile.whatsapp,
+        agent_photo_url: profile.photoUrl,
+        agent_gender: profile.gender,
+        agent_user_id: user?.id,
+      };
+
+      if (editingId) {
+        await supabase.from('agent_listings').update(payload).eq('id', editingId);
+      } else {
+        await supabase.from('agent_listings').insert(payload);
+      }
+      
+      await fetchListings();
+      setFormData(defaultFormData);
+      setEditingId(null);
+      setActiveTab(0);
+    } catch (e) {
+      console.error(e);
+      alert('Error saving listing');
+    }
+    setFormSaving(false);
   };
 
   return (
-    <div>
-      {/* Hero */}
-      <div className="bg-gradient-to-br from-slate-800 via-purple-900 to-slate-900 py-14 px-4 text-white">
-        <div className="mx-auto max-w-5xl">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500"><Briefcase size={20}/></div>
-            <span className="text-sm font-semibold text-slate-300 uppercase tracking-widest">Agent & Booking Portal</span>
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-bold mb-3">Available Room Types</h1>
-          <p className="text-slate-300 max-w-2xl mb-6">Browse our full room type catalogue with real-time availability. Select your dates to see which room types are open for booking.</p>
-
-          {allTypes.length > 1 && (
-            <div className="flex flex-wrap gap-2">
-              <button onClick={() => setFilterType("all")} className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${filterType==="all"?"bg-amber-500 text-white":"bg-white/10 text-white/80 hover:bg-white/20"}`}>All Types</button>
-              {allTypes.map(t => (<button key={t} onClick={() => setFilterType(t)} className={`rounded-xl px-4 py-2 text-sm font-semibold capitalize transition ${filterType===t?"bg-amber-500 text-white":"bg-white/10 text-white/80 hover:bg-white/20"}`}>{t}</button>))}
-            </div>
-          )}
-        </div>
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold">Agent Portal — Property Listings</h1>
+        {activeTab === 0 && (
+          <button 
+            onClick={() => { setEditingId(null); setFormData(defaultFormData); setActiveTab(1); }}
+            className="bg-blue-600 text-white rounded-xl px-4 py-2 text-sm font-medium hover:bg-blue-700 flex items-center gap-2"
+          >
+            <Plus size={16} /> Add Listing
+          </button>
+        )}
       </div>
 
-      <div className="mx-auto max-w-6xl px-4 py-10">
-        {loading && <div className="text-center py-20 text-gray-400"><Loader2 size={32} className="animate-spin mx-auto mb-3"/>Loading room showcases...</div>}
+      <div className="flex gap-6 border-b border-border-color">
+        {['My Listings', 'Add / Edit Listing', 'My Profile'].map((tab, idx) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(idx)}
+            className={`pb-3 px-2 font-medium text-sm transition-colors border-b-2 ${
+              activeTab === idx ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
 
-        {!loading && Object.keys(filteredByProperty).length === 0 && (
-          <div className="text-center py-20 text-gray-500">
-            <BedDouble size={48} className="mx-auto mb-4 opacity-30"/>
-            <p className="text-lg font-semibold">No room types published yet.</p>
-            <p className="text-sm text-gray-400 mt-1">Admin: go to Room Showcases in the dashboard to add room types.</p>
+      <div className="bg-surface rounded-2xl border border-border-color p-6 shadow-sm">
+        {activeTab === 0 && (
+          <div>
+            {loading ? (
+              <div className="text-center py-10 text-gray-500">Loading listings...</div>
+            ) : listings.length === 0 ? (
+              <div className="text-center py-10 text-gray-500">
+                <Building2 size={48} className="mx-auto mb-4 opacity-30" />
+                <p>No listings found. Click "+ Add Listing" to create one.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-border-color text-gray-500">
+                      <th className="pb-3 font-medium">Photo</th>
+                      <th className="pb-3 font-medium">Name</th>
+                      <th className="pb-3 font-medium">Type</th>
+                      <th className="pb-3 font-medium">Listing Type</th>
+                      <th className="pb-3 font-medium">City</th>
+                      <th className="pb-3 font-medium">Price</th>
+                      <th className="pb-3 font-medium">Status</th>
+                      <th className="pb-3 font-medium text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border-color">
+                    {listings.map(listing => (
+                      <tr key={listing.id}>
+                        <td className="py-3">
+                          {listing.photos?.[0] ? (
+                            <img src={listing.photos[0]} alt="thumbnail" className="w-16 h-12 object-cover rounded-lg" />
+                          ) : (
+                            <div className="w-16 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400">
+                              <ImageIcon size={20} />
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 font-medium">{listing.name}</td>
+                        <td className="py-3 capitalize">{listing.type}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${listing.listingType === 'sale' ? 'bg-indigo-100 text-indigo-700' : 'bg-orange-100 text-orange-700'}`}>
+                            For {listing.listingType}
+                          </span>
+                        </td>
+                        <td className="py-3">{listing.city}</td>
+                        <td className="py-3">ZAR {listing.price.toLocaleString()}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${listing.isPublished ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                            {listing.isPublished ? 'Live' : 'Draft'}
+                          </span>
+                        </td>
+                        <td className="py-3 text-right space-x-2">
+                          <button onClick={() => handleTogglePublish(listing.id, listing.isPublished, listing.photos?.length || 0)} className={`p-1.5 rounded-lg border ${listing.isPublished ? 'text-orange-600 border-orange-200 hover:bg-orange-50' : 'text-green-600 border-green-200 hover:bg-green-50'}`} title={listing.isPublished ? "Unpublish" : "Publish"}>
+                            {listing.isPublished ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                          <button onClick={() => handleEdit(listing)} className="p-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50" title="Edit">
+                            <Edit size={16} />
+                          </button>
+                          <button onClick={() => handleDelete(listing.id)} className="p-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50" title="Delete">
+                            <Trash size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
-        {Object.entries(filteredByProperty).map(([pid, { name, rooms }]) => (
-          <section key={pid} className="mb-12">
-            <div className="flex items-center gap-3 mb-6 pb-3 border-b border-gray-200">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-100 text-purple-700"><Building2 size={20}/></div>
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">{name}</h2>
-                <p className="text-sm text-gray-500">{rooms.length} room type{rooms.length !== 1 ? "s" : ""} available</p>
+        {activeTab === 1 && (
+          <div className="space-y-6">
+            <h2 className="text-lg font-bold">{editingId ? 'Edit Listing' : 'Add New Listing'}</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Property Name</label>
+                  <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" placeholder="e.g. Modern Apartment in Sandton" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Type</label>
+                    <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500">
+                      <option value="house">House</option>
+                      <option value="apartment">Apartment</option>
+                      <option value="lodge">Lodge</option>
+                      <option value="room">Room</option>
+                      <option value="storage">Storage</option>
+                      <option value="land">Land</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Listing Type</label>
+                    <select value={formData.listingType} onChange={e => setFormData({...formData, listingType: e.target.value as 'rent'|'sale'})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500">
+                      <option value="rent">For Rent</option>
+                      <option value="sale">For Sale</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    {formData.listingType === 'rent' ? 'Monthly Rent (ZAR)' : 'Sale Price (ZAR)'}
+                  </label>
+                  <input type="number" min="0" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Address</label>
+                  <input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">City</label>
+                    <input type="text" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Country</label>
+                    <input type="text" value={formData.country} onChange={e => setFormData({...formData, country: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Bedrooms</label>
+                    <input type="number" min="0" value={formData.bedrooms} onChange={e => setFormData({...formData, bedrooms: Number(e.target.value)})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Bathrooms</label>
+                    <input type="number" min="0" value={formData.bathrooms} onChange={e => setFormData({...formData, bathrooms: Number(e.target.value)})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Area (sqm)</label>
+                    <input type="number" min="0" value={formData.areaSqm} onChange={e => setFormData({...formData, areaSqm: Number(e.target.value)})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Description</label>
+                  <textarea rows={4} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500 resize-none" />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Amenities</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {AMENITIES_OPTIONS.map(amenity => (
+                      <label key={amenity} className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={formData.amenities.includes(amenity)} onChange={() => toggleAmenity(amenity)} className="rounded border-gray-300" />
+                        <span className="capitalize">{amenity.replace('_', ' ')}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-border-color">
+                  <label className="block text-sm font-medium mb-2">Photos (Minimum 4 for publishing)</label>
+                  
+                  <div className="flex items-center gap-4 mb-4">
+                    <label className="cursor-pointer bg-blue-50 text-blue-600 rounded-xl px-4 py-2 text-sm font-medium hover:bg-blue-100 flex items-center gap-2 transition">
+                      <Upload size={16} /> {uploadingPhotos ? 'Uploading...' : 'Upload Photos'}
+                      <input type="file" multiple accept="image/*" className="hidden" onChange={handlePhotosUpload} disabled={uploadingPhotos} />
+                    </label>
+                    <span className="text-sm text-gray-500">{formData.photos.length} of 4 minimum photos uploaded</span>
+                  </div>
+
+                  {formData.photos.length > 0 && (
+                    <div className="grid grid-cols-4 gap-3">
+                      {formData.photos.map((url, i) => (
+                        <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-border-color group">
+                          <img src={url} alt="Uploaded" className="w-full h-full object-cover" />
+                          <button onClick={() => removePhoto(i)} className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition hover:bg-black">
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {rooms.map(room => (
-                <div key={room.id} className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                  <PhotoSlider photos={room.photos} name={room.display_name}/>
-
-                  <div className="p-4">
-                    {/* Room header */}
-                    <div className="mb-3">
-                      <h3 className="font-bold text-gray-900 text-base">{room.display_name}</h3>
-                      <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
-                        <span className="flex items-center gap-1.5"><Users size={13} className="text-purple-500"/>{room.adults_capacity} Adults</span>
-                        {room.kids_capacity > 0 && <span className="flex items-center gap-1.5"><Baby size={13} className="text-blue-400"/>{room.kids_capacity} Kids</span>}
-                        <span className="ml-auto rounded-full bg-purple-100 px-2.5 py-0.5 text-[10px] font-bold text-purple-700 capitalize">{room.type_key}</span>
-                      </div>
-                    </div>
-
-                    {/* Description */}
-                    {room.description && <p className="text-xs text-gray-500 mb-3 line-clamp-2">{room.description}</p>}
-
-                    {/* Pricing */}
-                    <div className="rounded-xl bg-gray-50 border border-gray-100 p-3 mb-3 space-y-1.5 text-xs">
-                      {room.price_room_only > 0 && (<div className="flex justify-between items-center"><span className="text-gray-500">Room Only</span><span className="font-bold text-purple-700 text-sm">R{room.price_room_only.toLocaleString()}<span className="text-xs font-normal text-gray-400">/night</span></span></div>)}
-                      {room.price_bed_breakfast > 0 && (<div className="flex justify-between"><span className="text-gray-500">Bed & Breakfast</span><span className="font-semibold">R{room.price_bed_breakfast.toLocaleString()}/night</span></div>)}
-                      {room.price_full_board > 0 && (<div className="flex justify-between"><span className="text-gray-500">Full Board</span><span className="font-semibold">R{room.price_full_board.toLocaleString()}/night</span></div>)}
-                      <div className="flex justify-between pt-1 border-t border-gray-200 mt-1">
-                        <span className="text-gray-400">Total rooms of this type</span>
-                        <span className="font-bold text-gray-700">{room.total_rooms_of_type}</span>
-                      </div>
-                    </div>
-
-                    {/* Amenities */}
-                    {room.amenities.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-3">
-                        {room.amenities.map(a => (<span key={a} className="rounded-lg bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600">{AMENITY_LABELS[a]||a}</span>))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Availability checker */}
-                  <AvailabilityChecker room={room} bookings={bookings}/>
-                </div>
-              ))}
+            <div className="flex justify-end gap-3 pt-4 border-t border-border-color mt-6">
+              <button onClick={() => { setActiveTab(0); setEditingId(null); setFormData(defaultFormData); }} className="px-4 py-2 text-sm font-medium border border-border-color rounded-xl hover:bg-gray-50">
+                Cancel
+              </button>
+              <button onClick={saveListing} disabled={!formData.name || formData.photos.length < 4 || formSaving} className="bg-blue-600 text-white rounded-xl px-6 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                <Save size={16} /> {formSaving ? 'Saving...' : 'Save Listing'}
+              </button>
             </div>
-          </section>
-        ))}
+          </div>
+        )}
 
-        {/* Tips */}
-        {!loading && Object.keys(filteredByProperty).length > 0 && (
-          <div className="mt-8 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-            <h3 className="font-bold text-amber-900 mb-2 flex items-center gap-2"><Star size={15} className="text-amber-500"/>Booking Notes</h3>
-            <ul className="text-sm text-amber-800 space-y-1 list-disc list-inside">
-              <li>Select your check-in and check-out dates and times to see real-time availability</li>
-              <li>Green = rooms available · Orange = some rooms booked · Red = fully booked for those dates</li>
-              <li>Clicking "Book This Room" sends a request to the property team who will confirm within 24h</li>
-              <li>Contact us directly for group bookings or long-stay arrangements</li>
-            </ul>
+        {activeTab === 2 && (
+          <div className="max-w-2xl mx-auto space-y-6">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-20 h-20 rounded-full bg-gray-100 border border-border-color overflow-hidden flex items-center justify-center relative group">
+                {profile.photoUrl ? (
+                  <img src={profile.photoUrl} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  <User size={32} className="text-gray-400" />
+                )}
+                <label className="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition">
+                  <Camera size={20} />
+                  <input type="file" accept="image/*" className="hidden" onChange={handleProfilePhotoUpload} disabled={uploadingProfilePic} />
+                </label>
+              </div>
+              <div>
+                <h2 className="text-lg font-bold">Agent Profile Info</h2>
+                <p className="text-sm text-gray-500">This information will be displayed on your property listings.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">First Name</label>
+                <input type="text" value={profile.firstName} onChange={e => setProfile({...profile, firstName: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Last Name</label>
+                <input type="text" value={profile.lastName} onChange={e => setProfile({...profile, lastName: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Gender</label>
+              <select value={profile.gender} onChange={e => setProfile({...profile, gender: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500">
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Email Address</label>
+              <input type="email" value={profile.email} onChange={e => setProfile({...profile, email: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Phone Number</label>
+                <input type="text" placeholder="+27 XX XXX XXXX" value={profile.phone} onChange={e => setProfile({...profile, phone: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">WhatsApp Number</label>
+                <input type="text" placeholder="+27 XX XXX XXXX" value={profile.whatsapp} onChange={e => setProfile({...profile, whatsapp: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-4">
+              <button onClick={saveProfile} className="bg-blue-600 text-white rounded-xl px-6 py-2 text-sm font-medium hover:bg-blue-700 flex items-center gap-2">
+                <Save size={16} /> Save Profile
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -1,10 +1,19 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import { MapPin, BedDouble, Home, Search, ChevronLeft, ChevronRight, Users, Baby, Star } from "lucide-react";
+import { MapPin, BedDouble, Home, Search, ChevronLeft, ChevronRight, Users, Baby, Star, DollarSign } from "lucide-react";
 
 type RentalProp = { id: string; name: string; type: string; address: string; city: string; country: string; status: string; monthly_rent: number; photos: string[]; };
 type RoomListing = { id: string; property_id: string; display_name: string; property_name: string; type_key: string; adults_capacity: number; kids_capacity: number; total_rooms_of_type: number; price_room_only: number; price_bed_breakfast: number; price_full_board: number; photos: string[]; amenities: string[]; };
+type AgentListing = {
+  id: string; name: string; type: string; listing_type: string;
+  address: string; city: string; country: string; description: string;
+  bedrooms: number; bathrooms: number; area_sqm: number;
+  price: number; photos: string[]; amenities: string[];
+  is_published: boolean;
+  agent_name: string; agent_email: string; agent_phone: string;
+  agent_whatsapp: string; agent_photo_url: string;
+};
 
 function PhotoSlider({ photos, name }: { photos: string[]; name: string }) {
   const [idx, setIdx] = useState(0);
@@ -25,6 +34,7 @@ function PhotoSlider({ photos, name }: { photos: string[]; name: string }) {
 export default function PortalHomePage() {
   const [rentals, setRentals] = useState<RentalProp[]>([]);
   const [roomListings, setRoomListings] = useState<RoomListing[]>([]);
+  const [saleListings, setSaleListings] = useState<AgentListing[]>([]);
   const [reviewsMap, setReviewsMap] = useState<Record<string, { avg: number; count: number }>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -42,6 +52,15 @@ export default function PortalHomePage() {
         const { data } = await supabase.from("room_type_listings").select("id,property_id,display_name,property_name,type_key,adults_capacity,kids_capacity,total_rooms_of_type,price_room_only,price_bed_breakfast,price_full_board,photos,amenities").eq("is_active", true).order("sort_order").order("created_at");
         setRoomListings((data || []) as RoomListing[]);
       } catch { setRoomListings([]); }
+
+      try {
+        const { data: agentData } = await supabase.from('agent_listings')
+          .select('*')
+          .eq('is_published', true)
+          .eq('listing_type', 'sale')
+          .order('created_at', { ascending: false });
+        setSaleListings((agentData || []) as AgentListing[]);
+      } catch { setSaleListings([]); }
 
       try {
         const { data: revs } = await supabase.from("listing_reviews").select("property_id, rating");
@@ -72,10 +91,12 @@ export default function PortalHomePage() {
   const q = search.toLowerCase();
   const matchRental = (l: RentalProp) => !search || l.name.toLowerCase().includes(q) || (l.city||"").toLowerCase().includes(q) || (l.country||"").toLowerCase().includes(q);
   const matchRoom = (r: RoomListing) => !search || r.display_name.toLowerCase().includes(q) || (r.property_name||"").toLowerCase().includes(q);
+  const matchSale = (s: AgentListing) => !search || s.name.toLowerCase().includes(q) || (s.city||'').toLowerCase().includes(q) || (s.country||'').toLowerCase().includes(q);
 
-  const filteredRentals = filter === "booking" ? [] : rentals.filter(matchRental);
-  const filteredRooms = filter === "rental" ? [] : roomListings.filter(matchRoom);
-  const total = filteredRentals.length + filteredRooms.length;
+  const filteredRentals = filter === "booking" || filter === "sale" ? [] : rentals.filter(matchRental);
+  const filteredRooms = filter === "rental" || filter === "sale" ? [] : roomListings.filter(matchRoom);
+  const filteredSales = (filter === 'rental' || filter === 'booking') ? [] : saleListings.filter(matchSale);
+  const total = filteredRentals.length + filteredRooms.length + filteredSales.length;
 
   const lowestPrice = (r: RoomListing) => Math.min(...[r.price_room_only,r.price_bed_breakfast,r.price_full_board].filter(p=>p>0)) || 0;
 
@@ -90,6 +111,7 @@ export default function PortalHomePage() {
             <option value="all">All Listings</option>
             <option value="booking">🛏️ Book a Room</option>
             <option value="rental">🏠 For Rent</option>
+            <option value="sale">🏷️ For Sale</option>
           </select>
         </div>
       </div>
@@ -161,6 +183,59 @@ export default function PortalHomePage() {
             </div>
           </section>
         )}
+
+        {!loading && filteredSales.length > 0 && (
+          <section className="mb-14">
+            <div className="flex items-center gap-3 mb-6">
+              <DollarSign size={22} className="text-emerald-600"/>
+              <h2 className="text-2xl font-bold text-gray-900">Properties For Sale</h2>
+              <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-700">{filteredSales.length}</span>
+            </div>
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredSales.map(s => (
+                <div key={s.id} className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm hover:shadow-lg transition-all">
+                  <PhotoSlider photos={s.photos||[]} name={s.name}/>
+                  <div className="p-4">
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <h3 className="font-bold text-gray-900">{s.name}</h3>
+                      <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 uppercase">For Sale</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-2 flex items-center gap-1"><MapPin size={11}/>{[s.city, s.country].filter(Boolean).join(', ') || s.address}</p>
+                    {s.description && <p className="text-xs text-gray-500 mb-3 line-clamp-2">{s.description}</p>}
+                    <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
+                      {s.bedrooms > 0 && <span>{s.bedrooms} Bed</span>}
+                      {s.bathrooms > 0 && <span>{s.bathrooms} Bath</span>}
+                      {s.area_sqm > 0 && <span>{s.area_sqm} m²</span>}
+                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-gray-100 mb-3">
+                      <div><span className="text-xl font-bold text-emerald-700">R{(s.price||0).toLocaleString()}</span></div>
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">For Sale</span>
+                    </div>
+                    {/* Agent Contact Card */}
+                    {s.agent_name && (
+                      <div className="rounded-xl bg-gray-50 border border-gray-100 p-3 flex items-center gap-3">
+                        {s.agent_photo_url ? (
+                          <img src={s.agent_photo_url} alt={s.agent_name} className="w-10 h-10 rounded-full object-cover border-2 border-white shadow"/>
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-sm">{s.agent_name.charAt(0)}</div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm text-gray-900 truncate">{s.agent_name}</div>
+                          <div className="flex items-center gap-2 text-[10px] text-gray-500 mt-0.5">
+                            {s.agent_phone && <span className="flex items-center gap-0.5">📞 {s.agent_phone}</span>}
+                            {s.agent_whatsapp && <a href={`https://wa.me/${s.agent_whatsapp.replace(/[^0-9]/g,'')}`} target="_blank" rel="noreferrer" className="text-green-600 hover:underline">WhatsApp</a>}
+                          </div>
+                          {s.agent_email && <div className="text-[10px] text-gray-400 truncate">{s.agent_email}</div>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
 
         {/* For Rent — published rental properties */}
         {!loading && filteredRentals.length > 0 && (
