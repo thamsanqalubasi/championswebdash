@@ -201,11 +201,17 @@ const MAIN_CONTRACT_SECTIONS: ContractSection[] = [
   },
 ];
 
-async function ensureMainContractTemplateInDb(): Promise<{ ok: true } | { ok: false; message: string }> {
-  const { data: existingTemplate, error: existingError } = await supabase
+async function ensureMainContractTemplateInDb(companyId?: string): Promise<{ ok: true } | { ok: false; message: string }> {
+  let query = supabase
     .from("contract_templates")
     .select("id")
-    .eq("title", MAIN_CONTRACT_TITLE)
+    .eq("title", MAIN_CONTRACT_TITLE);
+
+  if (companyId && isValidUuid(companyId)) {
+    query = query.or(`company_id.eq.${companyId},is_default.eq.true`);
+  }
+
+  const { data: existingTemplate, error: existingError } = await query
     .limit(1)
     .maybeSingle();
 
@@ -216,23 +222,20 @@ async function ensureMainContractTemplateInDb(): Promise<{ ok: true } | { ok: fa
   let templateId = String(existingTemplate?.id ?? "");
 
   if (!templateId) {
-    const { error: unsetDefaultError } = await supabase
-      .from("contract_templates")
-      .update({ is_default: false })
-      .neq("id", "00000000-0000-0000-0000-000000000000");
-    if (unsetDefaultError) {
-      return { ok: false, message: unsetDefaultError.message };
+    const payload: Record<string, unknown> = {
+      title: MAIN_CONTRACT_TITLE,
+      category: "residential",
+      content: MAIN_CONTRACT_SECTIONS.map((section) => `${section.title}\n${section.content}`).join("\n\n"),
+      description: MAIN_CONTRACT_DESCRIPTION,
+      is_default: true,
+    };
+    if (companyId && isValidUuid(companyId)) {
+      payload.company_id = companyId;
     }
 
     const { data: insertedTemplate, error: insertError } = await supabase
       .from("contract_templates")
-      .insert({
-        title: MAIN_CONTRACT_TITLE,
-        category: "residential",
-        content: MAIN_CONTRACT_SECTIONS.map((section) => `${section.title}\n${section.content}`).join("\n\n"),
-        description: MAIN_CONTRACT_DESCRIPTION,
-        is_default: true,
-      })
+      .insert(payload)
       .select("id")
       .single();
 
@@ -435,12 +438,24 @@ export default function ContractsPage() {
     async function load() {
       setLoading(true); setError(null);
       try {
-        const result = await fetchContractsData();
+        const compId = currentCompany?.id;
+        const result = await fetchContractsData(compId);
         if (!cancelled) setContracts(result);
+        
+        let propsQuery = supabase.from("properties").select("id, name").order("name");
+        let tensQuery = supabase.from("tenants").select("id, full_name, email, phone, whatsapp_number").order("full_name");
+        let contractsQuery = supabase.from("contracts").select("id, document_url, title");
+
+        if (isValidUuid(compId)) {
+          propsQuery = propsQuery.eq("company_id", compId);
+          tensQuery = tensQuery.eq("company_id", compId);
+          contractsQuery = contractsQuery.eq("company_id", compId);
+        }
+
         const [{ data: props }, { data: tens }, { data: contractDocs }, { data: allSections }] = await Promise.all([
-          supabase.from("properties").select("id, name").order("name"),
-          supabase.from("tenants").select("id, full_name, email, phone, whatsapp_number").order("full_name"),
-          supabase.from("contracts").select("id, document_url, title"),
+          propsQuery,
+          tensQuery,
+          contractsQuery,
           supabase.from("contract_sections").select("contract_id, order_index, title, content").order("order_index"),
         ]);
         if (!cancelled) {
@@ -475,7 +490,7 @@ export default function ContractsPage() {
     }
     void load();
     return () => { cancelled = true; };
-  }, [reloadKey]);
+  }, [reloadKey, currentCompany?.id]);
 
   /* ── load templates ── */
   useEffect(() => {
@@ -483,13 +498,18 @@ export default function ContractsPage() {
     async function loadTemplates() {
       setTemplatesLoading(true);
       try {
-        const seedResult = await ensureMainContractTemplateInDb();
+        const compId = currentCompany?.id;
+        const seedResult = await ensureMainContractTemplateInDb(compId);
         if (!seedResult.ok && !templateSeedWarningShownRef.current) {
           templateSeedWarningShownRef.current = true;
-          alert(`Could not auto-create Main Contract template: ${seedResult.message}. You can run web/docs/seed-main-contract-template.sql in Supabase SQL Editor.`);
+          console.warn(`Contract template status: ${seedResult.message}`);
+        }
+        let tplsQuery = supabase.from("contract_templates").select("id, title, description, is_default, company_id").order("created_at", { ascending: false });
+        if (isValidUuid(compId)) {
+          tplsQuery = tplsQuery.or(`company_id.eq.${compId},company_id.is.null,is_default.eq.true`);
         }
         const [{ data: tpls }, { data: tplSections }] = await Promise.all([
-          supabase.from("contract_templates").select("id, title, description, is_default").order("created_at", { ascending: false }),
+          tplsQuery,
           supabase.from("contract_template_sections").select("template_id, order_index, title, content").order("order_index"),
         ]);
         if (!cancelled && tpls) {
@@ -514,7 +534,7 @@ export default function ContractsPage() {
     }
     void loadTemplates();
     return () => { cancelled = true; };
-  }, [reloadKey]);
+  }, [reloadKey, currentCompany?.id]);
 
   const reload = () => setReloadKey((v) => v + 1);
 

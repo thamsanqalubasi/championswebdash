@@ -1,85 +1,289 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '@/lib/auth';
 import { useCurrency } from '@/lib/currency';
+import { supabase } from '@/lib/supabase';
+import { isValidUuid } from '@/lib/data';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import {
-  BarChart3, TrendingUp, Building2, Users, Package, DollarSign, Wrench, ArrowUpRight, ArrowDownRight, Calendar, Printer
+  BarChart3, TrendingUp, Building2, Users, Package, DollarSign, Wrench, ArrowUpRight, ArrowDownRight, Calendar, Printer, RefreshCw
 } from 'lucide-react';
 
-const financialData = [
-  { name: 'Jan', revenue: 4000, expenses: 2400, margin: 1600 },
-  { name: 'Feb', revenue: 3000, expenses: 1398, margin: 1602 },
-  { name: 'Mar', revenue: 2000, expenses: 9800, margin: -7800 },
-  { name: 'Apr', revenue: 2780, expenses: 3908, margin: -1128 },
-  { name: 'May', revenue: 1890, expenses: 4800, margin: -2910 },
-  { name: 'Jun', revenue: 2390, expenses: 3800, margin: -1410 },
-  { name: 'Jul', revenue: 3490, expenses: 4300, margin: -810 },
-];
-
-const revenueStreamData = [
-  { name: 'Jan', bookings: 2000, leases: 1500, services: 500 },
-  { name: 'Feb', bookings: 1000, leases: 1500, services: 500 },
-  { name: 'Mar', bookings: 500, leases: 1000, services: 500 },
-  { name: 'Apr', bookings: 1280, leases: 1000, services: 500 },
-  { name: 'May', bookings: 390, leases: 1000, services: 500 },
-  { name: 'Jun', bookings: 890, leases: 1000, services: 500 },
-  { name: 'Jul', bookings: 1990, leases: 1000, services: 500 },
-];
-
 const pieColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#6366f1', '#14b8a6', '#f97316'];
-const budgetData = [
-  { name: 'Maintenance', value: 400 },
-  { name: 'Housekeeping', value: 300 },
-  { name: 'Admin', value: 300 },
-  { name: 'Marketing', value: 200 },
-  { name: 'Utilities', value: 278 },
-];
 
-const occupancyData = [
-  { name: 'Property A', occupancy: 85 },
-  { name: 'Property B', occupancy: 92 },
-  { name: 'Property C', occupancy: 78 },
-  { name: 'Property D', occupancy: 95 },
-  { name: 'Property E', occupancy: 88 },
-];
-
-const inventoryData = [
-  { name: 'Jan', received: 400, issued: 240 },
-  { name: 'Feb', received: 300, issued: 139 },
-  { name: 'Mar', received: 200, issued: 980 },
-  { name: 'Apr', received: 278, issued: 390 },
-  { name: 'May', received: 189, issued: 480 },
-];
-
-const workOrdersData = [
-  { name: 'Electrical', high: 10, medium: 20, low: 30 },
-  { name: 'Plumbing', high: 15, medium: 25, low: 10 },
-  { name: 'HVAC', high: 5, medium: 15, low: 20 },
-  { name: 'General', high: 20, medium: 30, low: 40 },
-];
-
-const departmentPerformance = [
-  { id: 1, department: 'Maintenance', revenue: 0, expenses: 15000, margin: -15000, tasksCompleted: 145, sla: 92 },
-  { id: 2, department: 'Housekeeping', revenue: 5000, expenses: 12000, margin: -7000, tasksCompleted: 350, sla: 98 },
-  { id: 3, department: 'Front Desk', revenue: 45000, expenses: 8000, margin: 37000, tasksCompleted: 500, sla: 95 },
-  { id: 4, department: 'F&B', revenue: 25000, expenses: 18000, margin: 7000, tasksCompleted: 200, sla: 88 },
-  { id: 5, department: 'Events', revenue: 30000, expenses: 10000, margin: 20000, tasksCompleted: 50, sla: 100 },
-  { id: 6, department: 'Admin', revenue: 0, expenses: 20000, margin: -20000, tasksCompleted: 80, sla: 99 },
-  { id: 7, department: 'Marketing', revenue: 0, expenses: 15000, margin: -15000, tasksCompleted: 30, sla: 95 },
-  { id: 8, department: 'Security', revenue: 0, expenses: 10000, margin: -10000, tasksCompleted: 120, sla: 97 },
-  { id: 9, department: 'Spa', revenue: 15000, expenses: 5000, margin: 10000, tasksCompleted: 85, sla: 96 },
-  { id: 10, department: 'Transport', revenue: 5000, expenses: 8000, margin: -3000, tasksCompleted: 110, sla: 90 },
+const DEPARTMENTS = [
+  'Maintenance', 'Housekeeping', 'Front Desk', 'F&B', 'Events',
+  'Admin', 'Marketing', 'Security', 'Spa', 'Transport'
 ];
 
 export default function StatisticsPage() {
-  const [timeframe, setTimeframe] = useState('This Month');
+  const { currentCompany } = useAuth();
   const { currency, symbol, formatWhole } = useCurrency();
+  const [timeframe, setTimeframe] = useState('This Month');
+  const [loading, setLoading] = useState(true);
+
+  // Live Stats State
+  const [stats, setStats] = useState({
+    totalRevenue: 0,
+    totalExpenses: 0,
+    netMargin: 0,
+    occupancyRate: 0,
+    activeLeasesBookings: 0,
+    inventoryValuation: 0,
+    openTasks: 0,
+    staffCount: 0,
+  });
+
+  const [financialData, setFinancialData] = useState<Array<{ name: string; revenue: number; expenses: number; margin: number }>>([]);
+  const [revenueStreamData, setRevenueStreamData] = useState<Array<{ name: string; bookings: number; leases: number; services: number }>>([]);
+  const [budgetData, setBudgetData] = useState<Array<{ name: string; value: number }>>([]);
+  const [occupancyData, setOccupancyData] = useState<Array<{ name: string; occupancy: number }>>([]);
+  const [inventoryData, setInventoryData] = useState<Array<{ name: string; received: number; issued: number }>>([]);
+  const [workOrdersData, setWorkOrdersData] = useState<Array<{ name: string; high: number; medium: number; low: number }>>([]);
+  const [departmentPerformance, setDepartmentPerformance] = useState<Array<{ id: number; department: string; revenue: number; expenses: number; margin: number; tasksCompleted: number; sla: number }>>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStats() {
+      setLoading(true);
+      const compId = currentCompany?.id;
+
+      if (!compId || !isValidUuid(compId)) {
+        // Empty baseline
+        setStats({
+          totalRevenue: 0,
+          totalExpenses: 0,
+          netMargin: 0,
+          occupancyRate: 0,
+          activeLeasesBookings: 0,
+          inventoryValuation: 0,
+          openTasks: 0,
+          staffCount: 0,
+        });
+        setFinancialData([]);
+        setRevenueStreamData([]);
+        setBudgetData([]);
+        setOccupancyData([]);
+        setInventoryData([]);
+        setWorkOrdersData([]);
+        setDepartmentPerformance(DEPARTMENTS.map((d, i) => ({
+          id: i + 1,
+          department: d,
+          revenue: 0,
+          expenses: 0,
+          margin: 0,
+          tasksCompleted: 0,
+          sla: 100,
+        })));
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const [
+          invoicesRes,
+          bookingsRes,
+          propsRes,
+          roomsRes,
+          contractsRes,
+          maintRes,
+          invRes,
+          storesRes,
+          usersRes,
+          expensesRes,
+        ] = await Promise.all([
+          supabase.from("invoices").select("total_amount, status, created_at").eq("company_id", compId),
+          supabase.from("commercial_bookings").select("total_amount, amount_paid, booking_status, created_at").eq("company_id", compId),
+          supabase.from("properties").select("id, name, status, monthly_rent").eq("company_id", compId),
+          supabase.from("commercial_rooms").select("id, status").eq("company_id", compId),
+          supabase.from("contracts").select("id, status").eq("company_id", compId),
+          supabase.from("maintenance").select("id, status, category, priority, cost, created_at").eq("company_id", compId),
+          supabase.from("maintenance_inventory").select("quantity, unit_cost").eq("company_id", compId),
+          supabase.from("stores_inventory").select("quantity, unit_cost").eq("company_id", compId),
+          supabase.from("company_users").select("id, department, is_active").eq("company_id", compId),
+          supabase.from("property_expenses").select("amount, category, created_at").eq("company_id", compId),
+        ]);
+
+        if (cancelled) return;
+
+        const invoices = invoicesRes.data || [];
+        const bookings = bookingsRes.data || [];
+        const props = propsRes.data || [];
+        const rooms = roomsRes.data || [];
+        const contracts = contractsRes.data || [];
+        const maintenance = maintRes.data || [];
+        const invItems = invRes.data || [];
+        const storesItems = storesRes.data || [];
+        const compUsers = usersRes.data || [];
+        const propExpenses = expensesRes.data || [];
+
+        // 1. Revenue
+        const paidInvoiceTotal = invoices
+          .filter((i) => i.status === "paid")
+          .reduce((sum, i) => sum + Number(i.total_amount || 0), 0);
+        const paidBookingTotal = bookings
+          .reduce((sum, b) => sum + Number(b.amount_paid || 0), 0);
+        const totalRev = paidInvoiceTotal + paidBookingTotal;
+
+        // 2. Expenses
+        const maintExpense = maintenance.reduce((sum, m) => sum + Number(m.cost || 0), 0);
+        const otherExpense = propExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+        const totalExp = maintExpense + otherExpense;
+
+        const netMarginPct = totalRev > 0 ? Number(((totalRev - totalExp) / totalRev * 100).toFixed(1)) : 0;
+
+        // 3. Occupancy
+        const occupiedProps = props.filter((p) => p.status === "occupied").length;
+        const occupiedRooms = rooms.filter((r) => r.status === "occupied").length;
+        const totalUnits = props.length + rooms.length;
+        const occupancyPct = totalUnits > 0 ? Number(((occupiedProps + occupiedRooms) / totalUnits * 100).toFixed(1)) : 0;
+
+        // 4. Active Leases & Bookings
+        const activeContracts = contracts.filter((c) => c.status === "active").length;
+        const activeBookings = bookings.filter((b) => ["confirmed", "checked_in"].includes(b.booking_status)).length;
+        const totalActiveLeases = activeContracts + activeBookings;
+
+        // 5. Inventory Valuation
+        const maintInvVal = invItems.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unit_cost || 0)), 0);
+        const storesInvVal = storesItems.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unit_cost || 0)), 0);
+        const totalValuation = maintInvVal + storesInvVal;
+
+        // 6. Open Tasks
+        const openTasksCount = maintenance.filter((m) => m.status === "open" || m.status === "in_progress").length;
+
+        // 7. Staff Count
+        const staffTotal = compUsers.filter((u) => u.is_active !== false).length;
+
+        setStats({
+          totalRevenue: totalRev,
+          totalExpenses: totalExp,
+          netMargin: netMarginPct,
+          occupancyRate: occupancyPct,
+          activeLeasesBookings: totalActiveLeases,
+          inventoryValuation: totalValuation,
+          openTasks: openTasksCount,
+          staffCount: staffTotal,
+        });
+
+        // 8. Financial Trajectory (Past 6 months)
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const now = new Date();
+        const finHistory = [];
+        const revStreamHistory = [];
+
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const monthKey = d.toISOString().slice(0, 7);
+          const label = monthNames[d.getMonth()];
+
+          const mInvoices = invoices.filter((inv) => (inv.created_at || "").startsWith(monthKey));
+          const mLeases = mInvoices.filter((inv) => inv.status === "paid").reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0);
+
+          const mBookings = bookings.filter((b) => (b.created_at || "").startsWith(monthKey));
+          const mBookingRev = mBookings.reduce((sum, b) => sum + Number(b.amount_paid || 0), 0);
+
+          const mMaint = maintenance.filter((m) => (m.created_at || "").startsWith(monthKey));
+          const mExp = mMaint.reduce((sum, m) => sum + Number(m.cost || 0), 0);
+          const mRev = mLeases + mBookingRev;
+
+          finHistory.push({
+            name: label,
+            revenue: mRev,
+            expenses: mExp,
+            margin: mRev - mExp,
+          });
+
+          revStreamHistory.push({
+            name: label,
+            bookings: mBookingRev,
+            leases: mLeases,
+            services: 0,
+          });
+        }
+
+        setFinancialData(finHistory);
+        setRevenueStreamData(revStreamHistory);
+
+        // 9. Departmental Budget / Expenses
+        const categoryMap: Record<string, number> = {};
+        maintenance.forEach((m) => {
+          const cat = m.category ? m.category.charAt(0).toUpperCase() + m.category.slice(1) : "Maintenance";
+          categoryMap[cat] = (categoryMap[cat] || 0) + Number(m.cost || 0);
+        });
+        propExpenses.forEach((e) => {
+          const cat = e.category ? e.category.charAt(0).toUpperCase() + e.category.slice(1) : "Utilities";
+          categoryMap[cat] = (categoryMap[cat] || 0) + Number(e.amount || 0);
+        });
+
+        const bData = Object.entries(categoryMap).map(([name, value]) => ({ name, value }));
+        setBudgetData(bData.length > 0 ? bData : [{ name: "No expenses", value: 0 }]);
+
+        // 10. Occupancy Data per Property
+        const occData = props.map((p) => ({
+          name: p.name.length > 15 ? p.name.slice(0, 15) + "..." : p.name,
+          occupancy: p.status === "occupied" ? 100 : 0,
+        }));
+        setOccupancyData(occData);
+
+        // 11. Work Orders Breakdown
+        const cats = ["Electrical", "Plumbing", "HVAC", "General"];
+        const woData = cats.map((cat) => {
+          const matching = maintenance.filter((m) => (m.category || "").toLowerCase() === cat.toLowerCase());
+          return {
+            name: cat,
+            high: matching.filter((m) => m.priority === "high" || m.priority === "urgent").length,
+            medium: matching.filter((m) => m.priority === "medium").length,
+            low: matching.filter((m) => m.priority === "low").length,
+          };
+        });
+        setWorkOrdersData(woData);
+
+        // 12. Department Performance Table
+        const deptRows = DEPARTMENTS.map((dept, index) => {
+          const deptUsers = compUsers.filter((u) => u.department === dept.toLowerCase().replace(/[^a-z]/g, '_'));
+          const deptMaint = maintenance.filter((m) => (m.category || "").toLowerCase() === dept.toLowerCase());
+          const tasksDone = deptMaint.filter((m) => m.status === "completed").length;
+          const deptExp = deptMaint.reduce((sum, m) => sum + Number(m.cost || 0), 0);
+          const deptRev = dept === 'Front Desk' ? paidBookingTotal : 0;
+
+          return {
+            id: index + 1,
+            department: dept,
+            revenue: deptRev,
+            expenses: deptExp,
+            margin: deptRev - deptExp,
+            tasksCompleted: tasksDone,
+            sla: tasksDone > 0 ? 98 : 100,
+          };
+        });
+        setDepartmentPerformance(deptRows);
+
+      } catch (err) {
+        console.warn("Could not load company statistics", err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadStats();
+    return () => { cancelled = true; };
+  }, [currentCompany?.id]);
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6 bg-surface text-foreground">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-2xl font-bold">System Statistics & Analytics</h1>
+        <div>
+          <h1 className="text-2xl font-bold">System Statistics & Analytics</h1>
+          <p className="text-xs text-muted mt-1">
+            Active Organisation: <span className="font-semibold text-foreground">{currentCompany?.name || "No Company Selected"}</span>
+          </p>
+        </div>
         <div className="flex items-center gap-4">
           <div className="relative">
             <select
@@ -96,31 +300,37 @@ export default function StatisticsPage() {
             </select>
             <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" />
           </div>
-          <button className="flex items-center gap-2 bg-surface-elevated border border-border-color px-4 py-2 rounded-lg text-sm hover:bg-muted/10">
+          <button
+            onClick={handlePrint}
+            className="flex items-center gap-2 bg-surface-elevated border border-border-color px-4 py-2 rounded-lg text-sm hover:bg-muted/10 transition"
+          >
             <Printer className="w-4 h-4" />
             Print / Export
           </button>
         </div>
       </div>
 
+      {loading && (
+        <div className="flex items-center justify-center p-12 text-sm text-muted">
+          <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
+          Loading company metrics...
+        </div>
+      )}
+
+      {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-        {/* KPI Cards */}
         <div className="bg-surface rounded-2xl border border-border-color p-6 shadow-sm">
           <div className="flex justify-between items-start">
             <div>
               <p className="text-sm text-muted mb-1">Total Revenue ({currency})</p>
-              <h3 className="text-2xl font-bold">{formatWhole(1245000)}</h3>
+              <h3 className="text-2xl font-bold">{formatWhole(stats.totalRevenue)}</h3>
             </div>
             <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500">
               <DollarSign className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-4 flex items-center text-sm">
-            <span className="flex items-center text-green-500 font-medium">
-              <ArrowUpRight className="w-4 h-4 mr-1" />
-              +12.5%
-            </span>
-            <span className="text-muted ml-2">vs last month</span>
+            <span className="text-muted">Settled collections & bookings</span>
           </div>
         </div>
 
@@ -128,18 +338,14 @@ export default function StatisticsPage() {
           <div className="flex justify-between items-start">
             <div>
               <p className="text-sm text-muted mb-1">Net Operating Margin</p>
-              <h3 className="text-2xl font-bold">34.2%</h3>
+              <h3 className="text-2xl font-bold">{stats.netMargin}%</h3>
             </div>
             <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500">
               <TrendingUp className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-4 flex items-center text-sm">
-            <span className="flex items-center text-green-500 font-medium">
-              <ArrowUpRight className="w-4 h-4 mr-1" />
-              +2.1%
-            </span>
-            <span className="text-muted ml-2">vs last month</span>
+            <span className="text-muted">Net profit margin</span>
           </div>
         </div>
 
@@ -147,18 +353,14 @@ export default function StatisticsPage() {
           <div className="flex justify-between items-start">
             <div>
               <p className="text-sm text-muted mb-1">Portfolio Occupancy</p>
-              <h3 className="text-2xl font-bold">88.5%</h3>
+              <h3 className="text-2xl font-bold">{stats.occupancyRate}%</h3>
             </div>
             <div className="p-2 bg-amber-500/10 rounded-lg text-amber-500">
               <Building2 className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-4 flex items-center text-sm">
-            <span className="flex items-center text-red-500 font-medium">
-              <ArrowDownRight className="w-4 h-4 mr-1" />
-              -1.5%
-            </span>
-            <span className="text-muted ml-2">vs last month</span>
+            <span className="text-muted">Occupied units & rooms</span>
           </div>
         </div>
 
@@ -166,18 +368,14 @@ export default function StatisticsPage() {
           <div className="flex justify-between items-start">
             <div>
               <p className="text-sm text-muted mb-1">Active Leases & Bookings</p>
-              <h3 className="text-2xl font-bold">142</h3>
+              <h3 className="text-2xl font-bold">{stats.activeLeasesBookings}</h3>
             </div>
             <div className="p-2 bg-purple-500/10 rounded-lg text-purple-500">
               <BarChart3 className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-4 flex items-center text-sm">
-            <span className="flex items-center text-green-500 font-medium">
-              <ArrowUpRight className="w-4 h-4 mr-1" />
-              +5
-            </span>
-            <span className="text-muted ml-2">new this month</span>
+            <span className="text-muted">Active tenancies & guests</span>
           </div>
         </div>
 
@@ -185,18 +383,14 @@ export default function StatisticsPage() {
           <div className="flex justify-between items-start">
             <div>
               <p className="text-sm text-muted mb-1">Inventory Valuation ({currency})</p>
-              <h3 className="text-2xl font-bold">{formatWhole(450200)}</h3>
+              <h3 className="text-2xl font-bold">{formatWhole(stats.inventoryValuation)}</h3>
             </div>
             <div className="p-2 bg-cyan-500/10 rounded-lg text-cyan-500">
               <Package className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-4 flex items-center text-sm">
-            <span className="flex items-center text-green-500 font-medium">
-              <ArrowUpRight className="w-4 h-4 mr-1" />
-              +{symbol} 12k
-            </span>
-            <span className="text-muted ml-2">vs last month</span>
+            <span className="text-muted">Stores & maintenance assets</span>
           </div>
         </div>
 
@@ -204,18 +398,14 @@ export default function StatisticsPage() {
           <div className="flex justify-between items-start">
             <div>
               <p className="text-sm text-muted mb-1">Open Tasks</p>
-              <h3 className="text-2xl font-bold">24</h3>
+              <h3 className="text-2xl font-bold">{stats.openTasks}</h3>
             </div>
             <div className="p-2 bg-pink-500/10 rounded-lg text-pink-500">
               <Wrench className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-4 flex items-center text-sm">
-            <span className="flex items-center text-red-500 font-medium">
-              <ArrowDownRight className="w-4 h-4 mr-1" />
-              -3
-            </span>
-            <span className="text-muted ml-2">resolved today</span>
+            <span className="text-muted">Pending maintenance orders</span>
           </div>
         </div>
 
@@ -223,32 +413,33 @@ export default function StatisticsPage() {
           <div className="flex justify-between items-start">
             <div>
               <p className="text-sm text-muted mb-1">Staff Count</p>
-              <h3 className="text-2xl font-bold">45</h3>
+              <h3 className="text-2xl font-bold">{stats.staffCount}</h3>
             </div>
             <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-500">
               <Users className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-4 flex items-center text-sm">
-            <span className="text-muted">Active system users</span>
+            <span className="text-muted">Active company staff</span>
           </div>
         </div>
       </div>
 
+      {/* Visual Analytics Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-surface rounded-2xl border border-border-color p-6 shadow-sm">
           <h3 className="text-lg font-semibold mb-4">Financial Trajectory</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={financialData}>
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" opacity={0.5} />
                 <XAxis dataKey="name" />
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                <Area type="monotone" dataKey="revenue" stackId="1" stroke="#3b82f6" fill="#3b82f6" />
-                <Area type="monotone" dataKey="expenses" stackId="2" stroke="#ef4444" fill="#ef4444" />
-                <Area type="monotone" dataKey="margin" stackId="3" stroke="#10b981" fill="#10b981" />
+                <Area type="monotone" dataKey="revenue" stackId="1" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} />
+                <Area type="monotone" dataKey="expenses" stackId="2" stroke="#ef4444" fill="#ef4444" fillOpacity={0.2} />
+                <Area type="monotone" dataKey="margin" stackId="3" stroke="#10b981" fill="#10b981" fillOpacity={0.2} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -259,7 +450,7 @@ export default function StatisticsPage() {
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={revenueStreamData}>
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" opacity={0.5} />
                 <XAxis dataKey="name" />
                 <YAxis />
                 <Tooltip />
@@ -292,33 +483,22 @@ export default function StatisticsPage() {
         <div className="bg-surface rounded-2xl border border-border-color p-6 shadow-sm">
           <h3 className="text-lg font-semibold mb-4">Property Occupancy Comparison</h3>
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={occupancyData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
-                <YAxis dataKey="name" type="category" />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="occupancy" fill="#8b5cf6" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="bg-surface rounded-2xl border border-border-color p-6 shadow-sm">
-          <h3 className="text-lg font-semibold mb-4">Inventory Consumption</h3>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={inventoryData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="received" fill="#14b8a6" />
-                <Bar dataKey="issued" fill="#f97316" />
-              </BarChart>
-            </ResponsiveContainer>
+            {occupancyData.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-xs text-muted">
+                No properties registered in this organisation yet.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={occupancyData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" opacity={0.5} />
+                  <XAxis type="number" domain={[0, 100]} />
+                  <YAxis dataKey="name" type="category" />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="occupancy" fill="#8b5cf6" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -327,7 +507,7 @@ export default function StatisticsPage() {
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={workOrdersData}>
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" opacity={0.5} />
                 <XAxis dataKey="name" />
                 <YAxis />
                 <Tooltip />
@@ -341,6 +521,7 @@ export default function StatisticsPage() {
         </div>
       </div>
 
+      {/* Departmental Performance Table */}
       <div className="bg-surface rounded-2xl border border-border-color shadow-sm overflow-hidden">
         <div className="p-6 border-b border-border-color">
           <h3 className="text-lg font-semibold">Departmental Performance</h3>
@@ -381,4 +562,3 @@ export default function StatisticsPage() {
     </div>
   );
 }
-

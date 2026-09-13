@@ -1255,12 +1255,12 @@ export async function fetchCommercialRooms(
     }
 
     const { data, error } = await query;
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((r) => ({
         id: r.id,
         companyId: r.company_id,
         propertyId: r.property_id,
-        propertyName: r.properties?.name || "Paimba Grand Safari Lodge",
+        propertyName: r.properties?.name || "Lodge Property",
         roomNumber: r.room_number,
         roomType: r.room_type,
         floor: r.floor || "Ground Floor",
@@ -1277,14 +1277,17 @@ export async function fetchCommercialRooms(
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock commercial rooms", err);
+    console.warn("Could not load commercial rooms from server", err);
   }
 
-  let list = MOCK_COMMERCIAL_ROOMS;
-  if (propertyId) {
-    list = list.filter((r) => r.propertyId === propertyId);
+  if (companyId === MOCK_COMPANIES[0].id || !isValidUuid(companyId)) {
+    let list = MOCK_COMMERCIAL_ROOMS;
+    if (propertyId) {
+      list = list.filter((r) => r.propertyId === propertyId);
+    }
+    return list;
   }
-  return list;
+  return [];
 }
 
 export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise<CommercialRoom> {
@@ -1435,12 +1438,12 @@ export async function fetchCommercialBookings(companyId: string = MOCK_COMPANIES
       .eq("company_id", companyId)
       .order("created_at", { ascending: false });
 
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((b) => ({
         id: b.id,
         companyId: b.company_id,
         propertyId: b.property_id,
-        propertyName: b.properties?.name || "Paimba Grand Safari Lodge",
+        propertyName: b.properties?.name || "Lodge Property",
         roomId: b.room_id,
         roomNumber: b.commercial_rooms?.room_number || "Room",
         roomType: b.commercial_rooms?.room_type || "standard",
@@ -1470,10 +1473,13 @@ export async function fetchCommercialBookings(companyId: string = MOCK_COMPANIES
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock bookings", err);
+    console.warn("Could not load bookings from server", err);
   }
 
-  return MOCK_COMMERCIAL_BOOKINGS.filter((b) => b.companyId === companyId || !b.companyId);
+  if (companyId === MOCK_COMPANIES[0].id || !isValidUuid(companyId)) {
+    return MOCK_COMMERCIAL_BOOKINGS.filter((b) => b.companyId === companyId);
+  }
+  return [];
 }
 
 export async function createInstantCheckin(params: {
@@ -2350,7 +2356,7 @@ export async function fetchSalaryScales(companyId: string = MOCK_COMPANIES[0].id
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("department");
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((s) => ({
         id: s.id,
         companyId: s.company_id,
@@ -2368,9 +2374,12 @@ export async function fetchSalaryScales(companyId: string = MOCK_COMPANIES[0].id
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock salary scales", err);
+    console.warn("Could not load salary scales from server", err);
   }
-  return MOCK_SALARY_SCALES;
+  if (companyId === MOCK_COMPANIES[0].id || !isValidUuid(companyId)) {
+    return MOCK_SALARY_SCALES;
+  }
+  return [];
 }
 
 export async function saveSalaryScale(scale: Partial<SalaryScale>): Promise<SalaryScale> {
@@ -2444,7 +2453,7 @@ export async function fetchPayslips(companyId: string = MOCK_COMPANIES[0].id, pa
     }
 
     const { data, error } = await query.order("created_at", { ascending: false });
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((p) => {
         const fullName = `${p.users?.first_name || ""} ${p.users?.last_name || ""}`.trim() || p.users?.email || "Employee";
         return {
@@ -2475,9 +2484,12 @@ export async function fetchPayslips(companyId: string = MOCK_COMPANIES[0].id, pa
       });
     }
   } catch (err) {
-    console.warn("Falling back to mock payslips", err);
+    console.warn("Could not load payslips from server", err);
   }
-  return MOCK_PAYSLIPS;
+  if (companyId === MOCK_COMPANIES[0].id || !isValidUuid(companyId)) {
+    return MOCK_PAYSLIPS;
+  }
+  return [];
 }
 
 export async function generatePayslip(params: {
@@ -2590,7 +2602,7 @@ export async function fetchEmployeeContractTemplates(companyId: string = MOCK_CO
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("created_at", { ascending: false });
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((t) => ({
         id: t.id,
         companyId: t.company_id,
@@ -2604,9 +2616,12 @@ export async function fetchEmployeeContractTemplates(companyId: string = MOCK_CO
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock contract templates", err);
+    console.warn("Could not load contract templates from server", err);
   }
-  return MOCK_EMPLOYEE_TEMPLATES;
+  if (companyId === MOCK_COMPANIES[0].id || !isValidUuid(companyId)) {
+    return MOCK_EMPLOYEE_TEMPLATES;
+  }
+  return [];
 }
 
 export async function fetchEmployeeContracts(companyId: string = MOCK_COMPANIES[0].id): Promise<EmployeeContract[]> {
@@ -2619,7 +2634,7 @@ export async function fetchEmployeeContracts(companyId: string = MOCK_COMPANIES[
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("created_at", { ascending: false });
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((c) => ({
         id: c.id,
         companyId: c.company_id,
@@ -2640,9 +2655,12 @@ export async function fetchEmployeeContracts(companyId: string = MOCK_COMPANIES[
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock employee contracts", err);
+    console.warn("Could not load employee contracts from server", err);
   }
-  return MOCK_EMPLOYEE_CONTRACTS;
+  if (companyId === MOCK_COMPANIES[0].id || !isValidUuid(companyId)) {
+    return MOCK_EMPLOYEE_CONTRACTS;
+  }
+  return [];
 }
 
 export async function createEmployeeContract(contract: Partial<EmployeeContract>): Promise<EmployeeContract> {
@@ -2941,7 +2959,7 @@ export async function fetchLeaveRecords(companyId: string = MOCK_COMPANIES[0].id
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("created_at", { ascending: false });
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((l) => ({
         id: l.id,
         companyId: l.company_id,
@@ -2959,9 +2977,9 @@ export async function fetchLeaveRecords(companyId: string = MOCK_COMPANIES[0].id
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock leave records", err);
+    console.warn("Error fetching leave records", err);
   }
-  return MOCK_LEAVE_RECORDS;
+  return [];
 }
 
 export async function requestLeave(record: Partial<LeaveRecord>): Promise<LeaveRecord> {
@@ -3107,7 +3125,7 @@ export async function fetchAuditEvents(companyId: string = MOCK_COMPANIES[0].id)
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("created_at", { ascending: false }).limit(200);
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((row) => ({
         id: row.id,
         companyId: row.company_id || companyId,
@@ -3121,9 +3139,9 @@ export async function fetchAuditEvents(companyId: string = MOCK_COMPANIES[0].id)
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock audit trail", err);
+    console.warn("Error fetching audit events", err);
   }
-  return MOCK_AUDIT_TRAIL;
+  return [];
 }
 
 export async function fetchCheckinPatterns(companyId: string = MOCK_COMPANIES[0].id) {
@@ -3151,66 +3169,162 @@ export async function fetchCheckinPatterns(companyId: string = MOCK_COMPANIES[0]
 }
 
 export async function fetchDashboardData(companyId: string = MOCK_COMPANIES[0].id): Promise<DashboardData> {
-  const rooms = await fetchCommercialRooms(companyId);
-  const occupiedRooms = rooms.filter((r) => r.status === "occupied").length;
-  const availableRooms = rooms.filter((r) => r.status === "available").length;
-  const cleaningNeeded = rooms.filter((r) => r.status === "cleaning_needed").length;
+  try {
+    const [propsRes, roomsRes, tenantsRes, invRes, maintRes, bookingsRes] = await Promise.all([
+      isValidUuid(companyId)
+        ? supabase.from("properties").select("id, type, status, monthly_rent").eq("company_id", companyId)
+        : Promise.resolve({ data: [] }),
+      isValidUuid(companyId)
+        ? supabase.from("commercial_rooms").select("id, status, price_per_night").eq("company_id", companyId)
+        : Promise.resolve({ data: [] }),
+      isValidUuid(companyId)
+        ? supabase.from("tenants").select("id, tenure_status").eq("company_id", companyId)
+        : Promise.resolve({ data: [] }),
+      isValidUuid(companyId)
+        ? supabase.from("invoices").select("id, total_amount, status, created_at").eq("company_id", companyId)
+        : Promise.resolve({ data: [] }),
+      isValidUuid(companyId)
+        ? supabase.from("maintenance").select("id, status, category, cost, created_at").eq("company_id", companyId)
+        : Promise.resolve({ data: [] }),
+      isValidUuid(companyId)
+        ? supabase.from("commercial_bookings").select("id, check_in_date, booking_status, total_amount, amount_paid").eq("company_id", companyId)
+        : Promise.resolve({ data: [] }),
+    ]);
 
-  const stats: DashboardStats = {
-    totalProperties: 8,
-    totalCommercialProperties: 2,
-    occupiedUnits: 6,
-    vacantUnits: 2,
-    occupancyRate: 75,
-    totalMonthlyIncome: 142500,
-    totalMonthlyInvoiced: 156000,
-    totalMonthlyExpenses: 48200,
-    netProfit: 94300,
-    pendingMaintenance: 3,
-    overduePayments: 2,
-    collectionRate: 91.3,
-    totalRooms: rooms.length || 12,
-    occupiedRooms,
-    availableRooms,
-    cleaningNeededRooms: cleaningNeeded,
-    activeCheckinsToday: 4,
-    maintenanceByStatus: [
-      { status: "Open", count: 2 },
-      { status: "In Progress", count: 1 },
-      { status: "Completed", count: 9 },
-    ],
-    maintenanceByCategory: [
-      { category: "Plumbing", count: 3 },
-      { category: "Electrical", count: 2 },
-      { category: "HVAC", count: 1 },
-    ],
-    propertyStatus: [
-      { status: "Residential", count: 6 },
-      { status: "Commercial Lodge", count: 2 },
-    ],
-  };
+    const props = propsRes.data || [];
+    const rooms = roomsRes.data || [];
+    const tenants = tenantsRes.data || [];
+    const invoices = invRes.data || [];
+    const maintenance = maintRes.data || [];
+    const bookings = bookingsRes.data || [];
 
-  const cashflow = [
-    { month: "2026-03", label: "Mar", income: 110000, expenses: 42000, profit: 68000 },
-    { month: "2026-04", label: "Apr", income: 125000, expenses: 44000, profit: 81000 },
-    { month: "2026-05", label: "May", income: 132000, expenses: 41000, profit: 91000 },
-    { month: "2026-06", label: "Jun", income: 128000, expenses: 46000, profit: 82000 },
-    { month: "2026-07", label: "Jul", income: 139000, expenses: 45000, profit: 94000 },
-    { month: "2026-08", label: "Aug", income: 142500, expenses: 48200, profit: 94300 },
-  ];
+    const occupiedRooms = rooms.filter((r) => r.status === "occupied").length;
+    const availableRooms = rooms.filter((r) => r.status === "available").length;
+    const cleaningNeeded = rooms.filter((r) => r.status === "cleaning_needed").length;
 
-  return { stats, cashflow };
+    const totalProperties = props.length;
+    const commercialProps = props.filter((p) => ["hotel", "motel", "lodge", "guest_house"].includes(p.type)).length;
+    const occupiedUnits = props.filter((p) => p.status === "occupied").length;
+    const vacantUnits = props.filter((p) => p.status === "vacant").length;
+    const totalUnits = occupiedUnits + vacantUnits;
+    const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : (rooms.length > 0 ? Math.round((occupiedRooms / rooms.length) * 100) : 0);
+
+    const paidInvoices = invoices.filter((i) => i.status === "paid");
+    const overdueInvoices = invoices.filter((i) => i.status === "overdue");
+    const totalMonthlyIncome = paidInvoices.reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
+    const totalMonthlyInvoiced = invoices.reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
+    const totalMonthlyExpenses = maintenance.reduce((acc, m) => acc + Number(m.cost || 0), 0);
+    const netProfit = totalMonthlyIncome - totalMonthlyExpenses;
+    const collectionRate = totalMonthlyInvoiced > 0 ? Math.round((totalMonthlyIncome / totalMonthlyInvoiced) * 100) : 0;
+
+    const pendingMaintenance = maintenance.filter((m) => m.status === "open" || m.status === "in_progress").length;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const activeCheckinsToday = bookings.filter((b) => b.check_in_date && String(b.check_in_date).startsWith(todayStr)).length;
+
+    const statusMap: Record<string, number> = {};
+    maintenance.forEach((m) => {
+      const s = m.status === "in_progress" ? "In Progress" : m.status === "completed" ? "Completed" : "Open";
+      statusMap[s] = (statusMap[s] || 0) + 1;
+    });
+    const maintenanceByStatus = Object.entries(statusMap).map(([status, count]) => ({ status, count }));
+
+    const catMap: Record<string, number> = {};
+    maintenance.forEach((m) => {
+      const c = m.category ? m.category.charAt(0).toUpperCase() + m.category.slice(1) : "General";
+      catMap[c] = (catMap[c] || 0) + 1;
+    });
+    const maintenanceByCategory = Object.entries(catMap).map(([category, count]) => ({ category, count }));
+
+    const propTypeMap: Record<string, number> = {};
+    props.forEach((p) => {
+      const t = ["hotel", "motel", "lodge", "guest_house"].includes(p.type) ? "Commercial Lodge" : "Residential";
+      propTypeMap[t] = (propTypeMap[t] || 0) + 1;
+    });
+    const propertyStatus = Object.entries(propTypeMap).map(([status, count]) => ({ status, count }));
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const now = new Date();
+    const cashflow = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthKey = d.toISOString().slice(0, 7);
+      const label = monthNames[d.getMonth()];
+      const mInvoices = invoices.filter((inv) => (inv.created_at || "").startsWith(monthKey));
+      const mIncome = mInvoices.filter((inv) => inv.status === "paid").reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0);
+      const mMaint = maintenance.filter((m) => (m.created_at || "").startsWith(monthKey));
+      const mExpenses = mMaint.reduce((sum, m) => sum + Number(m.cost || 0), 0);
+      cashflow.push({
+        month: monthKey,
+        label,
+        income: mIncome,
+        expenses: mExpenses,
+        profit: mIncome - mExpenses,
+      });
+    }
+
+    const stats: DashboardStats = {
+      totalProperties,
+      totalCommercialProperties: commercialProps,
+      occupiedUnits,
+      vacantUnits,
+      occupancyRate,
+      totalMonthlyIncome,
+      totalMonthlyInvoiced,
+      totalMonthlyExpenses,
+      netProfit,
+      pendingMaintenance,
+      overduePayments: overdueInvoices.length,
+      collectionRate,
+      totalRooms: rooms.length,
+      occupiedRooms,
+      availableRooms,
+      cleaningNeededRooms: cleaningNeeded,
+      activeCheckinsToday,
+      maintenanceByStatus,
+      maintenanceByCategory,
+      propertyStatus,
+    };
+
+    return { stats, cashflow };
+  } catch (err) {
+    console.warn("Error calculating dashboard data", err);
+    return {
+      stats: {
+        totalProperties: 0,
+        totalCommercialProperties: 0,
+        occupiedUnits: 0,
+        vacantUnits: 0,
+        occupancyRate: 0,
+        totalMonthlyIncome: 0,
+        totalMonthlyInvoiced: 0,
+        totalMonthlyExpenses: 0,
+        netProfit: 0,
+        pendingMaintenance: 0,
+        overduePayments: 0,
+        collectionRate: 0,
+        totalRooms: 0,
+        occupiedRooms: 0,
+        availableRooms: 0,
+        cleaningNeededRooms: 0,
+        activeCheckinsToday: 0,
+        maintenanceByStatus: [],
+        maintenanceByCategory: [],
+        propertyStatus: [],
+      },
+      cashflow: [],
+    };
+  }
 }
 
 export async function fetchProperties(companyId: string = MOCK_COMPANIES[0].id): Promise<PropertyRow[]> {
   try {
-    const { data, error } = await supabase
-      .from("properties")
-      .select("*")
-      .eq("company_id", companyId)
-      .order("name");
+    let query = supabase.from("properties").select("*");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("name");
 
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((p) => ({
         id: p.id,
         companyId: p.company_id || companyId,
@@ -3231,50 +3345,10 @@ export async function fetchProperties(companyId: string = MOCK_COMPANIES[0].id):
         isPublished: p.is_published || false,
       }));
     }
-  } catch {
-    // fallback
+  } catch (err) {
+    console.warn("Error fetching properties", err);
   }
-
-  return [
-    {
-      id: "b0000000-0000-0000-0000-000000000001",
-      companyId: "a0000000-0000-0000-0000-000000000001",
-      name: "Paimba Grand Safari Lodge & Hotel",
-      type: "lodge",
-      address: "Plot 45 Kruger Gateway, Nelspruit, Mpumalanga",
-      status: "occupied",
-      monthlyRent: 0,
-      totalRooms: 12,
-      uniformRoomPricing: true,
-      defaultRoomPrice: 1250,
-      defaultBedBreakfast: 1550,
-      defaultBedLunch: 1850,
-      defaultFullBoard: 2250,
-      photos: ["https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80"],
-    },
-    {
-      id: "prop-002",
-      companyId: "a0000000-0000-0000-0000-000000000001",
-      name: "Paimba Executive Villa 4",
-      type: "house",
-      address: "18 Sandton Ridge, Johannesburg",
-      status: "occupied",
-      monthlyRent: 24000,
-      photos: ["https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80"],
-    },
-    {
-      id: "prop-003",
-      companyId: "a0000000-0000-0000-0000-000000000001",
-      name: "Sunrise Guest House & Suites",
-      type: "guest_house",
-      address: "9 Ocean View Drive, Umhlanga",
-      status: "occupied",
-      monthlyRent: 0,
-      totalRooms: 8,
-      uniformRoomPricing: false,
-      photos: ["https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=800&q=80"],
-    },
-  ];
+  return [];
 }
 
 export async function fetchTenants(companyId: string = MOCK_COMPANIES[0].id): Promise<TenantRow[]> {
@@ -3284,7 +3358,7 @@ export async function fetchTenants(companyId: string = MOCK_COMPANIES[0].id): Pr
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("created_at", { ascending: false });
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((t) => ({
         id: t.id,
         companyId: t.company_id || companyId,
@@ -3297,20 +3371,9 @@ export async function fetchTenants(companyId: string = MOCK_COMPANIES[0].id): Pr
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock tenants", err);
+    console.warn("Error fetching tenants", err);
   }
-  return [
-    {
-      id: "ten-001",
-      companyId,
-      fullName: "Michael Van Der Merwe",
-      propertyName: "Paimba Executive Villa 4",
-      phone: "+27 83 902 1199",
-      email: "m.vandermerwe@gmail.com",
-      tenureStatus: "active",
-      rentStatus: "paid",
-    },
-  ];
+  return [];
 }
 
 export async function fetchInvoices(companyId: string = MOCK_COMPANIES[0].id): Promise<InvoiceRow[]> {
@@ -3320,7 +3383,7 @@ export async function fetchInvoices(companyId: string = MOCK_COMPANIES[0].id): P
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("created_at", { ascending: false });
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((inv) => ({
         id: inv.id,
         companyId: inv.company_id || companyId,
@@ -3333,56 +3396,89 @@ export async function fetchInvoices(companyId: string = MOCK_COMPANIES[0].id): P
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock invoices", err);
+    console.warn("Error fetching invoices", err);
   }
-  return [
-    {
-      id: "inv-001",
-      companyId,
-      tenantName: "Michael Van Der Merwe",
-      propertyName: "Paimba Executive Villa 4",
-      month: "2026-08",
-      dueDate: "2026-08-01",
-      totalAmount: 24000,
-      status: "paid",
-    },
-  ];
+  return [];
 }
 
 export async function fetchReportsData(companyId: string = MOCK_COMPANIES[0].id): Promise<ReportsData> {
-  return {
-    summary: {
-      totalInvoiced: 156000,
-      totalPaid: 142500,
-      totalOverdue: 13500,
-      collectionRate: 91.3,
-    },
-    byStatus: [
-      { label: "Paid", count: 8 },
-      { label: "Sent", count: 2 },
-      { label: "Draft", count: 1 },
-      { label: "Overdue", count: 1 },
-    ],
-    monthly: [
-      { month: "2026-06", label: "Jun", income: 128000, expenses: 46000, profit: 82000 },
-      { month: "2026-07", label: "Jul", income: 139000, expenses: 45000, profit: 94000 },
-      { month: "2026-08", label: "Aug", income: 142500, expenses: 48200, profit: 94300 },
-    ],
-  };
+  try {
+    let query = supabase.from("invoices").select("total_amount, status, created_at");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data: invoices } = await query;
+    const invList = invoices || [];
+    const totalInvoiced = invList.reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
+    const totalPaid = invList.filter((i) => i.status === "paid").reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
+    const totalOverdue = invList.filter((i) => i.status === "overdue").reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
+    const collectionRate = totalInvoiced > 0 ? Math.round((totalPaid / totalInvoiced) * 100) : 0;
+
+    const statusCounts = {
+      Paid: invList.filter((i) => i.status === "paid").length,
+      Sent: invList.filter((i) => i.status === "sent").length,
+      Draft: invList.filter((i) => i.status === "draft").length,
+      Overdue: invList.filter((i) => i.status === "overdue").length,
+    };
+
+    return {
+      summary: { totalInvoiced, totalPaid, totalOverdue, collectionRate },
+      byStatus: Object.entries(statusCounts).map(([label, count]) => ({ label, count })),
+      monthly: [],
+    };
+  } catch {
+    return {
+      summary: { totalInvoiced: 0, totalPaid: 0, totalOverdue: 0, collectionRate: 0 },
+      byStatus: [],
+      monthly: [],
+    };
+  }
 }
 
 export async function fetchMaintenanceOverview(companyId: string = MOCK_COMPANIES[0].id): Promise<MaintenanceOverviewData> {
-  return {
-    totalWorkOrders: 12,
-    openWorkOrders: 3,
-    completedWorkOrders: 9,
-    totalProviders: 6,
-    scheduledInspections: 4,
-    overduePreventiveTasks: 1,
-    lowStockItems: 2,
-    housekeepingPending: 2,
-    roomServiceRequested: 1,
-  };
+  try {
+    const [maintRes, provRes, inspRes, prevRes, invRes, hkRes, rsRes] = await Promise.all([
+      isValidUuid(companyId) ? supabase.from("maintenance").select("id, status").eq("company_id", companyId) : Promise.resolve({ data: [] }),
+      isValidUuid(companyId) ? supabase.from("maintainers").select("id").eq("company_id", companyId) : Promise.resolve({ data: [] }),
+      isValidUuid(companyId) ? supabase.from("inspections").select("id, status").eq("company_id", companyId) : Promise.resolve({ data: [] }),
+      isValidUuid(companyId) ? supabase.from("preventive_maintenance").select("id, status").eq("company_id", companyId) : Promise.resolve({ data: [] }),
+      isValidUuid(companyId) ? supabase.from("maintenance_inventory").select("id, quantity, min_stock_level").eq("company_id", companyId) : Promise.resolve({ data: [] }),
+      isValidUuid(companyId) ? supabase.from("housekeeping_schedules").select("id, status").eq("company_id", companyId) : Promise.resolve({ data: [] }),
+      isValidUuid(companyId) ? supabase.from("room_service_schedules").select("id, status").eq("company_id", companyId) : Promise.resolve({ data: [] }),
+    ]);
+
+    const maint = maintRes.data || [];
+    const openWorkOrders = maint.filter((m) => m.status === "open" || m.status === "in_progress").length;
+    const completedWorkOrders = maint.filter((m) => m.status === "completed").length;
+    const lowStockItems = (invRes.data || []).filter((i) => Number(i.quantity) <= Number(i.min_stock_level)).length;
+    const overduePreventive = (prevRes.data || []).filter((p) => p.status === "overdue").length;
+    const hkPending = (hkRes.data || []).filter((h) => h.status === "pending" || h.status === "in_progress").length;
+    const rsRequested = (rsRes.data || []).filter((r) => r.status === "requested" || r.status === "preparing").length;
+
+    return {
+      totalWorkOrders: maint.length,
+      openWorkOrders,
+      completedWorkOrders,
+      totalProviders: (provRes.data || []).length,
+      scheduledInspections: (inspRes.data || []).length,
+      overduePreventiveTasks: overduePreventive,
+      lowStockItems,
+      housekeepingPending: hkPending,
+      roomServiceRequested: rsRequested,
+    };
+  } catch {
+    return {
+      totalWorkOrders: 0,
+      openWorkOrders: 0,
+      completedWorkOrders: 0,
+      totalProviders: 0,
+      scheduledInspections: 0,
+      overduePreventiveTasks: 0,
+      lowStockItems: 0,
+      housekeepingPending: 0,
+      roomServiceRequested: 0,
+    };
+  }
 }
 
 export async function fetchWorkOrders(companyId: string = MOCK_COMPANIES[0].id): Promise<WorkOrderRow[]> {
@@ -3392,7 +3488,7 @@ export async function fetchWorkOrders(companyId: string = MOCK_COMPANIES[0].id):
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("created_at", { ascending: false });
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((w) => ({
         id: w.id,
         companyId: w.company_id || companyId,
@@ -3407,22 +3503,9 @@ export async function fetchWorkOrders(companyId: string = MOCK_COMPANIES[0].id):
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock work orders", err);
+    console.warn("Error fetching work orders", err);
   }
-  return [
-    {
-      id: "wo-001",
-      companyId,
-      propertyName: "Paimba Grand Safari Lodge & Hotel",
-      providerName: "AquaPro Plumbing",
-      category: "Plumbing",
-      priority: "high",
-      status: "open",
-      scheduledDate: "2026-08-31",
-      estimatedCost: 1800,
-      actualCost: 0,
-    },
-  ];
+  return [];
 }
 
 export async function fetchProviders(companyId: string = MOCK_COMPANIES[0].id): Promise<ProviderRow[]> {
@@ -3432,7 +3515,7 @@ export async function fetchProviders(companyId: string = MOCK_COMPANIES[0].id): 
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("name");
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((p) => ({
         id: p.id,
         companyId: p.company_id || companyId,
@@ -3445,20 +3528,9 @@ export async function fetchProviders(companyId: string = MOCK_COMPANIES[0].id): 
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock providers", err);
+    console.warn("Error fetching providers", err);
   }
-  return [
-    {
-      id: "prov-001",
-      companyId,
-      name: "AquaPro Plumbing",
-      phone: "+27 11 800 2933",
-      specialization: "Plumbing & Drainage",
-      rate: 450,
-      totalJobs: 14,
-      totalPaid: 24500,
-    },
-  ];
+  return [];
 }
 
 export async function fetchInspections(companyId: string = MOCK_COMPANIES[0].id): Promise<InspectionRow[]> {
@@ -3468,7 +3540,7 @@ export async function fetchInspections(companyId: string = MOCK_COMPANIES[0].id)
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("scheduled_date", { ascending: false });
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((insp) => ({
         id: insp.id,
         companyId: insp.company_id || companyId,
@@ -3482,21 +3554,9 @@ export async function fetchInspections(companyId: string = MOCK_COMPANIES[0].id)
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock inspections", err);
+    console.warn("Error fetching inspections", err);
   }
-  return [
-    {
-      id: "insp-001",
-      companyId,
-      propertyName: "Paimba Grand Safari Lodge & Hotel",
-      tenantName: "Commercial Operations",
-      type: "routine",
-      status: "scheduled",
-      scheduledDate: "2026-09-05",
-      completedDate: "",
-      inspectorName: "Sipho Khumalo",
-    },
-  ];
+  return [];
 }
 
 export async function fetchPreventiveTasks(companyId: string = MOCK_COMPANIES[0].id): Promise<PreventiveTaskRow[]> {
@@ -3506,11 +3566,11 @@ export async function fetchPreventiveTasks(companyId: string = MOCK_COMPANIES[0]
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("next_due");
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((t) => ({
         id: t.id,
         companyId: t.company_id || companyId,
-        propertyName: t.properties?.name || "Paimba Grand Safari Lodge",
+        propertyName: t.properties?.name || "Unassigned Property",
         providerName: t.maintainers?.name || "Maintenance Staff",
         title: t.title,
         category: t.category,
@@ -3521,22 +3581,9 @@ export async function fetchPreventiveTasks(companyId: string = MOCK_COMPANIES[0]
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock preventive tasks", err);
+    console.warn("Error fetching preventive tasks", err);
   }
-  return [
-    {
-      id: "prev-001",
-      companyId,
-      propertyName: "Paimba Grand Safari Lodge & Hotel",
-      providerName: "CoolBreeze HVAC",
-      title: "Quarterly Air Conditioning Filter Replacement",
-      category: "HVAC",
-      frequency: "quarterly",
-      status: "active",
-      nextDue: "2026-09-10",
-      estimatedCost: 3200,
-    },
-  ];
+  return [];
 }
 
 export async function fetchInventoryItems(companyId: string = MOCK_COMPANIES[0].id): Promise<InventoryItemRow[]> {
@@ -3546,7 +3593,7 @@ export async function fetchInventoryItems(companyId: string = MOCK_COMPANIES[0].
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("name");
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((item) => ({
         id: item.id,
         companyId: item.company_id || companyId,
@@ -3561,34 +3608,9 @@ export async function fetchInventoryItems(companyId: string = MOCK_COMPANIES[0].
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock inventory", err);
+    console.warn("Error fetching inventory items", err);
   }
-  return [
-    {
-      id: "inv-item-01",
-      companyId,
-      name: "Luxury Egyptian Cotton Linen Sets",
-      category: "Hospitality & Housekeeping",
-      quantity: 45,
-      unit: "sets",
-      minStockLevel: 20,
-      unitCost: 650,
-      supplier: "Hotel Linen Direct",
-      location: "Central Linen Room B",
-    },
-    {
-      id: "inv-item-02",
-      companyId,
-      name: "LED Ceiling Downlights 9W",
-      category: "Electrical",
-      quantity: 12,
-      unit: "pcs",
-      minStockLevel: 25,
-      unitCost: 85,
-      supplier: "VoltMax Supplies",
-      location: "Maintenance Store 1",
-    },
-  ];
+  return [];
 }
 
 export async function fetchContracts(companyId: string = MOCK_COMPANIES[0].id): Promise<ContractRow[]> {
@@ -3598,7 +3620,7 @@ export async function fetchContracts(companyId: string = MOCK_COMPANIES[0].id): 
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("created_at", { ascending: false });
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((c) => ({
         id: c.id,
         companyId: c.company_id || companyId,
@@ -3614,23 +3636,9 @@ export async function fetchContracts(companyId: string = MOCK_COMPANIES[0].id): 
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock contracts", err);
+    console.warn("Error fetching contracts", err);
   }
-  return [
-    {
-      id: "con-001",
-      companyId,
-      title: "Commercial Master Lease",
-      tenantName: "Michael Van Der Merwe",
-      propertyName: "Paimba Executive Villa 4",
-      startDate: "2026-01-01",
-      endDate: "2026-12-31",
-      monthlyRent: 24000,
-      depositAmount: 48000,
-      notes: "Standard 12 month residential lease agreement.",
-      status: "active",
-    },
-  ];
+  return [];
 }
 
 export async function fetchSettingsData(companyId: string = MOCK_COMPANIES[0].id): Promise<SettingsData> {
@@ -4000,7 +4008,7 @@ export async function fetchProcurementRequests(companyId: string = MOCK_COMPANIE
       .eq("company_id", companyId)
       .order("created_at", { ascending: false });
 
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((r) => ({
         id: r.id,
         companyId: r.company_id,
@@ -4051,9 +4059,9 @@ export async function fetchProcurementRequests(companyId: string = MOCK_COMPANIE
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock procurement requests", err);
+    console.warn("Error fetching procurement requests", err);
   }
-  return MOCK_PROCUREMENT_REQUESTS.filter((r) => r.companyId === companyId);
+  return [];
 }
 
 export async function createProcurementRequest(
@@ -4326,7 +4334,7 @@ export async function fetchStoresInventory(companyId: string = MOCK_COMPANIES[0]
       .eq("company_id", companyId)
       .order("name");
 
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((item) => ({
         id: item.id,
         companyId: item.company_id,
@@ -4347,9 +4355,9 @@ export async function fetchStoresInventory(companyId: string = MOCK_COMPANIES[0]
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock stores inventory", err);
+    console.warn("Error fetching stores inventory", err);
   }
-  return MOCK_STORES_INVENTORY.filter((s) => s.companyId === companyId);
+  return [];
 }
 
 export async function checkStoresForItem(itemName: string, companyId: string = MOCK_COMPANIES[0].id): Promise<StoresItem[]> {
@@ -4466,7 +4474,7 @@ export async function fetchStoresTransactions(companyId: string = MOCK_COMPANIES
       .eq("company_id", companyId)
       .order("created_at", { ascending: false });
 
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((t) => ({
         id: t.id,
         companyId: t.company_id,
@@ -4485,9 +4493,9 @@ export async function fetchStoresTransactions(companyId: string = MOCK_COMPANIES
       }));
     }
   } catch (err) {
-    console.warn("Falling back to mock stores transactions", err);
+    console.warn("Error fetching stores transactions", err);
   }
-  return MOCK_STORES_TRANSACTIONS.filter((t) => t.companyId === companyId);
+  return [];
 }
 
 export async function addStoresInventoryItem(

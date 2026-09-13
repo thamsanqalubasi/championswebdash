@@ -150,20 +150,32 @@ export default function RentCollectionPage() {
       setError(null);
 
       try {
+        const compId = currentCompany?.id;
+        let tenantsQuery = supabase
+          .from("tenants")
+          .select("id, full_name, phone, email, property_id, tenure_status, tenure_end_date, notice_end_date, properties(name)")
+          .order("full_name", { ascending: true });
+
+        let invoicesQuery = supabase
+          .from("invoices")
+          .select("id, tenant_id, month, total_amount, due_date, status, pdf_url")
+          .order("created_at", { ascending: false });
+
+        if (isValidUuid(compId)) {
+          tenantsQuery = tenantsQuery.eq("company_id", compId);
+          invoicesQuery = invoicesQuery.eq("company_id", compId);
+        }
+
         const [{ data: tenantsData, error: tenantsError }, { data: paymentsData, error: paymentsError }, { data: invoicesData, error: invoicesError }, { data: companyData }] = await Promise.all([
-          supabase
-            .from("tenants")
-            .select("id, full_name, phone, email, property_id, tenure_status, tenure_end_date, notice_end_date, properties(name)")
-            .order("full_name", { ascending: true }),
+          tenantsQuery,
           supabase
             .from("tenant_rent_payments")
             .select("id, tenant_id, payment_date, amount_paid")
             .order("payment_date", { ascending: false }),
-          supabase
-            .from("invoices")
-            .select("id, tenant_id, month, total_amount, due_date, status, pdf_url")
-            .order("created_at", { ascending: false }),
-          supabase.from("company_settings").select("default_due_day").limit(1).maybeSingle()
+          invoicesQuery,
+          isValidUuid(compId)
+            ? supabase.from("companies").select("default_due_day").eq("id", compId).maybeSingle()
+            : supabase.from("company_settings").select("default_due_day").limit(1).maybeSingle()
         ]);
 
         if (tenantsError) throw tenantsError;
@@ -207,10 +219,11 @@ export default function RentCollectionPage() {
         invoices.forEach((invoice) => { invoiceByIdMap[invoice.id] = invoice; });
         setInvoiceById(invoiceByIdMap);
 
+        const tenantIds = new Set((tenantsData ?? []).map((t) => String(t.id)));
         const paymentMap: Record<string, TenantPaymentHistoryRow[]> = {};
         (paymentsData ?? []).forEach((payment) => {
           const tenantId = String(payment.tenant_id ?? "");
-          if (!tenantId) return;
+          if (!tenantId || !tenantIds.has(tenantId)) return;
 
           if (!paymentMap[tenantId]) paymentMap[tenantId] = [];
           paymentMap[tenantId].push({
@@ -275,7 +288,7 @@ export default function RentCollectionPage() {
 
     void loadData();
     return () => { cancelled = true; };
-  }, [reloadKey]);
+  }, [reloadKey, currentCompany?.id]);
 
   const stats = useMemo(() => {
     const assigned = tenants.filter(t => t.propertyId);

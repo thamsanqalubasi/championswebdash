@@ -76,6 +76,7 @@ export type CompanyInfo = {
   paymentInstructions: string;
   currency?: string;
   email?: string;
+  phone?: string;
 };
 
 export type AdminInfo = {

@@ -110,11 +110,16 @@ export default function BillsPage() {
     let cancelled = false;
 
     async function fetchSchedules() {
-      const res = await supabase
+      const compId = currentCompany?.id;
+      let q = supabase
         .from("property_bill_schedules")
         .select("id, name, property_id, amount, due_day, created_at, is_active, properties(name)")
         .eq("is_active", true)
         .order("name");
+      if (isValidUuid(compId)) {
+        q = q.eq("company_id", compId);
+      }
+      const res = await q;
 
       if (!res.error && res.data) {
         return res.data.map((row) => ({
@@ -124,11 +129,15 @@ export default function BillsPage() {
         }));
       }
 
-      const fallback = await supabase
+      let fb = supabase
         .from("property_bill_schedules")
         .select("id, title, property_id, amount, due_day, created_at, is_active, properties(name)")
         .eq("is_active", true)
         .order("title");
+      if (isValidUuid(compId)) {
+        fb = fb.eq("company_id", compId);
+      }
+      const fallback = await fb;
 
       if (fallback.error) throw fallback.error;
       setSupportsFrequency(false);
@@ -140,13 +149,21 @@ export default function BillsPage() {
       setError(null);
 
       try {
+        const compId = currentCompany?.id;
+        let monthlyQ = supabase
+          .from("property_monthly_bills")
+          .select("schedule_id, month, amount, status, paid_date")
+          .order("month", { ascending: false });
+        let propsQ = supabase.from("properties").select("id, name").order("name");
+        if (isValidUuid(compId)) {
+          monthlyQ = monthlyQ.eq("company_id", compId);
+          propsQ = propsQ.eq("company_id", compId);
+        }
+
         const [scheduleRows, monthlyResult, propsResult] = await Promise.all([
           fetchSchedules(),
-          supabase
-            .from("property_monthly_bills")
-            .select("schedule_id, month, amount, status, paid_date")
-            .order("month", { ascending: false }),
-          supabase.from("properties").select("id, name").order("name"),
+          monthlyQ,
+          propsQ,
         ]);
 
         if (monthlyResult.error) throw monthlyResult.error;
@@ -215,7 +232,7 @@ export default function BillsPage() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, currentCompany?.id]);
 
   const reload = () => setReloadKey((value) => value + 1);
 

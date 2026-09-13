@@ -25,16 +25,21 @@ export default function MaintenancePage() {
     async function load() {
       setLoading(true); setError(null);
       try {
-        const result = await fetchMaintenanceOverviewData();
+        const compId = currentCompany?.id;
+        const result = await fetchMaintenanceOverviewData(compId);
         if (!cancelled) setData(result);
-        const { data: props } = await supabase.from("properties").select("id, name").order("name");
+        let propsQuery = supabase.from("properties").select("id, name").order("name");
+        if (isValidUuid(compId)) {
+          propsQuery = propsQuery.eq("company_id", compId);
+        }
+        const { data: props } = await propsQuery;
         if (!cancelled && props) setProperties(props.map((p) => ({ id: String(p.id), name: String(p.name) })));
       } catch (e) { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load maintenance overview."); }
       finally { if (!cancelled) setLoading(false); }
     }
     void load();
     return () => { cancelled = true; };
-  }, [reloadKey]);
+  }, [reloadKey, currentCompany?.id]);
 
   const reload = () => setReloadKey((v) => v + 1);
 

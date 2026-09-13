@@ -107,11 +107,18 @@ export default function InspectionsPage() {
     async function loadData() {
       setLoading(true); setError(null);
       try {
-        const result = await fetchInspectionsData();
+        const compId = currentCompany?.id;
+        const result = await fetchInspectionsData(compId);
         if (!cancelled) setInspections(result);
+        let propsQuery = supabase.from("properties").select("id, name").order("name");
+        let tensQuery = supabase.from("tenants").select("id, full_name").order("full_name");
+        if (isValidUuid(compId)) {
+          propsQuery = propsQuery.eq("company_id", compId);
+          tensQuery = tensQuery.eq("company_id", compId);
+        }
         const [{ data: props }, { data: tens }] = await Promise.all([
-          supabase.from("properties").select("id, name").order("name"),
-          supabase.from("tenants").select("id, full_name").order("full_name"),
+          propsQuery,
+          tensQuery,
         ]);
         if (!cancelled) {
           if (props) setProperties(props.map((p) => ({ id: String(p.id), name: String(p.name) })));
@@ -122,7 +129,7 @@ export default function InspectionsPage() {
     }
     void loadData();
     return () => { cancelled = true; };
-  }, [reloadKey]);
+  }, [reloadKey, currentCompany?.id]);
 
   const reload = () => setReloadKey((v) => v + 1);
 

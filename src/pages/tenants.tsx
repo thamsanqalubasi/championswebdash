@@ -206,15 +206,16 @@ export default function TenantsPage() {
       setError(null);
 
       try {
-        const result = await fetchTenantsData();
+        const result = await fetchTenantsData(currentCompany?.id);
         if (!cancelled) {
           setTenants(result);
         }
 
-        const { data: props, error: propsError } = await supabase
-          .from("properties")
-          .select("id, name")
-          .order("name");
+        let propQuery = supabase.from("properties").select("id, name").order("name");
+        if (isValidUuid(currentCompany?.id)) {
+          propQuery = propQuery.eq("company_id", currentCompany.id);
+        }
+        const { data: props, error: propsError } = await propQuery;
 
         if (propsError) throw propsError;
 
@@ -237,7 +238,7 @@ export default function TenantsPage() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, currentCompany?.id]);
 
   const reload = () => setReloadKey((value) => value + 1);
 

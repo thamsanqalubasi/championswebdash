@@ -140,10 +140,10 @@ function formatStageName(stage: string) {
 }
 
 export default function ProcurementPage() {
-  const { currentCompanyUser } = useAuth();
+  const { currentCompany, currentCompanyUser } = useAuth();
   const { formatWhole, currency } = useCurrency();
   const [activeTab, setActiveTab] = useState('overview');
-  const [requests, setRequests] = useState<ProcurementRequest[]>(MOCK_REQUESTS);
+  const [requests, setRequests] = useState<ProcurementRequest[]>([]);
   const [reminderThreshold, setReminderThreshold] = useState(24);
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
   
@@ -157,8 +157,8 @@ export default function ProcurementPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const reqs = await fetchProcurementRequests();
-        if (reqs && reqs.length > 0) setRequests(reqs);
+        const reqs = await fetchProcurementRequests(currentCompany?.id);
+        setRequests(reqs || []);
         const threshold = await fetchReminderThreshold();
         if (threshold) setReminderThreshold(threshold);
       } catch (e) {
@@ -166,7 +166,7 @@ export default function ProcurementPage() {
       }
     }
     loadData();
-  }, []);
+  }, [currentCompany?.id]);
 
   const getHoursElapsed = (stageEnteredAt: string) => {
     return (Date.now() - new Date(stageEnteredAt).getTime()) / 3600000;

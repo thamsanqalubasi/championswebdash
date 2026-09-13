@@ -73,11 +73,18 @@ export default function ScheduledTasksPage() {
     async function loadData() {
       setLoading(true); setError(null);
       try {
-        const result = await fetchPreventiveTasksData();
+        const compId = currentCompany?.id;
+        const result = await fetchPreventiveTasksData(compId);
         if (!cancelled) setTasks(result);
+        let propsQuery = supabase.from("properties").select("id, name").order("name");
+        let provsQuery = supabase.from("maintainers").select("id, name").order("name");
+        if (isValidUuid(compId)) {
+          propsQuery = propsQuery.eq("company_id", compId);
+          provsQuery = provsQuery.eq("company_id", compId);
+        }
         const [{ data: props }, { data: provs }] = await Promise.all([
-          supabase.from("properties").select("id, name").order("name"),
-          supabase.from("maintainers").select("id, name").order("name"),
+          propsQuery,
+          provsQuery,
         ]);
         if (!cancelled) {
           if (props) setProperties(props.map((p) => ({ id: String(p.id), name: String(p.name) })));
@@ -88,7 +95,7 @@ export default function ScheduledTasksPage() {
     }
     void loadData();
     return () => { cancelled = true; };
-  }, [reloadKey]);
+  }, [reloadKey, currentCompany?.id]);
 
   const reload = () => setReloadKey((v) => v + 1);
 

@@ -180,8 +180,8 @@ export default function StoresInventoryPage() {
   const [activeTab, setActiveTab] = useState<"inventory" | "receive" | "release" | "transactions">("inventory");
   const [loading, setLoading] = useState(true);
   
-  const [inventory, setInventory] = useState<StoresItem[]>(MOCK_STORES);
-  const [transactions, setTransactions] = useState<StoresTransaction[]>(MOCK_TRANSACTIONS);
+  const [inventory, setInventory] = useState<StoresItem[]>([]);
+  const [transactions, setTransactions] = useState<StoresTransaction[]>([]);
 
   const loadData = async () => {
     try {
@@ -190,12 +190,8 @@ export default function StoresInventoryPage() {
         fetchStoresInventory(companyId),
         fetchStoresTransactions(companyId),
       ]);
-      if (inv && inv.length > 0) {
-        setInventory(inv);
-      }
-      if (txns && txns.length > 0) {
-        setTransactions(txns);
-      }
+      setInventory(inv || []);
+      setTransactions(txns || []);
     } catch (err) {
       console.warn("Could not load stores data from server, using existing inventory", err);
     } finally {

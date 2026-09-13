@@ -263,6 +263,7 @@ function sanitizeCompanyInfo(info: {
   paymentInstructions?: string | null;
   currency?: string | null;
   email?: string | null;
+  phone?: string | null;
 }): CompanyInfo {
   const rawName = String(info.companyName ?? "").trim();
   const companyName = (!rawName || rawName.toLowerCase().includes("champions"))
@@ -282,6 +283,7 @@ function sanitizeCompanyInfo(info: {
     paymentInstructions: String(info.paymentInstructions ?? ""),
     currency: String(info.currency || "ZAR"),
     email: info.email ? String(info.email) : undefined,
+    phone: info.phone ? String(info.phone) : undefined,
   };
 }
 
@@ -305,7 +307,7 @@ export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo>
     try {
       const { data: comp, error: compErr } = await supabase
         .from("companies")
-        .select("name, logo_url, address, tax_rate, payment_instructions, currency, email")
+        .select("name, logo_url, address, tax_rate, payment_instructions, currency")
         .eq("id", targetId)
         .maybeSingle();
 
@@ -317,7 +319,6 @@ export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo>
           taxRate: Number(comp.tax_rate ?? 15),
           paymentInstructions: String(comp.payment_instructions ?? ""),
           currency: String(comp.currency || "ZAR"),
-          email: comp.email ? String(comp.email) : undefined,
         });
       }
     } catch {
