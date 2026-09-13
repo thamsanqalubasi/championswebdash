@@ -37,6 +37,7 @@ import type {
   SupplierContact,
   QuoteContactProfile,
   RoleCapability,
+  RoleProfileDefinition,
 } from "./types";
 import { supabase } from "./supabase";
 import {
@@ -4683,6 +4684,7 @@ export const ALL_ROLE_CAPABILITIES: RoleCapability[] = [
   { slug: "manage_settings", label: "Manage Settings", description: "Modify company settings, email configuration, and payment details", section: "Administration & Audit", defaultEnabled: ["admin"] },
   { slug: "view_audit_trail", label: "View Audit Trail", description: "View the full system audit log", section: "Administration & Audit", defaultEnabled: ["admin", "audit", "manager"] },
   { slug: "manage_companies", label: "Manage Companies / Organisations", description: "Add and manage multiple company organisations", section: "Administration & Audit", defaultEnabled: ["admin"] },
+  { slug: "manage_roles_organogram", label: "Manage Roles, Restrictions & Organogram", description: "Create new roles/job titles, modify duties, and adjust restrictions in the organogram", section: "Administration & Audit", defaultEnabled: ["admin"] },
 ];
 
 export async function fetchRolePermissions(department: string, companyId: string = MOCK_COMPANIES[0].id): Promise<Record<string, boolean>> {
@@ -4703,7 +4705,7 @@ export async function fetchRolePermissions(department: string, companyId: string
   // Build default permissions from capability definitions
   const defaults: Record<string, boolean> = {};
   ALL_ROLE_CAPABILITIES.forEach((cap) => {
-    defaults[cap.slug] = cap.defaultEnabled.includes(department as import("./types").DepartmentType);
+    defaults[cap.slug] = cap.defaultEnabled.includes(department as DepartmentType);
   });
   return defaults;
 }
@@ -4728,3 +4730,104 @@ export async function saveRolePermissions(
     .forEach((u) => { u.permissions = { ...u.permissions, ...permissions }; });
   return true;
 }
+
+// ─── CUSTOM ROLES & ORGANOGRAM OVERRIDES ──────────────────────────────────────
+
+export const MOCK_CUSTOM_ROLES: RoleProfileDefinition[] = [];
+
+export async function fetchCustomRoleDefinitions(companyId: string = MOCK_COMPANIES[0].id): Promise<RoleProfileDefinition[]> {
+  try {
+    const { data, error } = await supabase
+      .from("custom_roles")
+      .select("*")
+      .eq("company_id", companyId);
+
+    if (!error && data && data.length > 0) {
+      return data.map((r) => ({
+        id: r.id,
+        companyId: r.company_id,
+        title: r.title,
+        department: r.department,
+        defaultLevel: r.role_level,
+        responsibilities: r.responsibilities || "",
+        allowedRules: Array.isArray(r.allowed_rules) ? r.allowed_rules : [],
+        restrictedRules: Array.isArray(r.restricted_rules) ? r.restricted_rules : [],
+        rights: Array.isArray(r.rights) ? r.rights : [],
+        reportsTo: r.reports_to || "General Operations Manager",
+        isCustom: true,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock custom roles", err);
+  }
+  return MOCK_CUSTOM_ROLES.filter((r) => r.companyId === companyId || !r.companyId);
+}
+
+export async function saveCustomRoleDefinition(roleDef: RoleProfileDefinition): Promise<RoleProfileDefinition> {
+  const companyId = roleDef.companyId || MOCK_COMPANIES[0].id;
+  const now = new Date().toISOString();
+  const id = roleDef.id || `custom-role-${Date.now()}`;
+  const fullDef: RoleProfileDefinition = {
+    ...roleDef,
+    id,
+    companyId,
+    isCustom: true,
+  };
+
+  const existingIdx = MOCK_CUSTOM_ROLES.findIndex(
+    (r) => (r.id && r.id === id) || (r.title.toLowerCase() === roleDef.title.toLowerCase() && (r.companyId === companyId || !r.companyId))
+  );
+
+  if (existingIdx !== -1) {
+    MOCK_CUSTOM_ROLES[existingIdx] = fullDef;
+  } else {
+    MOCK_CUSTOM_ROLES.push(fullDef);
+  }
+
+  try {
+    if (isValidUuid(companyId)) {
+      await supabase.from("custom_roles").upsert({
+        company_id: companyId,
+        title: roleDef.title,
+        department: roleDef.department,
+        role_level: roleDef.defaultLevel,
+        responsibilities: roleDef.responsibilities,
+        allowed_rules: roleDef.allowedRules,
+        restricted_rules: roleDef.restrictedRules,
+        rights: roleDef.rights || [],
+        reports_to: roleDef.reportsTo,
+        updated_at: now,
+      });
+    }
+  } catch (err) {
+    console.warn("Could not upsert custom role to Supabase", err);
+  }
+
+  return fullDef;
+}
+
+export async function deleteCustomRoleDefinition(title: string, companyId: string = MOCK_COMPANIES[0].id): Promise<boolean> {
+  const idx = MOCK_CUSTOM_ROLES.findIndex(
+    (r) => r.title.toLowerCase() === title.toLowerCase() && (r.companyId === companyId || !r.companyId)
+  );
+  if (idx !== -1) {
+    MOCK_CUSTOM_ROLES.splice(idx, 1);
+  }
+
+  try {
+    if (isValidUuid(companyId)) {
+      await supabase.from("custom_roles").delete().eq("company_id", companyId).eq("title", title);
+    }
+  } catch {}
+
+  return true;
+}
+
+export function canUserManageRoles(user?: CompanyUser | null, isSuperAdmin?: boolean): boolean {
+  if (isSuperAdmin) return true;
+  if (!user) return false;
+  if (user.roleLevel === "super_admin" || user.roleLevel === "admin") return true;
+  if (user.permissions && user.permissions["manage_roles_organogram"]) return true;
+  return false;
+}
+

@@ -754,6 +754,20 @@ export type RoleCapability = {
   defaultEnabled: DepartmentType[];  // departments that have this by default
 };
 
+export type RoleProfileDefinition = {
+  id?: string;
+  companyId?: string;
+  title: string;
+  department: DepartmentType;
+  defaultLevel: RoleLevel;
+  responsibilities: string;
+  allowedRules: string[];
+  restrictedRules: string[];
+  rights?: string[];
+  reportsTo: string;
+  isCustom?: boolean;
+};
+
 // ─── COMPANY SETTINGS EXTRAS ──────────────────────────────────────────────────
 
 export type CompanyReminderSettings = {

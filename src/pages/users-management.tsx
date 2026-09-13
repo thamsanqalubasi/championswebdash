@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   UserCog,
@@ -27,8 +27,9 @@ import {
   resetUserPinByPrivilege,
   sendStaffInvitation,
   triggerStaffPasswordReset,
+  fetchCustomRoleDefinitions,
 } from "@/lib/data";
-import type { CompanyUser, DepartmentType, RoleLevel } from "@/lib/types";
+import type { CompanyUser, DepartmentType, RoleLevel, RoleProfileDefinition } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 
 const JOB_TITLES_BY_DEPARTMENT: Record<DepartmentType, Array<{ title: string; defaultLevel: RoleLevel }>> = {
@@ -366,10 +367,16 @@ export default function UsersManagementPage() {
     }
   };
 
+  const [customRoles, setCustomRoles] = useState<RoleProfileDefinition[]>([]);
+
   const loadUsers = async () => {
     setLoading(true);
-    const data = await fetchCompanyUsers(currentCompany.id);
-    setUsers(data);
+    const [userData, roleData] = await Promise.all([
+      fetchCompanyUsers(currentCompany.id),
+      fetchCustomRoleDefinitions(currentCompany.id),
+    ]);
+    setUsers(userData);
+    setCustomRoles(roleData);
     setLoading(false);
   };
 
@@ -377,19 +384,31 @@ export default function UsersManagementPage() {
     loadUsers();
   }, [currentCompany.id]);
 
+  const availableTitles: Array<{ title: string; defaultLevel: RoleLevel }> = useMemo(() => {
+    const baseAvailable = JOB_TITLES_BY_DEPARTMENT[department] || [];
+    const customForDept = customRoles
+      .filter((r) => r.department === department)
+      .map((r) => ({ title: r.title, defaultLevel: r.defaultLevel }));
+
+    const combined = [...baseAvailable];
+    customForDept.forEach((c) => {
+      if (!combined.some((b) => b.title.toLowerCase() === c.title.toLowerCase())) {
+        combined.push(c);
+      }
+    });
+
+    return isManager && !isAdmin
+      ? combined.filter((j) => j.defaultLevel !== "manager" && j.defaultLevel !== "super_admin" && j.defaultLevel !== "admin")
+      : combined;
+  }, [department, customRoles, isManager, isAdmin]);
+
   // When department changes in modal, update available job titles
   useEffect(() => {
-    const available = JOB_TITLES_BY_DEPARTMENT[department] || [];
-    // If manager is adding, filter out manager / super_admin titles
-    const filtered = isManager && !isAdmin
-      ? available.filter((j) => j.defaultLevel !== "manager" && j.defaultLevel !== "super_admin" && j.defaultLevel !== "admin")
-      : available;
-
-    if (filtered.length > 0) {
-      setJobTitle(filtered[0].title);
-      setRoleLevel(filtered[0].defaultLevel);
+    if (availableTitles.length > 0) {
+      setJobTitle(availableTitles[0].title);
+      setRoleLevel(availableTitles[0].defaultLevel);
     }
-  }, [department, isManager, isAdmin]);
+  }, [availableTitles]);
 
   const openAddUser = () => {
     setErrorMsg("");
@@ -808,7 +827,9 @@ export default function UsersManagementPage() {
                     <option value="human_resources">Human Resources</option>
                     <option value="it">Information Technology</option>
                     <option value="procurement">Procurement</option>
+                    <option value="stores">Stores & Inventory</option>
                     <option value="audit">Audit Department</option>
+                    <option value="manager">Operations Management</option>
                   </select>
                 </div>
 
@@ -818,18 +839,16 @@ export default function UsersManagementPage() {
                     value={jobTitle}
                     onChange={(e) => {
                       setJobTitle(e.target.value);
-                      const match = (JOB_TITLES_BY_DEPARTMENT[department] || []).find((j) => j.title === e.target.value);
+                      const match = availableTitles.find((j) => j.title === e.target.value);
                       if (match) setRoleLevel(match.defaultLevel);
                     }}
                     className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
                   >
-                    {(JOB_TITLES_BY_DEPARTMENT[department] || [])
-                      .filter((j) => !isManager || isAdmin || (j.defaultLevel !== "manager" && j.defaultLevel !== "super_admin" && j.defaultLevel !== "admin"))
-                      .map((j) => (
-                        <option key={j.title} value={j.title}>
-                          {j.title}
-                        </option>
-                      ))}
+                    {availableTitles.map((j) => (
+                      <option key={j.title} value={j.title}>
+                        {j.title} ({j.defaultLevel})
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
