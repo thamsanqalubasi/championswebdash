@@ -39,6 +39,7 @@ import RoomShowcasesPage from "@/pages/room-showcases";
 import ProcurementPage from "@/pages/procurement";
 import StoresPage from "@/pages/stores";
 import OrganogramPage from "@/pages/organogram";
+import ITPage from "@/pages/it";
 
 function CompanySlugRedirect() {
   const { companySlug } = useParams<{ companySlug: string }>();
@@ -115,6 +116,7 @@ export function AppRouter() {
         <Route path="/stores" element={<StoresPage />} />
         <Route path="/users-management" element={<UsersManagementPage />} />
         <Route path="/organogram" element={<OrganogramPage />} />
+        <Route path="/it" element={<ITPage />} />
         <Route path="/companies" element={<CompaniesPage />} />
         <Route path="/contracts" element={<ContractsPage />} />
         <Route path="/settings" element={<SettingsPage />} />

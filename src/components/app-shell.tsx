@@ -9,7 +9,7 @@ import {
   Truck, SearchCheck, CalendarClock, Package, FileSignature, Settings,
   History, Landmark, BedDouble, KeyRound, Briefcase, Layers, ChevronDown,
   Building, Inbox, Globe, UserCog, ChevronLeft, ChevronRight, Menu,
-  ShieldCheck, Check, X, Network,
+  ShieldCheck, Check, X, Network, Server,
   type LucideIcon,
 } from "lucide-react";
 import type { DepartmentType } from "@/lib/types";
@@ -83,14 +83,15 @@ const allNavSections: NavSection[] = [
     ],
   },
   {
-    title: "Administration & Audit",
+    title: "IT, Administration & Audit",
     items: [
+      { label: "IT & Systems Hub", href: "/it", icon: Server, departments: ["admin","it","manager"] },
       { label: "Companies / Orgs", href: "/companies", icon: Building, requiresSuperAdmin: true },
-      { label: "Users & Rights", href: "/users-management", icon: UserCog, departments: ["admin","manager","it"] },
-      { label: "Organogram & Roles", href: "/organogram", icon: Network, departments: ["admin","manager","it"] },
+      { label: "Users & Rights", href: "/users-management", icon: UserCog, departments: ["admin","it","manager"] },
+      { label: "Organogram & Roles", href: "/organogram", icon: Network, departments: ["admin","it","manager"] },
       { label: "Contracts", href: "/contracts", icon: FileSignature, departments: ["admin","manager"] },
-      { label: "Settings", href: "/settings", icon: Settings, departments: ["admin","manager","it"] },
-      { label: "Audit Department", href: "/audit-trail", icon: History, departments: ["admin","audit","manager"] },
+      { label: "Settings", href: "/settings", icon: Settings, departments: ["admin","it","manager"] },
+      { label: "Audit Department", href: "/audit-trail", icon: History, departments: ["admin","audit","manager","it"] },
     ],
   },
 ];
