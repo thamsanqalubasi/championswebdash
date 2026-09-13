@@ -162,3 +162,4 @@ export function TermsCheckboxField({ checked, onChange, required = true }: Terms
     </div>
   );
 }
+

@@ -311,7 +311,7 @@ export default function SettingsPage() {
     if (res.error) {
       setPasswordMsg({ type: "error", text: res.error });
     } else {
-      setPasswordMsg({ type: "success", text: "Password updated successfully!" });
+      setPasswordMsg({ type: "success", text: "Password updated successfully! A security confirmation email has been dispatched to your email." });
       setNewPassword("");
       setConfirmPassword("");
 

@@ -17,6 +17,11 @@ import {
   MOCK_COMPANIES,
   MOCK_COMPANY_USERS,
 } from "./data";
+import {
+  sendEmailViaApi,
+  wrapSignupWelcomeEmailHtml,
+  wrapPasswordChangeConfirmationEmailHtml,
+} from "./notifications";
 
 export type SignUpCompanyParams = {
   companyName: string;
@@ -237,6 +242,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) {
         return { error: error.message };
       }
+
+      // Security confirmation email
+      const targetEmail = currentCompanyUser?.email || user?.email;
+      if (targetEmail) {
+        try {
+          const origin = typeof window !== "undefined" ? window.location.origin : "";
+          const portalLoginUrl = currentCompany?.slug ? `${origin}/c/${currentCompany.slug}/login` : `${origin}/login`;
+          const emailHtml = wrapPasswordChangeConfirmationEmailHtml({
+            recipientName: currentCompanyUser?.fullName || targetEmail,
+            userEmail: targetEmail,
+            companyName: currentCompany?.name || "Champions Court",
+            companyLogo: currentCompany?.logoUrl,
+            portalLoginUrl,
+            changeType: "updated",
+          });
+          void sendEmailViaApi({
+            to: targetEmail,
+            subject: `Security Alert: Password Updated - ${currentCompany?.name || "Champions Court"}`,
+            html: emailHtml,
+          });
+        } catch (emailErr) {
+          console.warn("Could not dispatch password update email", emailErr);
+        }
+      }
+
       return { error: null, success: true };
     } catch (err) {
       return { error: err instanceof Error ? err.message : "Password update failed" };
@@ -291,6 +321,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         actorName: normalizedEmail,
         details: `User ${normalizedEmail} successfully established initial account password and activated account.`,
       });
+
+      // 5. Security confirmation email
+      try {
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        const portalLoginUrl = currentCompany?.slug ? `${origin}/c/${currentCompany.slug}/login` : `${origin}/login`;
+        const emailHtml = wrapPasswordChangeConfirmationEmailHtml({
+          recipientName: normalizedEmail,
+          userEmail: normalizedEmail,
+          companyName: currentCompany?.name || "Champions Court",
+          companyLogo: currentCompany?.logoUrl,
+          portalLoginUrl,
+          changeType: "initial_setup",
+        });
+        void sendEmailViaApi({
+          to: normalizedEmail,
+          subject: `Security Alert: Account Password Established - ${currentCompany?.name || "Champions Court"}`,
+          html: emailHtml,
+        });
+      } catch (emailErr) {
+        console.warn("Could not dispatch password setup email", emailErr);
+      }
 
       return { error: null, success: true };
     } catch (err) {
@@ -544,6 +595,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         actorName: newCompanyUser.fullName,
         details: `Organization "${newCompany.name}" (Portal: /c/${cleanSlug}/login) successfully registered with Super Admin ${newCompanyUser.fullName} (${normalizedEmail}).`,
       });
+
+      // 8. Dispatch Welcome & Onboarding Email
+      try {
+        const origin = typeof window !== "undefined" ? window.location.origin : "https://domain.com";
+        const portalLoginUrl = `${origin}/c/${cleanSlug}/login`;
+        const welcomeEmailHtml = wrapSignupWelcomeEmailHtml({
+          recipientName: `${adminFirstName} ${adminLastName}`.trim(),
+          companyName: companyName.trim(),
+          companySlug: cleanSlug,
+          adminEmail: normalizedEmail,
+          portalLoginUrl,
+          currency,
+          country,
+        });
+
+        void sendEmailViaApi({
+          to: normalizedEmail,
+          subject: `Welcome to ${companyName.trim()} - Your Organization Portal is Ready`,
+          html: welcomeEmailHtml,
+        });
+
+        if (companyEmail && companyEmail.trim().toLowerCase() !== normalizedEmail) {
+          void sendEmailViaApi({
+            to: companyEmail.trim().toLowerCase(),
+            subject: `Welcome to ${companyName.trim()} - Organization Workspace Provisioned`,
+            html: welcomeEmailHtml,
+          });
+        }
+      } catch (emailErr) {
+        console.warn("Could not dispatch welcome email on organization signup", emailErr);
+      }
 
       return { error: null, success: true, company: newCompany };
     } catch (err) {

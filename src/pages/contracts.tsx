@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState, Fragment } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
@@ -743,7 +743,7 @@ export default function ContractsPage() {
         ownerName: row.tenantName,
         ownerEmail: tenant?.email || "",
         defaultSubject: `Lease Contract - ${row.propertyName}`,
-        defaultMessage: `Dear ${row.tenantName},\n\nPlease find your lease contract for ${row.propertyName} attached. The contract period is ${row.startDate} to ${row.endDate} with a monthly rent of ${formatCurrency(row.monthlyRent)}.`,
+        defaultMessage: `Dear ${row.tenantName},\n\nPlease find your official lease agreement for ${row.propertyName} attached as a PDF document. The contract period is ${row.startDate} to ${row.endDate} with a monthly rent of ${formatCurrency(row.monthlyRent)}.`,
       });
     } catch (e) {
       alert(e instanceof Error ? e.message : "Could not prepare contract for sharing.");

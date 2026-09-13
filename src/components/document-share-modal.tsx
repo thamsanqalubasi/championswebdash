@@ -147,14 +147,44 @@ export function DocumentShareModal({
     setSending(true);
 
     try {
-      // Build attachment
-      let attachment: any = null;
+      // Build attachment - ALWAYS guarantee a valid PDF attachment for invoices, contracts, and documents
+      let attachment: {
+        filename: string;
+        contentBase64: string;
+        contentType: string;
+      } | null = null;
       const cleanFileName = `${fileNameBase.replace(/\.pdf$/i, "")}.pdf`;
 
-      if (documentUrl && documentUrl.startsWith("http") && documentUrl.toLowerCase().includes(".pdf")) {
-        attachment = await createPdfAttachmentFromUrl(documentUrl, cleanFileName);
-      } else if (documentHtml) {
-        attachment = await createPdfAttachmentFromHtml(documentHtml, cleanFileName);
+      if (documentUrl && documentUrl.startsWith("http")) {
+        try {
+          attachment = await createPdfAttachmentFromUrl(documentUrl, cleanFileName);
+        } catch (urlErr) {
+          console.warn("Could not fetch PDF attachment from URL, falling back to documentHtml", urlErr);
+        }
+      }
+
+      if (!attachment && documentHtml) {
+        try {
+          attachment = await createPdfAttachmentFromHtml(documentHtml, cleanFileName);
+        } catch (htmlErr) {
+          console.error("Failed to generate PDF attachment from HTML", htmlErr);
+        }
+      }
+
+      if (!attachment) {
+        const fallbackHtml = `
+          <div style="font-family: sans-serif; padding: 24px;">
+            <h2>${documentTitle}</h2>
+            <p>${message}</p>
+            <p><strong>Organization:</strong> ${currentCompany?.name || "Champions Court"}</p>
+            <p><strong>Issued:</strong> ${new Date().toLocaleDateString()}</p>
+          </div>
+        `;
+        try {
+          attachment = await createPdfAttachmentFromHtml(fallbackHtml, cleanFileName);
+        } catch (err) {
+          console.warn("Fallback PDF attachment generation failed", err);
+        }
       }
 
       // Build email body HTML

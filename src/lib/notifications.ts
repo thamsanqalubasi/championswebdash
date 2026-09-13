@@ -6,6 +6,7 @@
  */
 
 import { supabase } from "@/lib/supabase";
+import { createPdfAttachmentFromHtml } from "@/lib/storage";
 
 /* ------------------------------------------------------------------ */
 /*  Beautiful HTML email wrapper                                       */
@@ -38,6 +39,7 @@ export function wrapDocumentInEmailHtml(opts: {
   .email-body { padding: 28px; }
   .greeting { font-size: 16px; color: #333; margin: 0 0 16px; }
   .body-text { font-size: 14px; line-height: 1.6; color: #555; margin: 0 0 24px; }
+  .pdf-badge { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 16px; margin: 0 0 20px; font-size: 13px; color: #166534; }
   .document-frame { border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; margin: 0 0 24px; }
   .document-frame-header { background: #f8f9fa; border-bottom: 1px solid #e0e0e0; padding: 10px 16px; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
   .document-frame-content { padding: 0; }
@@ -58,17 +60,234 @@ export function wrapDocumentInEmailHtml(opts: {
     <div class="email-body">
       <p class="greeting">Dear ${recipientName},</p>
       <p class="body-text">${bodyText}</p>
+      <div class="pdf-badge">
+        📎 <strong>Official PDF Attached:</strong> A printable PDF document has been generated and attached to this email for your records.
+      </div>
       <div class="document-frame">
-        <div class="document-frame-header">📄 Attached Document</div>
+        <div class="document-frame-header">📄 Document Preview</div>
         <div class="document-frame-content">
           ${documentHtml}
         </div>
       </div>
-      <p class="cta-note">Please review the document above. If you have any questions, don't hesitate to reach out.</p>
+      <p class="cta-note">Please review the document above and the attached PDF. If you have any questions, don't hesitate to reach out.</p>
     </div>
     <div class="email-footer">
       <p>&copy; ${year} ${company}. All rights reserved.</p>
       ${companyEmail ? `<p><a href="mailto:${companyEmail}">${companyEmail}</a></p>` : ""}
+    </div>
+  </div>
+</div>
+</body>
+</html>`;
+}
+
+export function wrapSignupWelcomeEmailHtml(opts: {
+  recipientName: string;
+  companyName: string;
+  companySlug: string;
+  adminEmail: string;
+  portalLoginUrl: string;
+  currency: string;
+  country: string;
+  companyLogo?: string;
+}): string {
+  const { recipientName, companyName, companySlug, adminEmail, portalLoginUrl, currency, country, companyLogo } = opts;
+  const year = new Date().getFullYear();
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Welcome to ${companyName} - Organization Workspace Provisioned</title>
+<style>
+  body { margin: 0; padding: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1e293b; }
+  .wrapper { padding: 32px 16px; }
+  .card { max-width: 620px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+  .header { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); padding: 36px 32px; text-align: center; color: #ffffff; }
+  .header h1 { margin: 0 0 8px; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+  .header p { margin: 0; font-size: 14px; color: #93c5fd; font-weight: 500; }
+  .content { padding: 32px; }
+  .greeting { font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 14px; }
+  .body-text { font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px; }
+  .highlight-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; margin: 0 0 24px; }
+  .highlight-row { display: flex; justify-content: space-between; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+  .highlight-row:last-child { border-bottom: none; }
+  .highlight-label { color: #64748b; font-weight: 500; }
+  .highlight-val { color: #0f172a; font-weight: 700; }
+  .btn-container { text-align: center; margin: 28px 0; }
+  .btn { display: inline-block; background: #2563eb; color: #ffffff !important; text-decoration: none; font-size: 15px; font-weight: 700; padding: 14px 32px; border-radius: 10px; box-shadow: 0 4px 14px rgba(37,99,235,0.35); }
+  .direct-link { font-size: 12px; color: #64748b; line-height: 1.5; word-break: break-all; margin: 0 0 20px; padding: 12px; background: #f1f5f9; border-radius: 8px; }
+  .guide-title { font-size: 14px; font-weight: 700; color: #0f172a; margin: 24px 0 12px; }
+  .guide-steps { margin: 0 0 24px; padding-left: 20px; font-size: 13px; line-height: 1.7; color: #475569; }
+  .compliance-note { font-size: 11px; color: #64748b; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-top: 24px; line-height: 1.5; }
+  .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="card">
+    <div class="header">
+      ${companyLogo ? `<img src="${companyLogo}" alt="${companyName}" style="max-height: 48px; margin-bottom: 12px;" />` : ""}
+      <h1>${companyName}</h1>
+      <p>Dedicated Enterprise Portal Provisioned</p>
+    </div>
+    <div class="content">
+      <p class="greeting">Welcome ${recipientName},</p>
+      <p class="body-text">
+        Congratulations! Your private organization tenant for <strong>${companyName}</strong> has been successfully provisioned and configured on the property management platform.
+      </p>
+
+      <div class="highlight-box">
+        <div class="highlight-row">
+          <span class="highlight-label">Organization:</span>
+          <span class="highlight-val">${companyName}</span>
+        </div>
+        <div class="highlight-row">
+          <span class="highlight-label">Dedicated Portal URL:</span>
+          <span class="highlight-val">/c/${companySlug}</span>
+        </div>
+        <div class="highlight-row">
+          <span class="highlight-label">Super Admin Email:</span>
+          <span class="highlight-val">${adminEmail}</span>
+        </div>
+        <div class="highlight-row">
+          <span class="highlight-label">Operating Country:</span>
+          <span class="highlight-val">${country}</span>
+        </div>
+        <div class="highlight-row">
+          <span class="highlight-label">Billing Currency:</span>
+          <span class="highlight-val">${currency}</span>
+        </div>
+      </div>
+
+      <div class="btn-container">
+        <a href="${portalLoginUrl}" target="_blank" class="btn">Log In to Your Admin Portal &rarr;</a>
+      </div>
+
+      <p style="font-size: 12px; color: #64748b; margin-bottom: 6px;">Direct portal access link:</p>
+      <div class="direct-link">${portalLoginUrl}</div>
+
+      <div class="guide-title">Recommended Quick-Start Steps:</div>
+      <ol class="guide-steps">
+        <li><strong>Add Properties &amp; Units:</strong> Record buildings, units, and inventory in the Properties dashboard.</li>
+        <li><strong>Lease Contracts:</strong> Generate standardized legal agreements with automatic PDF export and e-signatures.</li>
+        <li><strong>Invite Staff &amp; Agents:</strong> Issue role-based invitations for managers, accountants, and field agents.</li>
+        <li><strong>Invoicing &amp; Billing:</strong> Set up automated rent cycles with uniform <strong>${currency}</strong> invoicing.</li>
+      </ol>
+
+      <div class="compliance-note">
+        <strong>Statutory Compliance &amp; Terms Agreement:</strong> By registering this workspace, you have certified that your organization holds all required statutory real estate licenses and legal permits in ${country}, and agrees to the Champions Court Terms of Service.
+      </div>
+    </div>
+    <div class="footer">
+      &copy; ${year} ${companyName}. Multi-tenant Property Management SaaS.
+    </div>
+  </div>
+</div>
+</body>
+</html>`;
+}
+
+export function wrapPasswordChangeConfirmationEmailHtml(opts: {
+  recipientName: string;
+  userEmail: string;
+  companyName: string;
+  companyLogo?: string;
+  portalLoginUrl?: string;
+  changeType?: "updated" | "initial_setup" | "reset";
+}): string {
+  const { recipientName, userEmail, companyName, companyLogo, portalLoginUrl, changeType = "updated" } = opts;
+  const year = new Date().getFullYear();
+  const timestamp = new Date().toUTCString();
+
+  const title =
+    changeType === "initial_setup"
+      ? "Account Password Established"
+      : changeType === "reset"
+        ? "Password Reset Successful"
+        : "Security Notice: Password Updated";
+
+  const description =
+    changeType === "initial_setup"
+      ? "Your initial account password has been set up successfully."
+      : changeType === "reset"
+        ? "Your account password was successfully reset."
+        : "Your account password was recently updated.";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>${title} - ${companyName}</title>
+<style>
+  body { margin: 0; padding: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1e293b; }
+  .wrapper { padding: 32px 16px; }
+  .card { max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.15); }
+  .header { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 32px; text-align: center; color: #ffffff; }
+  .header h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+  .header p { margin: 0; font-size: 13px; color: #94a3b8; font-weight: 500; }
+  .content { padding: 32px; }
+  .greeting { font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 14px; }
+  .body-text { font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px; }
+  .info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 20px; margin: 0 0 20px; font-size: 13px; }
+  .info-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
+  .info-row:last-child { border-bottom: none; }
+  .info-label { color: #64748b; font-weight: 500; }
+  .info-val { color: #0f172a; font-weight: 700; }
+  .notice-box { background: #eff6ff; border: 1px solid #dbeafe; border-left: 4px solid #3b82f6; border-radius: 8px; padding: 14px 16px; margin: 0 0 24px; font-size: 13px; color: #1e40af; line-height: 1.5; }
+  .alert-box { background: #fef2f2; border: 1px solid #fee2e2; border-left: 4px solid #ef4444; border-radius: 8px; padding: 14px 16px; margin: 0 0 24px; font-size: 12px; color: #991b1b; line-height: 1.5; }
+  .btn-container { text-align: center; margin: 24px 0; }
+  .btn { display: inline-block; background: #2563eb; color: #ffffff !important; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 28px; border-radius: 8px; box-shadow: 0 4px 12px rgba(37,99,235,0.3); }
+  .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="card">
+    <div class="header">
+      ${companyLogo ? `<img src="${companyLogo}" alt="${companyName}" style="max-height: 42px; margin-bottom: 10px;" />` : ""}
+      <h1>${title}</h1>
+      <p>${description}</p>
+    </div>
+    <div class="content">
+      <p class="greeting">Hello ${recipientName},</p>
+      <p class="body-text">
+        This is an official confirmation that the password for your account on <strong>${companyName}</strong> was successfully updated.
+      </p>
+
+      <div class="info-box">
+        <div class="info-row">
+          <span class="info-label">Account:</span>
+          <span class="info-val">${userEmail}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Organization:</span>
+          <span class="info-val">${companyName}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Timestamp:</span>
+          <span class="info-val">${timestamp}</span>
+        </div>
+      </div>
+
+      <div class="notice-box">
+        <strong>Authorized change?</strong> If you made this change, no further action is required. You can now use your new credentials to log in.
+      </div>
+
+      <div class="alert-box">
+        <strong>Did not make this change?</strong> If you did NOT authorize this password update, someone may have compromised your account. Please notify your organization administrator or IT department immediately.
+      </div>
+
+      ${portalLoginUrl ? `
+      <div class="btn-container">
+        <a href="${portalLoginUrl}" target="_blank" class="btn">Log In to Your Portal &rarr;</a>
+      </div>
+      ` : ""}
+    </div>
+    <div class="footer">
+      &copy; ${year} ${companyName}. Account Security Notification.
     </div>
   </div>
 </div>
@@ -341,15 +560,34 @@ export async function sendEmail(opts: {
 }): Promise<{ sent: boolean; fallback: boolean }> {
   const emailHtml = wrapDocumentInEmailHtml(opts);
 
-  const attachments = opts.attachmentFilename
+  let filename = opts.attachmentFilename || "document.pdf";
+  if (!filename.toLowerCase().endsWith(".pdf")) {
+    filename = `${filename}.pdf`;
+  }
+
+  let base64Content = opts.attachmentContentBase64;
+  if (!base64Content && opts.documentHtml) {
+    try {
+      const pdfAttachment = await createPdfAttachmentFromHtml(opts.documentHtml, filename);
+      base64Content = pdfAttachment.contentBase64;
+    } catch (e) {
+      console.warn("Could not compile PDF attachment from documentHtml", e);
+    }
+  }
+
+  const attachments = base64Content
     ? [{
-      filename: opts.attachmentFilename,
-      ...(opts.attachmentContentBase64
-        ? { contentBase64: opts.attachmentContentBase64 }
-        : { content: opts.documentHtml }),
-      contentType: opts.attachmentContentType || (opts.attachmentContentBase64 ? "application/pdf" : "text/html"),
+      filename,
+      contentBase64: base64Content,
+      contentType: "application/pdf",
     }]
-    : undefined;
+    : opts.attachmentFilename
+      ? [{
+        filename,
+        content: opts.documentHtml,
+        contentType: opts.attachmentContentType || "application/pdf",
+      }]
+      : undefined;
 
   const result = await sendEmailViaApi({ to: opts.to, subject: opts.subject, html: emailHtml, attachments });
 

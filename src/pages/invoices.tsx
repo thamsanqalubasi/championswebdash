@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog } from "@/components/modal";
@@ -562,7 +562,7 @@ export default function InvoicesPage() {
       ownerName: row.tenantName,
       ownerEmail: tenantEmail,
       defaultSubject: `Invoice ${row.month} - ${row.propertyName || currentCompany?.name || "Champions Court"}`,
-      defaultMessage: `Dear ${row.tenantName},\n\nPlease find your rental invoice for ${row.month} in the amount of ${formatCurrency(row.totalAmount)}.`,
+      defaultMessage: `Dear ${row.tenantName},\n\nPlease find your official rental invoice for ${row.month} in the amount of ${formatCurrency(row.totalAmount)} attached as a PDF document.`,
     });
   };
 

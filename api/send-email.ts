@@ -242,7 +242,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (method === "resend") {
       const resendApiKey = String(settings?.resend_api_key ?? process.env.RESEND_API_KEY ?? "").trim();
       if (!resendApiKey) {
-        return res.status(500).json({ error: "RESEND_API_KEY (or email_delivery_settings.resend_api_key) not configured" });
+        const mailtoSubject = encodeURIComponent(subject);
+        const mailtoBody = encodeURIComponent("Please configure your RESEND_API_KEY in Settings > Email Delivery.\n\n" + subject);
+        return res.status(409).json({
+          error: "RESEND_API_KEY (or email_delivery_settings.resend_api_key) not configured. Please set your API key in Settings > Email Delivery.",
+          mailtoUrl: `mailto:${to}?subject=${mailtoSubject}&body=${mailtoBody}`,
+        });
       }
 
       const resendResult = await sendWithResend({
@@ -266,7 +271,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (method === "sendgrid") {
       const sendgridApiKey = String(settings?.sendgrid_api_key ?? process.env.SENDGRID_API_KEY ?? "").trim();
       if (!sendgridApiKey) {
-        return res.status(500).json({ error: "SENDGRID_API_KEY (or email_delivery_settings.sendgrid_api_key) not configured" });
+        const mailtoSubject = encodeURIComponent(subject);
+        const mailtoBody = encodeURIComponent("Please configure your SENDGRID_API_KEY in Settings > Email Delivery.\n\n" + subject);
+        return res.status(409).json({
+          error: "SENDGRID_API_KEY (or email_delivery_settings.sendgrid_api_key) not configured. Please set your API key in Settings > Email Delivery.",
+          mailtoUrl: `mailto:${to}?subject=${mailtoSubject}&body=${mailtoBody}`,
+        });
       }
 
       const sendgridResult = await sendWithSendgrid({
@@ -291,7 +301,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const mailgunApiKey = String(settings?.mailgun_api_key ?? process.env.MAILGUN_API_KEY ?? "").trim();
       const mailgunDomain = String(settings?.mailgun_domain ?? process.env.MAILGUN_DOMAIN ?? "").trim();
       if (!mailgunApiKey || !mailgunDomain) {
-        return res.status(500).json({ error: "MAILGUN_API_KEY/MAILGUN_DOMAIN (or email_delivery_settings values) not configured" });
+        const mailtoSubject = encodeURIComponent(subject);
+        const mailtoBody = encodeURIComponent("Please configure your MAILGUN_API_KEY in Settings > Email Delivery.\n\n" + subject);
+        return res.status(409).json({
+          error: "MAILGUN_API_KEY/MAILGUN_DOMAIN (or email_delivery_settings values) not configured. Please set in Settings > Email Delivery.",
+          mailtoUrl: `mailto:${to}?subject=${mailtoSubject}&body=${mailtoBody}`,
+        });
       }
 
       const mailgunResult = await sendWithMailgun({

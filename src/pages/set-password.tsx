@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, useParams, Link } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { fetchCompanyBySlug } from "@/lib/data";
+import { sendEmailViaApi, wrapPasswordChangeConfirmationEmailHtml } from "@/lib/notifications";
 import { TermsCheckboxField } from "@/components/terms-modal";
 import type { Company } from "@/lib/types";
 import {
@@ -97,6 +98,28 @@ export default function SetPasswordPage() {
 
       if (company) {
         setCurrentCompany(company);
+      }
+
+      if (action === "reset") {
+        try {
+          const origin = typeof window !== "undefined" ? window.location.origin : "";
+          const portalLoginUrl = companySlug ? `${origin}/c/${companySlug}/login` : `${origin}/login`;
+          const emailHtml = wrapPasswordChangeConfirmationEmailHtml({
+            recipientName: email,
+            userEmail: email,
+            companyName: orgName,
+            companyLogo: company?.logoUrl,
+            portalLoginUrl,
+            changeType: "reset",
+          });
+          void sendEmailViaApi({
+            to: email,
+            subject: `Security Alert: Password Reset Completed - ${orgName}`,
+            html: emailHtml,
+          });
+        } catch (emailErr) {
+          console.warn("Could not dispatch reset confirmation email", emailErr);
+        }
       }
 
       setSuccess(true);

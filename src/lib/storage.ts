@@ -10,7 +10,8 @@ function stripHtmlToText(html: string) {
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, "\n")
+    .replace(/<(td|th)[^>]*>/gi, "   ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
@@ -20,7 +21,7 @@ function stripHtmlToText(html: string) {
     .replace(/&#39;/g, "'")
     .replace(/\r/g, "")
     .replace(/[\t ]+/g, " ")
-    .replace(/\n\s+/g, "\n")
+    .replace(/[ ]*\n[ ]*/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -105,18 +106,26 @@ export function createPdfFileFromHtml(html: string, fileNameBase: string): File 
   return new File([pdfBuffer], `${safeBase}.pdf`, { type: "application/pdf" });
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const len = bytes.byteLength;
+  const chunkSize = 8192;
+  for (let i = 0; i < len; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return btoa(binary);
+}
+
 export async function createPdfAttachmentFromHtml(html: string, fileNameBase: string) {
   const file = createPdfFileFromHtml(html, fileNameBase);
   const arrayBuffer = await file.arrayBuffer();
   const bytes = new Uint8Array(arrayBuffer);
-  let binary = "";
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte);
-  });
+  const safeFileName = file.name.endsWith(".pdf") ? file.name : `${file.name}.pdf`;
 
   return {
-    filename: file.name,
-    contentBase64: btoa(binary),
+    filename: safeFileName,
+    contentBase64: bytesToBase64(bytes),
     contentType: "application/pdf",
   };
 }
@@ -129,14 +138,11 @@ export async function createPdfAttachmentFromUrl(url: string, fileName: string) 
 
   const arrayBuffer = await response.arrayBuffer();
   const bytes = new Uint8Array(arrayBuffer);
-  let binary = "";
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte);
-  });
+  const safeFileName = fileName.endsWith(".pdf") ? fileName : `${fileName}.pdf`;
 
   return {
-    filename: fileName,
-    contentBase64: btoa(binary),
+    filename: safeFileName,
+    contentBase64: bytesToBase64(bytes),
     contentType: "application/pdf",
   };
 }
