@@ -47,19 +47,20 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
-  ChevronRight,
+  ChevronDown,
+  ChevronUp,
   PlusCircle,
   Server,
-  Database,
-  Terminal,
   Activity,
-  Lock,
   Globe,
   Settings,
   UserCog,
   FileSignature,
   Sliders,
   Check,
+  FolderOpen,
+  Folder,
+  SlidersHorizontal,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -169,7 +170,54 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [checkinOpen, setCheckinOpen] = useState(false);
-  const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>("all");
+
+  // Accordion drop toggler state for all departments
+  const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({
+    it: true,
+    procurement: true,
+    stores: true,
+    front_desk: true,
+    finance: true,
+    maintenance: true,
+    hr: true,
+    portal: true,
+    audit: false,
+    governance: false,
+  });
+
+  const toggleDept = (deptId: string) => {
+    setExpandedDepts((prev) => ({ ...prev, [deptId]: !prev[deptId] }));
+  };
+
+  const expandAll = () => {
+    setExpandedDepts({
+      it: true,
+      procurement: true,
+      stores: true,
+      front_desk: true,
+      finance: true,
+      maintenance: true,
+      hr: true,
+      portal: true,
+      audit: true,
+      governance: true,
+    });
+  };
+
+  const collapseAll = () => {
+    setExpandedDepts({
+      it: false,
+      procurement: false,
+      stores: false,
+      front_desk: false,
+      finance: false,
+      maintenance: false,
+      hr: false,
+      portal: false,
+      audit: false,
+      governance: false,
+    });
+  };
 
   const userDept = currentCompanyUser?.department || "admin";
   const isExecutive = isSuperAdmin || isAdmin;
@@ -227,10 +275,10 @@ export default function DashboardPage() {
 
   return (
     <ModulePage
-      title={isExecutive ? `${currentCompany.name} — Super Admin Command Center` : `${currentCompany.name} — ${currentCompanyUser?.jobTitle || "Staff Portal"}`}
+      title={isExecutive ? `${currentCompany.name} — Super Admin Dashboard` : `${currentCompany.name} — ${currentCompanyUser?.jobTitle || "Staff Portal"}`}
       description={
         isExecutive
-          ? "All operational departments and their functions: IT & Technology, Audit, HR, Procurement, Stores, Accounts, Maintenance, Front Desk, and Governance."
+          ? "Enterprise hospitality & property management. Click any department below to toggle its operational functions."
           : `Dedicated operational dashboard and assigned queues for the ${userDept.replace(/_/g, " ")} department.`
       }
     >
@@ -247,7 +295,7 @@ export default function DashboardPage() {
           {/* ========================================================================= */}
           {isExecutive && (
             <>
-              {/* Executive Cross-Department Command Bar */}
+              {/* Executive Overview Banner */}
               <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-blue-500/20 bg-gradient-to-r from-blue-600/10 via-surface to-surface p-5 shadow-sm">
                 <div className="flex items-center gap-3.5">
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-md shrink-0">
@@ -256,14 +304,14 @@ export default function DashboardPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <h2 className="text-base font-bold text-foreground">
-                        Super Administrator Multi-Department Console
+                        Operational Department Command Deck
                       </h2>
-                      <span className="rounded-full bg-blue-600/10 px-2.5 py-0.5 text-[10px] font-bold text-blue-600 border border-blue-600/20 uppercase tracking-wider">
-                        Full Enterprise Scope
+                      <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-600 border border-emerald-500/20 uppercase tracking-wider">
+                        All Services Active
                       </span>
                     </div>
                     <p className="text-xs text-muted mt-0.5">
-                      10 Operational Departments Active • Real-Time Data Sync Across IT, Procurement, Stores, HR & Accounts.
+                      10 Operational Departments • Real-time synchronization between Front Desk, Stores, Procurement, HR, and Accounts.
                     </p>
                   </div>
                 </div>
@@ -284,799 +332,938 @@ export default function DashboardPage() {
                     <Truck size={15} />
                     <span>New Procurement</span>
                   </Link>
-                  <Link
-                    to="/it"
-                    className="flex items-center gap-2 rounded-xl border border-border-color bg-surface px-3.5 py-2.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                  >
-                    <Server size={15} />
-                    <span>IT Hub</span>
-                  </Link>
                 </div>
               </div>
 
-              {/* Department View Filter Selector */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-2">
-                    <Sliders size={14} className="text-blue-600" />
-                    Filter Departments View
+              {/* Accordion Controls Bar */}
+              <div className="flex items-center justify-between pt-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
+                    <SlidersHorizontal size={14} className="text-blue-600" />
+                    Departments & Functions (Click heading to expand / collapse)
                   </h3>
-                  <span className="text-xs text-muted font-medium">Click any department to focus or view all below</span>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { id: "all", label: "🌟 All 10 Departments", icon: Layers },
-                    { id: "it", label: "💻 IT & Technology", icon: Server },
-                    { id: "audit", label: "🛡️ Audit & Compliance", icon: History },
-                    { id: "hr", label: "👥 HR & Payroll", icon: Briefcase },
-                    { id: "procurement", label: "🚚 Procurement", icon: Truck },
-                    { id: "stores", label: "📦 Stores & Inventory", icon: Package },
-                    { id: "finance", label: "💰 Finance & Accounts", icon: DollarSign },
-                    { id: "maintenance", label: "🔧 Operations & Maintenance", icon: Wrench },
-                    { id: "front_desk", label: "🏨 Front Desk & Hospitality", icon: BedDouble },
-                    { id: "portal", label: "💬 Customer Portal", icon: Inbox },
-                  ].map((dept) => (
-                    <button
-                      key={dept.id}
-                      type="button"
-                      onClick={() => setSelectedDeptFilter(dept.id)}
-                      className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-                        selectedDeptFilter === dept.id
-                          ? "bg-foreground text-surface shadow-sm"
-                          : "border border-border-color bg-surface text-muted hover:text-foreground hover:bg-surface-elevated"
-                      }`}
-                    >
-                      <span>{dept.label}</span>
-                    </button>
-                  ))}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={expandAll}
+                    className="text-xs font-semibold text-blue-600 hover:underline px-2 py-1"
+                  >
+                    Expand All
+                  </button>
+                  <span className="text-muted text-xs">•</span>
+                  <button
+                    type="button"
+                    onClick={collapseAll}
+                    className="text-xs font-semibold text-muted hover:text-foreground px-2 py-1"
+                  >
+                    Collapse All
+                  </button>
                 </div>
               </div>
 
               {/* ========================================================================= */}
-              {/* THE 10 OPERATIONAL DEPARTMENTS CARDS & FUNCTIONS GRID                    */}
+              {/* THE 10 OPERATIONAL DEPARTMENTS AS DROPDOWN TOGGLERS                       */}
               {/* ========================================================================= */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
 
-                {/* 1. IT & TECHNOLOGY DEPARTMENT */}
-                {(selectedDeptFilter === "all" || selectedDeptFilter === "it") && (
-                  <div className="rounded-2xl border border-blue-500/30 bg-surface p-6 shadow-sm space-y-5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-blue-600/10 text-blue-600 rounded-xl">
-                          <Server size={24} />
+                {/* 1. IT & SYSTEM ADMINISTRATION TOGGLER */}
+                <div className="rounded-2xl border border-blue-500/20 bg-surface shadow-sm overflow-hidden transition">
+                  <button
+                    type="button"
+                    onClick={() => toggleDept("it")}
+                    className="w-full flex items-center justify-between p-5 text-left hover:bg-surface-elevated/40 transition"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600 shrink-0">
+                        <Server size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-foreground">IT & System Administration</h4>
+                          <span className="rounded-full bg-blue-600/10 text-blue-600 px-2 py-0.5 text-[10px] font-bold">
+                            {companyUsers.length || 6} Staff Accounts
+                          </span>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-foreground">IT & Technology Department</h3>
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              Healthy
-                            </span>
+                        <p className="text-xs text-muted">User accounts, role rights, company settings & security history</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted font-medium hidden sm:inline">
+                        {expandedDepts.it ? "Collapse" : "Expand Functions"}
+                      </span>
+                      {expandedDepts.it ? (
+                        <ChevronUp size={18} className="text-muted" />
+                      ) : (
+                        <ChevronDown size={18} className="text-muted" />
+                      )}
+                    </div>
+                  </button>
+
+                  {expandedDepts.it && (
+                    <div className="p-5 pt-0 border-t border-border-color/60 space-y-4 bg-muted/5">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3">
+                        {/* Group 1: User Rights & Access */}
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider">
+                            <Users size={15} />
+                            <span>User Rights & Access</span>
                           </div>
-                          <p className="text-xs text-muted">Cloud DB, auth sessions, storage buckets, & system security</p>
-                        </div>
-                      </div>
-                      <Link to="/it" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
-                        <span>IT Hub</span>
-                        <ChevronRight size={14} />
-                      </Link>
-                    </div>
-
-                    {/* IT Metrics */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Database Engine</p>
-                        <p className="mt-1 text-sm font-black text-foreground">PostgreSQL</p>
-                        <p className="text-[10px] text-emerald-600 font-semibold">38ms Latency • Online</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Staff Accounts</p>
-                        <p className="mt-1 text-sm font-black text-blue-600">{companyUsers.length || 6} Users</p>
-                        <p className="text-[10px] text-muted">RBAC & PIN Sec</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Audit Records</p>
-                        <p className="mt-1 text-sm font-black text-amber-600">{auditEvents.length || 24} Logs</p>
-                        <p className="text-[10px] text-muted">Immutable Trail</p>
-                      </div>
-                    </div>
-
-                    {/* IT Functions */}
-                    <div className="space-y-2 pt-1 border-t border-border-color/60">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted">IT Operational Functions:</p>
-                      <div className="flex flex-wrap gap-2">
-                        <Link
-                          to="/it"
-                          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition"
-                        >
-                          <Activity size={13} />
-                          <span>Run IT Diagnostics</span>
-                        </Link>
-                        <Link
-                          to="/users-management"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <UserCog size={13} />
-                          <span>User Provisioning & Rights</span>
-                        </Link>
-                        <Link
-                          to="/settings"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <Settings size={13} />
-                          <span>SMTP & Mail Servers</span>
-                        </Link>
-                        <Link
-                          to="/audit-trail"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <ShieldCheck size={13} />
-                          <span>Security Logs</span>
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 2. PROCUREMENT DEPARTMENT */}
-                {(selectedDeptFilter === "all" || selectedDeptFilter === "procurement") && (
-                  <div className="rounded-2xl border border-purple-500/30 bg-surface p-6 shadow-sm space-y-5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-purple-600/10 text-purple-600 rounded-xl">
-                          <Truck size={24} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-foreground">Procurement Department</h3>
-                            <span className="text-[10px] font-bold text-purple-600 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20">
-                              Pipeline Active
-                            </span>
+                          <p className="text-xs text-muted">Create staff logins, assign job titles, and enforce department security.</p>
+                          <div className="pt-2 flex flex-col gap-1.5">
+                            <Link
+                              to="/users-management"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-blue-600 hover:text-white transition group"
+                            >
+                              <span>Manage Staff Accounts</span>
+                              <ArrowUpRight size={13} className="text-muted group-hover:text-white" />
+                            </Link>
+                            <Link
+                              to="/organogram"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-blue-600 hover:text-white transition group"
+                            >
+                              <span>Organogram & Role Hierarchy</span>
+                              <ArrowUpRight size={13} className="text-muted group-hover:text-white" />
+                            </Link>
                           </div>
-                          <p className="text-xs text-muted">Quotations gathering (max 10), RFQ generator & fund approvals</p>
                         </div>
-                      </div>
-                      <Link to="/procurement" className="text-xs font-bold text-purple-600 hover:underline flex items-center gap-1">
-                        <span>Procurement Hub</span>
-                        <ChevronRight size={14} />
-                      </Link>
-                    </div>
 
-                    {/* Procurement Metrics */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Active Pipeline</p>
-                        <p className="mt-1 text-sm font-black text-purple-600">{procurementMetrics.active} Requests</p>
-                        <p className="text-[10px] text-muted">Across all stages</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Quote Gathering</p>
-                        <p className="mt-1 text-sm font-black text-amber-600">{procurementMetrics.inQuotation} Items</p>
-                        <p className="text-[10px] text-muted">Supplier sourcing</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Awaiting Funds</p>
-                        <p className="mt-1 text-sm font-black text-pink-600">{procurementMetrics.awaitingFunds} Requests</p>
-                        <p className="text-[10px] text-muted">Accounts queue</p>
-                      </div>
-                    </div>
-
-                    {/* Procurement Functions */}
-                    <div className="space-y-2 pt-1 border-t border-border-color/60">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Procurement Functions:</p>
-                      <div className="flex flex-wrap gap-2">
-                        <Link
-                          to="/procurement"
-                          className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-purple-700 transition"
-                        >
-                          <PlusCircle size={13} />
-                          <span>Create Request</span>
-                        </Link>
-                        <Link
-                          to="/procurement"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <Clock size={13} />
-                          <span>View Pipeline Stages</span>
-                        </Link>
-                        <Link
-                          to="/procurement"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <ClipboardList size={13} />
-                          <span>Generate RFQ Document</span>
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 3. STORES & INVENTORY DEPARTMENT */}
-                {(selectedDeptFilter === "all" || selectedDeptFilter === "stores") && (
-                  <div className="rounded-2xl border border-emerald-500/30 bg-surface p-6 shadow-sm space-y-5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-emerald-600/10 text-emerald-600 rounded-xl">
-                          <Package size={24} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-foreground">Stores & Central Inventory</h3>
-                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                              Synced with Maintenance
-                            </span>
+                        {/* Group 2: Company & System Settings */}
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-purple-600 font-bold text-xs uppercase tracking-wider">
+                            <Settings size={15} />
+                            <span>Company & Settings</span>
                           </div>
-                          <p className="text-xs text-muted">Warehouse stock, goods receipts, releases, & maintenance blend</p>
-                        </div>
-                      </div>
-                      <Link to="/stores" className="text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1">
-                        <span>Stores</span>
-                        <ChevronRight size={14} />
-                      </Link>
-                    </div>
-
-                    {/* Stores Metrics */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Stocked Catalog</p>
-                        <p className="mt-1 text-sm font-black text-foreground">{storesMetrics.totalItems} Items</p>
-                        <p className="text-[10px] text-blue-600 font-semibold">{storesMetrics.maintenanceBlended} From Maint</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Low Stock Alarms</p>
-                        <p className="mt-1 text-sm font-black text-red-600">{storesMetrics.lowStock} Items</p>
-                        <p className="text-[10px] text-muted">Below min level</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Warehouse Valuation</p>
-                        <p className="mt-1 text-sm font-black text-emerald-600">R {storesMetrics.totalValue.toLocaleString()}</p>
-                        <p className="text-[10px] text-muted">Total inventory worth</p>
-                      </div>
-                    </div>
-
-                    {/* Stores Functions */}
-                    <div className="space-y-2 pt-1 border-t border-border-color/60">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Stores Operational Functions:</p>
-                      <div className="flex flex-wrap gap-2">
-                        <Link
-                          to="/stores"
-                          className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 transition"
-                        >
-                          <Package size={13} />
-                          <span>Stores & Inventory</span>
-                        </Link>
-                        <Link
-                          to="/maintenance/inventory"
-                          className="flex items-center gap-1.5 rounded-lg border border-blue-500/20 bg-blue-500/10 text-blue-600 px-3 py-1.5 text-xs font-semibold hover:bg-blue-500/20 transition"
-                        >
-                          <ClipboardList size={13} />
-                          <span>Inventory & Stock (Maintenance)</span>
-                        </Link>
-                        <Link
-                          to="/stores"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <ArrowDownRight size={13} />
-                          <span>Receive Items</span>
-                        </Link>
-                        <Link
-                          to="/stores"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <ArrowUpRight size={13} />
-                          <span>Release to Dept</span>
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 4. HUMAN RESOURCES & PAYROLL */}
-                {(selectedDeptFilter === "all" || selectedDeptFilter === "hr") && (
-                  <div className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm space-y-5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-blue-600/10 text-blue-600 rounded-xl">
-                          <Briefcase size={24} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-foreground">Human Resources & Payroll</h3>
-                            <span className="text-[10px] font-bold text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
-                              Workforce Active
-                            </span>
+                          <p className="text-xs text-muted">Configure organization profile, invoice logos, tax defaults, and emails.</p>
+                          <div className="pt-2 flex flex-col gap-1.5">
+                            <Link
+                              to="/settings"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-purple-600 hover:text-white transition group"
+                            >
+                              <span>General Company Settings</span>
+                              <ArrowUpRight size={13} className="text-muted group-hover:text-white" />
+                            </Link>
+                            <Link
+                              to="/settings"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-purple-600 hover:text-white transition group"
+                            >
+                              <span>Email & Notifications</span>
+                              <ArrowUpRight size={13} className="text-muted group-hover:text-white" />
+                            </Link>
                           </div>
-                          <p className="text-xs text-muted">Staff contracts, mass payroll generator, leaves & deactivations</p>
                         </div>
-                      </div>
-                      <Link to="/hr" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
-                        <span>HR Hub</span>
-                        <ChevronRight size={14} />
-                      </Link>
-                    </div>
 
-                    {/* HR Metrics */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Total Workforce</p>
-                        <p className="mt-1 text-sm font-black text-foreground">{companyUsers.length || 6} Employees</p>
-                        <p className="text-[10px] text-muted">All departments</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Organogram Roles</p>
-                        <p className="mt-1 text-sm font-black text-purple-600">Configured</p>
-                        <p className="text-[10px] text-muted">Hierarchy mapped</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Monthly Payroll</p>
-                        <p className="mt-1 text-sm font-black text-emerald-600">Active</p>
-                        <p className="text-[10px] text-muted">Payslips & Disb.</p>
-                      </div>
-                    </div>
-
-                    {/* HR Functions */}
-                    <div className="space-y-2 pt-1 border-t border-border-color/60">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted">HR Operational Functions:</p>
-                      <div className="flex flex-wrap gap-2">
-                        <Link
-                          to="/hr"
-                          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition"
-                        >
-                          <Users size={13} />
-                          <span>Employee Directory</span>
-                        </Link>
-                        <Link
-                          to="/hr"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <DollarSign size={13} />
-                          <span>Mass Payroll Generator</span>
-                        </Link>
-                        <Link
-                          to="/organogram"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <Network size={13} />
-                          <span>Organogram Hierarchy</span>
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 5. FINANCE & ACCOUNTS */}
-                {(selectedDeptFilter === "all" || selectedDeptFilter === "finance") && (
-                  <div className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm space-y-5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-emerald-600/10 text-emerald-600 rounded-xl">
-                          <DollarSign size={24} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-foreground">Finance & Accounts Department</h3>
-                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                              Ledger Balanced
-                            </span>
+                        {/* Group 3: Data & Security */}
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider">
+                            <ShieldCheck size={15} />
+                            <span>Data & Security</span>
                           </div>
-                          <p className="text-xs text-muted">Rent revenue, operating expenses, financial reports & purchase fund approvals</p>
-                        </div>
-                      </div>
-                      <Link to="/finance/reports" className="text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1">
-                        <span>Reports</span>
-                        <ChevronRight size={14} />
-                      </Link>
-                    </div>
-
-                    {/* Finance Metrics */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Monthly Income</p>
-                        <p className="mt-1 text-sm font-black text-emerald-600">{formatCurrency(stats.totalMonthlyIncome)}</p>
-                        <p className="text-[10px] text-muted">{stats.collectionRate}% collected</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Expenses</p>
-                        <p className="mt-1 text-sm font-black text-amber-600">{formatCurrency(stats.totalMonthlyExpenses)}</p>
-                        <p className="text-[10px] text-muted">Ops & Maintenance</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Fund Requests</p>
-                        <p className="mt-1 text-sm font-black text-pink-600">{procurementMetrics.awaitingFunds} Pending</p>
-                        <p className="text-[10px] text-muted">Purchase approval</p>
-                      </div>
-                    </div>
-
-                    {/* Finance Functions */}
-                    <div className="space-y-2 pt-1 border-t border-border-color/60">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Finance Functions:</p>
-                      <div className="flex flex-wrap gap-2">
-                        <Link
-                          to="/procurement"
-                          className="flex items-center gap-1.5 rounded-lg bg-pink-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-pink-700 transition"
-                        >
-                          <DollarSign size={13} />
-                          <span>Approve Purchase Funds ({procurementMetrics.awaitingFunds})</span>
-                        </Link>
-                        <Link
-                          to="/rent-collection"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <TrendingUp size={13} />
-                          <span>Rent & Revenue</span>
-                        </Link>
-                        <Link
-                          to="/finance/reports"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <Layers size={13} />
-                          <span>Financial Statements</span>
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 6. OPERATIONS & MAINTENANCE */}
-                {(selectedDeptFilter === "all" || selectedDeptFilter === "maintenance") && (
-                  <div className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm space-y-5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-amber-600/10 text-amber-600 rounded-xl">
-                          <Wrench size={24} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-foreground">Operations & Maintenance</h3>
-                            <span className="text-[10px] font-bold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-                              Active Servicing
-                            </span>
+                          <p className="text-xs text-muted">Review administrative action history and manage data backups.</p>
+                          <div className="pt-2 flex flex-col gap-1.5">
+                            <Link
+                              to="/it"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-emerald-600 hover:text-white transition group"
+                            >
+                              <span>IT Administration Hub</span>
+                              <ArrowUpRight size={13} className="text-muted group-hover:text-white" />
+                            </Link>
+                            <Link
+                              to="/audit-trail"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-emerald-600 hover:text-white transition group"
+                            >
+                              <span>Activity Audit History</span>
+                              <ArrowUpRight size={13} className="text-muted group-hover:text-white" />
+                            </Link>
                           </div>
-                          <p className="text-xs text-muted">Work orders queue, scheduled preventive tasks, & service providers</p>
                         </div>
                       </div>
-                      <Link to="/maintenance" className="text-xs font-bold text-amber-600 hover:underline flex items-center gap-1">
-                        <span>Maintenance</span>
-                        <ChevronRight size={14} />
-                      </Link>
                     </div>
+                  )}
+                </div>
 
-                    {/* Maintenance Metrics */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Open Work Orders</p>
-                        <p className="mt-1 text-sm font-black text-amber-600">{stats.pendingMaintenance}</p>
-                        <p className="text-[10px] text-muted">Pending technician</p>
+                {/* 2. FRONT DESK & HOSPITALITY TOGGLER */}
+                <div className="rounded-2xl border border-border-color bg-surface shadow-sm overflow-hidden transition">
+                  <button
+                    type="button"
+                    onClick={() => toggleDept("front_desk")}
+                    className="w-full flex items-center justify-between p-5 text-left hover:bg-surface-elevated/40 transition"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600 shrink-0">
+                        <BedDouble size={20} />
                       </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Cleaning Queue</p>
-                        <p className="mt-1 text-sm font-black text-foreground">{stats.cleaningNeededRooms} Rooms</p>
-                        <p className="text-[10px] text-muted">Housekeeping queue</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Spare Parts</p>
-                        <p className="mt-1 text-sm font-black text-blue-600">{storesMetrics.totalItems} Items</p>
-                        <p className="text-[10px] text-muted">Available in stock</p>
-                      </div>
-                    </div>
-
-                    {/* Maintenance Functions */}
-                    <div className="space-y-2 pt-1 border-t border-border-color/60">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Maintenance Functions:</p>
-                      <div className="flex flex-wrap gap-2">
-                        <Link
-                          to="/maintenance/work-orders"
-                          className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-700 transition"
-                        >
-                          <Wrench size={13} />
-                          <span>Work Orders Queue</span>
-                        </Link>
-                        <Link
-                          to="/maintenance/inventory"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <Package size={13} />
-                          <span>Inventory & Stock</span>
-                        </Link>
-                        <Link
-                          to="/maintenance/scheduled-tasks"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <Calendar size={13} />
-                          <span>Scheduled Maintenance</span>
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 7. FRONT DESK & HOSPITALITY */}
-                {(selectedDeptFilter === "all" || selectedDeptFilter === "front_desk") && (
-                  <div className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm space-y-5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-blue-600/10 text-blue-600 rounded-xl">
-                          <BedDouble size={24} />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-foreground">Front Desk & Hospitality</h4>
+                          <span className="rounded-full bg-emerald-500/10 text-emerald-600 px-2 py-0.5 text-[10px] font-bold">
+                            {stats.occupancyRate}% Occupied
+                          </span>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-foreground">Front Desk & Hospitality</h3>
-                            <span className="text-[10px] font-bold text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
-                              Live Occupancy
-                            </span>
+                        <p className="text-xs text-muted">Walk-in check-in, bookings calendar, room management & cleaning queue</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted font-medium hidden sm:inline">
+                        {expandedDepts.front_desk ? "Collapse" : "Expand Functions"}
+                      </span>
+                      {expandedDepts.front_desk ? (
+                        <ChevronUp size={18} className="text-muted" />
+                      ) : (
+                        <ChevronDown size={18} className="text-muted" />
+                      )}
+                    </div>
+                  </button>
+
+                  {expandedDepts.front_desk && (
+                    <div className="p-5 pt-0 border-t border-border-color/60 space-y-4 bg-muted/5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3">
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider">
+                            <KeyRound size={15} />
+                            <span>Guest Operations</span>
                           </div>
-                          <p className="text-xs text-muted">Walk-in guest arrivals, room allocation, bookings & online check-in</p>
-                        </div>
-                      </div>
-                      <Link to="/commercial-bookings" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
-                        <span>Bookings</span>
-                        <ChevronRight size={14} />
-                      </Link>
-                    </div>
-
-                    {/* Front Desk Metrics */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Total Rooms</p>
-                        <p className="mt-1 text-sm font-black text-foreground">{stats.totalRooms}</p>
-                        <p className="text-[10px] text-muted">{stats.totalCommercialProperties} Properties</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Available</p>
-                        <p className="mt-1 text-sm font-black text-emerald-600">{stats.availableRooms}</p>
-                        <p className="text-[10px] text-muted">Walk-in ready</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Occupancy Rate</p>
-                        <p className="mt-1 text-sm font-black text-blue-600">{stats.occupancyRate}%</p>
-                        <p className="text-[10px] text-muted">{stats.occupiedRooms} In-house</p>
-                      </div>
-                    </div>
-
-                    {/* Front Desk Functions */}
-                    <div className="space-y-2 pt-1 border-t border-border-color/60">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Front Desk Functions:</p>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setCheckinOpen(true)}
-                          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition"
-                        >
-                          <KeyRound size={13} />
-                          <span>Check In Walk-in Guest</span>
-                        </button>
-                        <Link
-                          to="/commercial-bookings"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <BedDouble size={13} />
-                          <span>All Bookings</span>
-                        </Link>
-                        <Link
-                          to="/room-management"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <DollarSign size={13} />
-                          <span>Rooms & Pricing</span>
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 8. AUDIT & COMPLIANCE */}
-                {(selectedDeptFilter === "all" || selectedDeptFilter === "audit") && (
-                  <div className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm space-y-5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-amber-600/10 text-amber-600 rounded-xl">
-                          <History size={24} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-foreground">Audit & Compliance Department</h3>
-                            <span className="text-[10px] font-bold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-                              Immutable Log
-                            </span>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setCheckinOpen(true)}
+                              className="flex items-center justify-between rounded-lg bg-blue-600 p-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition"
+                            >
+                              <span>Check In Guest (Walk-in)</span>
+                              <KeyRound size={13} />
+                            </button>
+                            <Link
+                              to="/commercial-bookings"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>All Guest Bookings</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
                           </div>
-                          <p className="text-xs text-muted">System audit trail, security checks, financial verifications & user actions</p>
                         </div>
-                      </div>
-                      <Link to="/audit-trail" className="text-xs font-bold text-amber-600 hover:underline flex items-center gap-1">
-                        <span>Audit Trail</span>
-                        <ChevronRight size={14} />
-                      </Link>
-                    </div>
 
-                    {/* Audit Metrics */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Recorded Events</p>
-                        <p className="mt-1 text-sm font-black text-foreground">{auditEvents.length || 24} Entries</p>
-                        <p className="text-[10px] text-muted">100% Retained</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Integrity Status</p>
-                        <p className="mt-1 text-sm font-black text-emerald-600">Passed</p>
-                        <p className="text-[10px] text-muted">Zero Tampering</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Compliance</p>
-                        <p className="mt-1 text-sm font-black text-blue-600">SOX / GAAP</p>
-                        <p className="text-[10px] text-muted">Standard Ready</p>
-                      </div>
-                    </div>
-
-                    {/* Audit Functions */}
-                    <div className="space-y-2 pt-1 border-t border-border-color/60">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Audit Functions:</p>
-                      <div className="flex flex-wrap gap-2">
-                        <Link
-                          to="/audit-trail"
-                          className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-700 transition"
-                        >
-                          <History size={13} />
-                          <span>Audit Trail Log</span>
-                        </Link>
-                        <Link
-                          to="/organogram"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <ShieldCheck size={13} />
-                          <span>Role Capability Matrix</span>
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 9. CUSTOMER PORTAL & ENQUIRIES */}
-                {(selectedDeptFilter === "all" || selectedDeptFilter === "portal") && (
-                  <div className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm space-y-5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-blue-600/10 text-blue-600 rounded-xl">
-                          <Inbox size={24} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-foreground">Customer Portal & Enquiries</h3>
-                            <span className="text-[10px] font-bold text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
-                              Public Facing
-                            </span>
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider">
+                            <BedDouble size={15} />
+                            <span>Rooms & Lodging</span>
                           </div>
-                          <p className="text-xs text-muted">Customer booking enquiries, support tickets, & public property showcase</p>
-                        </div>
-                      </div>
-                      <Link to="/enquiries" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
-                        <span>Enquiries</span>
-                        <ChevronRight size={14} />
-                      </Link>
-                    </div>
-
-                    {/* Customer Portal Metrics */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Public Portal</p>
-                        <p className="mt-1 text-sm font-black text-emerald-600">Active</p>
-                        <p className="text-[10px] text-muted">Direct guest booking</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Agent Portal</p>
-                        <p className="mt-1 text-sm font-black text-blue-600">Connected</p>
-                        <p className="text-[10px] text-muted">Commissioned reps</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Showcase Rooms</p>
-                        <p className="mt-1 text-sm font-black text-purple-600">Live</p>
-                        <p className="text-[10px] text-muted">Photo galleries</p>
-                      </div>
-                    </div>
-
-                    {/* Customer Portal Functions */}
-                    <div className="space-y-2 pt-1 border-t border-border-color/60">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Customer Portal Functions:</p>
-                      <div className="flex flex-wrap gap-2">
-                        <Link
-                          to="/enquiries"
-                          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition"
-                        >
-                          <Inbox size={13} />
-                          <span>Enquiries & Tickets</span>
-                        </Link>
-                        <Link
-                          to="/room-showcases"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <BedDouble size={13} />
-                          <span>Room Showcases</span>
-                        </Link>
-                        <Link
-                          to="/portal"
-                          target="_blank"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <Globe size={13} />
-                          <span>Open Public Portal ↗</span>
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 10. EXECUTIVE GOVERNANCE & ORGANOGRAM */}
-                {(selectedDeptFilter === "all" || selectedDeptFilter === "governance") && (
-                  <div className="rounded-2xl border border-indigo-500/30 bg-surface p-6 shadow-sm space-y-5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-indigo-600/10 text-indigo-600 rounded-xl">
-                          <Network size={24} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-foreground">Governance & Organogram</h3>
-                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
-                              Corporate Governance
-                            </span>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/room-management"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Rooms & Pricing Tiers</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                            <Link
+                              to="/properties"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Properties & Lodges</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
                           </div>
-                          <p className="text-xs text-muted">Role hierarchy tree, customized reporting paths, rights adjustment & legal contracts</p>
                         </div>
                       </div>
-                      <Link to="/organogram" className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1">
-                        <span>Organogram</span>
-                        <ChevronRight size={14} />
-                      </Link>
                     </div>
+                  )}
+                </div>
 
-                    {/* Governance Metrics */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Department Roles</p>
-                        <p className="mt-1 text-sm font-black text-indigo-600">10 Mapped</p>
-                        <p className="text-[10px] text-muted">Full hierarchy</p>
+                {/* 3. PROCUREMENT TOGGLER */}
+                <div className="rounded-2xl border border-purple-500/20 bg-surface shadow-sm overflow-hidden transition">
+                  <button
+                    type="button"
+                    onClick={() => toggleDept("procurement")}
+                    className="w-full flex items-center justify-between p-5 text-left hover:bg-surface-elevated/40 transition"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-600/10 text-purple-600 shrink-0">
+                        <Truck size={20} />
                       </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Custom Titles</p>
-                        <p className="mt-1 text-sm font-black text-foreground">Dynamic</p>
-                        <p className="text-[10px] text-muted">User-created</p>
-                      </div>
-                      <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Organizations</p>
-                        <p className="mt-1 text-sm font-black text-emerald-600">Managed</p>
-                        <p className="text-[10px] text-muted">Multi-tenant ready</p>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-foreground">Procurement Department</h4>
+                          <span className="rounded-full bg-purple-600/10 text-purple-600 px-2 py-0.5 text-[10px] font-bold">
+                            {procurementMetrics.active} In Pipeline
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted">Purchase requests, quotation gathering (max 10), supplier RFQs & accounts funding</p>
                       </div>
                     </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted font-medium hidden sm:inline">
+                        {expandedDepts.procurement ? "Collapse" : "Expand Functions"}
+                      </span>
+                      {expandedDepts.procurement ? (
+                        <ChevronUp size={18} className="text-muted" />
+                      ) : (
+                        <ChevronDown size={18} className="text-muted" />
+                      )}
+                    </div>
+                  </button>
 
-                    {/* Governance Functions */}
-                    <div className="space-y-2 pt-1 border-t border-border-color/60">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Governance Functions:</p>
-                      <div className="flex flex-wrap gap-2">
-                        <Link
-                          to="/organogram"
-                          className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 transition"
-                        >
-                          <Network size={13} />
-                          <span>Hierarchy Tree & Rules</span>
-                        </Link>
-                        <Link
-                          to="/companies"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <Building2 size={13} />
-                          <span>Manage Companies / Orgs</span>
-                        </Link>
-                        <Link
-                          to="/contracts"
-                          className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
-                        >
-                          <FileSignature size={13} />
-                          <span>Contracts & Leases</span>
-                        </Link>
+                  {expandedDepts.procurement && (
+                    <div className="p-5 pt-0 border-t border-border-color/60 space-y-4 bg-muted/5">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3">
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-purple-600 font-bold text-xs uppercase tracking-wider">
+                            <ClipboardList size={15} />
+                            <span>Purchasing Requests</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/procurement"
+                              className="flex items-center justify-between rounded-lg bg-purple-600 p-2 text-xs font-semibold text-white shadow-sm hover:bg-purple-700 transition"
+                            >
+                              <span>New Purchase Request</span>
+                              <PlusCircle size={13} />
+                            </Link>
+                            <Link
+                              to="/procurement"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>View Pipeline Stages</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-amber-600 font-bold text-xs uppercase tracking-wider">
+                            <Clock size={15} />
+                            <span>Quotes & Sourcing</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/procurement"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Quotation Gathering ({procurementMetrics.inQuotation})</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                            <Link
+                              to="/procurement"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Generate RFQ Document</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-pink-600 font-bold text-xs uppercase tracking-wider">
+                            <DollarSign size={15} />
+                            <span>Accounts Funding</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/procurement"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Awaiting Funds ({procurementMetrics.awaitingFunds})</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+
+                {/* 4. STORES & INVENTORY TOGGLER */}
+                <div className="rounded-2xl border border-emerald-500/20 bg-surface shadow-sm overflow-hidden transition">
+                  <button
+                    type="button"
+                    onClick={() => toggleDept("stores")}
+                    className="w-full flex items-center justify-between p-5 text-left hover:bg-surface-elevated/40 transition"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600/10 text-emerald-600 shrink-0">
+                        <Package size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-foreground">Stores & Central Inventory</h4>
+                          <span className="rounded-full bg-emerald-500/10 text-emerald-600 px-2 py-0.5 text-[10px] font-bold">
+                            {storesMetrics.totalItems} Items Cataloged
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted">Stockroom catalog, stock receipts, departmental issuance & maintenance inventory blend</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted font-medium hidden sm:inline">
+                        {expandedDepts.stores ? "Collapse" : "Expand Functions"}
+                      </span>
+                      {expandedDepts.stores ? (
+                        <ChevronUp size={18} className="text-muted" />
+                      ) : (
+                        <ChevronDown size={18} className="text-muted" />
+                      )}
+                    </div>
+                  </button>
+
+                  {expandedDepts.stores && (
+                    <div className="p-5 pt-0 border-t border-border-color/60 space-y-4 bg-muted/5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3">
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider">
+                            <Package size={15} />
+                            <span>Stock Catalog</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/stores"
+                              className="flex items-center justify-between rounded-lg bg-emerald-600 p-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 transition"
+                            >
+                              <span>Stores & Inventory Management</span>
+                              <Package size={13} />
+                            </Link>
+                            <Link
+                              to="/maintenance/inventory"
+                              className="flex items-center justify-between rounded-lg border border-blue-500/20 bg-blue-500/10 p-2 text-xs font-semibold text-blue-600 hover:bg-blue-500/20 transition"
+                            >
+                              <span>Inventory & Stock (Maintenance Hub)</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider">
+                            <Activity size={15} />
+                            <span>Stock Movements</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/stores"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Receive Delivered Goods</span>
+                              <ArrowDownRight size={13} />
+                            </Link>
+                            <Link
+                              to="/stores"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Issue Stock to Department</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 5. FINANCE & ACCOUNTS TOGGLER */}
+                <div className="rounded-2xl border border-border-color bg-surface shadow-sm overflow-hidden transition">
+                  <button
+                    type="button"
+                    onClick={() => toggleDept("finance")}
+                    className="w-full flex items-center justify-between p-5 text-left hover:bg-surface-elevated/40 transition"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600/10 text-emerald-600 shrink-0">
+                        <DollarSign size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-foreground">Finance & Accounts</h4>
+                          <span className="rounded-full bg-emerald-500/10 text-emerald-600 px-2 py-0.5 text-[10px] font-bold">
+                            {formatCurrency(stats.totalMonthlyIncome)} Revenue
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted">Rent revenue, invoice billing, financial accounts & purchase fund approvals</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted font-medium hidden sm:inline">
+                        {expandedDepts.finance ? "Collapse" : "Expand Functions"}
+                      </span>
+                      {expandedDepts.finance ? (
+                        <ChevronUp size={18} className="text-muted" />
+                      ) : (
+                        <ChevronDown size={18} className="text-muted" />
+                      )}
+                    </div>
+                  </button>
+
+                  {expandedDepts.finance && (
+                    <div className="p-5 pt-0 border-t border-border-color/60 space-y-4 bg-muted/5">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3">
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider">
+                            <TrendingUp size={15} />
+                            <span>Revenue & Billing</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/rent-collection"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Rent & Revenue Collection</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                            <Link
+                              to="/finance/invoices"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Invoices Management</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-pink-600 font-bold text-xs uppercase tracking-wider">
+                            <DollarSign size={15} />
+                            <span>Purchase Approvals</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/procurement"
+                              className="flex items-center justify-between rounded-lg bg-pink-600 p-2 text-xs font-semibold text-white shadow-sm hover:bg-pink-700 transition"
+                            >
+                              <span>Approve Procurement Funds</span>
+                              <CheckCircle2 size={13} />
+                            </Link>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider">
+                            <Layers size={15} />
+                            <span>Statements & Reports</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/finance/accounts"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Financial Accounts</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                            <Link
+                              to="/finance/reports"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Financial Reports</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 6. OPERATIONS & MAINTENANCE TOGGLER */}
+                <div className="rounded-2xl border border-border-color bg-surface shadow-sm overflow-hidden transition">
+                  <button
+                    type="button"
+                    onClick={() => toggleDept("maintenance")}
+                    className="w-full flex items-center justify-between p-5 text-left hover:bg-surface-elevated/40 transition"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-600/10 text-amber-600 shrink-0">
+                        <Wrench size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-foreground">Operations & Maintenance</h4>
+                          <span className="rounded-full bg-amber-500/10 text-amber-600 px-2 py-0.5 text-[10px] font-bold">
+                            {stats.pendingMaintenance} Open Work Orders
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted">Repairs queue, scheduled tasks, routine inspections & service providers</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted font-medium hidden sm:inline">
+                        {expandedDepts.maintenance ? "Collapse" : "Expand Functions"}
+                      </span>
+                      {expandedDepts.maintenance ? (
+                        <ChevronUp size={18} className="text-muted" />
+                      ) : (
+                        <ChevronDown size={18} className="text-muted" />
+                      )}
+                    </div>
+                  </button>
+
+                  {expandedDepts.maintenance && (
+                    <div className="p-5 pt-0 border-t border-border-color/60 space-y-4 bg-muted/5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3">
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-amber-600 font-bold text-xs uppercase tracking-wider">
+                            <Wrench size={15} />
+                            <span>Repairs & Work Orders</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/maintenance/work-orders"
+                              className="flex items-center justify-between rounded-lg bg-amber-600 p-2 text-xs font-semibold text-white shadow-sm hover:bg-amber-700 transition"
+                            >
+                              <span>Work Orders Queue</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                            <Link
+                              to="/maintenance/inventory"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Maintenance Inventory & Parts</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider">
+                            <Calendar size={15} />
+                            <span>Preventive Care</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/maintenance/scheduled-tasks"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Scheduled Tasks</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                            <Link
+                              to="/maintenance/providers"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Service Providers Network</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 7. HUMAN RESOURCES & PAYROLL TOGGLER */}
+                <div className="rounded-2xl border border-border-color bg-surface shadow-sm overflow-hidden transition">
+                  <button
+                    type="button"
+                    onClick={() => toggleDept("hr")}
+                    className="w-full flex items-center justify-between p-5 text-left hover:bg-surface-elevated/40 transition"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600 shrink-0">
+                        <Briefcase size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-foreground">Human Resources & Payroll</h4>
+                          <span className="rounded-full bg-blue-600/10 text-blue-600 px-2 py-0.5 text-[10px] font-bold">
+                            {companyUsers.length || 6} Staff Active
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted">Staff directory, contract countdowns, mass payroll generator & leave records</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted font-medium hidden sm:inline">
+                        {expandedDepts.hr ? "Collapse" : "Expand Functions"}
+                      </span>
+                      {expandedDepts.hr ? (
+                        <ChevronUp size={18} className="text-muted" />
+                      ) : (
+                        <ChevronDown size={18} className="text-muted" />
+                      )}
+                    </div>
+                  </button>
+
+                  {expandedDepts.hr && (
+                    <div className="p-5 pt-0 border-t border-border-color/60 space-y-4 bg-muted/5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3">
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider">
+                            <Users size={15} />
+                            <span>Staff Management</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/hr"
+                              className="flex items-center justify-between rounded-lg bg-blue-600 p-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition"
+                            >
+                              <span>Employee Directory & Contracts</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                            <Link
+                              to="/organogram"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Organogram Hierarchy</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider">
+                            <DollarSign size={15} />
+                            <span>Payroll & Compensation</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/hr"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Mass Payroll Generator</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 8. CUSTOMER PORTAL & ENQUIRIES TOGGLER */}
+                <div className="rounded-2xl border border-border-color bg-surface shadow-sm overflow-hidden transition">
+                  <button
+                    type="button"
+                    onClick={() => toggleDept("portal")}
+                    className="w-full flex items-center justify-between p-5 text-left hover:bg-surface-elevated/40 transition"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600 shrink-0">
+                        <Inbox size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-foreground">Customer Portal & Enquiries</h4>
+                          <span className="rounded-full bg-blue-500/10 text-blue-600 px-2 py-0.5 text-[10px] font-bold">
+                            Live Guest Inquiries
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted">Customer enquiries inbox, property showcase galleries, public portal & agent portal</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted font-medium hidden sm:inline">
+                        {expandedDepts.portal ? "Collapse" : "Expand Functions"}
+                      </span>
+                      {expandedDepts.portal ? (
+                        <ChevronUp size={18} className="text-muted" />
+                      ) : (
+                        <ChevronDown size={18} className="text-muted" />
+                      )}
+                    </div>
+                  </button>
+
+                  {expandedDepts.portal && (
+                    <div className="p-5 pt-0 border-t border-border-color/60 space-y-4 bg-muted/5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3">
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider">
+                            <Inbox size={15} />
+                            <span>Enquiry Management</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/enquiries"
+                              className="flex items-center justify-between rounded-lg bg-blue-600 p-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition"
+                            >
+                              <span>Customer Enquiries & Tickets</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-purple-600 font-bold text-xs uppercase tracking-wider">
+                            <Globe size={15} />
+                            <span>Portals & Showcase</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/room-showcases"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Room Showcases</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                            <Link
+                              to="/portal"
+                              target="_blank"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Open Public Portal ↗</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 9. AUDIT & COMPLIANCE TOGGLER */}
+                <div className="rounded-2xl border border-border-color bg-surface shadow-sm overflow-hidden transition">
+                  <button
+                    type="button"
+                    onClick={() => toggleDept("audit")}
+                    className="w-full flex items-center justify-between p-5 text-left hover:bg-surface-elevated/40 transition"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-600/10 text-amber-600 shrink-0">
+                        <History size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-foreground">Audit & Compliance Department</h4>
+                          <span className="rounded-full bg-amber-500/10 text-amber-600 px-2 py-0.5 text-[10px] font-bold">
+                            {auditEvents.length || 24} Audit Events
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted">Administrative audit logs, security checks, and financial reconciliation history</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted font-medium hidden sm:inline">
+                        {expandedDepts.audit ? "Collapse" : "Expand Functions"}
+                      </span>
+                      {expandedDepts.audit ? (
+                        <ChevronUp size={18} className="text-muted" />
+                      ) : (
+                        <ChevronDown size={18} className="text-muted" />
+                      )}
+                    </div>
+                  </button>
+
+                  {expandedDepts.audit && (
+                    <div className="p-5 pt-0 border-t border-border-color/60 space-y-4 bg-muted/5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3">
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-amber-600 font-bold text-xs uppercase tracking-wider">
+                            <History size={15} />
+                            <span>System Logs</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/audit-trail"
+                              className="flex items-center justify-between rounded-lg bg-amber-600 p-2 text-xs font-semibold text-white shadow-sm hover:bg-amber-700 transition"
+                            >
+                              <span>Audit Trail Inspector</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider">
+                            <ShieldCheck size={15} />
+                            <span>Role Rights Compliance</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/organogram"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Role Capability Matrix</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 10. EXECUTIVE GOVERNANCE TOGGLER */}
+                <div className="rounded-2xl border border-indigo-500/20 bg-surface shadow-sm overflow-hidden transition">
+                  <button
+                    type="button"
+                    onClick={() => toggleDept("governance")}
+                    className="w-full flex items-center justify-between p-5 text-left hover:bg-surface-elevated/40 transition"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600/10 text-indigo-600 shrink-0">
+                        <Network size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-foreground">Executive Governance & Organogram</h4>
+                          <span className="rounded-full bg-indigo-500/10 text-indigo-600 px-2 py-0.5 text-[10px] font-bold">
+                            Corporate Structure
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted">Role definitions, organogram reporting hierarchy & multi-organization management</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted font-medium hidden sm:inline">
+                        {expandedDepts.governance ? "Collapse" : "Expand Functions"}
+                      </span>
+                      {expandedDepts.governance ? (
+                        <ChevronUp size={18} className="text-muted" />
+                      ) : (
+                        <ChevronDown size={18} className="text-muted" />
+                      )}
+                    </div>
+                  </button>
+
+                  {expandedDepts.governance && (
+                    <div className="p-5 pt-0 border-t border-border-color/60 space-y-4 bg-muted/5">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3">
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs uppercase tracking-wider">
+                            <Network size={15} />
+                            <span>Organogram</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/organogram"
+                              className="flex items-center justify-between rounded-lg bg-indigo-600 p-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 transition"
+                            >
+                              <span>Organogram Hierarchy Tree</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider">
+                            <Building2 size={15} />
+                            <span>Organizations</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/companies"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Manage Organizations</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
+                          <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider">
+                            <FileSignature size={15} />
+                            <span>Contracts</span>
+                          </div>
+                          <div className="pt-1 flex flex-col gap-1.5">
+                            <Link
+                              to="/contracts"
+                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                            >
+                              <span>Contracts & Leases</span>
+                              <ArrowUpRight size={13} />
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Financial Charts & Occupancy Gauges */}
@@ -1151,58 +1338,6 @@ export default function DashboardPage() {
                   </div>
                 </article>
               </div>
-
-              {/* Recent In-House Bookings Strip */}
-              <div className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-bold text-foreground">Recent Front Desk Check-Ins</h3>
-                    <p className="text-xs text-muted">Latest guest arrivals and room assignments</p>
-                  </div>
-                  <Link
-                    to="/commercial-bookings"
-                    className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
-                  >
-                    <span>View All</span>
-                    <ChevronRight size={14} />
-                  </Link>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="border-b border-border-color text-[10px] font-bold uppercase tracking-wider text-muted">
-                      <tr>
-                        <th className="pb-2">Booking Code</th>
-                        <th className="pb-2">Guest Name</th>
-                        <th className="pb-2">Room</th>
-                        <th className="pb-2">Meal Plan</th>
-                        <th className="pb-2">Stay Dates</th>
-                        <th className="pb-2">Amount Paid</th>
-                        <th className="pb-2">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border-color">
-                      {recentBookings.map((b) => (
-                        <tr key={b.id} className="hover:bg-surface-elevated/30">
-                          <td className="py-2.5 font-mono font-bold text-blue-600">{b.bookingCode}</td>
-                          <td className="py-2.5 font-semibold text-foreground">{b.guestName}</td>
-                          <td className="py-2.5">{b.roomNumber}</td>
-                          <td className="py-2.5 capitalize text-muted">{b.mealPlan.replace(/_/g, " ")}</td>
-                          <td className="py-2.5 text-muted">
-                            {new Date(b.checkInDate).toLocaleDateString()} → {new Date(b.checkOutDate).toLocaleDateString()}
-                          </td>
-                          <td className="py-2.5 font-bold text-emerald-600">R{b.amountPaid.toLocaleString()}</td>
-                          <td className="py-2.5">
-                            <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold text-blue-600 uppercase">
-                              {b.bookingStatus.replace("_", " ")}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
             </>
           )}
 
@@ -1218,9 +1353,9 @@ export default function DashboardPage() {
                       <Server size={24} />
                     </div>
                     <div>
-                      <h2 className="text-lg font-bold text-foreground">IT Department Workspace</h2>
+                      <h2 className="text-lg font-bold text-foreground">IT & System Administration</h2>
                       <p className="text-xs text-muted">
-                        Database status, server latency, system health, and staff account provisioning.
+                        Staff account credentials, user rights, role hierarchy, and organization security.
                       </p>
                     </div>
                   </div>
@@ -1229,15 +1364,15 @@ export default function DashboardPage() {
                       to="/it"
                       className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition"
                     >
-                      <Activity size={16} />
-                      <span>IT Operations Hub</span>
+                      <Sliders size={16} />
+                      <span>Administration Hub</span>
                     </Link>
                     <Link
                       to="/users-management"
                       className="flex items-center gap-2 rounded-xl border border-border-color bg-surface-elevated px-4 py-2.5 text-xs font-semibold text-foreground hover:bg-surface transition"
                     >
                       <UserCog size={16} />
-                      <span>User Management</span>
+                      <span>User Rights</span>
                     </Link>
                   </div>
                 </div>
@@ -1247,21 +1382,21 @@ export default function DashboardPage() {
                 <StatCard
                   label="System Status"
                   value="Operational"
-                  detail="PostgreSQL Cloud & Edge"
+                  detail="All platform services active"
                   icon={Server}
                   colorClass="text-emerald-600"
                 />
                 <StatCard
-                  label="Provisioned Users"
+                  label="Configured Users"
                   value={String(companyUsers.length || 6)}
-                  detail="Staff Accounts Configured"
+                  detail="Staff Accounts Active"
                   icon={Users}
                   colorClass="text-blue-600"
                 />
                 <StatCard
-                  label="Audit Logs Tracked"
+                  label="Audit Logs"
                   value={String(auditEvents.length || 24)}
-                  detail="System Security Events"
+                  detail="Administrative records"
                   icon={History}
                   colorClass="text-amber-600"
                 />
