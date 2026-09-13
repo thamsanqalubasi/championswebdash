@@ -147,6 +147,7 @@ export default function ProcurementPage() {
   
   // Pipeline Modal
   const [selectedPipelineRequest, setSelectedPipelineRequest] = useState<ProcurementRequest | null>(null);
+  const [pipelineTab, setPipelineTab] = useState<'map' | 'specs' | 'quotes' | 'funds' | 'audit'>('map');
   
   // Quote Request Modal
   const [selectedQuoteRequest, setSelectedQuoteRequest] = useState<ProcurementRequest | null>(null);
@@ -479,10 +480,9 @@ export default function ProcurementPage() {
         const req = selectedPipelineRequest;
         const currentIdx = STAGES.indexOf(req.pipelineStage);
         const progressPct = Math.round(((currentIdx) / (STAGES.length - 1)) * 100);
-        const [pipelineTab, setPipelineTab] = React.useState<'map' | 'specs' | 'quotes' | 'funds' | 'audit'>('map');
 
         return (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) setSelectedPipelineRequest(null); }}>
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) { setSelectedPipelineRequest(null); setPipelineTab('map'); } }}>
           <div className="bg-surface w-full max-w-4xl rounded-2xl shadow-xl border border-border-color flex flex-col max-h-[90vh]">
             {/* Progress Header */}
             <div className="p-5 border-b border-border-color bg-gray-50/50 dark:bg-gray-800/50 rounded-t-2xl">
@@ -509,7 +509,7 @@ export default function ProcurementPage() {
                     <div className="h-full bg-blue-600 rounded-full transition-all duration-500" style={{ width: `${progressPct}%` }} />
                   </div>
                 </div>
-                <button onClick={() => setSelectedPipelineRequest(null)} className="text-gray-400 hover:text-gray-600 p-1 ml-4">✕</button>
+                <button onClick={() => { setSelectedPipelineRequest(null); setPipelineTab('map'); }} className="text-gray-400 hover:text-gray-600 p-1 ml-4">✕</button>
               </div>
             </div>
 
