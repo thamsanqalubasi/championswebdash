@@ -722,7 +722,7 @@ export default function PropertyDetailsPage() {
 
       const actorName = user?.email ?? "Admin";
       await supabase.from("audit_log").insert({
-        user_email: user?.email || "admin@championscourt.co.za",
+        user_email: user?.email || "admin@paimbabook.com",
         user_name: actorName,
         action: "invoice_status_updated",
         entity_type: "invoice",
@@ -833,7 +833,7 @@ export default function PropertyDetailsPage() {
 
       const actorName = user?.email ?? "Admin";
       await supabase.from("audit_log").insert({
-        user_email: user?.email || "admin@championscourt.co.za",
+        user_email: user?.email || "admin@paimbabook.com",
         user_name: actorName,
         action: "bill_payment_updated",
         entity_type: "property_monthly_bill",

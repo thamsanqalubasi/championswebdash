@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { TermsCheckboxField } from "@/components/terms-modal";
+import { sendEmailViaApi, wrapCustomerWelcomeEmailHtml } from "@/lib/notifications";
 import { LogIn, UserPlus, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react";
 
 function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
@@ -67,6 +68,23 @@ export default function PortalLoginPage() {
     try {
       const { error: err } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
       if (err) throw err;
+
+      try {
+        const origin = typeof window !== "undefined" ? window.location.origin : "https://paimbabook.com";
+        const emailHtml = wrapCustomerWelcomeEmailHtml({
+          customerName: name || email,
+          customerEmail: email,
+          portalUrl: origin,
+        });
+        void sendEmailViaApi({
+          to: email,
+          subject: "Welcome to Paimbabook - Your Customer Account is Ready",
+          html: emailHtml,
+        });
+      } catch (emailErr) {
+        console.warn("Could not dispatch customer welcome email", emailErr);
+      }
+
       setSuccess("Account created! Please check your email to confirm your account, then sign in.");
     } catch (err: any) { setError(err.message || "Signup failed."); }
     setLoading(false);

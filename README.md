@@ -1,6 +1,6 @@
-# Champions Court Desktop Dashboard (Web)
+# Paimbabook Desktop Dashboard (Web)
 
-Desktop-first operations dashboard for Champions Court, built with Next.js App Router and TypeScript.
+Desktop-first operations dashboard for Paimbabook, built with Next.js App Router and TypeScript.
 
 ## Stack
 
@@ -31,7 +31,7 @@ Use one of the following data modes.
 Notes:
 
 - Do not append `/api` to this value.
-- Example: `https://championscourt-api.onrender.com`
+- Example: `https://paimbabook.com`
 
 ### Fallback: Supabase mode
 

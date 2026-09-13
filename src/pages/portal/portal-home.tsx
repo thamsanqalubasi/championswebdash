@@ -138,7 +138,7 @@ export default function PortalHomePage() {
               {filteredRooms.map(r => {
                 const stat = reviewsMap[r.id] || reviewsMap[r.property_id];
                 return (
-                  <Link key={r.id} to={`/portal/listing/${r.id}`} className="group rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm hover:shadow-lg transition-all hover:-translate-y-1">
+                  <Link key={r.id} to={`/listing/${r.id}`} className="group rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm hover:shadow-lg transition-all hover:-translate-y-1">
                     <PhotoSlider photos={r.photos||[]} name={r.display_name}/>
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-2 mb-1">
@@ -249,7 +249,7 @@ export default function PortalHomePage() {
               {filteredRentals.map(l => {
                 const stat = reviewsMap[l.id];
                 return (
-                  <Link key={l.id} to={`/portal/listing/${l.id}`} className="group rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm hover:shadow-lg transition-all hover:-translate-y-1">
+                  <Link key={l.id} to={`/listing/${l.id}`} className="group rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm hover:shadow-lg transition-all hover:-translate-y-1">
                     <PhotoSlider photos={l.photos||[]} name={l.name}/>
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-2 mb-2">

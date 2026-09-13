@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState, Fragment } from "react";
+import { useEffect, useMemo, useState, Fragment } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
@@ -345,7 +345,7 @@ export default function RentCollectionPage() {
       if (paymentError) throw paymentError;
 
       await supabase.from("audit_log").insert({
-        user_email: user?.email || "admin@championscourt.co.za",
+        user_email: user?.email || "admin@paimbabook.com",
         user_name: executorName,
         action: "rent_payment_recorded",
         entity_type: "tenant_rent_payment",

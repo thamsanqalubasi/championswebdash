@@ -3069,7 +3069,7 @@ export default function OrganogramPage() {
                 <input
                   type="email"
                   required
-                  placeholder="e.g. sipho@championscourt.co.za"
+                  placeholder="e.g. sipho@paimbabook.com"
                   value={createAccountForm.email}
                   onChange={(e) =>
                     setCreateAccountForm({ ...createAccountForm, email: e.target.value })

@@ -54,15 +54,26 @@ export default function EnquiriesPage() {
         const { data, error } = await supabase
           .from("enquiries")
           .select("*")
+          .or(`company_id.eq.${currentCompany.id},company_id.is.null`)
           .order("created_at", { ascending: false });
-        if (!error && data) {
+        if (error) {
+          // Fallback simple query
+          const { data: fallbackData } = await supabase.from("enquiries").select("*").order("created_at", { ascending: false });
+          if (fallbackData) {
+            loaded = fallbackData;
+          } else if (error.message.includes("does not exist") || error.code === "42P01") {
+            setEmpty(true);
+          }
+        } else if (data) {
           loaded = data;
         }
-      } catch {}
+      } catch {
+        setEmpty(true);
+      }
 
       // Merge with locally submitted portal enquiries
       try {
-        const stored = JSON.parse(localStorage.getItem("paimbabook_enquiries") || localStorage.getItem("pambabook_enquiries") || "[]");
+        const stored = JSON.parse(localStorage.getItem("pambabook_enquiries") || "[]");
         if (Array.isArray(stored) && stored.length > 0) {
           const ids = new Set(loaded.map((item: any) => item.id));
           const uniqueLocal = stored.filter((item: any) => !ids.has(item.id));

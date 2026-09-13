@@ -125,40 +125,17 @@ export default function PortalListingPage() {
         payload.property_id = propertyId;
       }
 
-      // Guarantee local storage persistence so it displays on admin dashboard even if Supabase RLS is restrictive
-      const localId = "enq_" + Date.now();
-      const localEnquiry = {
-        id: localId,
-        company_id: targetCompanyId || "a0000000-0000-0000-0000-000000000001",
-        property_id: payload.property_id || propertyId,
-        room_type_listing_id: payload.room_type_listing_id || null,
-        customer_name: form.name,
-        customer_email: form.email,
-        customer_phone: form.phone || "",
-        type: isHosp ? "room_booking" : "rental_enquiry",
-        check_in_date: form.check_in || null,
-        check_out_date: form.check_out || null,
-        guests: form.guests,
-        message: form.message,
-        status: "open",
-        created_at: new Date().toISOString(),
-      };
-
-      try {
-        const stored = JSON.parse(localStorage.getItem("paimbabook_enquiries") || localStorage.getItem("pambabook_enquiries") || "[]");
-        localStorage.setItem("paimbabook_enquiries", JSON.stringify([localEnquiry, ...stored]));
-      } catch {}
-
       const { error: insertError } = await supabase.from("enquiries").insert(payload);
       if (insertError) {
         // Retry without room_type_listing_id in case column is not yet in table
         const fallbackPayload = { ...payload };
         delete fallbackPayload.room_type_listing_id;
-        await supabase.from("enquiries").insert(fallbackPayload);
+        const { error: retryError } = await supabase.from("enquiries").insert(fallbackPayload);
+        if (retryError) throw retryError;
       }
       setEnquirySent(true);
-    } catch {
-      setEnquirySent(true);
+    } catch (err: any) {
+      alert(err?.message || "Failed to send enquiry. Please try again.");
     }
     setSubmitting(false);
   };
@@ -215,7 +192,7 @@ export default function PortalListingPage() {
     <div className="flex flex-col items-center justify-center py-32 text-gray-400 gap-4">
       <BedDouble size={48} className="opacity-20"/>
       <p className="text-lg font-medium">Listing not found.</p>
-      <Link to="/portal" className="text-blue-600 text-sm hover:underline">← Back to all listings</Link>
+      <Link to="/" className="text-blue-600 text-sm hover:underline">← Back to all listings</Link>
     </div>
   );
 
@@ -227,7 +204,7 @@ export default function PortalListingPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10">
-      <Link to="/portal" className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 mb-6 transition"><ArrowLeft size={15}/> Back to Listings</Link>
+      <Link to="/" className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 mb-6 transition"><ArrowLeft size={15}/> Back to Listings</Link>
 
       <div className="grid lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">

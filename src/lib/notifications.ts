@@ -456,6 +456,81 @@ export function wrapStaffPasswordResetEmailHtml(opts: {
 </html>`;
 }
 
+export function wrapCustomerWelcomeEmailHtml(opts: {
+  customerName: string;
+  customerEmail: string;
+  portalUrl: string;
+}): string {
+  const { customerName, customerEmail, portalUrl } = opts;
+  const year = new Date().getFullYear();
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Welcome to Paimbabook - Your Customer Account is Ready</title>
+<style>
+  body { margin: 0; padding: 0; background: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1e293b; }
+  .wrapper { padding: 32px 16px; }
+  .card { max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
+  .header { background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%); padding: 36px 32px; text-align: center; color: #ffffff; }
+  .header h1 { margin: 0 0 8px; font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }
+  .header p { margin: 0; font-size: 14px; color: #bfdbfe; font-weight: 500; }
+  .content { padding: 32px; }
+  .greeting { font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 14px; }
+  .body-text { font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px; }
+  .highlight-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; margin: 0 0 24px; }
+  .highlight-row { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
+  .highlight-row:last-child { border-bottom: none; }
+  .highlight-label { color: #64748b; font-weight: 500; }
+  .highlight-val { color: #0f172a; font-weight: 700; }
+  .btn-container { text-align: center; margin: 28px 0; }
+  .btn { display: inline-block; background: #2563eb; color: #ffffff !important; text-decoration: none; font-size: 15px; font-weight: 700; padding: 14px 32px; border-radius: 10px; box-shadow: 0 4px 14px rgba(37,99,235,0.35); }
+  .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="card">
+    <div class="header">
+      <h1>Paimbabook</h1>
+      <p>Guest &amp; Tenant Customer Portal</p>
+    </div>
+    <div class="content">
+      <p class="greeting">Welcome, ${customerName}!</p>
+      <p class="body-text">
+        Thank you for joining Paimbabook. Your customer account is active. You can now browse verified rental properties, book safari lodges &amp; hotel rooms, manage your bookings, and track maintenance and lease enquiries directly online.
+      </p>
+
+      <div class="highlight-box">
+        <div class="highlight-row">
+          <span class="highlight-label">Account Name:</span>
+          <span class="highlight-val">${customerName}</span>
+        </div>
+        <div class="highlight-row">
+          <span class="highlight-label">Login Email:</span>
+          <span class="highlight-val">${customerEmail}</span>
+        </div>
+        <div class="highlight-row">
+          <span class="highlight-label">Portal:</span>
+          <span class="highlight-val">paimbabook.com</span>
+        </div>
+      </div>
+
+      <div class="btn-container">
+        <a href="${portalUrl}" target="_blank" class="btn">Explore Listings &amp; Bookings &rarr;</a>
+      </div>
+    </div>
+    <div class="footer">
+      &copy; ${year} Paimbabook. All rights reserved.
+    </div>
+  </div>
+</div>
+</body>
+</html>`;
+}
+
 /* ------------------------------------------------------------------ */
 /*  API callers                                                        */
 /* ------------------------------------------------------------------ */

@@ -46,12 +46,9 @@ async function loadEmailSettingsFromSupabase(): Promise<EmailSettingsRow | null>
 
 function toSender(fromName: string, fromEmail: string, fallback: string) {
   const trimmedEmail = String(fromEmail ?? "").trim();
-  const trimmedName = String(fromName ?? "").trim();
-  if (trimmedName && trimmedEmail) {
+  const trimmedName = String(fromName ?? "").trim() || "Paimbabook";
+  if (trimmedEmail && !trimmedEmail.toLowerCase().includes("resend.dev")) {
     return `${trimmedName} <${trimmedEmail}>`;
-  }
-  if (trimmedEmail) {
-    return trimmedEmail;
   }
   return fallback;
 }
@@ -86,6 +83,12 @@ async function sendWithResend(params: {
   replyTo?: string;
   attachments: EmailAttachment[];
 }) {
+  // Ensure sender uses verified domain paimbabook.com
+  let sender = params.sender;
+  if (!sender || sender.toLowerCase().includes("resend.dev")) {
+    sender = "Paimbabook <noreply@paimbabook.com>";
+  }
+
   const resendResponse = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -93,7 +96,7 @@ async function sendWithResend(params: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: params.sender,
+      from: sender,
       to: [params.to],
       subject: params.subject,
       html: params.html,
@@ -102,8 +105,9 @@ async function sendWithResend(params: {
     }),
   });
 
-  const resendData = await resendResponse.json();
+  const resendData = await resendResponse.json().catch(() => ({}));
   if (!resendResponse.ok) {
+    console.error("Resend API error:", resendData);
     return { ok: false as const, status: resendResponse.status, error: resendData?.message || "Failed to send via Resend", details: resendData };
   }
 
@@ -221,7 +225,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const configuredMethod = String(settings?.method || process.env.EMAIL_PROVIDER || "resend").toLowerCase();
   const method = String(requestedMethod || configuredMethod).toLowerCase();
 
-  const sender = from || toSender(String(settings?.from_name ?? ""), String(settings?.from_email ?? ""), process.env.EMAIL_FROM || "Paimbabook <onboarding@resend.dev>");
+  const sender = from || toSender(String(settings?.from_name ?? ""), String(settings?.from_email ?? ""), process.env.EMAIL_FROM || "Paimbabook <noreply@paimbabook.com>");
   const replyTo = String(settings?.reply_to ?? "").trim() || undefined;
   const normalizedAttachments: EmailAttachment[] = Array.isArray(attachments)
     ? (attachments as EmailAttachment[]).filter(

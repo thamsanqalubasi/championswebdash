@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
@@ -736,7 +736,7 @@ export default function TenantsPage() {
     paymentDates: string[],
   ) => {
     const { error: logError } = await supabase.from("audit_log").insert({
-      user_email: user?.email || "admin@championscourt.co.za",
+      user_email: user?.email || "admin@paimbabook.com",
       user_name: user?.email ?? "Admin",
       action: "invoice_shared",
       entity_type: "invoice_share",

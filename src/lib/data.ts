@@ -166,7 +166,7 @@ export const MOCK_COMPANY_USERS: CompanyUser[] = [
     id: "b0000000-0000-0000-0000-000000000001",
     companyId: "a0000000-0000-0000-0000-000000000001",
     userId: "c0000000-0000-0000-0000-000000000001",
-    email: "admin@championscourt.co.za",
+    email: "admin@paimbabook.com",
     fullName: "Thamsanqa Lubasi (Super Admin)",
     department: "admin",
     jobTitle: "Admin - Super Admin",
@@ -179,7 +179,7 @@ export const MOCK_COMPANY_USERS: CompanyUser[] = [
     id: "b0000000-0000-0000-0000-000000000002",
     companyId: "a0000000-0000-0000-0000-000000000001",
     userId: "c0000000-0000-0000-0000-000000000002",
-    email: "frontdesk@championscourt.co.za",
+    email: "frontdesk@paimbabook.com",
     fullName: "Nomsa Dlamini",
     department: "front_desk",
     jobTitle: "Front Desk - Receptionist",
@@ -192,7 +192,7 @@ export const MOCK_COMPANY_USERS: CompanyUser[] = [
     id: "b0000000-0000-0000-0000-000000000003",
     companyId: "a0000000-0000-0000-0000-000000000001",
     userId: "c0000000-0000-0000-0000-000000000003",
-    email: "maintenance@championscourt.co.za",
+    email: "maintenance@paimbabook.com",
     fullName: "Sipho Khumalo",
     department: "maintenance",
     jobTitle: "Maintenance - Manager",
@@ -205,7 +205,7 @@ export const MOCK_COMPANY_USERS: CompanyUser[] = [
     id: "b0000000-0000-0000-0000-000000000004",
     companyId: "a0000000-0000-0000-0000-000000000001",
     userId: "c0000000-0000-0000-0000-000000000004",
-    email: "accounts@championscourt.co.za",
+    email: "accounts@paimbabook.com",
     fullName: "Lerato Mokoena",
     department: "accountant",
     jobTitle: "Accountant - Manager",
@@ -218,7 +218,7 @@ export const MOCK_COMPANY_USERS: CompanyUser[] = [
     id: "b0000000-0000-0000-0000-000000000005",
     companyId: "a0000000-0000-0000-0000-000000000001",
     userId: "c0000000-0000-0000-0000-000000000005",
-    email: "hr@championscourt.co.za",
+    email: "hr@paimbabook.com",
     fullName: "Precious Ndlovu",
     department: "human_resources",
     jobTitle: "HR - Manager",
@@ -231,7 +231,7 @@ export const MOCK_COMPANY_USERS: CompanyUser[] = [
     id: "b0000000-0000-0000-0000-000000000006",
     companyId: "a0000000-0000-0000-0000-000000000001",
     userId: "c0000000-0000-0000-0000-000000000006",
-    email: "audit@championscourt.co.za",
+    email: "audit@paimbabook.com",
     fullName: "Farai Moyo",
     department: "audit",
     jobTitle: "Audit - Auditor",
@@ -247,7 +247,7 @@ export const MOCK_COMMERCIAL_ROOMS: CommercialRoom[] = [
     id: "d0000000-0000-0000-0000-000000000101",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
-    propertyName: "Grand Champions Safari Lodge & Hotel",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
     roomNumber: "Room 101",
     roomType: "deluxe",
     floor: "Ground Floor",
@@ -266,7 +266,7 @@ export const MOCK_COMMERCIAL_ROOMS: CommercialRoom[] = [
     id: "d0000000-0000-0000-0000-000000000102",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
-    propertyName: "Grand Champions Safari Lodge & Hotel",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
     roomNumber: "Room 102",
     roomType: "suite",
     floor: "Ground Floor",
@@ -285,7 +285,7 @@ export const MOCK_COMMERCIAL_ROOMS: CommercialRoom[] = [
     id: "d0000000-0000-0000-0000-000000000103",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
-    propertyName: "Grand Champions Safari Lodge & Hotel",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
     roomNumber: "Room 103",
     roomType: "standard",
     floor: "Ground Floor",
@@ -304,7 +304,7 @@ export const MOCK_COMMERCIAL_ROOMS: CommercialRoom[] = [
     id: "d0000000-0000-0000-0000-000000000201",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
-    propertyName: "Grand Champions Safari Lodge & Hotel",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
     roomNumber: "Room 201",
     roomType: "executive",
     floor: "1st Floor",
@@ -323,7 +323,7 @@ export const MOCK_COMMERCIAL_ROOMS: CommercialRoom[] = [
     id: "d0000000-0000-0000-0000-000000000202",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
-    propertyName: "Grand Champions Safari Lodge & Hotel",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
     roomNumber: "Room 202",
     roomType: "family",
     floor: "1st Floor",
@@ -345,7 +345,7 @@ export const MOCK_COMMERCIAL_BOOKINGS: CommercialBooking[] = [
     id: "e0000000-0000-0000-0000-000000000001",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
-    propertyName: "Grand Champions Safari Lodge & Hotel",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
     roomId: "d0000000-0000-0000-0000-000000000101",
     roomNumber: "Room 101",
     roomType: "deluxe",
@@ -379,7 +379,7 @@ export const MOCK_HOUSEKEEPING: HousekeepingSchedule[] = [
     id: "f0000000-0000-0000-0000-000000000001",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
-    propertyName: "Grand Champions Safari Lodge & Hotel",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
     roomId: "d0000000-0000-0000-0000-000000000103",
     roomNumber: "Room 103",
     cleanerName: "Maria Sithole",
@@ -395,7 +395,7 @@ export const MOCK_HOUSEKEEPING: HousekeepingSchedule[] = [
     id: "f0000000-0000-0000-0000-000000000002",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
-    propertyName: "Grand Champions Safari Lodge & Hotel",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
     roomId: "d0000000-0000-0000-0000-000000000101",
     roomNumber: "Room 101",
     cleanerName: "Grace Mabena",
@@ -414,7 +414,7 @@ export const MOCK_ROOM_SERVICE: RoomServiceSchedule[] = [
     id: "f1000000-0000-0000-0000-000000000001",
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
-    propertyName: "Grand Champions Safari Lodge & Hotel",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
     roomId: "d0000000-0000-0000-0000-000000000101",
     roomNumber: "Room 101",
     guestName: "Arthur Pendelton",
@@ -1260,7 +1260,7 @@ export async function fetchCommercialRooms(
         id: r.id,
         companyId: r.company_id,
         propertyId: r.property_id,
-        propertyName: r.properties?.name || "Grand Champions Safari Lodge",
+        propertyName: r.properties?.name || "Paimba Grand Safari Lodge",
         roomNumber: r.room_number,
         roomType: r.room_type,
         floor: r.floor || "Ground Floor",
@@ -1314,7 +1314,7 @@ export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise
     id,
     companyId,
     propertyId,
-    propertyName: room.propertyName || "Grand Champions Safari Lodge & Hotel",
+    propertyName: room.propertyName || "Paimba Grand Safari Lodge & Hotel",
     roomNumber,
     roomType,
     floor,
@@ -1440,7 +1440,7 @@ export async function fetchCommercialBookings(companyId: string = MOCK_COMPANIES
         id: b.id,
         companyId: b.company_id,
         propertyId: b.property_id,
-        propertyName: b.properties?.name || "Grand Champions Safari Lodge",
+        propertyName: b.properties?.name || "Paimba Grand Safari Lodge",
         roomId: b.room_id,
         roomNumber: b.commercial_rooms?.room_number || "Room",
         roomType: b.commercial_rooms?.room_type || "standard",
@@ -2183,7 +2183,7 @@ export async function fetchHousekeepingSchedules(
         id: h.id,
         companyId: h.company_id,
         propertyId: h.property_id,
-        propertyName: h.properties?.name || "Grand Champions Safari Lodge",
+        propertyName: h.properties?.name || "Paimba Grand Safari Lodge",
         roomId: h.room_id,
         roomNumber: h.commercial_rooms?.room_number || "Room",
         cleanerName: "Housekeeping Team",
@@ -2268,7 +2268,7 @@ export async function fetchRoomServiceSchedules(
         id: rs.id,
         companyId: rs.company_id,
         propertyId: rs.property_id,
-        propertyName: rs.properties?.name || "Grand Champions Safari Lodge",
+        propertyName: rs.properties?.name || "Paimba Grand Safari Lodge",
         roomId: rs.room_id,
         roomNumber: rs.commercial_rooms?.room_number || "Room",
         guestName: "In-house Guest",
@@ -2299,7 +2299,7 @@ export async function createRoomServiceOrder(order: Partial<RoomServiceSchedule>
     id: newId,
     companyId,
     propertyId,
-    propertyName: order.propertyName || "Grand Champions Safari Lodge & Hotel",
+    propertyName: order.propertyName || "Paimba Grand Safari Lodge & Hotel",
     roomId,
     roomNumber: order.roomNumber || "Room 101",
     guestName: order.guestName || "In-house Guest",
@@ -2507,7 +2507,7 @@ export async function generatePayslip(params: {
 
   let validUserId = params.userId;
   if (!isValidUuid(validUserId)) {
-    const dbUserId = await ensureDbUser(`${params.employeeName.toLowerCase().replace(/\s+/g, ".")}@championscourt.co.za`, params.employeeName);
+    const dbUserId = await ensureDbUser(`${params.employeeName.toLowerCase().replace(/\s+/g, ".")}@paimbabook.com`, params.employeeName);
     validUserId = dbUserId || generateUuid();
   }
 
@@ -2650,7 +2650,7 @@ export async function createEmployeeContract(contract: Partial<EmployeeContract>
   const newId = generateUuid();
   let validUserId = contract.userId;
   if (!isValidUuid(validUserId)) {
-    const dbUserId = await ensureDbUser(`${(contract.employeeName || "staff").toLowerCase().replace(/\s+/g, ".")}@championscourt.co.za`, contract.employeeName);
+    const dbUserId = await ensureDbUser(`${(contract.employeeName || "staff").toLowerCase().replace(/\s+/g, ".")}@paimbabook.com`, contract.employeeName);
     validUserId = dbUserId || generateUuid();
   }
 
@@ -2969,7 +2969,7 @@ export async function requestLeave(record: Partial<LeaveRecord>): Promise<LeaveR
   const newId = generateUuid();
   let validUserId = record.userId;
   if (!isValidUuid(validUserId)) {
-    const dbUserId = await ensureDbUser(`${(record.employeeName || "staff").toLowerCase().replace(/\s+/g, ".")}@championscourt.co.za`, record.employeeName);
+    const dbUserId = await ensureDbUser(`${(record.employeeName || "staff").toLowerCase().replace(/\s+/g, ".")}@paimbabook.com`, record.employeeName);
     validUserId = dbUserId || generateUuid();
   }
 
@@ -3076,7 +3076,7 @@ export async function logAuditEvent(event: {
     const payload: Record<string, unknown> = {
       action: event.action,
       entity_type: event.entityType,
-      user_email: event.userEmail || "admin@championscourt.co.za",
+      user_email: event.userEmail || "admin@paimbabook.com",
       user_name: event.actorName || "System Admin",
       details: {
         summary: event.details,
@@ -3239,7 +3239,7 @@ export async function fetchProperties(companyId: string = MOCK_COMPANIES[0].id):
     {
       id: "b0000000-0000-0000-0000-000000000001",
       companyId: "a0000000-0000-0000-0000-000000000001",
-      name: "Grand Champions Safari Lodge & Hotel",
+      name: "Paimba Grand Safari Lodge & Hotel",
       type: "lodge",
       address: "Plot 45 Kruger Gateway, Nelspruit, Mpumalanga",
       status: "occupied",
@@ -3255,7 +3255,7 @@ export async function fetchProperties(companyId: string = MOCK_COMPANIES[0].id):
     {
       id: "prop-002",
       companyId: "a0000000-0000-0000-0000-000000000001",
-      name: "Champions Executive Villa 4",
+      name: "Paimba Executive Villa 4",
       type: "house",
       address: "18 Sandton Ridge, Johannesburg",
       status: "occupied",
@@ -3304,7 +3304,7 @@ export async function fetchTenants(companyId: string = MOCK_COMPANIES[0].id): Pr
       id: "ten-001",
       companyId,
       fullName: "Michael Van Der Merwe",
-      propertyName: "Champions Executive Villa 4",
+      propertyName: "Paimba Executive Villa 4",
       phone: "+27 83 902 1199",
       email: "m.vandermerwe@gmail.com",
       tenureStatus: "active",
@@ -3340,7 +3340,7 @@ export async function fetchInvoices(companyId: string = MOCK_COMPANIES[0].id): P
       id: "inv-001",
       companyId,
       tenantName: "Michael Van Der Merwe",
-      propertyName: "Champions Executive Villa 4",
+      propertyName: "Paimba Executive Villa 4",
       month: "2026-08",
       dueDate: "2026-08-01",
       totalAmount: 24000,
@@ -3413,7 +3413,7 @@ export async function fetchWorkOrders(companyId: string = MOCK_COMPANIES[0].id):
     {
       id: "wo-001",
       companyId,
-      propertyName: "Grand Champions Safari Lodge & Hotel",
+      propertyName: "Paimba Grand Safari Lodge & Hotel",
       providerName: "AquaPro Plumbing",
       category: "Plumbing",
       priority: "high",
@@ -3488,7 +3488,7 @@ export async function fetchInspections(companyId: string = MOCK_COMPANIES[0].id)
     {
       id: "insp-001",
       companyId,
-      propertyName: "Grand Champions Safari Lodge & Hotel",
+      propertyName: "Paimba Grand Safari Lodge & Hotel",
       tenantName: "Commercial Operations",
       type: "routine",
       status: "scheduled",
@@ -3510,7 +3510,7 @@ export async function fetchPreventiveTasks(companyId: string = MOCK_COMPANIES[0]
       return data.map((t) => ({
         id: t.id,
         companyId: t.company_id || companyId,
-        propertyName: t.properties?.name || "Grand Champions Safari Lodge",
+        propertyName: t.properties?.name || "Paimba Grand Safari Lodge",
         providerName: t.maintainers?.name || "Maintenance Staff",
         title: t.title,
         category: t.category,
@@ -3527,7 +3527,7 @@ export async function fetchPreventiveTasks(companyId: string = MOCK_COMPANIES[0]
     {
       id: "prev-001",
       companyId,
-      propertyName: "Grand Champions Safari Lodge & Hotel",
+      propertyName: "Paimba Grand Safari Lodge & Hotel",
       providerName: "CoolBreeze HVAC",
       title: "Quarterly Air Conditioning Filter Replacement",
       category: "HVAC",
@@ -3622,7 +3622,7 @@ export async function fetchContracts(companyId: string = MOCK_COMPANIES[0].id): 
       companyId,
       title: "Commercial Master Lease",
       tenantName: "Michael Van Der Merwe",
-      propertyName: "Champions Executive Villa 4",
+      propertyName: "Paimba Executive Villa 4",
       startDate: "2026-01-01",
       endDate: "2026-12-31",
       monthlyRent: 24000,
@@ -3640,7 +3640,7 @@ export async function fetchSettingsData(companyId: string = MOCK_COMPANIES[0].id
     adminProfile: {
       firstName: "Thamsanqa",
       lastName: "Lubasi",
-      email: "admin@championscourt.co.za",
+      email: "admin@paimbabook.com",
       signatureUrl: "",
     },
     companyProfile: {
@@ -3662,8 +3662,8 @@ export async function fetchSettingsData(companyId: string = MOCK_COMPANIES[0].id
     emailDelivery: {
       method: "resend",
       fromName: company.name,
-      fromEmail: company.email || "noreply@championscourt.co.za",
-      replyTo: company.email || "support@championscourt.co.za",
+      fromEmail: company.email || "noreply@paimbabook.com",
+      replyTo: company.email || "support@paimbabook.com",
       resendApiKey: "",
       smtpHost: "smtp.resend.com",
       smtpPort: 587,
@@ -3972,7 +3972,7 @@ export const MOCK_QUOTE_CONTACTS: QuoteContactProfile[] = [
     companyId: "a0000000-0000-0000-0000-000000000001",
     name: "Lerato Mokoena",
     title: "Accounts Manager",
-    email: "accounts@championscourt.co.za",
+    email: "accounts@paimbabook.com",
     phone: "+27 11 987 6543",
     department: "accountant",
   },
@@ -3981,7 +3981,7 @@ export const MOCK_QUOTE_CONTACTS: QuoteContactProfile[] = [
     companyId: "a0000000-0000-0000-0000-000000000001",
     name: "Thamsanqa Lubasi",
     title: "General Manager",
-    email: "admin@championscourt.co.za",
+    email: "admin@paimbabook.com",
     phone: "+27 11 987 6540",
     department: "admin",
   },

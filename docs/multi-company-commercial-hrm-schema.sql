@@ -1,5 +1,5 @@
 -- ======================================================================================
--- CHAMPIONS COURT DASHBOARD - MULTI-COMPANY & COMMERCIAL LODGING & HRM SCHEMA MIGRATION
+-- PAIMBABOOK DASHBOARD - MULTI-COMPANY & COMMERCIAL LODGING & HRM SCHEMA MIGRATION
 -- Execute this SQL in your Supabase SQL Editor.
 -- ======================================================================================
 
@@ -11,7 +11,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- --------------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.companies (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name text NOT NULL DEFAULT 'Champions Court Group',
+  name text NOT NULL DEFAULT 'Paimbabook Group',
   slug text UNIQUE,
   logo_url text,
   logo_bucket_path text,
@@ -31,11 +31,11 @@ CREATE TABLE IF NOT EXISTS public.companies (
 INSERT INTO public.companies (id, name, slug, address, phone, email, tax_rate, currency)
 VALUES (
   'a0000000-0000-0000-0000-000000000001',
-  'Champions Court Hospitality & Properties',
-  'champions-court',
+  'Paimbabook Hospitality & Properties',
+  'paimbabook',
   '124 Main Boulevard, Johannesburg, South Africa',
   '+27 11 987 6543',
-  'admin@championscourt.co.za',
+  'admin@paimbabook.com',
   15.00,
   'ZAR'
 )
@@ -462,7 +462,7 @@ INSERT INTO public.properties (
 ) VALUES (
   'b0000000-0000-0000-0000-000000000001',
   'a0000000-0000-0000-0000-000000000001',
-  'Grand Champions Safari Lodge & Hotel',
+  'Paimba Grand Safari Lodge & Hotel',
   'lodge',
   0,
   'occupied',

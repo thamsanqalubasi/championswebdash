@@ -6,7 +6,7 @@ begin;
 create table if not exists public.email_delivery_settings (
   id uuid primary key default gen_random_uuid(),
   method text not null default 'resend' check (method in ('mailto','resend','smtp','nodemailer','sendgrid','ses','mailgun')),
-  from_name text default 'Champions Court',
+  from_name text default 'Paimbabook',
   from_email text,
   reply_to text,
 
@@ -70,7 +70,7 @@ create policy "email_delivery_settings: auth delete"
   using (true);
 
 insert into public.email_delivery_settings (method, from_name)
-select 'resend', 'Champions Court'
+select 'resend', 'Paimbabook'
 where not exists (select 1 from public.email_delivery_settings);
 
 commit;

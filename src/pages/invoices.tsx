@@ -347,7 +347,7 @@ export default function InvoicesPage() {
       const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
 
       const { error: auditError } = await supabase.from("audit_log").insert({
-        user_email: user?.email || "admin@championscourt.co.za",
+        user_email: user?.email || "admin@paimbabook.com",
         user_name: user?.email ?? "Admin",
         action: "unified_invoice_generated",
         entity_type: "tenant_rent_payment",

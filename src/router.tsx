@@ -85,11 +85,15 @@ export function AppRouter() {
       <Route path="/c/:companySlug/set-password" element={<SetPasswordPage />} />
 
       {/* Public Customer Portal Routes */}
-      <Route path="/portal" element={<PortalLayout />}>
+      <Route path="/" element={<PortalLayout />}>
         <Route index element={<PortalHomePage />} />
+        <Route path="portal" element={<Navigate to="/" replace />} />
         <Route path="listing/:propertyId" element={<PortalListingPage />} />
-        <Route path="login" element={<PortalLoginPage />} />
-        <Route path="dashboard" element={<CustomerDashboardPage />} />
+        <Route path="portal/listing/:propertyId" element={<PortalListingPage />} />
+        <Route path="portal/login" element={<PortalLoginPage />} />
+        <Route path="guest-login" element={<PortalLoginPage />} />
+        <Route path="portal/dashboard" element={<CustomerDashboardPage />} />
+        <Route path="my-account" element={<CustomerDashboardPage />} />
       </Route>
 
       <Route element={<ProtectedLayout />}>
@@ -127,8 +131,7 @@ export function AppRouter() {
         <Route path="/agent-mode" element={<AgentPortalPage />} />
       </Route>
 
-      <Route path="/" element={<Navigate to="/portal" replace />} />
-      <Route path="*" element={<Navigate to="/portal" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

@@ -7,12 +7,12 @@ export default function PortalLayout() {
       <nav className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 backdrop-blur-sm shadow-sm">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="flex h-16 items-center justify-between">
-            <Link to="/portal" className="flex items-center gap-2 font-black text-xl text-blue-700 tracking-tight">
+            <Link to="/" className="flex items-center gap-2 font-black text-xl text-blue-700 tracking-tight">
               <Building2 size={24} className="text-blue-600" />
               <span>Paimbabook</span>
             </Link>
             <div className="flex items-center gap-2 sm:gap-4">
-              <Link to="/portal" className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-blue-700 transition">
+              <Link to="/" className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-blue-700 transition">
                 <Home size={15}/> <span className="hidden sm:inline">Listings</span>
               </Link>
               <Link to="/portal/dashboard" className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-blue-700 transition">

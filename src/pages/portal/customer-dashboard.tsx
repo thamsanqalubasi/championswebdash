@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { User, MessageSquare, CheckCircle, Clock, LogOut, Star, Home } from "lucide-react";
@@ -56,7 +56,7 @@ export default function CustomerDashboardPage() {
           <div><h1 className="text-xl font-bold text-gray-900">Welcome back</h1><p className="text-gray-500 text-sm">{userName}</p></div>
         </div>
         <div className="flex gap-3">
-          <Link to="/portal" className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"><Home size={15}/> Listings</Link>
+          <Link to="/" className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"><Home size={15}/> Listings</Link>
           <button onClick={handleSignOut} className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"><LogOut size={15}/> Sign Out</button>
         </div>
       </div>
@@ -69,7 +69,7 @@ export default function CustomerDashboardPage() {
           <MessageSquare size={48} className="mx-auto mb-3 opacity-30"/>
           <p className="font-medium">No enquiries yet.</p>
           <p className="text-sm mt-1">Browse listings and send an enquiry to get started.</p>
-          <Link to="/portal" className="mt-4 inline-block rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition">Browse Listings</Link>
+          <Link to="/" className="mt-4 inline-block rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition">Browse Listings</Link>
         </div>
       )}
 

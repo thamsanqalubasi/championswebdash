@@ -56,7 +56,7 @@ const DEFAULT_COMPANY_USER: CompanyUser = {
   id: "b0000000-0000-0000-0000-000000000001",
   companyId: DEFAULT_COMPANY.id,
   userId: "c0000000-0000-0000-0000-000000000001",
-  email: "admin@championscourt.co.za",
+  email: "admin@paimbabook.com",
   fullName: "Thamsanqa Lubasi (Super Admin)",
   department: "admin",
   jobTitle: "Admin - Super Admin",

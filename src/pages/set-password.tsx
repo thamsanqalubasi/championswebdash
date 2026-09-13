@@ -100,26 +100,26 @@ export default function SetPasswordPage() {
         setCurrentCompany(company);
       }
 
-      if (action === "reset") {
-        try {
-          const origin = typeof window !== "undefined" ? window.location.origin : "";
-          const portalLoginUrl = companySlug ? `${origin}/c/${companySlug}/login` : `${origin}/login`;
-          const emailHtml = wrapPasswordChangeConfirmationEmailHtml({
-            recipientName: email,
-            userEmail: email,
-            companyName: orgName,
-            companyLogo: company?.logoUrl,
-            portalLoginUrl,
-            changeType: "reset",
-          });
-          void sendEmailViaApi({
-            to: email,
-            subject: `Security Alert: Password Reset Completed - ${orgName}`,
-            html: emailHtml,
-          });
-        } catch (emailErr) {
-          console.warn("Could not dispatch reset confirmation email", emailErr);
-        }
+      try {
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        const portalLoginUrl = companySlug ? `${origin}/c/${companySlug}/login` : `${origin}/login`;
+        const emailHtml = wrapPasswordChangeConfirmationEmailHtml({
+          recipientName: email,
+          userEmail: email,
+          companyName: orgName,
+          companyLogo: company?.logoUrl,
+          portalLoginUrl,
+          changeType: action === "reset" ? "reset" : "initial_setup",
+        });
+        void sendEmailViaApi({
+          to: email,
+          subject: action === "reset"
+            ? `Security Alert: Password Reset Completed - ${orgName}`
+            : `Account Security: Password Established - ${orgName}`,
+          html: emailHtml,
+        });
+      } catch (emailErr) {
+        console.warn("Could not dispatch password confirmation email", emailErr);
       }
 
       setSuccess(true);
