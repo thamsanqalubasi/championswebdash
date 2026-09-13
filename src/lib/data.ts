@@ -28,6 +28,15 @@ import type {
   SettingsData,
   TenantRow,
   WorkOrderRow,
+  ProcurementRequest,
+  ProcurementPipelineEvent,
+  ProcurementQuotation,
+  ProcurementStage,
+  StoresItem,
+  StoresTransaction,
+  SupplierContact,
+  QuoteContactProfile,
+  RoleCapability,
 } from "./types";
 import { supabase } from "./supabase";
 import {
@@ -3686,3 +3695,1036 @@ export const fetchTenantsData = fetchTenants;
 export const fetchWorkOrdersData = fetchWorkOrders;
 export const fetchPropertiesData = fetchProperties;
 export const fetchAuditTrailData = fetchAuditEvents;
+
+
+// --------------------------------------------------------------------------------------
+// PROCUREMENT & STORES MOCK DATA
+// --------------------------------------------------------------------------------------
+
+export const MOCK_PROCUREMENT_REQUESTS: ProcurementRequest[] = [
+  {
+    id: "proc-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    requestedByName: "Sipho Khumalo",
+    requestingDepartment: "maintenance",
+    itemName: "Industrial Air Conditioner Unit",
+    itemSpecifications: "18,000 BTU inverter split system, 220V, R410A refrigerant, SABS approved, includes installation brackets and 5m copper piping.",
+    quantity: 2,
+    unit: "units",
+    urgency: "high",
+    justification: "Guest rooms 203 and 204 HVAC units have failed. Guest comfort severely impacted.",
+    pipelineStage: "quotation_gathering",
+    pipelineType: "procurement",
+    stageEnteredAt: new Date(Date.now() - 1000 * 60 * 60 * 30).toISOString(),
+    status: "open",
+    events: [
+      { id: "ev-001", requestId: "proc-001", stage: "draft", action: "Request submitted by requester", actorName: "Sipho Khumalo", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 50).toISOString() },
+      { id: "ev-002", requestId: "proc-001", stage: "dept_manager_approval", action: "Approved by department manager", actorName: "Thamsanqa Lubasi", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 40).toISOString() },
+      { id: "ev-003", requestId: "proc-001", stage: "stores_check", action: "Stores checked — item not found in inventory", actorName: "Stores Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 35).toISOString() },
+      { id: "ev-004", requestId: "proc-001", stage: "quotation_gathering", action: "Quotation gathering initiated", actorName: "Procurement Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 30).toISOString() },
+    ],
+    quotations: [
+      { id: "quot-001", requestId: "proc-001", supplierName: "CoolTech HVAC", supplierContact: "+27 11 555 0001", amount: 24500, currency: "ZAR", fileType: "pdf", isSelected: false, uploadedByName: "Procurement Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 20).toISOString() },
+    ],
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 50).toISOString(),
+    updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 30).toISOString(),
+  },
+  {
+    id: "proc-002",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    requestedByName: "Nomsa Dlamini",
+    requestingDepartment: "front_desk",
+    itemName: "A4 Printing Paper (500 sheets/ream)",
+    itemSpecifications: "80gsm white A4 printing paper, 500 sheets per ream, acid-free, suitable for laser and inkjet printers. Brand: Rotatrim or equivalent.",
+    quantity: 20,
+    unit: "reams",
+    urgency: "medium",
+    justification: "Stock depleted. Required for daily operations and guest receipts.",
+    pipelineStage: "stores_dispatch",
+    pipelineType: "stores",
+    stageEnteredAt: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
+    status: "open",
+    events: [
+      { id: "ev-010", requestId: "proc-002", stage: "draft", action: "Request submitted", actorName: "Nomsa Dlamini", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 10).toISOString() },
+      { id: "ev-011", requestId: "proc-002", stage: "dept_manager_approval", action: "Approved by manager", actorName: "Thamsanqa Lubasi", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString() },
+      { id: "ev-012", requestId: "proc-002", stage: "stores_check", action: "Stores checked — 25 reams found in inventory", actorName: "Stores Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString() },
+      { id: "ev-013", requestId: "proc-002", stage: "stores_dispatch", action: "Item confirmed available in stores. Awaiting dispatch.", actorName: "Stores Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString() },
+    ],
+    quotations: [],
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 10).toISOString(),
+    updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
+  },
+  {
+    id: "proc-003",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    requestedByName: "Lerato Mokoena",
+    requestingDepartment: "accountant",
+    itemName: "Laptop Computer",
+    itemSpecifications: "15.6 inch FHD display, Intel Core i7 12th Gen, 16GB DDR4 RAM, 512GB NVMe SSD, Windows 11 Pro. Dell Latitude 5540 or Lenovo ThinkPad E15 preferred.",
+    quantity: 1,
+    unit: "pcs",
+    urgency: "high",
+    justification: "Current laptop is failing, impacting financial reporting deadlines.",
+    pipelineStage: "fund_request_to_accounts",
+    pipelineType: "procurement",
+    stageEnteredAt: new Date(Date.now() - 1000 * 60 * 60 * 50).toISOString(),
+    paymentMethod: "bank_deposit",
+    bankDetails: { bankName: "Standard Bank", accountName: "TechZone Supplies (Pty) Ltd", accountNumber: "076543210", branchCode: "051001", reference: "PO-2026-003" },
+    totalApprovedAmount: 18500,
+    status: "open",
+    events: [
+      { id: "ev-020", requestId: "proc-003", stage: "draft", action: "Request submitted", actorName: "Lerato Mokoena", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 80).toISOString() },
+      { id: "ev-021", requestId: "proc-003", stage: "dept_manager_approval", action: "Approved", actorName: "Thamsanqa Lubasi", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 75).toISOString() },
+      { id: "ev-022", requestId: "proc-003", stage: "stores_check", action: "Stores checked — not in inventory", actorName: "Stores Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 70).toISOString() },
+      { id: "ev-023", requestId: "proc-003", stage: "quotation_gathering", action: "Quotation gathering started", actorName: "Procurement Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 65).toISOString() },
+      { id: "ev-024", requestId: "proc-003", stage: "procurement_manager_approval", action: "Approved by procurement manager. Best quote: TechZone R18,500", actorName: "Procurement Manager", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 55).toISOString() },
+      { id: "ev-025", requestId: "proc-003", stage: "fund_request_to_accounts", action: "Fund request submitted to accounts. Payment method: Bank Deposit.", actorName: "Procurement Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 50).toISOString() },
+    ],
+    quotations: [
+      { id: "quot-005", requestId: "proc-003", supplierName: "TechZone Supplies", supplierContact: "+27 21 555 8800", amount: 18500, currency: "ZAR", isSelected: true, uploadedByName: "Procurement", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 63).toISOString() },
+      { id: "quot-006", requestId: "proc-003", supplierName: "iStore Business", supplierContact: "+27 11 888 0200", amount: 21000, currency: "ZAR", isSelected: false, uploadedByName: "Procurement", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 62).toISOString() },
+    ],
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 80).toISOString(),
+    updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 50).toISOString(),
+  },
+];
+
+export const MOCK_STORES_INVENTORY: StoresItem[] = [
+  {
+    id: "store-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    name: "Luxury Egyptian Cotton Linen Sets",
+    category: "Hospitality & Housekeeping",
+    quantity: 45,
+    unit: "sets",
+    minStockLevel: 20,
+    unitCost: 650,
+    supplier: "Hotel Linen Direct",
+    location: "Central Linen Room B",
+    source: "maintenance_inventory",
+    createdAt: "2026-01-10T00:00:00Z",
+    updatedAt: "2026-09-01T00:00:00Z",
+  },
+  {
+    id: "store-002",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    name: "LED Ceiling Downlights 9W",
+    category: "Electrical",
+    quantity: 12,
+    unit: "pcs",
+    minStockLevel: 25,
+    unitCost: 85,
+    supplier: "VoltMax Supplies",
+    location: "Maintenance Store 1",
+    source: "maintenance_inventory",
+    createdAt: "2026-01-10T00:00:00Z",
+    updatedAt: "2026-09-05T00:00:00Z",
+  },
+  {
+    id: "store-003",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    name: "A4 Printing Paper (500 sheets/ream)",
+    category: "Office Supplies",
+    quantity: 25,
+    unit: "reams",
+    minStockLevel: 10,
+    unitCost: 55,
+    supplier: "Office Mart",
+    location: "Admin Storeroom",
+    source: "stores",
+    createdAt: "2026-03-15T00:00:00Z",
+    updatedAt: "2026-09-10T00:00:00Z",
+  },
+  {
+    id: "store-004",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    name: "Bathroom Amenity Sets (Shampoo/Soap/Lotion)",
+    category: "Hospitality & Housekeeping",
+    quantity: 8,
+    unit: "sets",
+    minStockLevel: 50,
+    unitCost: 35,
+    supplier: "Amenity World SA",
+    location: "Housekeeping Storage A",
+    source: "procured",
+    createdAt: "2026-05-20T00:00:00Z",
+    updatedAt: "2026-09-12T00:00:00Z",
+  },
+  {
+    id: "store-005",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    name: "Gate Remote Controls",
+    category: "Security & Access",
+    quantity: 6,
+    unit: "pcs",
+    minStockLevel: 5,
+    unitCost: 180,
+    supplier: "Access Systems SA",
+    location: "Front Desk Drawer",
+    source: "procured",
+    createdAt: "2026-06-10T00:00:00Z",
+    updatedAt: "2026-08-30T00:00:00Z",
+  },
+  {
+    id: "store-006",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    name: "First Aid Kits (Complete)",
+    category: "Safety & Medical",
+    quantity: 4,
+    unit: "kits",
+    minStockLevel: 5,
+    unitCost: 320,
+    supplier: "Safety First SA",
+    location: "Reception & Kitchen",
+    source: "stores",
+    createdAt: "2026-04-01T00:00:00Z",
+    updatedAt: "2026-08-15T00:00:00Z",
+  },
+];
+
+export const MOCK_STORES_TRANSACTIONS: StoresTransaction[] = [
+  {
+    id: "txn-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    inventoryId: "store-003",
+    inventoryName: "A4 Printing Paper (500 sheets/ream)",
+    transactionType: "receive",
+    quantity: 30,
+    receivedFrom: "Office Mart Delivery",
+    notes: "Monthly restock order",
+    performedByName: "Stores Staff",
+    transactionDate: "2026-09-01",
+    createdAt: "2026-09-01T09:00:00Z",
+  },
+  {
+    id: "txn-002",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    inventoryId: "store-003",
+    inventoryName: "A4 Printing Paper (500 sheets/ream)",
+    transactionType: "release",
+    quantity: 5,
+    department: "front_desk",
+    releasedToName: "Nomsa Dlamini",
+    notes: "Daily operational use",
+    performedByName: "Stores Staff",
+    transactionDate: "2026-09-05",
+    createdAt: "2026-09-05T10:00:00Z",
+  },
+  {
+    id: "txn-003",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    inventoryId: "store-004",
+    inventoryName: "Bathroom Amenity Sets",
+    transactionType: "receive",
+    quantity: 100,
+    receivedFrom: "Amenity World SA",
+    procurementRequestId: "proc-001",
+    notes: "Received from procurement order",
+    performedByName: "Stores Staff",
+    transactionDate: "2026-09-10",
+    createdAt: "2026-09-10T14:00:00Z",
+  },
+];
+
+export const MOCK_SUPPLIER_CONTACTS: SupplierContact[] = [
+  {
+    id: "sup-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    supplierName: "CoolTech HVAC Solutions",
+    email: "quotes@cooltechhvac.co.za",
+    phone: "+27 11 555 0001",
+    address: "14 Industrial Road, Boksburg, Gauteng",
+    contactPerson: "Mr. Andre Botha",
+    contactPersonPhone: "+27 83 555 0001",
+    createdAt: "2026-05-01T00:00:00Z",
+    updatedAt: "2026-09-01T00:00:00Z",
+  },
+  {
+    id: "sup-002",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    supplierName: "TechZone Supplies (Pty) Ltd",
+    email: "corporate@techzone.co.za",
+    phone: "+27 21 555 8800",
+    address: "Suite 5, Century City, Cape Town",
+    contactPerson: "Ms. Karen Naidoo",
+    contactPersonPhone: "+27 72 888 0200",
+    createdAt: "2026-06-15T00:00:00Z",
+    updatedAt: "2026-09-10T00:00:00Z",
+  },
+  {
+    id: "sup-003",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    supplierName: "Office Mart SA",
+    email: "orders@officemart.co.za",
+    phone: "+27 11 334 5600",
+    address: "88 Commissioner Street, Johannesburg CBD",
+    contactPerson: "Mr. Bongani Zulu",
+    contactPersonPhone: "+27 76 334 5601",
+    createdAt: "2026-03-10T00:00:00Z",
+    updatedAt: "2026-08-20T00:00:00Z",
+  },
+];
+
+export const MOCK_QUOTE_CONTACTS: QuoteContactProfile[] = [
+  {
+    id: "qc-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    name: "Lerato Mokoena",
+    title: "Accounts Manager",
+    email: "accounts@championscourt.co.za",
+    phone: "+27 11 987 6543",
+    department: "accountant",
+  },
+  {
+    id: "qc-002",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    name: "Thamsanqa Lubasi",
+    title: "General Manager",
+    email: "admin@championscourt.co.za",
+    phone: "+27 11 987 6540",
+    department: "admin",
+  },
+];
+
+// Reminder threshold in hours (default 24h, set by super admin)
+let MOCK_REMINDER_THRESHOLD_HOURS = 24;
+
+// ─── PROCUREMENT FUNCTIONS ─────────────────────────────────────────────────────
+
+export async function fetchProcurementRequests(companyId: string = MOCK_COMPANIES[0].id): Promise<ProcurementRequest[]> {
+  try {
+    const { data, error } = await supabase
+      .from("procurement_requests")
+      .select("*, procurement_pipeline_events(*), procurement_quotations(*)")
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false });
+
+    if (!error && data && data.length > 0) {
+      return data.map((r) => ({
+        id: r.id,
+        companyId: r.company_id,
+        requestedByUserId: r.requested_by_user_id,
+        requestedByName: r.requested_by_name,
+        requestingDepartment: r.requesting_department,
+        itemName: r.item_name,
+        itemSpecifications: r.item_specifications || "",
+        quantity: r.quantity,
+        unit: r.unit,
+        urgency: r.urgency,
+        justification: r.justification || "",
+        pipelineStage: r.pipeline_stage,
+        pipelineType: r.pipeline_type,
+        stageEnteredAt: r.stage_entered_at,
+        reminderSentAt: r.reminder_sent_at,
+        paymentMethod: r.payment_method,
+        bankDetails: r.bank_details,
+        totalApprovedAmount: r.total_approved_amount,
+        notes: r.notes || "",
+        status: r.status,
+        events: (r.procurement_pipeline_events || []).map((ev: Record<string, unknown>) => ({
+          id: ev.id as string,
+          requestId: ev.request_id as string,
+          stage: ev.stage as ProcurementStage,
+          action: ev.action as string,
+          actorName: ev.actor_name as string,
+          actorUserId: ev.actor_user_id as string | undefined,
+          notes: ev.notes as string | undefined,
+          createdAt: ev.created_at as string,
+        })),
+        quotations: (r.procurement_quotations || []).map((q: Record<string, unknown>) => ({
+          id: q.id as string,
+          requestId: q.request_id as string,
+          supplierName: q.supplier_name as string,
+          supplierContact: q.supplier_contact as string | undefined,
+          amount: Number(q.amount),
+          currency: q.currency as string,
+          fileUrl: q.file_url as string | undefined,
+          fileType: q.file_type as "pdf" | "image" | undefined,
+          notes: q.notes as string | undefined,
+          isSelected: q.is_selected as boolean,
+          uploadedByName: q.uploaded_by_name as string | undefined,
+          createdAt: q.created_at as string,
+        })),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock procurement requests", err);
+  }
+  return MOCK_PROCUREMENT_REQUESTS.filter((r) => r.companyId === companyId);
+}
+
+export async function createProcurementRequest(
+  req: Omit<ProcurementRequest, "id" | "pipelineStage" | "pipelineType" | "stageEnteredAt" | "status" | "events" | "quotations" | "createdAt" | "updatedAt">
+): Promise<ProcurementRequest> {
+  const now = new Date().toISOString();
+  const newReq: ProcurementRequest = {
+    ...req,
+    id: `proc-${Date.now()}`,
+    pipelineStage: "dept_manager_approval",
+    pipelineType: "procurement",
+    stageEnteredAt: now,
+    status: "open",
+    events: [
+      {
+        id: `ev-${Date.now()}`,
+        requestId: `proc-${Date.now()}`,
+        stage: "draft",
+        action: "Procurement request submitted",
+        actorName: req.requestedByName,
+        createdAt: now,
+      },
+    ],
+    quotations: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  try {
+    if (isValidUuid(req.companyId)) {
+      await supabase.from("procurement_requests").insert({
+        company_id: req.companyId,
+        requested_by_name: req.requestedByName,
+        requesting_department: req.requestingDepartment,
+        item_name: req.itemName,
+        item_specifications: req.itemSpecifications,
+        quantity: req.quantity,
+        unit: req.unit,
+        urgency: req.urgency,
+        justification: req.justification,
+        pipeline_stage: "dept_manager_approval",
+        pipeline_type: "procurement",
+        stage_entered_at: now,
+        status: "open",
+        notes: req.notes || "",
+      });
+    }
+  } catch (err) {
+    console.warn("Could not insert procurement request in Supabase", err);
+  }
+
+  MOCK_PROCUREMENT_REQUESTS.push(newReq);
+  return newReq;
+}
+
+export async function advancePipelineStage(
+  requestId: string,
+  newStage: ProcurementStage,
+  actorName: string,
+  action: string,
+  notes?: string,
+  extraUpdates?: Partial<ProcurementRequest>
+): Promise<ProcurementRequest | null> {
+  const now = new Date().toISOString();
+  const idx = MOCK_PROCUREMENT_REQUESTS.findIndex((r) => r.id === requestId);
+  if (idx === -1) return null;
+
+  const event: ProcurementPipelineEvent = {
+    id: `ev-${Date.now()}`,
+    requestId,
+    stage: newStage,
+    action,
+    actorName,
+    notes,
+    createdAt: now,
+  };
+
+  MOCK_PROCUREMENT_REQUESTS[idx] = {
+    ...MOCK_PROCUREMENT_REQUESTS[idx],
+    ...extraUpdates,
+    pipelineStage: newStage,
+    stageEnteredAt: now,
+    updatedAt: now,
+    events: [...(MOCK_PROCUREMENT_REQUESTS[idx].events || []), event],
+  };
+
+  if (newStage === "completed" || newStage === "cancelled") {
+    MOCK_PROCUREMENT_REQUESTS[idx].status = newStage === "completed" ? "completed" : "cancelled";
+  }
+
+  try {
+    if (isValidUuid(requestId)) {
+      await supabase.from("procurement_requests").update({
+        pipeline_stage: newStage,
+        stage_entered_at: now,
+        updated_at: now,
+        ...(extraUpdates || {}),
+      }).eq("id", requestId);
+
+      await supabase.from("procurement_pipeline_events").insert({
+        request_id: requestId,
+        stage: newStage,
+        action,
+        actor_name: actorName,
+        notes: notes || "",
+        created_at: now,
+      });
+    }
+  } catch (err) {
+    console.warn("Could not advance pipeline stage in Supabase", err);
+  }
+
+  return MOCK_PROCUREMENT_REQUESTS[idx];
+}
+
+export async function approveDeptManagerRequest(requestId: string, actorName: string, approved: boolean, notes?: string): Promise<ProcurementRequest | null> {
+  if (!approved) {
+    return advancePipelineStage(requestId, "cancelled", actorName, `Request rejected by department manager${notes ? `: ${notes}` : ""}`, notes);
+  }
+  return advancePipelineStage(requestId, "stores_check", actorName, "Approved by department manager. Checking stores inventory.", notes);
+}
+
+export async function performStoresCheck(requestId: string, actorName: string, foundInStores: boolean, quantityAvailable?: number, notes?: string): Promise<ProcurementRequest | null> {
+  if (foundInStores) {
+    return advancePipelineStage(
+      requestId, "stores_dispatch", actorName,
+      `Stores check complete — ${quantityAvailable || 0} unit(s) available in inventory. Routing to stores dispatch.`,
+      notes,
+      { pipelineType: "stores" }
+    );
+  }
+  return advancePipelineStage(requestId, "quotation_gathering", actorName, "Stores check complete — item not in inventory. Proceeding to quotation gathering.", notes);
+}
+
+export async function startQuotationGathering(requestId: string, actorName: string): Promise<ProcurementRequest | null> {
+  return advancePipelineStage(requestId, "quotation_gathering", actorName, "Quotation gathering initiated by procurement staff.");
+}
+
+export async function uploadQuotation(
+  requestId: string,
+  quotation: Omit<ProcurementQuotation, "id" | "requestId" | "createdAt">
+): Promise<ProcurementQuotation | null> {
+  const req = MOCK_PROCUREMENT_REQUESTS.find((r) => r.id === requestId);
+  if (!req) return null;
+
+  const currentQuotations = req.quotations || [];
+  if (currentQuotations.length >= 10) {
+    throw new Error("Maximum of 10 quotations per request has been reached.");
+  }
+
+  const newQuotation: ProcurementQuotation = {
+    ...quotation,
+    id: `quot-${Date.now()}`,
+    requestId,
+    createdAt: new Date().toISOString(),
+  };
+
+  const idx = MOCK_PROCUREMENT_REQUESTS.findIndex((r) => r.id === requestId);
+  if (idx !== -1) {
+    MOCK_PROCUREMENT_REQUESTS[idx].quotations = [...currentQuotations, newQuotation];
+    MOCK_PROCUREMENT_REQUESTS[idx].updatedAt = new Date().toISOString();
+  }
+
+  try {
+    if (isValidUuid(requestId)) {
+      await supabase.from("procurement_quotations").insert({
+        request_id: requestId,
+        supplier_name: quotation.supplierName,
+        supplier_contact: quotation.supplierContact,
+        amount: quotation.amount,
+        currency: quotation.currency || "ZAR",
+        file_url: quotation.fileUrl,
+        file_type: quotation.fileType,
+        notes: quotation.notes,
+        is_selected: quotation.isSelected,
+        uploaded_by_name: quotation.uploadedByName,
+      });
+    }
+  } catch (err) {
+    console.warn("Could not insert quotation in Supabase", err);
+  }
+
+  return newQuotation;
+}
+
+export async function escalateToProcurementManager(requestId: string, actorName: string, selectedQuotationId?: string, notes?: string): Promise<ProcurementRequest | null> {
+  const idx = MOCK_PROCUREMENT_REQUESTS.findIndex((r) => r.id === requestId);
+  if (idx !== -1 && selectedQuotationId) {
+    MOCK_PROCUREMENT_REQUESTS[idx].quotations = (MOCK_PROCUREMENT_REQUESTS[idx].quotations || []).map((q) => ({
+      ...q,
+      isSelected: q.id === selectedQuotationId,
+    }));
+  }
+  return advancePipelineStage(requestId, "procurement_manager_approval", actorName, "Escalated to procurement manager for final quote approval.", notes);
+}
+
+export async function approveProcurementManager(requestId: string, actorName: string, approved: boolean, notes?: string): Promise<ProcurementRequest | null> {
+  if (!approved) {
+    return advancePipelineStage(requestId, "quotation_gathering", actorName, `Returned to quotation stage by procurement manager${notes ? `: ${notes}` : ""}`, notes);
+  }
+  return advancePipelineStage(requestId, "fund_request_to_accounts", actorName, "Approved by procurement manager. Fund request sent to accounts department.", notes);
+}
+
+export async function requestFundsFromAccounts(
+  requestId: string,
+  actorName: string,
+  paymentMethod: "online" | "cash" | "bank_deposit",
+  totalAmount: number,
+  bankDetails?: ProcurementRequest["bankDetails"],
+  notes?: string
+): Promise<ProcurementRequest | null> {
+  return advancePipelineStage(
+    requestId, "fund_request_to_accounts", actorName,
+    `Fund request submitted to accounts. Payment method: ${paymentMethod}. Amount: R${totalAmount.toLocaleString()}`,
+    notes,
+    { paymentMethod, totalApprovedAmount: totalAmount, bankDetails }
+  );
+}
+
+export async function approveAccountsFunding(requestId: string, actorName: string, approved: boolean, notes?: string): Promise<ProcurementRequest | null> {
+  if (!approved) {
+    return advancePipelineStage(requestId, "procurement_manager_approval", actorName, `Fund request returned by accounts${notes ? `: ${notes}` : ""}`, notes);
+  }
+  return advancePipelineStage(requestId, "payment_approved", actorName, "Funds approved by accounts department. Procurement may proceed with purchase.", notes);
+}
+
+export async function markPurchaseComplete(requestId: string, actorName: string, notes?: string): Promise<ProcurementRequest | null> {
+  return advancePipelineStage(requestId, "delivered_to_stores", actorName, "Purchase completed. Items delivered to stores for receiving.", notes);
+}
+
+export async function confirmStoresReceived(requestId: string, actorName: string, notes?: string): Promise<ProcurementRequest | null> {
+  return advancePipelineStage(requestId, "released_to_department", actorName, "Items received and recorded in stores inventory.", notes);
+}
+
+export async function releaseFromStoresToDept(requestId: string, actorName: string, notes?: string): Promise<ProcurementRequest | null> {
+  return advancePipelineStage(requestId, "completed", actorName, "Items released to requesting department. Request fulfilled.", notes);
+}
+
+export async function triggerStageReminder(requestId: string, actorName: string): Promise<boolean> {
+  const now = new Date().toISOString();
+  const idx = MOCK_PROCUREMENT_REQUESTS.findIndex((r) => r.id === requestId);
+  if (idx !== -1) {
+    MOCK_PROCUREMENT_REQUESTS[idx].reminderSentAt = now;
+    const req = MOCK_PROCUREMENT_REQUESTS[idx];
+    const event: ProcurementPipelineEvent = {
+      id: `ev-remind-${Date.now()}`,
+      requestId,
+      stage: req.pipelineStage,
+      action: `Reminder triggered by ${actorName} — request has been at "${req.pipelineStage}" stage for extended time.`,
+      actorName,
+      createdAt: now,
+    };
+    MOCK_PROCUREMENT_REQUESTS[idx].events = [...(req.events || []), event];
+  }
+  try {
+    if (isValidUuid(requestId)) {
+      await supabase.from("procurement_requests").update({ reminder_sent_at: now }).eq("id", requestId);
+    }
+  } catch {}
+  return true;
+}
+
+// ─── STORES INVENTORY FUNCTIONS ───────────────────────────────────────────────
+
+export async function fetchStoresInventory(companyId: string = MOCK_COMPANIES[0].id): Promise<StoresItem[]> {
+  try {
+    const { data, error } = await supabase
+      .from("stores_inventory")
+      .select("*")
+      .eq("company_id", companyId)
+      .order("name");
+
+    if (!error && data && data.length > 0) {
+      return data.map((item) => ({
+        id: item.id,
+        companyId: item.company_id,
+        name: item.name,
+        category: item.category,
+        quantity: item.quantity,
+        unit: item.unit,
+        minStockLevel: item.min_stock_level,
+        unitCost: toNumber(item.unit_cost),
+        supplier: item.supplier,
+        location: item.location,
+        source: item.source,
+        maintenanceInventoryId: item.maintenance_inventory_id,
+        lastRestocked: item.last_restocked,
+        notes: item.notes,
+        createdAt: item.created_at,
+        updatedAt: item.updated_at,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock stores inventory", err);
+  }
+  return MOCK_STORES_INVENTORY.filter((s) => s.companyId === companyId);
+}
+
+export async function checkStoresForItem(itemName: string, companyId: string = MOCK_COMPANIES[0].id): Promise<StoresItem[]> {
+  const inventory = await fetchStoresInventory(companyId);
+  const search = itemName.toLowerCase().trim();
+  return inventory.filter(
+    (item) => item.name.toLowerCase().includes(search) || item.category.toLowerCase().includes(search)
+  );
+}
+
+export async function receiveStoresItem(
+  transaction: Omit<StoresTransaction, "id" | "transactionType" | "createdAt">
+): Promise<StoresTransaction> {
+  const now = new Date().toISOString();
+  const newTxn: StoresTransaction = {
+    ...transaction,
+    id: `txn-${Date.now()}`,
+    transactionType: "receive",
+    createdAt: now,
+  };
+
+  // Update inventory quantity
+  const idx = MOCK_STORES_INVENTORY.findIndex((s) => s.id === transaction.inventoryId);
+  if (idx !== -1) {
+    MOCK_STORES_INVENTORY[idx].quantity += transaction.quantity;
+    MOCK_STORES_INVENTORY[idx].lastRestocked = transaction.transactionDate;
+    MOCK_STORES_INVENTORY[idx].updatedAt = now;
+  }
+
+  MOCK_STORES_TRANSACTIONS.push(newTxn);
+
+  try {
+    if (isValidUuid(transaction.companyId)) {
+      await supabase.from("stores_transactions").insert({
+        company_id: transaction.companyId,
+        inventory_id: transaction.inventoryId,
+        procurement_request_id: transaction.procurementRequestId,
+        transaction_type: "receive",
+        quantity: transaction.quantity,
+        received_from: transaction.receivedFrom,
+        notes: transaction.notes,
+        performed_by_name: transaction.performedByName,
+        transaction_date: transaction.transactionDate,
+      });
+
+      if (isValidUuid(transaction.inventoryId)) {
+        await supabase.from("stores_inventory")
+          .update({ quantity: MOCK_STORES_INVENTORY[idx]?.quantity || 0, last_restocked: transaction.transactionDate })
+          .eq("id", transaction.inventoryId);
+      }
+    }
+  } catch (err) {
+    console.warn("Could not save stores receive transaction", err);
+  }
+
+  return newTxn;
+}
+
+export async function releaseStoresItem(
+  transaction: Omit<StoresTransaction, "id" | "transactionType" | "createdAt">
+): Promise<StoresTransaction> {
+  const now = new Date().toISOString();
+
+  const idx = MOCK_STORES_INVENTORY.findIndex((s) => s.id === transaction.inventoryId);
+  if (idx !== -1) {
+    if (MOCK_STORES_INVENTORY[idx].quantity < transaction.quantity) {
+      throw new Error(`Insufficient stock. Available: ${MOCK_STORES_INVENTORY[idx].quantity} ${MOCK_STORES_INVENTORY[idx].unit}.`);
+    }
+    MOCK_STORES_INVENTORY[idx].quantity -= transaction.quantity;
+    MOCK_STORES_INVENTORY[idx].updatedAt = now;
+  }
+
+  const newTxn: StoresTransaction = {
+    ...transaction,
+    id: `txn-${Date.now()}`,
+    transactionType: "release",
+    createdAt: now,
+  };
+
+  MOCK_STORES_TRANSACTIONS.push(newTxn);
+
+  try {
+    if (isValidUuid(transaction.companyId)) {
+      await supabase.from("stores_transactions").insert({
+        company_id: transaction.companyId,
+        inventory_id: transaction.inventoryId,
+        transaction_type: "release",
+        quantity: transaction.quantity,
+        department: transaction.department,
+        released_to_name: transaction.releasedToName,
+        notes: transaction.notes,
+        performed_by_name: transaction.performedByName,
+        transaction_date: transaction.transactionDate,
+      });
+
+      if (isValidUuid(transaction.inventoryId)) {
+        await supabase.from("stores_inventory")
+          .update({ quantity: MOCK_STORES_INVENTORY[idx]?.quantity || 0 })
+          .eq("id", transaction.inventoryId);
+      }
+    }
+  } catch (err) {
+    console.warn("Could not save stores release transaction", err);
+  }
+
+  return newTxn;
+}
+
+export async function fetchStoresTransactions(companyId: string = MOCK_COMPANIES[0].id): Promise<StoresTransaction[]> {
+  try {
+    const { data, error } = await supabase
+      .from("stores_transactions")
+      .select("*, stores_inventory(name)")
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false });
+
+    if (!error && data && data.length > 0) {
+      return data.map((t) => ({
+        id: t.id,
+        companyId: t.company_id,
+        inventoryId: t.inventory_id,
+        inventoryName: t.stores_inventory?.name,
+        procurementRequestId: t.procurement_request_id,
+        transactionType: t.transaction_type,
+        quantity: t.quantity,
+        department: t.department,
+        receivedFrom: t.received_from,
+        releasedToName: t.released_to_name,
+        notes: t.notes,
+        performedByName: t.performed_by_name,
+        transactionDate: t.transaction_date,
+        createdAt: t.created_at,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock stores transactions", err);
+  }
+  return MOCK_STORES_TRANSACTIONS.filter((t) => t.companyId === companyId);
+}
+
+export async function addStoresInventoryItem(
+  item: Omit<StoresItem, "id" | "createdAt" | "updatedAt">
+): Promise<StoresItem> {
+  const now = new Date().toISOString();
+  const newItem: StoresItem = { ...item, id: `store-${Date.now()}`, createdAt: now, updatedAt: now };
+
+  try {
+    if (isValidUuid(item.companyId)) {
+      await supabase.from("stores_inventory").insert({
+        company_id: item.companyId,
+        name: item.name,
+        category: item.category,
+        quantity: item.quantity,
+        unit: item.unit,
+        min_stock_level: item.minStockLevel,
+        unit_cost: item.unitCost,
+        supplier: item.supplier,
+        location: item.location,
+        source: item.source,
+        notes: item.notes,
+      });
+    }
+  } catch (err) {
+    console.warn("Could not insert stores item", err);
+  }
+
+  MOCK_STORES_INVENTORY.push(newItem);
+  return newItem;
+}
+
+export async function updateStoresInventoryItem(id: string, updates: Partial<StoresItem>): Promise<StoresItem | null> {
+  const now = new Date().toISOString();
+  const idx = MOCK_STORES_INVENTORY.findIndex((s) => s.id === id);
+  if (idx === -1) return null;
+  MOCK_STORES_INVENTORY[idx] = { ...MOCK_STORES_INVENTORY[idx], ...updates, updatedAt: now };
+
+  try {
+    if (isValidUuid(id)) {
+      await supabase.from("stores_inventory").update({ ...updates, updated_at: now }).eq("id", id);
+    }
+  } catch {}
+
+  return MOCK_STORES_INVENTORY[idx];
+}
+
+// ─── SUPPLIER CONTACT FUNCTIONS ───────────────────────────────────────────────
+
+export async function fetchSupplierContacts(companyId: string = MOCK_COMPANIES[0].id): Promise<SupplierContact[]> {
+  try {
+    const { data, error } = await supabase.from("supplier_contacts").select("*").eq("company_id", companyId).order("supplier_name");
+    if (!error && data && data.length > 0) {
+      return data.map((s) => ({
+        id: s.id,
+        companyId: s.company_id,
+        supplierName: s.supplier_name,
+        email: s.email,
+        phone: s.phone,
+        address: s.address,
+        contactPerson: s.contact_person,
+        contactPersonPhone: s.contact_person_phone,
+        createdAt: s.created_at,
+        updatedAt: s.updated_at,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock supplier contacts", err);
+  }
+  return MOCK_SUPPLIER_CONTACTS.filter((s) => s.companyId === companyId);
+}
+
+export async function saveSupplierContact(
+  contact: Omit<SupplierContact, "id" | "createdAt" | "updatedAt">
+): Promise<SupplierContact> {
+  const now = new Date().toISOString();
+  const newContact: SupplierContact = { ...contact, id: `sup-${Date.now()}`, createdAt: now, updatedAt: now };
+
+  try {
+    if (isValidUuid(contact.companyId)) {
+      await supabase.from("supplier_contacts").insert({
+        company_id: contact.companyId,
+        supplier_name: contact.supplierName,
+        email: contact.email,
+        phone: contact.phone,
+        address: contact.address,
+        contact_person: contact.contactPerson,
+        contact_person_phone: contact.contactPersonPhone,
+      });
+    }
+  } catch (err) {
+    console.warn("Could not save supplier contact", err);
+  }
+
+  MOCK_SUPPLIER_CONTACTS.push(newContact);
+  return newContact;
+}
+
+// ─── QUOTE CONTACT FUNCTIONS ──────────────────────────────────────────────────
+
+export async function fetchQuoteContacts(companyId: string = MOCK_COMPANIES[0].id): Promise<QuoteContactProfile[]> {
+  return MOCK_QUOTE_CONTACTS.filter((q) => q.companyId === companyId);
+}
+
+export async function saveQuoteContact(contact: Omit<QuoteContactProfile, "id">): Promise<QuoteContactProfile> {
+  const newContact: QuoteContactProfile = { ...contact, id: `qc-${Date.now()}` };
+  MOCK_QUOTE_CONTACTS.push(newContact);
+  return newContact;
+}
+
+export async function updateQuoteContact(id: string, updates: Partial<QuoteContactProfile>): Promise<QuoteContactProfile | null> {
+  const idx = MOCK_QUOTE_CONTACTS.findIndex((q) => q.id === id);
+  if (idx === -1) return null;
+  MOCK_QUOTE_CONTACTS[idx] = { ...MOCK_QUOTE_CONTACTS[idx], ...updates };
+  return MOCK_QUOTE_CONTACTS[idx];
+}
+
+export async function deleteQuoteContact(id: string): Promise<boolean> {
+  const idx = MOCK_QUOTE_CONTACTS.findIndex((q) => q.id === id);
+  if (idx !== -1) MOCK_QUOTE_CONTACTS.splice(idx, 1);
+  return true;
+}
+
+// ─── REMINDER THRESHOLD FUNCTIONS ─────────────────────────────────────────────
+
+export async function fetchReminderThreshold(companyId: string = MOCK_COMPANIES[0].id): Promise<number> {
+  try {
+    const { data, error } = await supabase
+      .from("company_settings")
+      .select("reminder_threshold_hours")
+      .eq("id", companyId)
+      .maybeSingle();
+    if (!error && data && data.reminder_threshold_hours) {
+      MOCK_REMINDER_THRESHOLD_HOURS = data.reminder_threshold_hours;
+      return data.reminder_threshold_hours;
+    }
+  } catch {}
+  return MOCK_REMINDER_THRESHOLD_HOURS;
+}
+
+export async function saveReminderThreshold(companyId: string, hours: number): Promise<boolean> {
+  MOCK_REMINDER_THRESHOLD_HOURS = hours;
+  try {
+    if (isValidUuid(companyId)) {
+      await supabase.from("company_settings").update({ reminder_threshold_hours: hours }).eq("id", companyId);
+    }
+  } catch {}
+  return true;
+}
+
+// ─── ROLE CAPABILITIES ─────────────────────────────────────────────────────────
+
+export const ALL_ROLE_CAPABILITIES: RoleCapability[] = [
+  // Hospitality & Core
+  { slug: "view_dashboard", label: "View Dashboard", description: "Access the main dashboard overview", section: "Hospitality & Core", defaultEnabled: ["admin", "manager", "front_desk", "accountant", "human_resources", "maintenance", "procurement", "stores", "audit", "it"] },
+  { slug: "manage_bookings", label: "Manage Bookings", description: "Create, edit, check-in/out bookings", section: "Hospitality & Core", defaultEnabled: ["admin", "manager", "front_desk"] },
+  { slug: "view_rooms", label: "View Rooms & Pricing", description: "View room list and pricing", section: "Hospitality & Core", defaultEnabled: ["admin", "manager", "front_desk", "maintenance"] },
+  { slug: "manage_rooms", label: "Manage Rooms & Pricing", description: "Create and edit rooms and rates", section: "Hospitality & Core", defaultEnabled: ["admin", "manager"] },
+  { slug: "manage_properties", label: "Manage Properties", description: "Add, edit, delete properties", section: "Hospitality & Core", defaultEnabled: ["admin", "manager"] },
+  { slug: "manage_tenants", label: "Manage Tenants & Leases", description: "Create and manage tenant records and lease agreements", section: "Hospitality & Core", defaultEnabled: ["admin", "manager", "accountant"] },
+  // Finance & Accounts
+  { slug: "collect_rent", label: "Collect Rent", description: "Record rent payments from tenants", section: "Finance & Accounts", defaultEnabled: ["admin", "manager", "accountant"] },
+  { slug: "manage_invoices", label: "Manage Invoices", description: "Create, send, and mark invoices as paid", section: "Finance & Accounts", defaultEnabled: ["admin", "manager", "accountant"] },
+  { slug: "manage_bills", label: "Manage Bills & Schedules", description: "Manage property utility bills and payment schedules", section: "Finance & Accounts", defaultEnabled: ["admin", "manager", "accountant"] },
+  { slug: "view_financial_reports", label: "View Financial Reports", description: "Access financial reports and analytics", section: "Finance & Accounts", defaultEnabled: ["admin", "manager", "accountant", "audit"] },
+  { slug: "manage_accounts", label: "Manage Financial Accounts", description: "Access and manage financial account records", section: "Finance & Accounts", defaultEnabled: ["admin", "accountant", "manager"] },
+  { slug: "approve_procurement_funds", label: "Approve Procurement Funds", description: "Approve fund requests from procurement department", section: "Finance & Accounts", defaultEnabled: ["admin", "accountant"] },
+  // Operations & Maintenance
+  { slug: "view_maintenance", label: "View Maintenance Hub", description: "View maintenance jobs and work orders", section: "Operations & Maintenance", defaultEnabled: ["admin", "manager", "maintenance"] },
+  { slug: "manage_maintenance", label: "Manage Maintenance", description: "Create and manage maintenance jobs", section: "Operations & Maintenance", defaultEnabled: ["admin", "manager", "maintenance"] },
+  { slug: "manage_work_orders", label: "Manage Work Orders", description: "Create and manage work orders for external providers", section: "Operations & Maintenance", defaultEnabled: ["admin", "manager", "maintenance"] },
+  { slug: "manage_providers", label: "Manage Service Providers", description: "Add and manage external maintenance providers", section: "Operations & Maintenance", defaultEnabled: ["admin", "manager", "maintenance", "procurement"] },
+  { slug: "manage_inspections", label: "Manage Inspections", description: "Schedule and conduct property inspections", section: "Operations & Maintenance", defaultEnabled: ["admin", "manager", "maintenance"] },
+  { slug: "manage_scheduled_tasks", label: "Manage Scheduled Tasks", description: "Create and manage preventive maintenance tasks", section: "Operations & Maintenance", defaultEnabled: ["admin", "manager", "maintenance"] },
+  { slug: "view_inventory", label: "View Inventory & Stock", description: "View maintenance and stores inventory", section: "Operations & Maintenance", defaultEnabled: ["admin", "manager", "maintenance", "procurement", "stores"] },
+  // Human Resources
+  { slug: "view_hr", label: "View HR & Payroll", description: "View employee records and HR data", section: "Human Resources", defaultEnabled: ["admin", "manager", "human_resources"] },
+  { slug: "manage_payroll", label: "Manage Payroll", description: "Generate, approve, and issue payslips", section: "Human Resources", defaultEnabled: ["admin", "human_resources"] },
+  { slug: "manage_employees", label: "Manage Employee Contracts", description: "Create, extend, and terminate employee contracts", section: "Human Resources", defaultEnabled: ["admin", "human_resources", "manager"] },
+  { slug: "manage_leave", label: "Manage Leave Records", description: "Approve or reject employee leave applications", section: "Human Resources", defaultEnabled: ["admin", "human_resources", "manager"] },
+  // Procurement & Stores
+  { slug: "raise_procurement_request", label: "Raise Procurement Requests", description: "Submit procurement requests on behalf of your department", section: "Procurement & Stores", defaultEnabled: ["admin", "manager", "front_desk", "maintenance", "accountant", "human_resources", "it", "procurement", "stores"] },
+  { slug: "approve_procurement_dept", label: "Approve Dept Procurement Requests", description: "Approve or reject procurement requests from your department", section: "Procurement & Stores", defaultEnabled: ["admin", "manager"] },
+  { slug: "manage_quotations", label: "Manage Quotations", description: "Upload and manage supplier quotations for procurement requests", section: "Procurement & Stores", defaultEnabled: ["admin", "procurement"] },
+  { slug: "approve_procurement_manager", label: "Approve as Procurement Manager", description: "Final approval of quotations as procurement manager", section: "Procurement & Stores", defaultEnabled: ["admin", "procurement"] },
+  { slug: "generate_quote_request", label: "Generate External Quote Request", description: "Generate and email formal quote request documents to suppliers", section: "Procurement & Stores", defaultEnabled: ["admin", "accountant", "procurement"] },
+  { slug: "manage_stores", label: "Manage Stores Inventory", description: "Receive, release, and manage stores inventory items", section: "Procurement & Stores", defaultEnabled: ["admin", "stores", "procurement"] },
+  // Customer Portal & Enquiries
+  { slug: "manage_enquiries", label: "Manage Enquiries", description: "View and respond to customer enquiries and tickets", section: "Customer Portal", defaultEnabled: ["admin", "manager", "front_desk", "accountant"] },
+  { slug: "manage_showcases", label: "Manage Room Showcases", description: "Manage public room listings and showcases", section: "Customer Portal", defaultEnabled: ["admin", "manager", "front_desk"] },
+  // Administration & Audit
+  { slug: "manage_users", label: "Manage Users & Rights", description: "Create, edit, and deactivate staff user accounts", section: "Administration & Audit", defaultEnabled: ["admin", "it"] },
+  { slug: "manage_contracts", label: "Manage Contracts", description: "Create and manage tenant contract templates and contracts", section: "Administration & Audit", defaultEnabled: ["admin", "manager"] },
+  { slug: "manage_settings", label: "Manage Settings", description: "Modify company settings, email configuration, and payment details", section: "Administration & Audit", defaultEnabled: ["admin"] },
+  { slug: "view_audit_trail", label: "View Audit Trail", description: "View the full system audit log", section: "Administration & Audit", defaultEnabled: ["admin", "audit", "manager"] },
+  { slug: "manage_companies", label: "Manage Companies / Organisations", description: "Add and manage multiple company organisations", section: "Administration & Audit", defaultEnabled: ["admin"] },
+];
+
+export async function fetchRolePermissions(department: string, companyId: string = MOCK_COMPANIES[0].id): Promise<Record<string, boolean>> {
+  try {
+    const { data, error } = await supabase
+      .from("company_users")
+      .select("permissions")
+      .eq("company_id", companyId)
+      .eq("department", department)
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && data?.permissions) {
+      return data.permissions as Record<string, boolean>;
+    }
+  } catch {}
+
+  // Build default permissions from capability definitions
+  const defaults: Record<string, boolean> = {};
+  ALL_ROLE_CAPABILITIES.forEach((cap) => {
+    defaults[cap.slug] = cap.defaultEnabled.includes(department as import("./types").DepartmentType);
+  });
+  return defaults;
+}
+
+export async function saveRolePermissions(
+  department: string,
+  permissions: Record<string, boolean>,
+  companyId: string = MOCK_COMPANIES[0].id
+): Promise<boolean> {
+  try {
+    if (isValidUuid(companyId)) {
+      await supabase
+        .from("company_users")
+        .update({ permissions })
+        .eq("company_id", companyId)
+        .eq("department", department);
+    }
+  } catch {}
+  // Update mock data
+  MOCK_COMPANY_USERS
+    .filter((u) => u.companyId === companyId && u.department === department)
+    .forEach((u) => { u.permissions = { ...u.permissions, ...permissions }; });
+  return true;
+}

@@ -36,6 +36,8 @@ import PortalLoginPage from "@/pages/portal/portal-login";
 import CustomerDashboardPage from "@/pages/portal/customer-dashboard";
 import AgentPortalPage from "@/pages/portal/agent-portal";
 import RoomShowcasesPage from "@/pages/room-showcases";
+import ProcurementPage from "@/pages/procurement";
+import StoresPage from "@/pages/stores";
 
 function CompanySlugRedirect() {
   const { companySlug } = useParams<{ companySlug: string }>();
@@ -108,6 +110,8 @@ export function AppRouter() {
         <Route path="/maintenance/scheduled-tasks" element={<ScheduledTasksPage />} />
         <Route path="/maintenance/inventory" element={<InventoryPage />} />
         <Route path="/hr" element={<HRPage />} />
+        <Route path="/procurement" element={<ProcurementPage />} />
+        <Route path="/stores" element={<StoresPage />} />
         <Route path="/users-management" element={<UsersManagementPage />} />
         <Route path="/companies" element={<CompaniesPage />} />
         <Route path="/contracts" element={<ContractsPage />} />

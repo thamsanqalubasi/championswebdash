@@ -999,3 +999,229 @@ export function buildProfessionalPayslipHtml(
 </html>`;
 }
 
+export type ExternalQuoteRequestData = {
+  // Requesting company info
+  requestingCompanyName: string;
+  requestingCompanyLogo?: string;
+  requestingCompanyAddress?: string;
+  requestingCompanyPhone?: string;
+  requestingCompanyEmail?: string;
+  // Accounting/requesting contact
+  contactName: string;
+  contactTitle?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  // Supplier / recipient company
+  supplierName: string;
+  supplierContactPerson?: string;
+  supplierEmail?: string;
+  supplierPhone?: string;
+  supplierAddress?: string;
+  // Items (from procurement requests)
+  items: Array<{
+    itemName: string;
+    specifications: string;
+    quantity: number;
+    unit: string;
+  }>;
+  // Reference info
+  referenceNumber?: string;
+  requestDate?: string;
+  currency?: string;
+};
+
+export function buildExternalQuoteRequestHtml(data: ExternalQuoteRequestData): string {
+  const today = data.requestDate || new Date().toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric" });
+  const refNo = data.referenceNumber || `RFQ-${Date.now().toString(36).toUpperCase()}`;
+  const currency = data.currency || "ZAR";
+
+  const itemRows = data.items.map((item, i) => `
+    <tr style="border-bottom: 1px solid #e5e7eb;">
+      <td style="padding: 10px 12px; font-size: 12px; color: #374151;">${i + 1}</td>
+      <td style="padding: 10px 12px; font-size: 12px; font-weight: 600; color: #111827;">${esc(item.itemName)}</td>
+      <td style="padding: 10px 12px; font-size: 11px; color: #6b7280; line-height: 1.5;">${esc(item.specifications)}</td>
+      <td style="padding: 10px 12px; font-size: 12px; text-align: center; color: #374151;">${item.quantity} ${esc(item.unit)}</td>
+      <td style="padding: 10px 12px; font-size: 12px; color: #9ca3af; font-style: italic;">Awaiting Quote</td>
+    </tr>
+  `).join("");
+
+  const logoHtml = data.requestingCompanyLogo
+    ? `<img src="${data.requestingCompanyLogo}" alt="Logo" style="height: 52px; width: auto; object-fit: contain; border-radius: 6px;"/>`
+    : `<div style="height: 52px; width: 52px; background: #2563eb; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 900; color: white;">${esc(data.requestingCompanyName.charAt(0))}</div>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Request for Quotation — ${esc(refNo)}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f9fafb; color: #111827; }
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white; }
+      .page { box-shadow: none !important; }
+    }
+    .no-print {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: #1e293b; padding: 10px 24px;
+      display: flex; align-items: center; justify-between; gap: 12px;
+      border-bottom: 1px solid #334155;
+    }
+    .no-print span { color: #94a3b8; font-size: 12px; }
+    .no-print button {
+      padding: 8px 18px; border-radius: 8px; font-size: 12px; font-weight: 600;
+      cursor: pointer; border: none; transition: all 0.15s;
+    }
+    .btn-print { background: #2563eb; color: white; }
+    .btn-print:hover { background: #1d4ed8; }
+    .btn-close { background: #475569; color: white; }
+    .btn-close:hover { background: #334155; }
+    .page {
+      max-width: 900px; margin: 80px auto 40px; background: white;
+      border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+    .header { background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); padding: 32px 40px; }
+    .header-top { display: flex; align-items: center; justify-content: space-between; }
+    .rfq-badge {
+      background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 8px; padding: 8px 16px; color: white; font-size: 11px;
+      font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+    }
+    .company-info { text-align: right; color: rgba(255,255,255,0.8); font-size: 11px; margin-top: 4px; line-height: 1.6; }
+    .company-name-header { color: white; font-size: 18px; font-weight: 800; margin-top: 2px; }
+    .doc-title { margin-top: 20px; }
+    .doc-title h1 { font-size: 28px; font-weight: 900; color: white; letter-spacing: -0.5px; }
+    .doc-title p { font-size: 13px; color: rgba(255,255,255,0.7); margin-top: 4px; }
+    .body { padding: 36px 40px; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 28px; }
+    .meta-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px 20px; }
+    .meta-card-title { font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 8px; }
+    .meta-card p { font-size: 12px; color: #374151; line-height: 1.6; }
+    .meta-card strong { color: #111827; font-weight: 700; }
+    .intro { background: #eff6ff; border-left: 4px solid #2563eb; border-radius: 0 8px 8px 0; padding: 14px 18px; margin-bottom: 28px; font-size: 13px; color: #1e40af; line-height: 1.6; }
+    .section-title { font-size: 13px; font-weight: 800; color: #111827; letter-spacing: -0.2px; margin-bottom: 12px; display: flex; align-items: center; gap-8px; }
+    table { width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; margin-bottom: 28px; }
+    thead { background: #f1f5f9; }
+    thead th { padding: 10px 12px; text-align: left; font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; }
+    .footer { background: #f8fafc; border-top: 1px solid #e5e7eb; padding: 20px 40px; display: flex; align-items: center; justify-content: space-between; }
+    .footer p { font-size: 11px; color: #94a3b8; }
+    .footer strong { color: #64748b; }
+    .sig-area { margin-top: 32px; display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+    .sig-box { border-top: 2px solid #e5e7eb; padding-top: 10px; }
+    .sig-box p { font-size: 11px; color: #6b7280; }
+    .sig-box strong { font-size: 12px; color: #111827; display: block; margin-bottom: 2px; }
+  </style>
+</head>
+<body>
+
+  <div class="no-print" style="display: flex; align-items: center; justify-content: space-between;">
+    <span>📄 Request for Quotation — ${esc(refNo)}</span>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn-print" onclick="window.print()">🖨 Print / Save as PDF</button>
+      <button class="btn-close" onclick="window.close()">✕ Close</button>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="header">
+      <div class="header-top">
+        <div style="display: flex; align-items: center; gap: 14px;">
+          ${logoHtml}
+          <div>
+            <div class="company-name-header">${esc(data.requestingCompanyName)}</div>
+            <div class="company-info">
+              ${data.requestingCompanyAddress ? esc(data.requestingCompanyAddress) + "<br>" : ""}
+              ${data.requestingCompanyPhone ? "Tel: " + esc(data.requestingCompanyPhone) : ""}
+              ${data.requestingCompanyEmail ? " | " + esc(data.requestingCompanyEmail) : ""}
+            </div>
+          </div>
+        </div>
+        <div class="rfq-badge">REQUEST FOR QUOTATION</div>
+      </div>
+      <div class="doc-title">
+        <h1>Quotation Request</h1>
+        <p>Ref: ${esc(refNo)} &nbsp;|&nbsp; Date: ${esc(today)}</p>
+      </div>
+    </div>
+
+    <div class="body">
+      <div class="meta-grid">
+        <div class="meta-card">
+          <div class="meta-card-title">📤 Quote Requested By</div>
+          <p><strong>${esc(data.contactName)}</strong></p>
+          ${data.contactTitle ? `<p>${esc(data.contactTitle)}</p>` : ""}
+          <p>${esc(data.requestingCompanyName)}</p>
+          ${data.contactEmail ? `<p>Email: ${esc(data.contactEmail)}</p>` : ""}
+          ${data.contactPhone ? `<p>Tel: ${esc(data.contactPhone)}</p>` : ""}
+        </div>
+        <div class="meta-card">
+          <div class="meta-card-title">📩 Quote To Be Submitted To</div>
+          <p><strong>${esc(data.supplierName)}</strong></p>
+          ${data.supplierContactPerson ? `<p>Attn: ${esc(data.supplierContactPerson)}</p>` : ""}
+          ${data.supplierAddress ? `<p>${esc(data.supplierAddress)}</p>` : ""}
+          ${data.supplierEmail ? `<p>Email: ${esc(data.supplierEmail)}</p>` : ""}
+          ${data.supplierPhone ? `<p>Tel: ${esc(data.supplierPhone)}</p>` : ""}
+        </div>
+      </div>
+
+      <div class="intro">
+        Dear ${data.supplierContactPerson ? esc(data.supplierContactPerson) : "Sir/Madam"},<br/><br/>
+        We hereby request you to provide us with a formal quotation for the items listed below. Please ensure your quotation includes unit pricing, VAT breakdown, delivery lead times, and any applicable terms and conditions.<br/><br/>
+        Kindly submit your quotation to <strong>${data.contactEmail ? esc(data.contactEmail) : esc(data.requestingCompanyName)}</strong> by return.
+      </div>
+
+      <div class="section-title">📋 Items Requiring Quotation</div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 32px;">#</th>
+            <th>Item Description</th>
+            <th>Full Specifications</th>
+            <th style="width: 80px; text-align: center;">Qty</th>
+            <th style="width: 100px;">Unit Price (${esc(currency)})</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemRows}
+        </tbody>
+      </table>
+
+      <div class="sig-area">
+        <div class="sig-box">
+          <strong>${esc(data.contactName)}</strong>
+          <p>${data.contactTitle ? esc(data.contactTitle) + " — " : ""}${esc(data.requestingCompanyName)}</p>
+          <p style="margin-top: 4px; color: #9ca3af;">Signature: ________________________</p>
+          <p style="color: #9ca3af;">Date: ________________________</p>
+        </div>
+        <div class="sig-box">
+          <strong>For: ${esc(data.supplierName)}</strong>
+          <p>Authorised Signatory</p>
+          <p style="margin-top: 4px; color: #9ca3af;">Signature: ________________________</p>
+          <p style="color: #9ca3af;">Date: ________________________</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>This is a formal request for quotation only and does not constitute a purchase order or commitment to purchase.</p>
+      <p><strong>Ref: ${esc(refNo)}</strong></p>
+    </div>
+  </div>
+
+</body>
+</html>`;
+}
+
+export function openExternalQuoteRequestInNewTab(data: ExternalQuoteRequestData): void {
+  const html = buildExternalQuoteRequestHtml(data);
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, "_blank", "noopener,noreferrer");
+  if (win) {
+    win.focus();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+}

@@ -78,6 +78,12 @@ const JOB_TITLES_BY_DEPARTMENT: Record<DepartmentType, Array<{ title: string; de
     { title: "Audit - Auditor", defaultLevel: "staff" },
     { title: "Audit - All Rights", defaultLevel: "all_rights" },
   ],
+  stores: [
+    { title: "Stores - Manager", defaultLevel: "manager" },
+    { title: "Stores - Clerk", defaultLevel: "staff" },
+    { title: "Stores - Receiver", defaultLevel: "staff" },
+    { title: "Stores - All Rights", defaultLevel: "all_rights" },
+  ],
   manager: [
     { title: "General Operations Manager", defaultLevel: "manager" },
   ],

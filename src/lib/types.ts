@@ -77,6 +77,7 @@ export type DepartmentType =
   | "maintenance"
   | "human_resources"
   | "procurement"
+  | "stores"
   | "audit";
 
 export type RoleLevel =
@@ -591,3 +592,171 @@ export type SettingsData = {
     mailgunDomain: string;
   };
 };
+
+// ─── PROCUREMENT PIPELINE TYPES ──────────────────────────────────────────────
+
+export type ProcurementStage =
+  | "draft"
+  | "dept_manager_approval"
+  | "stores_check"
+  | "stores_dispatch"
+  | "quotation_gathering"
+  | "procurement_manager_approval"
+  | "fund_request_to_accounts"
+  | "payment_approved"
+  | "purchase_in_progress"
+  | "delivered_to_stores"
+  | "released_to_department"
+  | "completed"
+  | "cancelled";
+
+export type ProcurementPipelineType = "procurement" | "stores";
+
+export type ProcurementUrgency = "low" | "medium" | "high" | "critical";
+
+export type ProcurementPaymentMethod = "online" | "cash" | "bank_deposit";
+
+export type ProcurementPipelineEvent = {
+  id: string;
+  requestId: string;
+  stage: ProcurementStage;
+  action: string;
+  actorName: string;
+  actorUserId?: string;
+  notes?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type ProcurementQuotation = {
+  id: string;
+  requestId: string;
+  supplierName: string;
+  supplierContact?: string;
+  amount: number;
+  currency: string;
+  fileUrl?: string;
+  fileType?: "pdf" | "image";
+  notes?: string;
+  isSelected: boolean;
+  uploadedByName?: string;
+  createdAt: string;
+};
+
+export type ProcurementRequest = {
+  id: string;
+  companyId: string;
+  requestedByUserId?: string;
+  requestedByName: string;
+  requestingDepartment: DepartmentType;
+  itemName: string;
+  itemSpecifications: string;
+  quantity: number;
+  unit: string;
+  urgency: ProcurementUrgency;
+  justification: string;
+  pipelineStage: ProcurementStage;
+  pipelineType: ProcurementPipelineType;
+  stageEnteredAt: string;
+  reminderSentAt?: string;
+  paymentMethod?: ProcurementPaymentMethod;
+  bankDetails?: {
+    bankName?: string;
+    accountName?: string;
+    accountNumber?: string;
+    branchCode?: string;
+    reference?: string;
+  };
+  totalApprovedAmount?: number;
+  notes?: string;
+  status: "open" | "completed" | "cancelled";
+  events?: ProcurementPipelineEvent[];
+  quotations?: ProcurementQuotation[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+// ─── STORES INVENTORY TYPES ───────────────────────────────────────────────────
+
+export type StoresItemSource = "stores" | "maintenance_inventory" | "procured";
+
+export type StoresItem = {
+  id: string;
+  companyId: string;
+  name: string;
+  category: string;
+  quantity: number;
+  unit: string;
+  minStockLevel: number;
+  unitCost: number;
+  supplier?: string;
+  location?: string;
+  source: StoresItemSource;
+  maintenanceInventoryId?: string;
+  lastRestocked?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StoresTransactionType = "receive" | "release";
+
+export type StoresTransaction = {
+  id: string;
+  companyId: string;
+  inventoryId: string;
+  inventoryName?: string;
+  procurementRequestId?: string;
+  transactionType: StoresTransactionType;
+  quantity: number;
+  department?: DepartmentType;
+  receivedFrom?: string;
+  releasedToName?: string;
+  notes?: string;
+  performedByName?: string;
+  transactionDate: string;
+  createdAt: string;
+};
+
+// ─── SUPPLIER CONTACT TYPES ───────────────────────────────────────────────────
+
+export type SupplierContact = {
+  id: string;
+  companyId: string;
+  supplierName: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  contactPerson?: string;
+  contactPersonPhone?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Quote contact profile for accounting manager (shown on external quote docs)
+export type QuoteContactProfile = {
+  id: string;
+  companyId: string;
+  name: string;
+  title?: string;
+  email?: string;
+  phone?: string;
+  department: string;
+};
+
+// ─── ROLE CAPABILITIES ────────────────────────────────────────────────────────
+
+export type RoleCapability = {
+  slug: string;                 // e.g. "manage_payroll"
+  label: string;                // e.g. "Manage Payroll"
+  description: string;          // e.g. "Generate, approve, and pay payslips"
+  section: string;              // e.g. "Human Resources"
+  defaultEnabled: DepartmentType[];  // departments that have this by default
+};
+
+// ─── COMPANY SETTINGS EXTRAS ──────────────────────────────────────────────────
+
+export type CompanyReminderSettings = {
+  reminderThresholdHours: number; // default 24
+};
+

@@ -1,13 +1,15 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { ThemeToggle } from "./theme-toggle";
 import { CheckinModal } from "./checkin-modal";
+import { ALL_ROLE_CAPABILITIES, fetchReminderThreshold, saveReminderThreshold, fetchRolePermissions, saveRolePermissions } from "@/lib/data";
 import {
   LayoutDashboard, Building2, Users, DollarSign, Wrench, ClipboardList,
   Truck, SearchCheck, CalendarClock, Package, FileSignature, Settings,
   History, Landmark, BedDouble, KeyRound, Briefcase, Layers, ChevronDown,
   Building, Inbox, Globe, UserCog, ChevronLeft, ChevronRight, Menu,
+  ShieldCheck, Check, X,
   type LucideIcon,
 } from "lucide-react";
 import type { DepartmentType } from "@/lib/types";
@@ -61,6 +63,13 @@ const allNavSections: NavSection[] = [
     title: "Human Resources",
     items: [
       { label: "HR & Payroll", href: "/hr", icon: Briefcase, departments: ["admin","human_resources","manager"] },
+    ],
+  },
+  {
+    title: "Procurement & Stores",
+    items: [
+      { label: "Procurement Hub", href: "/procurement", icon: Truck, departments: ["admin","procurement","manager"] },
+      { label: "Stores & Inventory", href: "/stores", icon: Package, departments: ["admin","stores","procurement","manager","maintenance"] },
     ],
   },
   {
@@ -120,6 +129,34 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [checkinOpen, setCheckinOpen] = useState(false);
   const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [seeRolesOpen, setSeeRolesOpen] = useState(false);
+  const [selectedRoleDept, setSelectedRoleDept] = useState<string>("admin");
+  const [rolePermissions, setRolePermissions] = useState<Record<string, boolean>>({});
+  const [reminderThreshold, setReminderThreshold] = useState(24);
+  const [savingPermissions, setSavingPermissions] = useState(false);
+
+  useEffect(() => {
+    if (isSuperAdmin && seeRolesOpen) {
+      fetchRolePermissions(selectedRoleDept, currentCompany.id).then(setRolePermissions);
+    }
+  }, [isSuperAdmin, seeRolesOpen, selectedRoleDept, currentCompany.id]);
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      fetchReminderThreshold(currentCompany.id).then(setReminderThreshold);
+    }
+  }, [isSuperAdmin, currentCompany.id]);
+
+  const handleSavePermissions = async () => {
+    setSavingPermissions(true);
+    await saveRolePermissions(selectedRoleDept, rolePermissions, currentCompany.id);
+    setSavingPermissions(false);
+  };
+
+  const handleSaveThreshold = async (hours: number) => {
+    setReminderThreshold(hours);
+    await saveReminderThreshold(currentCompany.id, hours);
+  };
 
   const userEmail = user?.email || currentCompanyUser.email;
 
@@ -226,6 +263,93 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           ))}
         </nav>
+
+        {/* ── See Roles Panel (Super Admin Only) ── */}
+        {isSuperAdmin && !sidebarCollapsed && (
+          <div className="border-t border-border-color">
+            <button
+              type="button"
+              onClick={() => setSeeRolesOpen(!seeRolesOpen)}
+              className="flex w-full items-center justify-between px-4 py-2.5 text-xs font-semibold text-muted hover:text-foreground transition"
+            >
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={14} className="text-violet-500"/>
+                <span className="text-[11px] font-bold uppercase tracking-wider">See Roles</span>
+              </div>
+              <ChevronDown size={12} className={`transition-transform ${seeRolesOpen ? "rotate-180" : ""}`}/>
+            </button>
+
+            {seeRolesOpen && (
+              <div className="max-h-[55vh] overflow-y-auto px-3 pb-3 space-y-3">
+                {/* Reminder Threshold Setting */}
+                <div className="rounded-xl border border-border-color bg-surface-elevated p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-1.5">Reminder Threshold</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={168}
+                      value={reminderThreshold}
+                      onChange={(e) => handleSaveThreshold(Number(e.target.value))}
+                      className="w-16 rounded-lg border border-border-color bg-surface px-2 py-1 text-xs text-center"
+                    />
+                    <span className="text-xs text-muted">hours before reminder activates</span>
+                  </div>
+                </div>
+
+                {/* Department selector */}
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-1.5">View Role</p>
+                  <div className="flex flex-wrap gap-1">
+                    {(["admin","manager","accountant","front_desk","it","maintenance","human_resources","procurement","stores","audit"] as const).map((dept) => (
+                      <button
+                        key={dept}
+                        type="button"
+                        onClick={() => setSelectedRoleDept(dept)}
+                        className={`rounded-lg px-2 py-0.5 text-[10px] font-medium transition ${
+                          selectedRoleDept === dept ? "bg-violet-600 text-white" : "bg-surface border border-border-color text-muted hover:text-foreground"
+                        }`}
+                      >
+                        {dept.replace(/_/g, " ")}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Capabilities by section */}
+                {Array.from(new Set(ALL_ROLE_CAPABILITIES.map((c) => c.section))).map((section) => (
+                  <div key={section}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60 mb-1">{section}</p>
+                    <div className="space-y-0.5">
+                      {ALL_ROLE_CAPABILITIES.filter((c) => c.section === section).map((cap) => (
+                        <label key={cap.slug} className="flex items-start gap-2 rounded-lg p-1.5 hover:bg-surface-elevated cursor-pointer" title={cap.description}>
+                          <div
+                            onClick={() => setRolePermissions((prev) => ({ ...prev, [cap.slug]: !prev[cap.slug] }))}
+                            className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded cursor-pointer border transition ${
+                              rolePermissions[cap.slug] ? "bg-violet-600 border-violet-600" : "border-border-color bg-surface"
+                            }`}
+                          >
+                            {rolePermissions[cap.slug] && <Check size={9} className="text-white"/>}
+                          </div>
+                          <span className="text-[10px] leading-tight text-foreground">{cap.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={handleSavePermissions}
+                  disabled={savingPermissions}
+                  className="w-full rounded-xl bg-violet-600 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 transition disabled:opacity-60"
+                >
+                  {savingPermissions ? "Saving..." : "Save Permissions"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </aside>
 
       {/* ── Right Panel: Header + Scrollable Main ── */}
