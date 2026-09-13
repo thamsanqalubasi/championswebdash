@@ -1,16 +1,20 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { 
   Search, 
   Filter, 
   Plus, 
-  Minus,
-  Package,
-  ArrowDownRight,
-  ArrowUpRight,
-  History,
-  AlertTriangle,
-  Edit,
-  X
+  Minus, 
+  Package, 
+  ArrowDownRight, 
+  ArrowUpRight, 
+  History, 
+  AlertTriangle, 
+  Edit, 
+  X,
+  RefreshCw,
+  ClipboardList,
+  ExternalLink
 } from "lucide-react";
 import type { 
   StoresItem, 
@@ -18,8 +22,15 @@ import type {
   StoresItemSource, 
   ProcurementRequest 
 } from "@/lib/types";
-// using mock auth
-const useAuth = () => ({ user: { companyId: "a0000000-0000-0000-0000-000000000001", fullName: "Stores Staff" } });
+import { useAuth } from "@/lib/auth";
+import {
+  fetchStoresInventory,
+  fetchStoresTransactions,
+  receiveStoresItem,
+  releaseStoresItem,
+  updateStoresInventoryItem,
+  createStoresInventoryItem
+} from "@/lib/data";
 
 // MOCK DATA
 const MOCK_STORES: StoresItem[] = [
@@ -158,13 +169,39 @@ const DEPARTMENTS = [
 ];
 
 export default function StoresInventoryPage() {
-  const { user } = useAuth();
+  const { currentCompany, currentCompanyUser, user } = useAuth();
+  const companyId = currentCompany?.id || "a0000000-0000-0000-0000-000000000001";
+  const userDisplayName = currentCompanyUser?.fullName || user?.user_metadata?.full_name || "Stores Officer";
+
   const [activeTab, setActiveTab] = useState<"inventory" | "receive" | "release" | "transactions">("inventory");
+  const [loading, setLoading] = useState(true);
   
   const [inventory, setInventory] = useState<StoresItem[]>(MOCK_STORES);
   const [transactions, setTransactions] = useState<StoresTransaction[]>(MOCK_TRANSACTIONS);
 
-  // Tabs logic could fetch real data, but here we just use state initialized with mock
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [inv, txns] = await Promise.all([
+        fetchStoresInventory(companyId),
+        fetchStoresTransactions(companyId),
+      ]);
+      if (inv && inv.length > 0) {
+        setInventory(inv);
+      }
+      if (txns && txns.length > 0) {
+        setTransactions(txns);
+      }
+    } catch (err) {
+      console.warn("Could not load stores data from server, using existing inventory", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, [companyId]);
   
   // --- INVENTORY TAB STATE ---
   const [searchQuery, setSearchQuery] = useState("");
@@ -201,32 +238,40 @@ export default function StoresInventoryPage() {
     return { totalItems, lowStock, totalValue };
   }, [inventory]);
 
-  const handleAdjustStock = (e: React.FormEvent) => {
+  const handleAdjustStock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adjustItem) return;
     const qty = parseInt(adjustQty, 10);
     if (isNaN(qty) || qty <= 0) return;
 
+    const targetQty = adjustType === "add" ? adjustItem.quantity + qty : Math.max(0, adjustItem.quantity - qty);
+
     const newInventory = inventory.map(item => {
       if (item.id === adjustItem.id) {
         return {
           ...item,
-          quantity: adjustType === "add" ? item.quantity + qty : Math.max(0, item.quantity - qty)
+          quantity: targetQty
         };
       }
       return item;
     });
     setInventory(newInventory);
 
+    try {
+      await updateStoresInventoryItem(adjustItem.id, { quantity: targetQty });
+    } catch (err) {
+      console.warn("Could not persist adjusted stock", err);
+    }
+
     const newTxn: StoresTransaction = {
       id: `txn-${Date.now()}`,
-      companyId: user?.companyId || "",
+      companyId,
       inventoryId: adjustItem.id,
       inventoryName: adjustItem.name,
       transactionType: adjustType === "add" ? "receive" : "release",
       quantity: qty,
       notes: `Manual adjustment: ${adjustNotes}`,
-      performedByName: user?.fullName,
+      performedByName: userDisplayName,
       transactionDate: new Date().toISOString().slice(0, 10),
       createdAt: new Date().toISOString(),
     };
@@ -247,7 +292,7 @@ export default function StoresInventoryPage() {
   const [recNotes, setRecNotes] = useState("");
   const [recDate, setRecDate] = useState(new Date().toISOString().slice(0, 10));
 
-  const handleReceive = (e: React.FormEvent) => {
+  const handleReceive = async (e: React.FormEvent) => {
     e.preventDefault();
     const qty = parseInt(recQty, 10);
     if (isNaN(qty) || qty <= 0) return;
@@ -258,21 +303,25 @@ export default function StoresInventoryPage() {
     if (recItemId === "new") {
       targetId = `store-${Date.now()}`;
       targetName = recNewName;
-      const newItem: StoresItem = {
-        id: targetId,
-        companyId: user?.companyId || "",
-        name: recNewName,
-        category: "General",
-        quantity: qty,
-        unit: "pcs",
-        minStockLevel: 5,
-        unitCost: 0,
-        supplier: recSupplier,
-        source: "stores",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      setInventory([...inventory, newItem]);
+      try {
+        const created = await createStoresInventoryItem({
+          companyId,
+          name: recNewName,
+          category: "General",
+          quantity: qty,
+          unit: "pcs",
+          minStockLevel: 5,
+          unitCost: 0,
+          supplier: recSupplier,
+          location: "Central Stores",
+          source: "stores",
+          notes: recNotes,
+        });
+        targetId = created.id;
+        setInventory(prev => [...prev, created]);
+      } catch (err) {
+        console.warn("Could not create stores item", err);
+      }
     } else {
       const existing = inventory.find(i => i.id === recItemId);
       if (existing) {
@@ -281,20 +330,20 @@ export default function StoresInventoryPage() {
       }
     }
 
-    const newTxn: StoresTransaction = {
-      id: `txn-${Date.now()}`,
-      companyId: user?.companyId || "",
-      inventoryId: targetId,
-      inventoryName: targetName,
-      transactionType: "receive",
-      quantity: qty,
-      receivedFrom: recFrom || recSupplier,
-      notes: recNotes,
-      performedByName: user?.fullName,
-      transactionDate: recDate,
-      createdAt: new Date().toISOString(),
-    };
-    setTransactions([newTxn, ...transactions]);
+    try {
+      const txn = await receiveStoresItem({
+        companyId,
+        inventoryId: targetId,
+        quantity: qty,
+        receivedFrom: recFrom || recSupplier,
+        notes: recNotes,
+        performedByName: userDisplayName,
+        transactionDate: recDate,
+      });
+      setTransactions(prev => [txn, ...prev]);
+    } catch (err) {
+      console.warn("Could not save receive transaction", err);
+    }
     
     // reset
     setRecItemId("");
@@ -319,7 +368,7 @@ export default function StoresInventoryPage() {
 
   const selectedRelItem = inventory.find(i => i.id === relItemId);
 
-  const handleRelease = (e: React.FormEvent) => {
+  const handleRelease = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedRelItem) return;
     const qty = parseInt(relQty, 10);
@@ -327,21 +376,21 @@ export default function StoresInventoryPage() {
 
     setInventory(inventory.map(i => i.id === relItemId ? { ...i, quantity: i.quantity - qty } : i));
 
-    const newTxn: StoresTransaction = {
-      id: `txn-${Date.now()}`,
-      companyId: user?.companyId || "",
-      inventoryId: relItemId,
-      inventoryName: selectedRelItem.name,
-      transactionType: "release",
-      quantity: qty,
-      department: relDept as any,
-      releasedToName: relTo,
-      notes: relNotes,
-      performedByName: user?.fullName,
-      transactionDate: relDate,
-      createdAt: new Date().toISOString(),
-    };
-    setTransactions([newTxn, ...transactions]);
+    try {
+      const txn = await releaseStoresItem({
+        companyId,
+        inventoryId: relItemId,
+        quantity: qty,
+        department: relDept as any,
+        releasedToName: relTo,
+        notes: relNotes,
+        performedByName: userDisplayName,
+        transactionDate: relDate,
+      });
+      setTransactions(prev => [txn, ...prev]);
+    } catch (err) {
+      console.warn("Could not save release transaction", err);
+    }
     
     setRelItemId("");
     setRelQty("");
@@ -368,27 +417,86 @@ export default function StoresInventoryPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6 text-foreground bg-background min-h-screen">
-      <div className="flex justify-between items-end">
+      {/* Top Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Stores & Inventory</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage stock, receive goods, and issue items to departments.</p>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-semibold tracking-tight">Stores & Inventory</h1>
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-xs font-semibold text-blue-600 border border-blue-500/20">
+              <Package size={12} />
+              Stores & Maintenance Blended
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground mt-1">
+            Central storehouse stock, material receipts, departmental issuances, and blended inventory from maintenance.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={loadData}
+            disabled={loading}
+            className="flex items-center gap-2 rounded-xl border border-border-color bg-surface px-3 py-2 text-xs font-medium text-foreground hover:bg-surface-elevated transition shadow-sm"
+            title="Refresh stores & inventory data"
+          >
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            <span>Refresh</span>
+          </button>
+
+          <Link
+            to="/maintenance/inventory"
+            className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition"
+          >
+            <ClipboardList size={15} />
+            <span>Inventory & Stock Hub</span>
+            <ExternalLink size={13} />
+          </Link>
         </div>
       </div>
 
-      <div className="flex space-x-1 border-b border-border-color">
-        {(["inventory", "receive", "release", "transactions"] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-              activeTab === tab 
-                ? "border-blue-600 text-blue-600" 
-                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border-color"
-            }`}
-          >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
+      {/* Sync Banner */}
+      <div className="flex items-center justify-between gap-4 rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-xs">
+        <div className="flex items-center gap-2.5 text-foreground">
+          <Package className="h-4 w-4 text-blue-600 shrink-0" />
+          <span>
+            <strong>Inventory Sync Active:</strong> Items added under <strong>Inventory & Stock</strong> automatically appear here in Stores & Inventory.
+          </span>
+        </div>
+        <Link
+          to="/maintenance/inventory"
+          className="text-blue-600 dark:text-blue-400 font-semibold hover:underline shrink-0 flex items-center gap-1"
+        >
+          <span>Open Inventory & Stock</span>
+          <ArrowUpRight size={14} />
+        </Link>
+      </div>
+
+      {/* Tabs Bar with Inventory & Stock option */}
+      <div className="flex items-center justify-between border-b border-border-color">
+        <div className="flex space-x-1">
+          {(["inventory", "receive", "release", "transactions"] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                activeTab === tab 
+                  ? "border-blue-600 text-blue-600" 
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border-color"
+              }`}
+            >
+              {tab === "inventory" ? "Central Stores Inventory" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        <Link
+          to="/maintenance/inventory"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 rounded-lg transition"
+        >
+          <ClipboardList size={14} />
+          <span>Inventory & Stock (Maintenance) ↗</span>
+        </Link>
       </div>
 
       {activeTab === "inventory" && (

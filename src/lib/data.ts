@@ -33,6 +33,7 @@ import type {
   ProcurementQuotation,
   ProcurementStage,
   StoresItem,
+  StoresItemSource,
   StoresTransaction,
   SupplierContact,
   QuoteContactProfile,
@@ -4319,37 +4320,89 @@ export async function triggerStageReminder(requestId: string, actorName: string)
 // ─── STORES INVENTORY FUNCTIONS ───────────────────────────────────────────────
 
 export async function fetchStoresInventory(companyId: string = MOCK_COMPANIES[0].id): Promise<StoresItem[]> {
+  const itemsMap = new Map<string, StoresItem>();
+
+  // 1. Fetch from stores_inventory table
   try {
-    const { data, error } = await supabase
-      .from("stores_inventory")
-      .select("*")
-      .eq("company_id", companyId)
-      .order("name");
+    let query = supabase.from("stores_inventory").select("*");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    const { data, error } = await query.order("name");
 
     if (!error && data && data.length > 0) {
-      return data.map((item) => ({
-        id: item.id,
-        companyId: item.company_id,
-        name: item.name,
-        category: item.category,
-        quantity: item.quantity,
-        unit: item.unit,
-        minStockLevel: item.min_stock_level,
-        unitCost: toNumber(item.unit_cost),
-        supplier: item.supplier,
-        location: item.location,
-        source: item.source,
-        maintenanceInventoryId: item.maintenance_inventory_id,
-        lastRestocked: item.last_restocked,
-        notes: item.notes,
-        createdAt: item.created_at,
-        updatedAt: item.updated_at,
-      }));
+      for (const item of data) {
+        itemsMap.set(item.id, {
+          id: item.id,
+          companyId: item.company_id || companyId,
+          name: item.name,
+          category: item.category || "Stores Item",
+          quantity: item.quantity ?? 0,
+          unit: item.unit || "pcs",
+          minStockLevel: item.min_stock_level ?? 0,
+          unitCost: toNumber(item.unit_cost),
+          supplier: item.supplier || "",
+          location: item.location || "",
+          source: (item.source as StoresItemSource) || "stores",
+          maintenanceInventoryId: item.maintenance_inventory_id,
+          lastRestocked: item.last_restocked,
+          notes: item.notes,
+          createdAt: item.created_at,
+          updatedAt: item.updated_at,
+        });
+      }
     }
   } catch (err) {
-    console.warn("Falling back to mock stores inventory", err);
+    console.warn("Could not query stores_inventory", err);
   }
-  return MOCK_STORES_INVENTORY.filter((s) => s.companyId === companyId);
+
+  // 2. Blend items from maintenance_inventory table (Inventory & Stock)
+  try {
+    let maintQuery = supabase.from("maintenance_inventory").select("*");
+    if (isValidUuid(companyId)) {
+      maintQuery = maintQuery.eq("company_id", companyId);
+    }
+    const { data: maintData, error: maintErr } = await maintQuery.order("name");
+
+    if (!maintErr && maintData && maintData.length > 0) {
+      for (const item of maintData) {
+        // Check if already present via maintenanceInventoryId or direct ID
+        const exists = Array.from(itemsMap.values()).some(
+          (s) => s.maintenanceInventoryId === item.id || s.id === item.id
+        );
+        if (!exists) {
+          itemsMap.set(item.id, {
+            id: item.id,
+            companyId: item.company_id || companyId,
+            name: item.name,
+            category: item.category || "Maintenance & Stock",
+            quantity: item.quantity ?? 0,
+            unit: item.unit || "pcs",
+            minStockLevel: item.min_stock_level ?? 0,
+            unitCost: toNumber(item.unit_cost),
+            supplier: item.supplier || "",
+            location: item.location || "",
+            source: "maintenance_inventory",
+            maintenanceInventoryId: item.id,
+            lastRestocked: item.updated_at,
+            notes: item.category,
+            createdAt: item.created_at || new Date().toISOString(),
+            updatedAt: item.updated_at || new Date().toISOString(),
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Could not blend maintenance_inventory into stores", err);
+  }
+
+  // 3. If items found in DB, return them
+  if (itemsMap.size > 0) {
+    return Array.from(itemsMap.values());
+  }
+
+  // 4. Fallback to mock stores inventory (which already includes blended maintenance items)
+  return MOCK_STORES_INVENTORY.filter((s) => !companyId || s.companyId === companyId);
 }
 
 export async function checkStoresForItem(itemName: string, companyId: string = MOCK_COMPANIES[0].id): Promise<StoresItem[]> {
@@ -4371,12 +4424,14 @@ export async function receiveStoresItem(
     createdAt: now,
   };
 
-  // Update inventory quantity
+  // Update in-memory stores inventory quantity if present
+  let newQuantity = transaction.quantity;
   const idx = MOCK_STORES_INVENTORY.findIndex((s) => s.id === transaction.inventoryId);
   if (idx !== -1) {
     MOCK_STORES_INVENTORY[idx].quantity += transaction.quantity;
     MOCK_STORES_INVENTORY[idx].lastRestocked = transaction.transactionDate;
     MOCK_STORES_INVENTORY[idx].updatedAt = now;
+    newQuantity = MOCK_STORES_INVENTORY[idx].quantity;
   }
 
   MOCK_STORES_TRANSACTIONS.push(newTxn);
@@ -4396,9 +4451,15 @@ export async function receiveStoresItem(
       });
 
       if (isValidUuid(transaction.inventoryId)) {
-        await supabase.from("stores_inventory")
-          .update({ quantity: MOCK_STORES_INVENTORY[idx]?.quantity || 0, last_restocked: transaction.transactionDate })
-          .eq("id", transaction.inventoryId);
+        // Sync both stores_inventory and maintenance_inventory
+        await Promise.allSettled([
+          supabase.from("stores_inventory")
+            .update({ quantity: newQuantity, last_restocked: transaction.transactionDate })
+            .eq("id", transaction.inventoryId),
+          supabase.from("maintenance_inventory")
+            .update({ quantity: newQuantity, updated_at: now })
+            .eq("id", transaction.inventoryId),
+        ]);
       }
     }
   } catch (err) {
@@ -4413,6 +4474,7 @@ export async function releaseStoresItem(
 ): Promise<StoresTransaction> {
   const now = new Date().toISOString();
 
+  let remainingQty = 0;
   const idx = MOCK_STORES_INVENTORY.findIndex((s) => s.id === transaction.inventoryId);
   if (idx !== -1) {
     if (MOCK_STORES_INVENTORY[idx].quantity < transaction.quantity) {
@@ -4420,6 +4482,7 @@ export async function releaseStoresItem(
     }
     MOCK_STORES_INVENTORY[idx].quantity -= transaction.quantity;
     MOCK_STORES_INVENTORY[idx].updatedAt = now;
+    remainingQty = MOCK_STORES_INVENTORY[idx].quantity;
   }
 
   const newTxn: StoresTransaction = {
@@ -4446,9 +4509,15 @@ export async function releaseStoresItem(
       });
 
       if (isValidUuid(transaction.inventoryId)) {
-        await supabase.from("stores_inventory")
-          .update({ quantity: MOCK_STORES_INVENTORY[idx]?.quantity || 0 })
-          .eq("id", transaction.inventoryId);
+        // Sync both stores_inventory and maintenance_inventory
+        await Promise.allSettled([
+          supabase.from("stores_inventory")
+            .update({ quantity: remainingQty, updated_at: now })
+            .eq("id", transaction.inventoryId),
+          supabase.from("maintenance_inventory")
+            .update({ quantity: remainingQty, updated_at: now })
+            .eq("id", transaction.inventoryId),
+        ]);
       }
     }
   } catch (err) {
@@ -4520,19 +4589,36 @@ export async function addStoresInventoryItem(
   return newItem;
 }
 
+export const createStoresInventoryItem = addStoresInventoryItem;
+
 export async function updateStoresInventoryItem(id: string, updates: Partial<StoresItem>): Promise<StoresItem | null> {
   const now = new Date().toISOString();
   const idx = MOCK_STORES_INVENTORY.findIndex((s) => s.id === id);
-  if (idx === -1) return null;
-  MOCK_STORES_INVENTORY[idx] = { ...MOCK_STORES_INVENTORY[idx], ...updates, updatedAt: now };
+  if (idx !== -1) {
+    MOCK_STORES_INVENTORY[idx] = { ...MOCK_STORES_INVENTORY[idx], ...updates, updatedAt: now };
+  }
 
   try {
     if (isValidUuid(id)) {
-      await supabase.from("stores_inventory").update({ ...updates, updated_at: now }).eq("id", id);
-    }
-  } catch {}
+      const payload: Record<string, unknown> = { updated_at: now };
+      if (updates.quantity !== undefined) payload.quantity = updates.quantity;
+      if (updates.name !== undefined) payload.name = updates.name;
+      if (updates.category !== undefined) payload.category = updates.category;
+      if (updates.minStockLevel !== undefined) payload.min_stock_level = updates.minStockLevel;
+      if (updates.unitCost !== undefined) payload.unit_cost = updates.unitCost;
+      if (updates.supplier !== undefined) payload.supplier = updates.supplier;
+      if (updates.location !== undefined) payload.location = updates.location;
 
-  return MOCK_STORES_INVENTORY[idx];
+      await Promise.allSettled([
+        supabase.from("stores_inventory").update(payload).eq("id", id),
+        supabase.from("maintenance_inventory").update(payload).eq("id", id),
+      ]);
+    }
+  } catch (err) {
+    console.warn("Could not update stores/maintenance inventory item", err);
+  }
+
+  return idx !== -1 ? MOCK_STORES_INVENTORY[idx] : null;
 }
 
 // ─── SUPPLIER CONTACT FUNCTIONS ───────────────────────────────────────────────

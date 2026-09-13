@@ -34,7 +34,7 @@ const allNavSections: NavSection[] = [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Front Desk & Bookings", href: "/commercial-bookings", icon: KeyRound, departments: ["admin","front_desk","manager","audit"] },
       { label: "Rooms & Pricing", href: "/room-management", icon: BedDouble, departments: ["admin","front_desk","manager","maintenance"] },
-      { label: "Properties & Lodges", href: "/properties", icon: Building2 },
+      { label: "Properties & Lodges", href: "/properties", icon: Building2, departments: ["admin","manager","front_desk","maintenance"] },
       { label: "Tenants & Leases", href: "/tenants", icon: Users, departments: ["admin","manager","accountant"] },
     ],
   },
@@ -70,6 +70,7 @@ const allNavSections: NavSection[] = [
     items: [
       { label: "Procurement Hub", href: "/procurement", icon: Truck, departments: ["admin","procurement","manager"] },
       { label: "Stores & Inventory", href: "/stores", icon: Package, departments: ["admin","stores","procurement","manager","maintenance"] },
+      { label: "Inventory & Stock", href: "/maintenance/inventory", icon: ClipboardList, departments: ["admin","stores","procurement","manager","maintenance"] },
     ],
   },
   {
@@ -77,8 +78,8 @@ const allNavSections: NavSection[] = [
     items: [
       { label: "Showcase", href: "/room-showcases", icon: BedDouble, departments: ["admin","manager","front_desk"] },
       { label: "Enquiries & Tickets", href: "/enquiries", icon: Inbox, departments: ["admin","manager","front_desk","accountant"] },
-      { label: "Public Portal", href: "/portal", icon: Globe },
-      { label: "Agent Portal", href: "/portal/agent", icon: Briefcase },
+      { label: "Public Portal", href: "/portal", icon: Globe, departments: ["admin","manager","front_desk"] },
+      { label: "Agent Portal", href: "/portal/agent", icon: Briefcase, departments: ["admin","manager","front_desk"] },
     ],
   },
   {
@@ -88,7 +89,7 @@ const allNavSections: NavSection[] = [
       { label: "Users & Rights", href: "/users-management", icon: UserCog, departments: ["admin","manager","it"] },
       { label: "Organogram & Roles", href: "/organogram", icon: Network, departments: ["admin","manager","it"] },
       { label: "Contracts", href: "/contracts", icon: FileSignature, departments: ["admin","manager"] },
-      { label: "Settings", href: "/settings", icon: Settings },
+      { label: "Settings", href: "/settings", icon: Settings, departments: ["admin","manager","it"] },
       { label: "Audit Department", href: "/audit-trail", icon: History, departments: ["admin","audit","manager"] },
     ],
   },

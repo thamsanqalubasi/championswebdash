@@ -1,4 +1,5 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
@@ -177,6 +178,22 @@ export default function InventoryPage() {
       {!loading && error && <ErrorState message={error} onRetry={reload} />}
       {!loading && !error && (
         <div className="space-y-6">
+          {/* Sync notice banner */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-xs">
+            <div className="flex items-center gap-2 text-foreground">
+              <Package className="h-4 w-4 text-blue-600 shrink-0" />
+              <span>
+                <strong>Stores & Procurement Connected:</strong> All items added or updated here automatically sync and appear under <strong>Stores & Inventory</strong> (`/stores`).
+              </span>
+            </div>
+            <Link
+              to="/stores"
+              className="text-blue-600 dark:text-blue-400 font-semibold hover:underline shrink-0"
+            >
+              Open Stores & Inventory &rarr;
+            </Link>
+          </div>
+
           <div className="grid gap-4 md:grid-cols-3">
             <StatCard label="Total Catalog" value={String(items.length)} detail="Unique items listed" icon={Boxes} />
             <StatCard label="Critical Alerts" value={String(totals.low)} detail="Items below min level" icon={AlertTriangle} colorClass={totals.low > 0 ? "text-red-600" : "text-foreground"} />
@@ -198,6 +215,13 @@ export default function InventoryPage() {
                 onFilterChange={setActiveFilter}
                 actions={
                   <>
+                    <Link
+                      to="/stores"
+                      className="flex items-center gap-2 rounded-lg border border-border-color bg-surface-elevated px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-foreground transition-all"
+                    >
+                      <Package size={16} />
+                      <span>Stores & Inventory</span>
+                    </Link>
                     <button
                       type="button"
                       onClick={exportCsv}
