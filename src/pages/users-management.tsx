@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import {
   UserCog,
   Plus,
@@ -15,6 +16,7 @@ import {
   Mail,
   Send,
   Globe,
+  Network,
 } from "lucide-react";
 import {
   fetchCompanyUsers,
@@ -536,16 +538,25 @@ export default function UsersManagementPage() {
           </p>
         </div>
 
-        {(isAdmin || isManager) && (
-          <button
-            type="button"
-            onClick={openAddUser}
-            className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition"
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/organogram"
+            className="flex items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-600/10 px-4 py-2.5 text-sm font-bold text-violet-400 hover:bg-violet-600/20 transition"
           >
-            <Plus size={18} />
-            <span>Add New User</span>
-          </button>
-        )}
+            <Network size={18} />
+            <span>Organogram & Roles</span>
+          </Link>
+          {(isAdmin || isManager) && (
+            <button
+              type="button"
+              onClick={openAddUser}
+              className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition"
+            >
+              <Plus size={18} />
+              <span>Add New User</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Search and Filters */}

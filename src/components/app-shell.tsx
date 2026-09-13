@@ -9,7 +9,7 @@ import {
   Truck, SearchCheck, CalendarClock, Package, FileSignature, Settings,
   History, Landmark, BedDouble, KeyRound, Briefcase, Layers, ChevronDown,
   Building, Inbox, Globe, UserCog, ChevronLeft, ChevronRight, Menu,
-  ShieldCheck, Check, X,
+  ShieldCheck, Check, X, Network,
   type LucideIcon,
 } from "lucide-react";
 import type { DepartmentType } from "@/lib/types";
@@ -86,6 +86,7 @@ const allNavSections: NavSection[] = [
     items: [
       { label: "Companies / Orgs", href: "/companies", icon: Building, requiresSuperAdmin: true },
       { label: "Users & Rights", href: "/users-management", icon: UserCog, departments: ["admin","manager","it"] },
+      { label: "Organogram & Roles", href: "/organogram", icon: Network, departments: ["admin","manager","it"] },
       { label: "Contracts", href: "/contracts", icon: FileSignature, departments: ["admin","manager"] },
       { label: "Settings", href: "/settings", icon: Settings },
       { label: "Audit Department", href: "/audit-trail", icon: History, departments: ["admin","audit","manager"] },
@@ -346,6 +347,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                 >
                   {savingPermissions ? "Saving..." : "Save Permissions"}
                 </button>
+
+                <Link
+                  to="/organogram"
+                  className="flex items-center justify-center gap-1.5 w-full rounded-xl bg-surface-elevated border border-violet-500/30 py-1.5 text-[11px] font-semibold text-violet-400 hover:bg-violet-600/10 transition mt-1"
+                >
+                  <Network size={13} />
+                  <span>Open Full Organogram & Roles ➔</span>
+                </Link>
               </div>
             )}
           </div>
