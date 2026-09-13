@@ -173,14 +173,14 @@ export default function DashboardPage() {
 
   // Accordion drop toggler state for all departments
   const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({
-    it: true,
-    procurement: true,
-    stores: true,
-    front_desk: true,
-    finance: true,
-    maintenance: true,
-    hr: true,
-    portal: true,
+    it: false,
+    procurement: false,
+    stores: false,
+    front_desk: false,
+    finance: false,
+    maintenance: false,
+    hr: false,
+    portal: false,
     audit: false,
     governance: false,
   });

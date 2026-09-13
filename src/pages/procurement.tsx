@@ -237,13 +237,17 @@ export default function ProcurementPage() {
             return (
               <tr key={req.id} className="border-b border-border-color hover:bg-gray-50 dark:hover:bg-gray-800/50">
                 <td className="p-3">
-                  <div className="font-medium">{req.itemName}</div>
+                  <div className="font-medium cursor-pointer hover:text-blue-600 transition-colors" onClick={() => setSelectedPipelineRequest(req)}>{req.itemName}</div>
                   <div className="text-gray-500 text-[10px] mt-0.5 truncate max-w-xs">{req.itemSpecifications}</div>
                 </td>
                 <td className="p-3">{req.requestedByName}</td>
                 <td className="p-3 capitalize">{req.requestingDepartment.replace('_', ' ')}</td>
                 <td className="p-3">
-                  <span className={`px-2 py-1 rounded-full text-[10px] border ${getStageBadgeColor(req.pipelineStage)}`}>
+                  <span 
+                    className={`px-2 py-1 rounded-full text-[10px] border cursor-pointer hover:opacity-80 transition-opacity ${getStageBadgeColor(req.pipelineStage)}`}
+                    onClick={() => setSelectedPipelineRequest(req)}
+                    title="Click to view full pipeline"
+                  >
                     {formatStageName(req.pipelineStage)}
                   </span>
                 </td>
@@ -470,77 +474,257 @@ export default function ProcurementPage() {
         )}
       </div>
 
-      {/* View Pipeline Modal */}
-      {selectedPipelineRequest && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-surface w-full max-w-lg rounded-2xl shadow-xl border border-border-color flex flex-col max-h-[85vh]">
-            <div className="p-4 border-b border-border-color flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50 rounded-t-2xl">
-              <div>
-                <h3 className="font-semibold">Pipeline: {selectedPipelineRequest.itemName}</h3>
-                <p className="text-xs text-gray-500 mt-0.5">Track the status of this request</p>
+      {/* Full Pipeline Progress Map & Data Inspector */}
+      {selectedPipelineRequest && (() => {
+        const req = selectedPipelineRequest;
+        const currentIdx = STAGES.indexOf(req.pipelineStage);
+        const progressPct = Math.round(((currentIdx) / (STAGES.length - 1)) * 100);
+        const [pipelineTab, setPipelineTab] = React.useState<'map' | 'specs' | 'quotes' | 'funds' | 'audit'>('map');
+
+        return (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) setSelectedPipelineRequest(null); }}>
+          <div className="bg-surface w-full max-w-4xl rounded-2xl shadow-xl border border-border-color flex flex-col max-h-[90vh]">
+            {/* Progress Header */}
+            <div className="p-5 border-b border-border-color bg-gray-50/50 dark:bg-gray-800/50 rounded-t-2xl">
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-lg font-bold">{req.itemName}</h3>
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-medium border ${getStageBadgeColor(req.pipelineStage)}`}>
+                      {formatStageName(req.pipelineStage)}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] ${getUrgencyColor(req.urgency)}`}>
+                      {req.urgency}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-gray-500">
+                    <span>Requested by <strong>{req.requestedByName}</strong></span>
+                    <span>•</span>
+                    <span className="capitalize">{req.requestingDepartment.replace('_', ' ')}</span>
+                    <span>•</span>
+                    <span>Stage {currentIdx + 1} of {STAGES.length} — {progressPct}% Complete</span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="mt-3 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-600 rounded-full transition-all duration-500" style={{ width: `${progressPct}%` }} />
+                  </div>
+                </div>
+                <button onClick={() => setSelectedPipelineRequest(null)} className="text-gray-400 hover:text-gray-600 p-1 ml-4">✕</button>
               </div>
-              <button 
-                onClick={() => setSelectedPipelineRequest(null)}
-                className="text-gray-400 hover:text-gray-600 p-1"
-              >
-                ✕
-              </button>
             </div>
+
+            {/* Tab Navigation */}
+            <div className="flex border-b border-border-color text-xs">
+              {([
+                { key: 'map', label: 'Pipeline Map' },
+                { key: 'specs', label: 'Item & Specs' },
+                { key: 'quotes', label: `Quotations (${req.quotations?.length || 0})` },
+                { key: 'funds', label: 'Funds & Payment' },
+                { key: 'audit', label: `Audit Trail (${req.events?.length || 0})` },
+              ] as { key: typeof pipelineTab; label: string }[]).map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setPipelineTab(tab.key)}
+                  className={`px-4 py-3 font-medium transition-colors border-b-2 ${
+                    pipelineTab === tab.key 
+                      ? 'border-blue-600 text-blue-600' 
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab Content */}
             <div className="p-6 overflow-y-auto flex-1">
-              <div className="space-y-0">
-                {STAGES.map((stage, idx) => {
-                  const isCurrent = selectedPipelineRequest.pipelineStage === stage;
-                  const currentIdx = STAGES.indexOf(selectedPipelineRequest.pipelineStage);
-                  const isPast = idx < currentIdx;
-                  const event = selectedPipelineRequest.events?.find(e => e.stage === stage);
-                  
-                  return (
-                    <div key={stage} className="flex gap-4 relative">
-                      {idx !== STAGES.length - 1 && (
-                        <div className={`absolute left-[15px] top-6 bottom-[-10px] w-0.5 ${
-                          isPast ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                        }`} />
-                      )}
-                      
-                      <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 ${
-                        isPast ? 'bg-blue-600 text-white' :
-                        isCurrent ? 'bg-blue-100 text-blue-600 border-2 border-blue-600' :
-                        'bg-gray-100 text-gray-400 border-2 border-gray-200 dark:bg-gray-800 dark:border-gray-700'
-                      }`}>
-                        {isPast ? <CheckCircle className="w-4 h-4" /> : <div className="w-2 h-2 rounded-full bg-current" />}
-                      </div>
-                      
-                      <div className={`pb-6 flex-1 ${
-                        !isPast && !isCurrent ? 'opacity-50' : ''
-                      }`}>
-                        <div className={`p-3 rounded-xl text-xs border ${
-                          isCurrent ? 'border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-900/10 shadow-sm' :
-                          'border-transparent'
+              {/* Pipeline Map Tab */}
+              {pipelineTab === 'map' && (
+                <div className="space-y-0">
+                  {STAGES.map((stage, idx) => {
+                    const isCurrent = req.pipelineStage === stage;
+                    const isPast = idx < currentIdx;
+                    const event = req.events?.find(e => e.stage === stage);
+
+                    return (
+                      <div key={stage} className="flex gap-4 relative">
+                        {idx !== STAGES.length - 1 && (
+                          <div className={`absolute left-[15px] top-6 bottom-[-10px] w-0.5 ${
+                            isPast ? 'bg-emerald-500' : isCurrent ? 'bg-blue-400' : 'bg-gray-200 dark:bg-gray-700'
+                          }`} style={!isPast && !isCurrent ? { borderLeft: '2px dashed', width: 0 } : {}} />
+                        )}
+
+                        <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 ${
+                          isPast ? 'bg-emerald-500 text-white' :
+                          isCurrent ? 'bg-blue-100 text-blue-600 border-2 border-blue-600 animate-pulse' :
+                          'bg-gray-100 text-gray-400 border-2 border-gray-200 dark:bg-gray-800 dark:border-gray-700'
                         }`}>
-                          <div className="font-medium capitalize text-sm mb-1">{formatStageName(stage)}</div>
-                          {event ? (
-                            <div className="space-y-1">
-                              <p className="text-gray-600 dark:text-gray-300">{event.action}</p>
-                              <div className="flex justify-between items-center text-[10px] text-gray-500">
-                                <span>By {event.actorName}</span>
-                                <span>{new Date(event.createdAt).toLocaleString()}</span>
+                          {isPast ? <CheckCircle className="w-4 h-4" /> : <div className="w-2 h-2 rounded-full bg-current" />}
+                        </div>
+
+                        <div className={`pb-6 flex-1 ${!isPast && !isCurrent ? 'opacity-40' : ''}`}>
+                          <div className={`p-3 rounded-xl text-xs border ${
+                            isCurrent ? 'border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-900/10 shadow-sm' :
+                            isPast ? 'border-emerald-100 dark:border-emerald-900/30' :
+                            'border-transparent'
+                          }`}>
+                            <div className="font-medium capitalize text-sm mb-1">{formatStageName(stage)}</div>
+                            {event ? (
+                              <div className="space-y-1">
+                                <p className="text-gray-600 dark:text-gray-300">{event.action}</p>
+                                <div className="flex justify-between items-center text-[10px] text-gray-500">
+                                  <span>By {event.actorName}</span>
+                                  <span>{new Date(event.createdAt).toLocaleString()}</span>
+                                </div>
                               </div>
-                            </div>
-                          ) : isCurrent ? (
-                            <p className="text-blue-600 font-medium">Currently pending...</p>
-                          ) : (
-                            <p className="text-gray-400 border-t border-dashed border-gray-200 dark:border-gray-700 pt-1 mt-1">Pending</p>
-                          )}
+                            ) : isCurrent ? (
+                              <p className="text-blue-600 font-medium">⏳ Currently pending action...</p>
+                            ) : (
+                              <p className="text-gray-400 border-t border-dashed border-gray-200 dark:border-gray-700 pt-1 mt-1">Pending</p>
+                            )}
+                          </div>
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Item & Specs Tab */}
+              {pipelineTab === 'specs' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Item Name</div>
+                      <div className="text-sm font-medium">{req.itemName}</div>
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Quantity & Unit</div>
+                      <div className="text-sm font-medium">{req.quantity} {req.unit}</div>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Urgency</div>
+                      <div className="text-sm font-medium capitalize">{req.urgency}</div>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Pipeline Type</div>
+                      <div className="text-sm font-medium capitalize">{req.pipelineType}</div>
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                    <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Full Specifications</div>
+                    <div className="text-sm whitespace-pre-wrap">{req.itemSpecifications || 'No specifications provided.'}</div>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                    <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Business Justification</div>
+                    <div className="text-sm whitespace-pre-wrap">{req.justification || 'No justification provided.'}</div>
+                  </div>
+                  {req.notes && (
+                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Additional Notes</div>
+                      <div className="text-sm whitespace-pre-wrap">{req.notes}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Quotations Tab */}
+              {pipelineTab === 'quotes' && (
+                <div className="space-y-3">
+                  {req.quotations && req.quotations.length > 0 ? (
+                    req.quotations.map((q, qi) => (
+                      <div key={q.id || qi} className={`rounded-xl border p-4 ${q.isSelected ? 'border-emerald-300 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-900/10' : 'border-border-color'}`}>
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <div className="font-medium text-sm">{q.supplierName}</div>
+                            {q.supplierContact && <div className="text-xs text-gray-500">{q.supplierContact}</div>}
+                          </div>
+                          <div className="text-right">
+                            <div className="font-bold text-sm">{q.currency} {q.amount.toLocaleString()}</div>
+                            {q.isSelected && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Selected</span>}
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] text-gray-500">
+                          <span>Uploaded by {q.uploadedByName || 'Unknown'}</span>
+                          <span>{new Date(q.createdAt).toLocaleString()}</span>
+                        </div>
+                        {q.fileUrl && (
+                          <a href={q.fileUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                            <FileText className="w-3 h-3" /> View Document
+                          </a>
+                        )}
+                        {q.notes && <p className="text-xs text-gray-500 mt-1">{q.notes}</p>}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-gray-500 text-sm">No quotations gathered yet.</div>
+                  )}
+                </div>
+              )}
+
+              {/* Funds & Payment Tab */}
+              {pipelineTab === 'funds' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Payment Method</div>
+                      <div className="text-sm font-medium capitalize">{req.paymentMethod || 'Not specified'}</div>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Total Approved Amount</div>
+                      <div className="text-sm font-bold">
+                        {req.totalApprovedAmount ? `ZAR ${req.totalApprovedAmount.toLocaleString()}` : 'Pending approval'}
+                      </div>
+                    </div>
+                  </div>
+                  {req.bankDetails && (
+                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Bank Details</div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {req.bankDetails.bankName && <div><span className="text-gray-500">Bank:</span> {req.bankDetails.bankName}</div>}
+                        {req.bankDetails.accountName && <div><span className="text-gray-500">Account:</span> {req.bankDetails.accountName}</div>}
+                        {req.bankDetails.accountNumber && <div><span className="text-gray-500">Acc No:</span> {req.bankDetails.accountNumber}</div>}
+                        {req.bankDetails.branchCode && <div><span className="text-gray-500">Branch:</span> {req.bankDetails.branchCode}</div>}
+                        {req.bankDetails.reference && <div className="col-span-2"><span className="text-gray-500">Reference:</span> {req.bankDetails.reference}</div>}
+                      </div>
+                    </div>
+                  )}
+                  {!req.paymentMethod && !req.bankDetails && !req.totalApprovedAmount && (
+                    <div className="text-center py-8 text-gray-500 text-sm">Funds and payment details will appear here once the request reaches the accounting stage.</div>
+                  )}
+                </div>
+              )}
+
+              {/* Audit Trail Tab */}
+              {pipelineTab === 'audit' && (
+                <div className="space-y-2">
+                  {req.events && req.events.length > 0 ? (
+                    [...req.events].reverse().map((ev, ei) => (
+                      <div key={ev.id || ei} className="flex gap-3 items-start p-3 rounded-xl border border-border-color hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                        <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium">{ev.action}</div>
+                          <div className="flex items-center gap-2 text-[10px] text-gray-500 mt-0.5">
+                            <span className="font-medium">{ev.actorName}</span>
+                            <span>•</span>
+                            <span className="capitalize">{formatStageName(ev.stage)}</span>
+                            <span>•</span>
+                            <span>{new Date(ev.createdAt).toLocaleString()}</span>
+                          </div>
+                          {ev.notes && <p className="text-xs text-gray-500 mt-1">{ev.notes}</p>}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-gray-500 text-sm">No audit events recorded yet.</div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Generate Quote Request Modal */}
       {selectedQuoteRequest && (

@@ -9,7 +9,7 @@ import {
   Truck, SearchCheck, CalendarClock, Package, FileSignature, Settings,
   History, Landmark, BedDouble, KeyRound, Briefcase, Layers, ChevronDown,
   Building, Inbox, Globe, UserCog, ChevronLeft, ChevronRight, Menu,
-  ShieldCheck, Check, X, Network, Server,
+  ShieldCheck, Check, X, Network, Server, BarChart3,
   type LucideIcon,
 } from "lucide-react";
 import type { DepartmentType } from "@/lib/types";
@@ -32,6 +32,7 @@ const allNavSections: NavSection[] = [
     title: "Hospitality & Core",
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+      { label: "Statistics", href: "/statistics", icon: BarChart3, departments: ["admin","manager","it","accountant","audit"] },
       { label: "Front Desk & Bookings", href: "/commercial-bookings", icon: KeyRound, departments: ["admin","front_desk","manager","audit"] },
       { label: "Rooms & Pricing", href: "/room-management", icon: BedDouble, departments: ["admin","front_desk","manager","maintenance"] },
       { label: "Properties & Lodges", href: "/properties", icon: Building2, departments: ["admin","manager","front_desk","maintenance"] },

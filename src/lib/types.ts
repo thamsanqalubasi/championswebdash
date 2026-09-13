@@ -508,6 +508,10 @@ export type InventoryItemRow = {
   unitCost: number;
   supplier: string;
   location: string;
+  photoUrl?: string;
+  photos?: string[];
+  receiptUrl?: string;
+  receipts?: string[];
 };
 
 export type MaintenanceOverviewData = {
@@ -695,6 +699,10 @@ export type StoresItem = {
   maintenanceInventoryId?: string;
   lastRestocked?: string;
   notes?: string;
+  photoUrl?: string;
+  photos?: string[];
+  receiptUrl?: string;
+  receipts?: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -714,6 +722,8 @@ export type StoresTransaction = {
   releasedToName?: string;
   notes?: string;
   performedByName?: string;
+  photoUrl?: string;
+  receiptUrl?: string;
   transactionDate: string;
   createdAt: string;
 };

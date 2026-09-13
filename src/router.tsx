@@ -40,6 +40,7 @@ import ProcurementPage from "@/pages/procurement";
 import StoresPage from "@/pages/stores";
 import OrganogramPage from "@/pages/organogram";
 import ITPage from "@/pages/it";
+import StatisticsPage from "@/pages/statistics";
 
 function CompanySlugRedirect() {
   const { companySlug } = useParams<{ companySlug: string }>();
@@ -94,6 +95,7 @@ export function AppRouter() {
 
       <Route element={<ProtectedLayout />}>
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/statistics" element={<StatisticsPage />} />
         <Route path="/commercial-bookings" element={<CommercialBookingsPage />} />
         <Route path="/room-management" element={<RoomManagementPage />} />
         <Route path="/rent-collection" element={<RentCollectionPage />} />

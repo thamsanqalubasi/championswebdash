@@ -217,6 +217,21 @@ export async function uploadFileToBucket(
   return signedData.signedUrl;
 }
 
+/**
+ * Upload a picture or receipt file for inventory/stores items.
+ * Uses the 'inventory-files' bucket (auto-created if needed).
+ * Returns the public URL of the uploaded file.
+ */
+export async function uploadInventoryMedia(
+  folder: string,
+  file: File,
+  type: "picture" | "receipt" = "picture",
+): Promise<string> {
+  const bucket = "inventory-files";
+  const subfolder = `${folder}/${type}s`;
+  return uploadFileToBucket(bucket, subfolder, file);
+}
+
 
 /**
  * Save an HTML document string to a database column.

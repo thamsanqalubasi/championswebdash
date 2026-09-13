@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
 import type { InventoryItemRow } from "@/lib/types";
+import { uploadInventoryMedia } from "@/lib/storage";
 
 import { 
   Plus, 
@@ -24,7 +25,10 @@ import {
   Truck,
   ChevronRight,
   RefreshCw,
-  Tag
+  Tag,
+  Upload,
+  Image,
+  FileText
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 
@@ -67,6 +71,11 @@ export default function InventoryPage() {
   const [deleting, setDeleting] = useState(false);
   const [restockTarget, setRestockTarget] = useState<InventoryItemRow | null>(null);
   const [restockQty, setRestockQty] = useState(0);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string>('');
+  const [receiptPreview, setReceiptPreview] = useState<string>('');
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -103,16 +112,35 @@ export default function InventoryPage() {
     return result;
   }, [items, activeFilter, searchQuery]);
 
-  const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
+  const openAdd = () => { setEditingId(null); setForm(emptyForm); setPhotoFile(null); setReceiptFile(null); setPhotoPreview(''); setReceiptPreview(''); setModalOpen(true); };
   const openEdit = (row: InventoryItemRow) => {
     setEditingId(row.id);
     setForm({ name: row.name, category: row.category, quantity: row.quantity, unit: row.unit, min_stock_level: row.minStockLevel, unit_cost: row.unitCost, supplier: row.supplier, location: row.location });
+    setPhotoFile(null);
+    setReceiptFile(null);
+    setPhotoPreview(row.photoUrl || '');
+    setReceiptPreview(row.receiptUrl || '');
     setModalOpen(true);
   };
 
   const onSave = async () => {
     setSaving(true);
+    setUploading(true);
     try {
+      let uploadedPhotoUrl = photoPreview && !photoFile ? photoPreview : undefined;
+      let uploadedReceiptUrl = receiptPreview && !receiptFile ? receiptPreview : undefined;
+
+      try {
+        if (photoFile) uploadedPhotoUrl = await uploadInventoryMedia('inventory', photoFile, 'picture');
+      } catch (err) {
+        console.error("Failed to upload photo", err);
+      }
+      try {
+        if (receiptFile) uploadedReceiptUrl = await uploadInventoryMedia('inventory', receiptFile, 'receipt');
+      } catch (err) {
+        console.error("Failed to upload receipt", err);
+      }
+
       const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
       const payload: Record<string, unknown> = {
         name: form.name.trim(),
@@ -125,6 +153,10 @@ export default function InventoryPage() {
         location: form.location,
         company_id: compId,
       };
+
+      if (uploadedPhotoUrl !== undefined) payload.photo_url = uploadedPhotoUrl;
+      if (uploadedReceiptUrl !== undefined) payload.receipt_url = uploadedReceiptUrl;
+
       if (editingId) {
         const { error: err } = await supabase.from("maintenance_inventory").update(payload).eq("id", editingId);
         if (err) throw err;
@@ -134,7 +166,7 @@ export default function InventoryPage() {
       }
       setModalOpen(false); reload();
     } catch (e) { alert(e instanceof Error ? e.message : "Save failed"); }
-    finally { setSaving(false); }
+    finally { setSaving(false); setUploading(false); }
   };
 
   const onDelete = async () => {
@@ -150,10 +182,25 @@ export default function InventoryPage() {
 
   const onRestock = async () => {
     if (!restockTarget || restockQty <= 0) return;
-    const newQty = restockTarget.quantity + restockQty;
-    const { error: err } = await supabase.from("maintenance_inventory").update({ quantity: newQty }).eq("id", restockTarget.id);
-    if (err) { alert(err.message); return; }
-    setRestockTarget(null); setRestockQty(0); reload();
+    setUploading(true);
+    try {
+      let uploadedReceiptUrl = undefined;
+      try {
+        if (receiptFile) uploadedReceiptUrl = await uploadInventoryMedia('inventory', receiptFile, 'receipt');
+      } catch (err) {
+        console.error("Failed to upload receipt", err);
+      }
+      
+      const newQty = restockTarget.quantity + restockQty;
+      const payload: Record<string, unknown> = { quantity: newQty };
+      if (uploadedReceiptUrl) payload.receipt_url = uploadedReceiptUrl;
+      
+      const { error: err } = await supabase.from("maintenance_inventory").update(payload).eq("id", restockTarget.id);
+      if (err) { alert(err.message); return; }
+      setRestockTarget(null); setRestockQty(0); setReceiptFile(null); setReceiptPreview(''); reload();
+    } finally {
+      setUploading(false);
+    }
   };
 
   const exportCsv = () => {
@@ -272,11 +319,22 @@ export default function InventoryPage() {
                         >
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted/5 group-hover:bg-foreground group-hover:text-surface transition-all">
-                                <Package size={20} className="text-muted/60 group-hover:text-current" />
+                              <div className="flex h-10 w-10 shrink-0 overflow-hidden items-center justify-center rounded-lg bg-muted/5 group-hover:bg-foreground group-hover:text-surface transition-all">
+                                {row.photoUrl ? (
+                                  <img src={row.photoUrl} alt="" className="h-full w-full object-cover" />
+                                ) : (
+                                  <Package size={20} className="text-muted/60 group-hover:text-current" />
+                                )}
                               </div>
                               <div className="min-w-0">
-                                <p className="font-bold tracking-tight text-foreground truncate">{row.name}</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="font-bold tracking-tight text-foreground truncate">{row.name}</p>
+                                  {row.receiptUrl && (
+                                    <a href={row.receiptUrl} target="_blank" rel="noreferrer" className="text-blue-500 hover:text-blue-700" onClick={(e) => e.stopPropagation()}>
+                                      <FileText size={14} />
+                                    </a>
+                                  )}
+                                </div>
                                 <p className="text-xs text-muted">Min Level: {row.minStockLevel} {row.unit}</p>
                               </div>
                             </div>
@@ -362,20 +420,94 @@ export default function InventoryPage() {
             <div><label className="mb-1 block text-sm text-muted">Supplier</label><input value={form.supplier} onChange={(e) => setForm({ ...form, supplier: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
             <div><label className="mb-1 block text-sm text-muted">Location</label><input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           </div>
+          
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-sm text-muted">Item Photo</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                      setPhotoFile(f);
+                      setPhotoPreview(URL.createObjectURL(f));
+                    }
+                  }}
+                  className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                />
+                {photoPreview && (
+                  <img src={photoPreview} alt="Preview" className="h-9 w-9 rounded-md object-cover border border-border-color shrink-0" />
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm text-muted">Receipt / Invoice</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                      setReceiptFile(f);
+                      if (f.type.startsWith('image/')) {
+                        setReceiptPreview(URL.createObjectURL(f));
+                      } else {
+                        setReceiptPreview('');
+                      }
+                    }
+                  }}
+                  className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                />
+                {receiptPreview && (
+                  <img src={receiptPreview} alt="Receipt" className="h-9 w-9 rounded-md object-cover border border-border-color shrink-0" />
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setModalOpen(false)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
-            <button type="button" onClick={onSave} disabled={saving} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
+            <button type="button" onClick={onSave} disabled={saving || uploading} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{(saving || uploading) ? "Saving..." : "Save"}</button>
           </div>
         </div>
       </Modal>
 
-      <Modal open={!!restockTarget} onClose={() => setRestockTarget(null)} title={`Restock: ${restockTarget?.name ?? ""}`}>
+      <Modal open={!!restockTarget} onClose={() => { setRestockTarget(null); setReceiptFile(null); setReceiptPreview(''); }} title={`Restock: ${restockTarget?.name ?? ""}`}>
         <div className="space-y-3">
           <p className="text-sm text-muted">Current quantity: <span className="font-medium">{restockTarget?.quantity}</span></p>
           <div><label className="mb-1 block text-sm text-muted">Add Quantity</label><input type="number" min={1} value={restockQty} onChange={(e) => setRestockQty(Number(e.target.value))} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+          
+          <div>
+            <label className="mb-1 block text-sm text-muted">Receipt / Invoice (Optional)</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="file"
+                accept="image/*,.pdf"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) {
+                    setReceiptFile(f);
+                    if (f.type.startsWith('image/')) {
+                      setReceiptPreview(URL.createObjectURL(f));
+                    } else {
+                      setReceiptPreview('');
+                    }
+                  }
+                }}
+                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+              {receiptPreview && (
+                <img src={receiptPreview} alt="Receipt" className="h-9 w-9 rounded-md object-cover border border-border-color shrink-0" />
+              )}
+            </div>
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setRestockTarget(null)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
-            <button type="button" onClick={onRestock} disabled={restockQty <= 0} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">Add Stock</button>
+            <button type="button" onClick={() => { setRestockTarget(null); setReceiptFile(null); setReceiptPreview(''); }} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
+            <button type="button" onClick={onRestock} disabled={restockQty <= 0 || uploading} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{uploading ? "Saving..." : "Add Stock"}</button>
           </div>
         </div>
       </Modal>

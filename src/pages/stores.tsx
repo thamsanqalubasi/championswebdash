@@ -14,8 +14,12 @@ import {
   X,
   RefreshCw,
   ClipboardList,
-  ExternalLink
+  ExternalLink,
+  Upload,
+  Image as ImageIcon,
+  FileText
 } from "lucide-react";
+import { uploadInventoryMedia } from '@/lib/storage';
 import type { 
   StoresItem, 
   StoresTransaction, 
@@ -29,7 +33,7 @@ import {
   receiveStoresItem,
   releaseStoresItem,
   updateStoresInventoryItem,
-  createStoresInventoryItem
+  addStoresInventoryItem
 } from "@/lib/data";
 
 // MOCK DATA
@@ -291,67 +295,100 @@ export default function StoresInventoryPage() {
   const [recFrom, setRecFrom] = useState("");
   const [recNotes, setRecNotes] = useState("");
   const [recDate, setRecDate] = useState(new Date().toISOString().slice(0, 10));
+  
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState<string>('');
+  const [receiptPreview, setReceiptPreview] = useState<string>('');
 
   const handleReceive = async (e: React.FormEvent) => {
     e.preventDefault();
     const qty = parseInt(recQty, 10);
     if (isNaN(qty) || qty <= 0) return;
 
-    let targetId = recItemId;
-    let targetName = "";
-
-    if (recItemId === "new") {
-      targetId = `store-${Date.now()}`;
-      targetName = recNewName;
-      try {
-        const created = await createStoresInventoryItem({
-          companyId,
-          name: recNewName,
-          category: "General",
-          quantity: qty,
-          unit: "pcs",
-          minStockLevel: 5,
-          unitCost: 0,
-          supplier: recSupplier,
-          location: "Central Stores",
-          source: "stores",
-          notes: recNotes,
-        });
-        targetId = created.id;
-        setInventory(prev => [...prev, created]);
-      } catch (err) {
-        console.warn("Could not create stores item", err);
-      }
-    } else {
-      const existing = inventory.find(i => i.id === recItemId);
-      if (existing) {
-        targetName = existing.name;
-        setInventory(inventory.map(i => i.id === recItemId ? { ...i, quantity: i.quantity + qty } : i));
-      }
-    }
-
+    setUploading(true);
     try {
-      const txn = await receiveStoresItem({
-        companyId,
-        inventoryId: targetId,
-        quantity: qty,
-        receivedFrom: recFrom || recSupplier,
-        notes: recNotes,
-        performedByName: userDisplayName,
-        transactionDate: recDate,
-      });
-      setTransactions(prev => [txn, ...prev]);
-    } catch (err) {
-      console.warn("Could not save receive transaction", err);
+      let uploadedPhotoUrl = photoPreview && !photoFile ? photoPreview : undefined;
+      let uploadedReceiptUrl = receiptPreview && !receiptFile ? receiptPreview : undefined;
+      
+      try {
+        if (photoFile) uploadedPhotoUrl = await uploadInventoryMedia('stores', photoFile, 'picture');
+      } catch (err) {
+        console.error("Failed to upload photo", err);
+      }
+      try {
+        if (receiptFile) uploadedReceiptUrl = await uploadInventoryMedia('stores', receiptFile, 'receipt');
+      } catch (err) {
+        console.error("Failed to upload receipt", err);
+      }
+
+      let targetId = recItemId;
+      let targetName = "";
+
+      if (recItemId === "new") {
+        targetId = `store-${Date.now()}`;
+        targetName = recNewName;
+        try {
+          const created = await addStoresInventoryItem({
+            companyId,
+            name: recNewName,
+            category: "General",
+            quantity: qty,
+            unit: "pcs",
+            minStockLevel: 5,
+            unitCost: 0,
+            supplier: recSupplier,
+            location: "Central Stores",
+            source: "stores",
+            notes: recNotes,
+            photoUrl: uploadedPhotoUrl,
+            receiptUrl: uploadedReceiptUrl,
+          });
+          targetId = created.id;
+          setInventory(prev => [...prev, created]);
+        } catch (err) {
+          console.warn("Could not create stores item", err);
+        }
+      } else {
+        const existing = inventory.find(i => i.id === recItemId);
+        if (existing) {
+          targetName = existing.name;
+          setInventory(inventory.map(i => i.id === recItemId ? { ...i, quantity: i.quantity + qty } : i));
+        }
+      }
+
+      try {
+        const txn = await receiveStoresItem({
+          companyId,
+          inventoryId: targetId,
+          quantity: qty,
+          receivedFrom: recFrom || recSupplier,
+          notes: recNotes,
+          performedByName: userDisplayName,
+          transactionDate: recDate,
+          photo_url: uploadedPhotoUrl,
+          receipt_url: uploadedReceiptUrl,
+        } as any);
+        setTransactions(prev => [txn, ...prev]);
+      } catch (err) {
+        console.warn("Could not save receive transaction", err);
+      }
+      
+      // reset
+      setRecItemId("");
+      setRecNewName("");
+      setRecQty("");
+      setRecSupplier("");
+      setRecFrom("");
+      setRecNotes("");
+      setPhotoFile(null);
+      setReceiptFile(null);
+      setPhotoPreview('');
+      setReceiptPreview('');
+    } finally {
+      setUploading(false);
     }
-    
-    // reset
-    setRecItemId("");
-    setRecNewName("");
-    setRecQty("");
-    setRecSupplier("");
-    setRecFrom("");
-    setRecNotes("");
   };
 
   const recentReceives = useMemo(() => {
@@ -727,9 +764,56 @@ export default function StoresInventoryPage() {
                 />
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Delivery Photo</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) {
+                          setPhotoFile(f);
+                          setPhotoPreview(URL.createObjectURL(f));
+                        }
+                      }}
+                      className="w-full rounded-md border border-border-color bg-background px-3 py-2 text-sm outline-none file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    />
+                    {photoPreview && (
+                      <img src={photoPreview} alt="Preview" className="h-9 w-9 rounded-md object-cover border border-border-color shrink-0" />
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Receipt / Invoice</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) {
+                          setReceiptFile(f);
+                          if (f.type.startsWith('image/')) {
+                            setReceiptPreview(URL.createObjectURL(f));
+                          } else {
+                            setReceiptPreview('');
+                          }
+                        }
+                      }}
+                      className="w-full rounded-md border border-border-color bg-background px-3 py-2 text-sm outline-none file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    />
+                    {receiptPreview && (
+                      <img src={receiptPreview} alt="Receipt" className="h-9 w-9 rounded-md object-cover border border-border-color shrink-0" />
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="pt-2">
-                <button type="submit" className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-xl hover:bg-emerald-700 transition-colors">
-                  Record Receipt
+                <button type="submit" disabled={uploading} className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-50">
+                  {uploading ? "Uploading & Recording..." : "Record Receipt"}
                 </button>
               </div>
             </form>
@@ -754,7 +838,19 @@ export default function StoresInventoryPage() {
                 {recentReceives.map(txn => (
                   <tr key={txn.id} className="hover:bg-muted/20">
                     <td className="px-4 py-2 whitespace-nowrap">{txn.transactionDate}</td>
-                    <td className="px-4 py-2 font-medium">{txn.inventoryName}</td>
+                    <td className="px-4 py-2 font-medium">
+                      <div className="flex items-center gap-2">
+                        {txn.photoUrl && (
+                          <img src={txn.photoUrl} alt="Photo" className="h-6 w-6 rounded-md object-cover border border-border-color" />
+                        )}
+                        <span>{txn.inventoryName}</span>
+                        {txn.receiptUrl && (
+                          <a href={txn.receiptUrl} target="_blank" rel="noreferrer" className="text-blue-500 hover:text-blue-700 ml-1">
+                            <FileText size={14} />
+                          </a>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-2 text-emerald-600 font-medium">+{txn.quantity}</td>
                     <td className="px-4 py-2 text-muted-foreground">{txn.receivedFrom || "-"}</td>
                     <td className="px-4 py-2 text-muted-foreground truncate max-w-[200px]">{txn.notes || "-"}</td>
@@ -946,7 +1042,19 @@ export default function StoresInventoryPage() {
                   filteredTxns.map(txn => (
                     <tr key={txn.id} className="hover:bg-muted/20 transition-colors">
                       <td className="px-4 py-3 whitespace-nowrap">{txn.transactionDate}</td>
-                      <td className="px-4 py-3 font-medium">{txn.inventoryName}</td>
+                      <td className="px-4 py-3 font-medium">
+                        <div className="flex items-center gap-2">
+                          {txn.photoUrl && (
+                            <img src={txn.photoUrl} alt="Photo" className="h-6 w-6 rounded-md object-cover border border-border-color" />
+                          )}
+                          <span>{txn.inventoryName}</span>
+                          {txn.receiptUrl && (
+                            <a href={txn.receiptUrl} target="_blank" rel="noreferrer" className="text-blue-500 hover:text-blue-700 ml-1">
+                              <FileText size={14} />
+                            </a>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-1 rounded text-[10px] uppercase font-semibold ${
                           txn.transactionType === "receive" ? "bg-emerald-500/10 text-emerald-600" : "bg-red-500/10 text-red-600"
