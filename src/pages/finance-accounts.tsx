@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { ErrorState, LoadingState } from "@/components/data-state";
 import { supabase } from "@/lib/supabase";
@@ -708,7 +708,7 @@ export default function FinanceAccountsPage() {
       fileNameBase: `balance-sheet-${cleanScope}-${startDate}-to-${endDate}`,
       ownerName: "Property Owner / Stakeholder",
       ownerEmail: "",
-      defaultSubject: `Balance Sheet: ${scopeLabel} (${startDate} to ${endDate}) - ${companyInfo?.companyName || currentCompany?.name || "Champions Court"}`,
+      defaultSubject: `Balance Sheet: ${scopeLabel} (${startDate} to ${endDate}) - ${companyInfo?.companyName || currentCompany?.name || "Paimbabook"}`,
       defaultMessage: `Please find attached the official financial balance sheet statement for ${scopeLabel} covering the period ${startDate} to ${endDate}.`,
     });
   };

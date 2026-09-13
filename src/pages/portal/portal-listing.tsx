@@ -145,8 +145,8 @@ export default function PortalListingPage() {
       };
 
       try {
-        const stored = JSON.parse(localStorage.getItem("pambabook_enquiries") || "[]");
-        localStorage.setItem("pambabook_enquiries", JSON.stringify([localEnquiry, ...stored]));
+        const stored = JSON.parse(localStorage.getItem("paimbabook_enquiries") || localStorage.getItem("pambabook_enquiries") || "[]");
+        localStorage.setItem("paimbabook_enquiries", JSON.stringify([localEnquiry, ...stored]));
       } catch {}
 
       const { error: insertError } = await supabase.from("enquiries").insert(payload);

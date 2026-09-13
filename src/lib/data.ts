@@ -135,11 +135,11 @@ export async function ensureDbUser(email: string, fullName?: string): Promise<st
 export const MOCK_COMPANIES: Company[] = [
   {
     id: "a0000000-0000-0000-0000-000000000001",
-    name: "Champions Court Hospitality & Properties",
-    slug: "champions-court",
+    name: "Paimbabook Properties & Hospitality",
+    slug: "paimbabook",
     address: "124 Main Boulevard, Johannesburg, South Africa",
     phone: "+27 11 987 6543",
-    email: "admin@championscourt.co.za",
+    email: "admin@paimbabook.com",
     taxRate: 15.0,
     currency: "ZAR",
     defaultDueDay: 1,

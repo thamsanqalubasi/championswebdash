@@ -9,7 +9,7 @@ export default function PortalLayout() {
           <div className="flex h-16 items-center justify-between">
             <Link to="/portal" className="flex items-center gap-2 font-black text-xl text-blue-700 tracking-tight">
               <Building2 size={24} className="text-blue-600" />
-              <span>Pambabook</span>
+              <span>Paimbabook</span>
             </Link>
             <div className="flex items-center gap-2 sm:gap-4">
               <Link to="/portal" className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-blue-700 transition">
@@ -32,8 +32,8 @@ export default function PortalLayout() {
         <Outlet />
       </main>
       <footer className="border-t border-gray-200 bg-gray-50 py-8 text-center text-sm text-gray-500">
-        <p className="font-semibold text-gray-700">&copy; {new Date().getFullYear()} Pambabook. All rights reserved.</p>
-        <p className="mt-1 text-xs text-gray-400">Pambabook Hospitality & Property Management Platform</p>
+        <p className="font-semibold text-gray-700">&copy; {new Date().getFullYear()} Paimbabook. All rights reserved.</p>
+        <p className="mt-1 text-xs text-gray-400">Paimbabook Hospitality & Property Management Platform</p>
       </footer>
     </div>
   );

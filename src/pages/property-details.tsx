@@ -663,8 +663,8 @@ export default function PropertyDetailsPage() {
         fileNameBase: `invoice-${invoice.tenantName.replace(/\s+/g, "_")}-${invoice.month}`,
         ownerName: invoice.tenantName,
         ownerEmail: tenant?.email || "",
-        defaultSubject: `Invoice ${invoice.month} - ${property?.name ?? currentCompany?.name ?? "Champions Court"}`,
-        defaultMessage: `Dear ${invoice.tenantName},\n\nPlease find your rental invoice for ${invoice.month} attached. The total amount due is ${formatCurrency(invoice.amount)}.`,
+        defaultSubject: `Invoice ${invoice.month} - ${property?.name ?? currentCompany?.name ?? "Paimbabook"}`,
+        defaultMessage: `Dear ${invoice.tenantName},\n\nPlease find your official rental invoice for ${invoice.month} in the amount of ${formatCurrency(invoice.amount)} attached as a PDF document.`,
       });
     } catch (e) {
       alert(e instanceof Error ? e.message : "Could not prepare invoice for sharing.");

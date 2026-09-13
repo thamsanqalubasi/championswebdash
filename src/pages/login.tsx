@@ -74,7 +74,7 @@ export default function LoginPage() {
     }
   };
 
-  const portalName = company ? company.name : "Pambabook";
+  const portalName = company ? company.name : "Paimbabook";
   const portalSubtitle = company
     ? "Dedicated Staff & Operations Portal"
     : "Smart Hospitality & Property Management Platform";

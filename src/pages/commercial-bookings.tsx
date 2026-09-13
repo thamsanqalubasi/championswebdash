@@ -515,7 +515,7 @@ export default function CommercialBookingsPage() {
               <button
                 type="button"
                 onClick={() => {
-                  const html = buildFolioHtml(folioBooking, currentCompany?.name || "Champions Court");
+                  const html = buildFolioHtml(folioBooking, currentCompany?.name || "Paimbabook");
                   downloadPdfDocument(html, `folio-${folioBooking.bookingCode}`);
                 }}
                 className="rounded-xl border border-border-color px-4 py-2 text-xs font-bold text-foreground hover:bg-surface-elevated transition-all"
@@ -525,7 +525,7 @@ export default function CommercialBookingsPage() {
               <button
                 type="button"
                 onClick={() => {
-                  const html = buildFolioHtml(folioBooking, currentCompany?.name || "Champions Court");
+                  const html = buildFolioHtml(folioBooking, currentCompany?.name || "Paimbabook");
                   setShareModalDoc({
                     isOpen: true,
                     documentTitle: `Guest Folio & Receipt - #${folioBooking.bookingCode} (${folioBooking.guestName})`,
@@ -534,7 +534,7 @@ export default function CommercialBookingsPage() {
                     fileNameBase: `receipt-${folioBooking.bookingCode}-${folioBooking.guestName.replace(/\s+/g, "_")}`,
                     ownerName: folioBooking.guestName,
                     ownerEmail: folioBooking.guestEmail || "",
-                    defaultSubject: `Folio Receipt #${folioBooking.bookingCode} - ${currentCompany?.name || "Champions Court"}`,
+                    defaultSubject: `Folio Receipt #${folioBooking.bookingCode} - ${currentCompany?.name || "Paimbabook"}`,
                     defaultMessage: `Dear ${folioBooking.guestName},\n\nPlease find attached your official guest folio and payment receipt for your stay in Room ${folioBooking.roomNumber}.`,
                   });
                 }}

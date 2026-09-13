@@ -204,7 +204,7 @@ async function sendWithMailgun(params: {
  *
  * Env vars required:
  * - RESEND_API_KEY
- * - EMAIL_FROM (e.g. "Champions Court <noreply@yourdomain.com>")
+ * - EMAIL_FROM (e.g. "Paimbabook <noreply@paimbabook.com>")
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -221,7 +221,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const configuredMethod = String(settings?.method || process.env.EMAIL_PROVIDER || "resend").toLowerCase();
   const method = String(requestedMethod || configuredMethod).toLowerCase();
 
-  const sender = from || toSender(String(settings?.from_name ?? ""), String(settings?.from_email ?? ""), process.env.EMAIL_FROM || "Champions Court <onboarding@resend.dev>");
+  const sender = from || toSender(String(settings?.from_name ?? ""), String(settings?.from_email ?? ""), process.env.EMAIL_FROM || "Paimbabook <onboarding@resend.dev>");
   const replyTo = String(settings?.reply_to ?? "").trim() || undefined;
   const normalizedAttachments: EmailAttachment[] = Array.isArray(attachments)
     ? (attachments as EmailAttachment[]).filter(

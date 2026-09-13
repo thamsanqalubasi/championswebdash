@@ -134,7 +134,7 @@ export default function SetPasswordPage() {
   };
 
   const backLoginUrl = companySlug ? `/c/${companySlug}/login` : "/login";
-  const orgName = company ? company.name : "Champions Court";
+  const orgName = company ? company.name : "Paimbabook";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4 py-8">

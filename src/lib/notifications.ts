@@ -21,7 +21,7 @@ export function wrapDocumentInEmailHtml(opts: {
   companyEmail?: string;
 }) {
   const { recipientName, subject, bodyText, documentHtml, companyName, companyEmail } = opts;
-  const company = companyName || "Champions Court";
+  const company = companyName || "Paimbabook";
   const year = new Date().getFullYear();
 
   return `<!DOCTYPE html>
@@ -177,7 +177,7 @@ export function wrapSignupWelcomeEmailHtml(opts: {
       </ol>
 
       <div class="compliance-note">
-        <strong>Statutory Compliance &amp; Terms Agreement:</strong> By registering this workspace, you have certified that your organization holds all required statutory real estate licenses and legal permits in ${country}, and agrees to the Champions Court Terms of Service.
+        <strong>Statutory Compliance &amp; Terms Agreement:</strong> By registering this workspace, you have certified that your organization holds all required statutory real estate licenses and legal permits in ${country}, and agrees to the Paimbabook Terms of Service.
       </div>
     </div>
     <div class="footer">

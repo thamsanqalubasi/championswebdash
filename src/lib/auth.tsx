@@ -40,11 +40,11 @@ export type SignUpCompanyParams = {
 
 const DEFAULT_COMPANY: Company = {
   id: "a0000000-0000-0000-0000-000000000001",
-  name: "Champions Court Hospitality & Properties",
-  slug: "champions-court",
+  name: "Paimbabook Properties & Hospitality",
+  slug: "paimbabook",
   address: "124 Main Boulevard, Johannesburg, South Africa",
   phone: "+27 11 987 6543",
-  email: "admin@championscourt.co.za",
+  email: "admin@paimbabook.com",
   taxRate: 15.0,
   currency: "ZAR",
   defaultDueDay: 1,
@@ -252,14 +252,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const emailHtml = wrapPasswordChangeConfirmationEmailHtml({
             recipientName: currentCompanyUser?.fullName || targetEmail,
             userEmail: targetEmail,
-            companyName: currentCompany?.name || "Champions Court",
+            companyName: currentCompany?.name || "Paimbabook",
             companyLogo: currentCompany?.logoUrl,
             portalLoginUrl,
             changeType: "updated",
           });
           void sendEmailViaApi({
             to: targetEmail,
-            subject: `Security Alert: Password Updated - ${currentCompany?.name || "Champions Court"}`,
+            subject: `Security Alert: Password Updated - ${currentCompany?.name || "Paimbabook"}`,
             html: emailHtml,
           });
         } catch (emailErr) {
@@ -329,14 +329,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const emailHtml = wrapPasswordChangeConfirmationEmailHtml({
           recipientName: normalizedEmail,
           userEmail: normalizedEmail,
-          companyName: currentCompany?.name || "Champions Court",
+          companyName: currentCompany?.name || "Paimbabook",
           companyLogo: currentCompany?.logoUrl,
           portalLoginUrl,
           changeType: "initial_setup",
         });
         void sendEmailViaApi({
           to: normalizedEmail,
-          subject: `Security Alert: Account Password Established - ${currentCompany?.name || "Champions Court"}`,
+          subject: `Security Alert: Account Password Established - ${currentCompany?.name || "Paimbabook"}`,
           html: emailHtml,
         });
       } catch (emailErr) {

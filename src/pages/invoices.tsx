@@ -561,7 +561,7 @@ export default function InvoicesPage() {
       fileNameBase: `invoice-${row.tenantName.replace(/\s+/g, "_")}-${row.month}`,
       ownerName: row.tenantName,
       ownerEmail: tenantEmail,
-      defaultSubject: `Invoice ${row.month} - ${row.propertyName || currentCompany?.name || "Champions Court"}`,
+      defaultSubject: `Invoice ${row.month} - ${row.propertyName || currentCompany?.name || "Paimbabook"}`,
       defaultMessage: `Dear ${row.tenantName},\n\nPlease find your official rental invoice for ${row.month} in the amount of ${formatCurrency(row.totalAmount)} attached as a PDF document.`,
     });
   };

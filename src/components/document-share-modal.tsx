@@ -89,7 +89,7 @@ export function DocumentShareModal({
       // Default subject and message
       const subj =
         defaultSubject ||
-        `${documentTitle} - ${currentCompany?.name || "Champions Court"}`;
+        `${documentTitle} - ${currentCompany?.name || "Paimbabook"}`;
       setSubject(subj);
 
       const msg =
@@ -176,7 +176,7 @@ export function DocumentShareModal({
           <div style="font-family: sans-serif; padding: 24px;">
             <h2>${documentTitle}</h2>
             <p>${message}</p>
-            <p><strong>Organization:</strong> ${currentCompany?.name || "Champions Court"}</p>
+            <p><strong>Organization:</strong> ${currentCompany?.name || "Paimbabook"}</p>
             <p><strong>Issued:</strong> ${new Date().toLocaleDateString()}</p>
           </div>
         `;

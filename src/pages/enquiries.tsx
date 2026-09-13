@@ -62,7 +62,7 @@ export default function EnquiriesPage() {
 
       // Merge with locally submitted portal enquiries
       try {
-        const stored = JSON.parse(localStorage.getItem("pambabook_enquiries") || "[]");
+        const stored = JSON.parse(localStorage.getItem("paimbabook_enquiries") || localStorage.getItem("pambabook_enquiries") || "[]");
         if (Array.isArray(stored) && stored.length > 0) {
           const ids = new Set(loaded.map((item: any) => item.id));
           const uniqueLocal = stored.filter((item: any) => !ids.has(item.id));

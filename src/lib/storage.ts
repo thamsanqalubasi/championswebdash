@@ -278,7 +278,7 @@ export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo>
 
       if (!compErr && comp) {
         return {
-          companyName: String(comp.name ?? "Champions Court"),
+          companyName: String(comp.name ?? "Paimbabook"),
           logoUrl: String(comp.logo_url ?? ""),
           address: String(comp.address ?? ""),
           taxRate: Number(comp.tax_rate ?? 15),
@@ -323,7 +323,7 @@ export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo>
 
     if (!error && data) {
       return {
-        companyName: String(data.company_name ?? "Champions Court"),
+        companyName: String(data.company_name ?? "Paimbabook"),
         logoUrl: String(data.logo_url ?? ""),
         address: String(data.address ?? ""),
         taxRate: Number(data.tax_rate ?? 15),
@@ -336,7 +336,7 @@ export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo>
   }
 
   return {
-    companyName: "Champions Court Hospitality",
+    companyName: "Paimbabook Hospitality & Properties",
     logoUrl: "",
     address: "Johannesburg, South Africa",
     taxRate: 15,
