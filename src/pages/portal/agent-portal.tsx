@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { uploadFileToBucket } from '@/lib/storage';
 import { useAuth } from '@/lib/auth';
+import { useCurrency } from '@/lib/currency';
 import { 
   Plus, Edit, Trash, Eye, EyeOff, Upload, X, Save, User, Building2, 
   ChevronLeft, ChevronRight, MapPin, Phone, Mail, Camera, Home, 
@@ -43,6 +44,7 @@ const AMENITIES_OPTIONS = [
 
 export default function AgentPortalPage() {
   const { user } = useAuth();
+  const { currency, symbol, formatWhole } = useCurrency();
   const [activeTab, setActiveTab] = useState(0);
   const [listings, setListings] = useState<AgentListing[]>([]);
   const [loading, setLoading] = useState(true);
@@ -343,7 +345,7 @@ export default function AgentPortalPage() {
                           </span>
                         </td>
                         <td className="py-3">{listing.city}</td>
-                        <td className="py-3">ZAR {listing.price.toLocaleString()}</td>
+                        <td className="py-3">{formatWhole(listing.price)}</td>
                         <td className="py-3">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${listing.isPublished ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
                             {listing.isPublished ? 'Live' : 'Draft'}
@@ -403,7 +405,7 @@ export default function AgentPortalPage() {
 
                 <div>
                   <label className="block text-sm font-medium mb-1">
-                    {formData.listingType === 'rent' ? 'Monthly Rent (ZAR)' : 'Sale Price (ZAR)'}
+                    {formData.listingType === 'rent' ? `Monthly Rent (${currency})` : `Sale Price (${currency})`}
                   </label>
                   <input type="number" min="0" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
                 </div>

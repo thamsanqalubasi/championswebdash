@@ -66,11 +66,13 @@ import type {
   DepartmentType,
 } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
 import { buildProfessionalPayslipHtml } from "@/lib/document-templates";
 import { fetchCompanyInfo, openDocumentPreview } from "@/lib/storage";
 
 export default function HRPage() {
   const { currentCompany, currentCompanyUser, isManager, isAdmin } = useAuth();
+  const { currency, symbol, formatWhole } = useCurrency();
   const [activeTab, setActiveTab] = useState<
     "directory" | "payslips" | "history" | "expiring" | "contracts" | "salaries" | "leave"
   >("directory");
@@ -1593,7 +1595,7 @@ export default function HRPage() {
               <tr>
                 <th className="px-5 py-4">Department & Title</th>
                 <th className="px-5 py-4">Grade</th>
-                <th className="px-5 py-4">Base Salary Range (ZAR)</th>
+                <th className="px-5 py-4">Base Salary Range ({currency})</th>
                 <th className="px-5 py-4">Monthly Allowances</th>
                 <th className="px-5 py-4">Statutory Deductions</th>
               </tr>
@@ -1962,7 +1964,7 @@ export default function HRPage() {
               </div>
 
               <div>
-                <label className="mb-1 block font-bold text-foreground">Monthly Salary on Renewal (ZAR)</label>
+                <label className="mb-1 block font-bold text-foreground">Monthly Salary on Renewal ({currency})</label>
                 <input
                   type="number"
                   value={extensionSalary}
@@ -2380,7 +2382,7 @@ export default function HRPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block font-medium text-foreground">Basic Salary (ZAR) *</label>
+                  <label className="mb-1 block font-medium text-foreground">Basic Salary ({currency}) *</label>
                   <input
                     type="number"
                     value={basicSalary}

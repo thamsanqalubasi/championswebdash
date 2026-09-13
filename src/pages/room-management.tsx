@@ -51,6 +51,7 @@ import type {
   RoomServiceSchedule,
 } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
 
 export const AVAILABLE_AMENITIES = [
   { key: "wifi", label: "Free Wi-Fi", icon: Wifi },
@@ -65,6 +66,7 @@ export const AVAILABLE_AMENITIES = [
 
 export default function RoomManagementPage() {
   const { currentCompany, currentCompanyUser } = useAuth();
+  const { currency, symbol } = useCurrency();
   const [activeTab, setActiveTab] = useState<"rooms" | "pricing" | "housekeeping" | "roomservice">("rooms");
 
   const [properties, setProperties] = useState<PropertyRow[]>([]);
@@ -530,7 +532,7 @@ export default function RoomManagementPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-foreground">
-                  1. Bed Alone / Room Only (ZAR)
+                  1. Bed Alone / Room Only ({currency})
                 </label>
                 <input
                   type="number"
@@ -543,7 +545,7 @@ export default function RoomManagementPage() {
 
               <div>
                 <label className="mb-1 block text-xs font-semibold text-foreground">
-                  2. Bed & Breakfast (ZAR)
+                  2. Bed & Breakfast ({currency})
                 </label>
                 <input
                   type="number"
@@ -556,7 +558,7 @@ export default function RoomManagementPage() {
 
               <div>
                 <label className="mb-1 block text-xs font-semibold text-foreground">
-                  3. Bed, Breakfast & Lunch (ZAR)
+                  3. Bed, Breakfast & Lunch ({currency})
                 </label>
                 <input
                   type="number"
@@ -569,7 +571,7 @@ export default function RoomManagementPage() {
 
               <div>
                 <label className="mb-1 block text-xs font-semibold text-foreground">
-                  4. Bed, Breakfast, Lunch & Dinner (Full Board) (ZAR)
+                  4. Bed, Breakfast, Lunch & Dinner (Full Board) ({currency})
                 </label>
                 <input
                   type="number"
@@ -849,7 +851,7 @@ export default function RoomManagementPage() {
               {/* Price tiers with permission check */}
               <div className="space-y-2 pt-1">
                 <div className="flex items-center justify-between">
-                  <label className="font-bold text-foreground">Nightly Rate & Meal Plan Pricing (ZAR)</label>
+                  <label className="font-bold text-foreground">Nightly Rate & Meal Plan Pricing ({currency})</label>
                   {editingRoom && !canEditPricing && (
                     <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded">
                       <Lock size={12} />
@@ -860,7 +862,7 @@ export default function RoomManagementPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1 block font-medium text-foreground">Bed Only Rate (ZAR)</label>
+                    <label className="mb-1 block font-medium text-foreground">Bed Only Rate ({currency})</label>
                     <input
                       type="number"
                       value={pricePerNight}
@@ -871,7 +873,7 @@ export default function RoomManagementPage() {
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block font-medium text-foreground">Bed & Breakfast Rate (ZAR)</label>
+                    <label className="mb-1 block font-medium text-foreground">Bed & Breakfast Rate ({currency})</label>
                     <input
                       type="number"
                       value={priceBedBreakfast}
@@ -882,7 +884,7 @@ export default function RoomManagementPage() {
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block font-medium text-foreground">Bed, B/Fast & Lunch (ZAR)</label>
+                    <label className="mb-1 block font-medium text-foreground">Bed, B/Fast & Lunch ({currency})</label>
                     <input
                       type="number"
                       value={priceBedLunch}
@@ -893,7 +895,7 @@ export default function RoomManagementPage() {
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block font-medium text-foreground">Full Board Rate (ZAR)</label>
+                    <label className="mb-1 block font-medium text-foreground">Full Board Rate ({currency})</label>
                     <input
                       type="number"
                       value={priceFullBoard}

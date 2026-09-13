@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { fetchCompanyBySlug } from "@/lib/data";
+import { TermsCheckboxField } from "@/components/terms-modal";
 import {
   Building2,
   Lock,
@@ -55,6 +56,7 @@ export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
 
   // Status
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -148,6 +150,11 @@ export default function SignupPage() {
 
     if (adminPassword !== confirmPassword) {
       setError("Passwords do not match. Please verify and try again.");
+      return;
+    }
+
+    if (!agreedToTerms) {
+      setError("You must review and agree to the Platform Terms of Service & Statutory Licensing Policy to register an organization.");
       return;
     }
 
@@ -447,10 +454,15 @@ export default function SignupPage() {
                 </div>
               </div>
 
+              {/* Terms and Conditions Acceptance */}
+              <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-4">
+                <TermsCheckboxField checked={agreedToTerms} onChange={setAgreedToTerms} />
+              </div>
+
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={loading || slugAvailable === false}
+                disabled={loading || slugAvailable === false || !agreedToTerms}
                 className="w-full rounded-xl bg-blue-600 py-3 font-bold text-white shadow-lg hover:bg-blue-700 disabled:opacity-50 transition flex items-center justify-center gap-2 text-sm"
               >
                 {loading ? (

@@ -1,6 +1,7 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { TermsCheckboxField } from "@/components/terms-modal";
 import { LogIn, UserPlus, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react";
 
 function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
@@ -38,6 +39,7 @@ export default function PortalLoginPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -57,6 +59,11 @@ export default function PortalLoginPage() {
     if (password.length < 8) { setError("Password must be at least 8 characters."); setLoading(false); return; }
     if (!/\d/.test(password)) { setError("Password must contain at least one number."); setLoading(false); return; }
     if (password !== confirmPassword) { setError("Passwords do not match."); setLoading(false); return; }
+    if (!agreedToTerms) {
+      setError("You must review and agree to the Platform Terms of Service to create an account.");
+      setLoading(false);
+      return;
+    }
     try {
       const { error: err } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
       if (err) throw err;
@@ -82,11 +89,20 @@ export default function PortalLoginPage() {
             {mode === "signup" && (<input placeholder="Full name" value={name} onChange={e => setName(e.target.value)} required className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition"/>)}
             <input placeholder="Email address" type="email" value={email} onChange={e => setEmail(e.target.value)} required className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition"/>
             <PasswordInput value={password} onChange={setPassword} placeholder="Password"/>
-            {mode === "signup" && (<>
-              <PasswordInput value={confirmPassword} onChange={setConfirmPassword} placeholder="Confirm password"/>
-              <PasswordRules password={password}/>
-            </>)}
-            <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60 transition">
+            {mode === "signup" && (
+              <>
+                <PasswordInput value={confirmPassword} onChange={setConfirmPassword} placeholder="Confirm password"/>
+                <PasswordRules password={password}/>
+                <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3.5">
+                  <TermsCheckboxField checked={agreedToTerms} onChange={setAgreedToTerms} />
+                </div>
+              </>
+            )}
+            <button
+              type="submit"
+              disabled={loading || (mode === "signup" && !agreedToTerms)}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60 transition"
+            >
               {mode === "login" ? <LogIn size={16}/> : <UserPlus size={16}/>}
               {loading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"}
             </button>

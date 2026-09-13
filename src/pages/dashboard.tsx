@@ -19,6 +19,7 @@ import type {
   AuditEventRow,
 } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
 import { CheckinModal } from "@/components/checkin-modal";
 import {
   TrendingUp,
@@ -73,13 +74,6 @@ import {
 } from "recharts";
 import { Link } from "react-router-dom";
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-ZA", {
-    style: "currency",
-    currency: "ZAR",
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
 
 function StatCard({
   label,
@@ -160,6 +154,7 @@ function GaugeCard({ label, value, color }: { label: string; value: number; colo
 
 export default function DashboardPage() {
   const { currentCompany, currentCompanyUser, isSuperAdmin, isAdmin } = useAuth();
+  const { formatWhole: formatCurrency, currency, symbol } = useCurrency();
   const [data, setData] = useState<DashboardData | null>(null);
   const [recentBookings, setRecentBookings] = useState<CommercialBooking[]>([]);
   const [procurementRequests, setProcurementRequests] = useState<ProcurementRequest[]>([]);
@@ -1458,7 +1453,7 @@ export default function DashboardPage() {
                 />
                 <StatCard
                   label="Total Stock Valuation"
-                  value={`R ${storesMetrics.totalValue.toLocaleString()}`}
+                  value={formatCurrency(storesMetrics.totalValue)}
                   detail="Current warehouse inventory worth"
                   icon={DollarSign}
                   colorClass="text-emerald-600"

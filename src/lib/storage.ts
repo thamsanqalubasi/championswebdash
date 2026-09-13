@@ -266,7 +266,7 @@ export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo>
     try {
       const { data: comp, error: compErr } = await supabase
         .from("companies")
-        .select("name, logo_url, address, tax_rate, payment_instructions")
+        .select("name, logo_url, address, tax_rate, payment_instructions, currency")
         .eq("id", targetId)
         .maybeSingle();
 
@@ -277,6 +277,7 @@ export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo>
           address: String(comp.address ?? ""),
           taxRate: Number(comp.tax_rate ?? 15),
           paymentInstructions: String(comp.payment_instructions ?? ""),
+          currency: String(comp.currency || "ZAR"),
         };
       }
     } catch {
@@ -296,6 +297,7 @@ export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo>
               address: String(parsed.address || ""),
               taxRate: Number(parsed.taxRate || 15),
               paymentInstructions: String(parsed.paymentInstructions || ""),
+              currency: String(parsed.currency || "ZAR"),
             };
           }
         }
@@ -320,6 +322,7 @@ export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo>
         address: String(data.address ?? ""),
         taxRate: Number(data.tax_rate ?? 15),
         paymentInstructions: String(data.payment_instructions ?? ""),
+        currency: "ZAR",
       };
     }
   } catch {
@@ -332,6 +335,7 @@ export async function fetchCompanyInfo(companyId?: string): Promise<CompanyInfo>
     address: "Johannesburg, South Africa",
     taxRate: 15,
     paymentInstructions: "Please refer to standard EFT instructions.",
+    currency: "ZAR",
   };
 }
 

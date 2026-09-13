@@ -5,6 +5,7 @@ import {
   AlertCircle, DollarSign, Activity, FileCheck
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { useCurrency } from '@/lib/currency';
 import type {
   ProcurementRequest, ProcurementPipelineEvent, ProcurementQuotation,
   ProcurementStage, ProcurementUrgency, SupplierContact, QuoteContactProfile
@@ -140,6 +141,7 @@ function formatStageName(stage: string) {
 
 export default function ProcurementPage() {
   const { currentCompanyUser } = useAuth();
+  const { formatWhole, currency } = useCurrency();
   const [activeTab, setActiveTab] = useState('overview');
   const [requests, setRequests] = useState<ProcurementRequest[]>(MOCK_REQUESTS);
   const [reminderThreshold, setReminderThreshold] = useState(24);
@@ -438,7 +440,7 @@ export default function ProcurementPage() {
                     </div>
                     <div>
                       <div className="text-gray-500 mb-1">Approved Amount</div>
-                      <div className="font-medium text-blue-600">ZAR {req.totalApprovedAmount?.toLocaleString()}</div>
+                      <div className="font-medium text-blue-600">{formatWhole(req.totalApprovedAmount || 0)}</div>
                     </div>
                     {req.bankDetails && (
                       <div className="col-span-2 bg-gray-50 dark:bg-gray-800 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
@@ -673,7 +675,7 @@ export default function ProcurementPage() {
                     <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
                       <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Total Approved Amount</div>
                       <div className="text-sm font-bold">
-                        {req.totalApprovedAmount ? `ZAR ${req.totalApprovedAmount.toLocaleString()}` : 'Pending approval'}
+                        {req.totalApprovedAmount ? formatWhole(req.totalApprovedAmount) : 'Pending approval'}
                       </div>
                     </div>
                   </div>

@@ -3,6 +3,8 @@
  * These produce well-designed, printable HTML documents with company branding and admin signature.
  */
 
+import { formatCurrencyValue } from "@/lib/currency";
+
 /* ---------- shared helpers ---------- */
 
 function esc(text: string) {
@@ -31,8 +33,12 @@ function formatSectionContent(content: string) {
   return sanitizeRichTextHtml(trimmed);
 }
 
-function formatNAD(amount: number) {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "NAD", minimumFractionDigits: 2 }).format(amount);
+function formatDocCurrency(amount: number, currency: string = "ZAR") {
+  return formatCurrencyValue(amount, currency || "ZAR", 2);
+}
+
+function formatNAD(amount: number, currency: string = "ZAR") {
+  return formatDocCurrency(amount, currency);
 }
 
 function fmtDate(value: string) {
@@ -50,6 +56,7 @@ export type CompanyInfo = {
   address: string;
   taxRate: number;
   paymentInstructions: string;
+  currency?: string;
 };
 
 export type AdminInfo = {
@@ -151,6 +158,7 @@ export function buildProfessionalInvoiceHtml(
   company: CompanyInfo,
   admin: AdminInfo,
 ): string {
+  const docCurrency = company.currency || "ZAR";
   const subtotal = doc.lineItems.reduce((sum, item) => sum + item.amount, 0);
   const taxAmount = subtotal * (company.taxRate / 100);
   const total = subtotal + taxAmount;
@@ -174,7 +182,7 @@ export function buildProfessionalInvoiceHtml(
     <tr>
       <td>${i + 1}</td>
       <td>${esc(item.description)}</td>
-      <td class="amount">${formatNAD(item.amount)}</td>
+      <td class="amount">${formatDocCurrency(item.amount, docCurrency)}</td>
     </tr>`
   ).join("");
 
@@ -245,15 +253,15 @@ export function buildProfessionalInvoiceHtml(
         <div class="totals-table">
           <div class="totals-row subtotal">
             <span>Subtotal</span>
-            <span>${formatNAD(subtotal)}</span>
+            <span>${formatDocCurrency(subtotal, docCurrency)}</span>
           </div>
           ${company.taxRate > 0 ? `<div class="totals-row">
             <span>VAT (${company.taxRate}%)</span>
-            <span>${formatNAD(taxAmount)}</span>
+            <span>${formatDocCurrency(taxAmount, docCurrency)}</span>
           </div>` : ""}
           <div class="totals-row total">
             <span>Total Due</span>
-            <span>${formatNAD(total)}</span>
+            <span>${formatDocCurrency(total, docCurrency)}</span>
           </div>
         </div>
       </div>
@@ -293,6 +301,7 @@ export function buildProfessionalContractHtml(
   company: CompanyInfo,
   admin: AdminInfo,
 ): string {
+  const docCurrency = company.currency || "ZAR";
   const statusClass =
     doc.status === "active" ? "status-active"
     : doc.status === "expired" ? "status-overdue"
@@ -339,8 +348,8 @@ export function buildProfessionalContractHtml(
     <div class="section">
       <div class="section-title">3. Financial Terms</div>
       <ol class="terms">
-        <li><strong>Monthly Rent:</strong> The Tenant shall pay <strong>${formatNAD(doc.monthlyRent)}</strong> per month, due in accordance with the company&rsquo;s payment schedule and instructions.</li>
-        <li><strong>Security Deposit:</strong> A refundable deposit of <strong>${formatNAD(doc.depositAmount)}</strong> is payable upon signing and shall be held for the duration of the tenancy.</li>
+        <li><strong>Monthly Rent:</strong> The Tenant shall pay <strong>${formatDocCurrency(doc.monthlyRent, docCurrency)}</strong> per month, due in accordance with the company&rsquo;s payment schedule and instructions.</li>
+        <li><strong>Security Deposit:</strong> A refundable deposit of <strong>${formatDocCurrency(doc.depositAmount, docCurrency)}</strong> is payable upon signing and shall be held for the duration of the tenancy.</li>
         <li>Late payments may incur penalties as determined by the Landlord&rsquo;s policies. The Tenant is responsible for ensuring timely payment.</li>
       </ol>
     </div>
@@ -422,11 +431,11 @@ export function buildProfessionalContractHtml(
         </div>
         <div class="info-item">
           <label>Monthly Rent</label>
-          <p>${formatNAD(doc.monthlyRent)}</p>
+          <p>${formatDocCurrency(doc.monthlyRent, docCurrency)}</p>
         </div>
         <div class="info-item">
           <label>Security Deposit</label>
-          <p>${formatNAD(doc.depositAmount)}</p>
+          <p>${formatDocCurrency(doc.depositAmount, docCurrency)}</p>
         </div>
       </div>
     </div>
@@ -485,6 +494,7 @@ export function buildUnifiedInvoiceHtml(
   company: CompanyInfo,
   admin: AdminInfo,
 ): string {
+  const docCurrency = company.currency || "ZAR";
   const total = doc.transactions.reduce((sum, t) => sum + t.amountPaid, 0);
 
   const logoHtml = company.logoUrl
@@ -502,7 +512,7 @@ export function buildUnifiedInvoiceHtml(
       <td>${esc(t.paymentDate)}</td>
       <td>${esc(t.tenantName)}</td>
       <td>${esc(t.propertyName)}</td>
-      <td class="amount">${formatNAD(t.amountPaid)}</td>
+      <td class="amount">${formatDocCurrency(t.amountPaid, docCurrency)}</td>
     </tr>`
   ).join("");
 
@@ -553,7 +563,7 @@ export function buildUnifiedInvoiceHtml(
         <div class="totals-table">
           <div class="totals-row total">
             <span>Total Collected</span>
-            <span>${formatNAD(total)}</span>
+            <span>${formatDocCurrency(total, docCurrency)}</span>
           </div>
         </div>
       </div>
@@ -631,6 +641,7 @@ export function buildBalanceSheetHtml(
   company: CompanyInfo,
   admin: AdminInfo,
 ): string {
+  const docCurrency = company.currency || "ZAR";
   const logoHtml = company.logoUrl
     ? `<img src="${esc(company.logoUrl)}" alt="Company logo" class="company-logo" />`
     : "";
@@ -645,13 +656,13 @@ export function buildBalanceSheetHtml(
     <tr>
       <td>${index + 1}</td>
       <td>${esc(row.month)}</td>
-      <td class="amount" style="color:#15803d;font-weight:700;">${formatNAD(row.rentCollected)}</td>
-      <td class="amount" style="color:#dc2626;">${formatNAD(row.maintenance)}</td>
-      <td class="amount" style="color:#dc2626;">${formatNAD(row.bills)}</td>
-      <td class="amount" style="color:#dc2626;">${formatNAD(row.renovations)}</td>
-      <td class="amount" style="color:#dc2626;">${formatNAD(row.tax)}</td>
-      <td class="amount" style="color:#dc2626;font-weight:700;">${formatNAD(row.totalExpenses)}</td>
-      <td class="amount" style="color:${row.netProfit >= 0 ? "#15803d" : "#dc2626"};font-weight:700;">${formatNAD(row.netProfit)}</td>
+      <td class="amount" style="color:#15803d;font-weight:700;">${formatDocCurrency(row.rentCollected, docCurrency)}</td>
+      <td class="amount" style="color:#dc2626;">${formatDocCurrency(row.maintenance, docCurrency)}</td>
+      <td class="amount" style="color:#dc2626;">${formatDocCurrency(row.bills, docCurrency)}</td>
+      <td class="amount" style="color:#dc2626;">${formatDocCurrency(row.renovations, docCurrency)}</td>
+      <td class="amount" style="color:#dc2626;">${formatDocCurrency(row.tax, docCurrency)}</td>
+      <td class="amount" style="color:#dc2626;font-weight:700;">${formatDocCurrency(row.totalExpenses, docCurrency)}</td>
+      <td class="amount" style="color:${row.netProfit >= 0 ? "#15803d" : "#dc2626"};font-weight:700;">${formatDocCurrency(row.netProfit, docCurrency)}</td>
     </tr>`).join("");
 
   const transactionRowsHtml = doc.transactionRows.map((row, index) => {
@@ -664,9 +675,9 @@ export function buildBalanceSheetHtml(
       <td>${esc(row.category)}</td>
       <td>${esc(row.details)}</td>
       ${doc.includeExecutor ? `<td>${esc(row.executor || "-")}</td>` : ""}
-      <td class="amount" style="color:${amountColor};font-weight:700;">${formatNAD(row.amount)}</td>
-      <td class="amount" style="color:#dc2626;">${formatNAD(row.tax)}</td>
-      <td class="amount" style="color:${row.net >= 0 ? "#15803d" : "#dc2626"};font-weight:700;">${formatNAD(row.net)}</td>
+      <td class="amount" style="color:${amountColor};font-weight:700;">${formatDocCurrency(row.amount, docCurrency)}</td>
+      <td class="amount" style="color:#dc2626;">${formatDocCurrency(row.tax, docCurrency)}</td>
+      <td class="amount" style="color:${row.net >= 0 ? "#15803d" : "#dc2626"};font-weight:700;">${formatDocCurrency(row.net, docCurrency)}</td>
     </tr>`;
   }).join("");
 
@@ -710,14 +721,14 @@ export function buildBalanceSheetHtml(
           </tr>
         </thead>
         <tbody>
-          <tr><td><strong>INFLOWS (Income)</strong></td><td class="amount" style="color:#15803d;font-weight:700;">${formatNAD(doc.summary.rentCollected)}</td></tr>
-          <tr><td>Rent Collected</td><td class="amount" style="color:#15803d;">${formatNAD(doc.summary.rentCollected)}</td></tr>
-          <tr><td><strong>OUTFLOWS (Expenses)</strong></td><td class="amount" style="color:#dc2626;font-weight:700;">${formatNAD(doc.summary.totalExpenses + doc.summary.tax)}</td></tr>
-          <tr><td>Work Order Fees / Maintenance</td><td class="amount" style="color:#dc2626;">${formatNAD(doc.summary.maintenance)}</td></tr>
-          <tr><td>Bill Payments</td><td class="amount" style="color:#dc2626;">${formatNAD(doc.summary.bills)}</td></tr>
-          <tr><td>Renovations</td><td class="amount" style="color:#dc2626;">${formatNAD(doc.summary.renovations)}</td></tr>
-          <tr><td>Tax</td><td class="amount" style="color:#dc2626;">${formatNAD(doc.summary.tax)}</td></tr>
-          <tr><td><strong>Net Position</strong></td><td class="amount" style="color:${doc.summary.netProfit >= 0 ? "#15803d" : "#dc2626"};font-weight:700;">${formatNAD(doc.summary.netProfit)}</td></tr>
+          <tr><td><strong>INFLOWS (Income)</strong></td><td class="amount" style="color:#15803d;font-weight:700;">${formatDocCurrency(doc.summary.rentCollected, docCurrency)}</td></tr>
+          <tr><td>Rent Collected</td><td class="amount" style="color:#15803d;">${formatDocCurrency(doc.summary.rentCollected, docCurrency)}</td></tr>
+          <tr><td><strong>OUTFLOWS (Expenses)</strong></td><td class="amount" style="color:#dc2626;font-weight:700;">${formatDocCurrency(doc.summary.totalExpenses + doc.summary.tax, docCurrency)}</td></tr>
+          <tr><td>Work Order Fees / Maintenance</td><td class="amount" style="color:#dc2626;">${formatDocCurrency(doc.summary.maintenance, docCurrency)}</td></tr>
+          <tr><td>Bill Payments</td><td class="amount" style="color:#dc2626;">${formatDocCurrency(doc.summary.bills, docCurrency)}</td></tr>
+          <tr><td>Renovations</td><td class="amount" style="color:#dc2626;">${formatDocCurrency(doc.summary.renovations, docCurrency)}</td></tr>
+          <tr><td>Tax</td><td class="amount" style="color:#dc2626;">${formatDocCurrency(doc.summary.tax, docCurrency)}</td></tr>
+          <tr><td><strong>Net Position</strong></td><td class="amount" style="color:${doc.summary.netProfit >= 0 ? "#15803d" : "#dc2626"};font-weight:700;">${formatDocCurrency(doc.summary.netProfit, docCurrency)}</td></tr>
         </tbody>
       </table>
     </div>
@@ -803,6 +814,7 @@ export function buildProfessionalPayslipHtml(
   },
   company: CompanyInfo
 ): string {
+  const docCurrency = company.currency || "ZAR";
   const companyLogoHtml = company.logoUrl
     ? `<img src="${esc(company.logoUrl)}" alt="${esc(company.companyName)}" style="height:60px; max-width:180px; object-fit:contain;" />`
     : `<div style="font-size:24px; font-weight:900; color:#1e3a8a; letter-spacing:-0.5px;">${esc(company.companyName)}</div>`;
@@ -867,19 +879,19 @@ export function buildProfessionalPayslipHtml(
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
           Print / Save as PDF
         </button>
-        <button class="close-btn" onclick="window.close()">Close Window</button>
+        <button class="close-btn" onclick="window.close()">Close</button>
       </div>
     </div>
 
     <div class="header">
       <div>
         ${companyLogoHtml}
-        <p style="font-size:12px; color:#64748b; margin-top:6px;">${esc(company.address || "South Africa")}</p>
+        <p style="font-size: 12px; color: #64748b; margin-top: 6px;">${esc(company.address || "Company Headquarters")}</p>
       </div>
       <div style="text-align:right;">
-        <span class="badge">Official Salary Slip</span>
-        <div style="font-size:18px; font-weight:800; color:#0f172a; margin-top:4px;">Period: ${esc(payslip.payPeriod)}</div>
-        <p style="font-size:11px; color:#64748b; margin-top:2px;">Ref #${esc(payslip.id.slice(0, 10).toUpperCase())}</p>
+        <div class="badge">Official Payslip</div>
+        <p style="font-size: 12px; color: #64748b; font-weight: 600;">Ref: PAY-${esc(payslip.id.slice(0, 8).toUpperCase())}</p>
+        <p style="font-size: 12px; color: #64748b;">Period: <strong style="color:#0f172a;">${esc(payslip.payPeriod)}</strong></p>
       </div>
     </div>
 
@@ -890,7 +902,7 @@ export function buildProfessionalPayslipHtml(
           <p>${esc(payslip.employeeName)}</p>
         </div>
         <div class="meta-item" style="margin-top:8px;">
-          <label>Designation / Role</label>
+          <label>Designation / Job Title</label>
           <p>${esc(payslip.jobTitle)}</p>
         </div>
       </div>
@@ -913,23 +925,23 @@ export function buildProfessionalPayslipHtml(
           <thead>
             <tr>
               <th>Earnings</th>
-              <th class="amount">Amount (ZAR)</th>
+              <th class="amount">Amount (${esc(docCurrency)})</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td>Basic Salary</td>
-              <td class="amount">R${Number(payslip.basicSalary).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              <td class="amount">${formatDocCurrency(payslip.basicSalary, docCurrency)}</td>
             </tr>
             ${allowanceEntries.map(([k, v]) => `
               <tr>
                 <td style="text-transform:capitalize;">${esc(k.replace(/_/g, " "))} Allowance</td>
-                <td class="amount">R${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td class="amount">${formatDocCurrency(Number(v), docCurrency)}</td>
               </tr>
             `).join("")}
             <tr class="subtotal-row">
               <td>Total Gross Earnings</td>
-              <td class="amount" style="color:#1e3a8a;">R${Number(payslip.grossPay).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              <td class="amount" style="color:#1e3a8a;">${formatDocCurrency(payslip.grossPay, docCurrency)}</td>
             </tr>
           </tbody>
         </table>
@@ -941,7 +953,7 @@ export function buildProfessionalPayslipHtml(
           <thead>
             <tr>
               <th>Statutory Deductions</th>
-              <th class="amount">Amount (ZAR)</th>
+              <th class="amount">Amount (${esc(docCurrency)})</th>
             </tr>
           </thead>
           <tbody>
@@ -952,12 +964,12 @@ export function buildProfessionalPayslipHtml(
             ` : deductionEntries.map(([k, v]) => `
               <tr>
                 <td style="text-transform:capitalize;">${esc(k.replace(/([A-Z])/g, ' $1').toLowerCase())}</td>
-                <td class="amount" style="color:#dc2626;">-R${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td class="amount" style="color:#dc2626;">-${formatDocCurrency(Number(v), docCurrency)}</td>
               </tr>
             `).join("")}
             <tr class="subtotal-row">
               <td>Total Deductions</td>
-              <td class="amount" style="color:#dc2626;">-R${Number(totalDeductions || (payslip.grossPay - payslip.netPay)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              <td class="amount" style="color:#dc2626;">-${formatDocCurrency(totalDeductions || (payslip.grossPay - payslip.netPay), docCurrency)}</td>
             </tr>
           </tbody>
         </table>
@@ -969,7 +981,7 @@ export function buildProfessionalPayslipHtml(
         <div class="net-label">Net Take-Home Pay</div>
         <div style="font-size:11px; opacity:0.8; margin-top:2px;">Credited directly to employee account</div>
       </div>
-      <div class="net-amount">R${Number(payslip.netPay).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+      <div class="net-amount">${formatDocCurrency(payslip.netPay, docCurrency)}</div>
     </div>
 
     <div class="sig-area">

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useCurrency } from '@/lib/currency';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
@@ -73,6 +74,7 @@ const departmentPerformance = [
 
 export default function StatisticsPage() {
   const [timeframe, setTimeframe] = useState('This Month');
+  const { currency, symbol, formatWhole } = useCurrency();
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6 bg-surface text-foreground">
@@ -106,8 +108,8 @@ export default function StatisticsPage() {
         <div className="bg-surface rounded-2xl border border-border-color p-6 shadow-sm">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-sm text-muted mb-1">Total Revenue (ZAR)</p>
-              <h3 className="text-2xl font-bold">R 1,245,000</h3>
+              <p className="text-sm text-muted mb-1">Total Revenue ({currency})</p>
+              <h3 className="text-2xl font-bold">{formatWhole(1245000)}</h3>
             </div>
             <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500">
               <DollarSign className="w-5 h-5" />
@@ -182,8 +184,8 @@ export default function StatisticsPage() {
         <div className="bg-surface rounded-2xl border border-border-color p-6 shadow-sm">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-sm text-muted mb-1">Inventory Asset Valuation</p>
-              <h3 className="text-2xl font-bold">R 450,200</h3>
+              <p className="text-sm text-muted mb-1">Inventory Valuation ({currency})</p>
+              <h3 className="text-2xl font-bold">{formatWhole(450200)}</h3>
             </div>
             <div className="p-2 bg-cyan-500/10 rounded-lg text-cyan-500">
               <Package className="w-5 h-5" />
@@ -192,7 +194,7 @@ export default function StatisticsPage() {
           <div className="mt-4 flex items-center text-sm">
             <span className="flex items-center text-green-500 font-medium">
               <ArrowUpRight className="w-4 h-4 mr-1" />
-              +R 12k
+              +{symbol} 12k
             </span>
             <span className="text-muted ml-2">vs last month</span>
           </div>
@@ -359,10 +361,10 @@ export default function StatisticsPage() {
               {departmentPerformance.map((dept) => (
                 <tr key={dept.id} className="hover:bg-surface-elevated/50">
                   <td className="p-4 font-medium">{dept.department}</td>
-                  <td className="p-4 text-right">R {dept.revenue.toLocaleString()}</td>
-                  <td className="p-4 text-right">R {dept.expenses.toLocaleString()}</td>
+                  <td className="p-4 text-right">{formatWhole(dept.revenue)}</td>
+                  <td className="p-4 text-right">{formatWhole(dept.expenses)}</td>
                   <td className={`p-4 text-right font-medium ${dept.margin >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    R {dept.margin.toLocaleString()}
+                    {formatWhole(dept.margin)}
                   </td>
                   <td className="p-4 text-right">{dept.tasksCompleted}</td>
                   <td className="p-4 text-right">

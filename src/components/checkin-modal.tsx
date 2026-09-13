@@ -22,6 +22,7 @@ import {
 } from "@/lib/data";
 import type { CommercialRoom, MealPlan, PropertyRow } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
 
 interface CheckinModalProps {
   isOpen: boolean;
@@ -31,6 +32,7 @@ interface CheckinModalProps {
 
 export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) {
   const { currentCompany, currentCompanyUser } = useAuth();
+  const { currency, symbol } = useCurrency();
   const [activeTab, setActiveTab] = useState<"instant" | "code">("instant");
 
   // Properties & Rooms state
@@ -517,11 +519,11 @@ export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) 
 
                 <div>
                   <label className="mb-1 block text-xs font-medium text-foreground">
-                    Amount Collected Now (ZAR)
+                    Amount Collected Now ({currency})
                   </label>
                   <input
                     type="number"
-                    placeholder={`Full: R${totalAmount}`}
+                    placeholder={`Full: ${symbol} ${totalAmount}`}
                     value={amountPaid || ""}
                     onChange={(e) => setAmountPaid(Number(e.target.value))}
                     className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none"

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, useParams, Link } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { fetchCompanyBySlug } from "@/lib/data";
+import { TermsCheckboxField } from "@/components/terms-modal";
 import type { Company } from "@/lib/types";
 import {
   KeyRound,
@@ -26,6 +27,7 @@ export default function SetPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -77,6 +79,11 @@ export default function SetPasswordPage() {
 
     if (password !== confirmPassword) {
       setError("Passwords do not match. Please verify and try again.");
+      return;
+    }
+
+    if (!agreedToTerms) {
+      setError("You must review and agree to the Platform Terms of Service & Regulatory Compliance Policy to activate your account.");
       return;
     }
 
@@ -226,9 +233,14 @@ export default function SetPasswordPage() {
               <p>• Enterprise access and departmental rights will be assigned automatically</p>
             </div>
 
+            {/* Terms and Conditions Acceptance */}
+            <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3">
+              <TermsCheckboxField checked={agreedToTerms} onChange={setAgreedToTerms} />
+            </div>
+
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !agreedToTerms}
               className="w-full rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-50 transition"
             >
               {loading
