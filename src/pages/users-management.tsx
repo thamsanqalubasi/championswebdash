@@ -606,6 +606,7 @@ export default function UsersManagementPage() {
             <option value="human_resources">Human Resources</option>
             <option value="it">Information Technology</option>
             <option value="procurement">Procurement</option>
+            <option value="stores">Stores / Inventory</option>
             <option value="audit">Audit Department</option>
           </select>
         </div>

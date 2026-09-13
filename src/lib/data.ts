@@ -72,14 +72,13 @@ export function generateUuid(): string {
 
 export function mapDepartmentToDb(dept: string): string {
   const d = dept.toLowerCase();
-  if (d === "accountant" || d === "finance") return "finance";
-  if (d === "human_resources" || d === "hr") return "hr";
+  if (d === "accountant" || d === "finance") return "accountant";
+  if (d === "human_resources" || d === "hr") return "human_resources";
   if (d === "front_desk" || d === "frontdesk") return "front_desk";
-  if (d === "maintenance") return "maintenance";
-  if (d === "housekeeping") return "housekeeping";
-  if (d === "kitchen") return "kitchen";
+  if (d === "maintenance" || d === "housekeeping") return "maintenance";
+  if (d === "kitchen") return "front_desk";
   if (d === "it") return "it";
-  if (d === "procurement") return "procurement";
+  if (d === "procurement" || d === "stores") return "procurement";
   if (d === "audit") return "audit";
   if (d === "manager") return "manager";
   return "admin";
@@ -1000,14 +999,16 @@ export async function fetchCompanyBySlug(slug: string): Promise<Company | null> 
   return mockMatch || null;
 }
 
-export async function fetchCompanyUsers(companyId: string = MOCK_COMPANIES[0].id): Promise<CompanyUser[]> {
+export async function fetchCompanyUsers(companyId?: string): Promise<CompanyUser[]> {
+  if (!companyId) return [];
+
   try {
     const { data, error } = await supabase
       .from("company_users")
       .select("*, users(email, first_name, last_name)")
       .eq("company_id", companyId);
 
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data.map((cu) => ({
         id: cu.id,
         companyId: cu.company_id,
@@ -1025,31 +1026,49 @@ export async function fetchCompanyUsers(companyId: string = MOCK_COMPANIES[0].id
         createdAt: cu.created_at,
       }));
     }
+    if (error) {
+      console.warn("Supabase fetchCompanyUsers error", error);
+    }
   } catch (err) {
-    console.warn("Falling back to mock company users", err);
+    console.warn("Error fetching company users", err);
   }
-  return MOCK_COMPANY_USERS.filter((u) => u.companyId === companyId || !u.companyId);
+
+  // Only fall back to mock users if querying legacy company
+  if (companyId === "a0000000-0000-0000-0000-000000000001") {
+    return MOCK_COMPANY_USERS.filter((u) => u.companyId === companyId);
+  }
+
+  return [];
 }
 
 export async function createCompanyUser(user: Partial<CompanyUser>): Promise<CompanyUser> {
-  const companyId = user.companyId || MOCK_COMPANIES[0].id;
-  const email = user.email || "newuser@domain.com";
-  const fullName = user.fullName || "New Staff Member";
+  const companyId = user.companyId;
+  if (!companyId) {
+    throw new Error("Missing active organization ID for user creation.");
+  }
+  const email = (user.email || "").trim().toLowerCase();
+  if (!email) {
+    throw new Error("Valid email is required.");
+  }
+  const fullName = (user.fullName || "New Staff Member").trim();
   const department = user.department || "front_desk";
   const jobTitle = user.jobTitle || "Front Desk - Receptionist";
   const roleLevel = user.roleLevel || "staff";
   const permissions = user.permissions || {};
 
-  let validUserId = user.userId;
+  let validUserId: string = user.userId || "";
   if (!isValidUuid(validUserId)) {
     const dbUserId = await ensureDbUser(email, fullName);
-    validUserId = dbUserId || generateUuid();
+    if (!dbUserId) {
+      throw new Error(`Could not initialize base user account for ${email}`);
+    }
+    validUserId = dbUserId;
   }
 
   const newUser: CompanyUser = {
     id: generateUuid(),
     companyId,
-    userId: validUserId || generateUuid(),
+    userId: validUserId,
     email,
     fullName,
     department,
@@ -1060,32 +1079,32 @@ export async function createCompanyUser(user: Partial<CompanyUser>): Promise<Com
     createdAt: new Date().toISOString(),
   };
 
-  try {
-    const dbDept = mapDepartmentToDb(department);
-    const dbRole = mapRoleLevelToDb(roleLevel);
+  const dbDept = mapDepartmentToDb(department);
+  const dbRole = mapRoleLevelToDb(roleLevel);
 
-    const { data, error } = await supabase
-      .from("company_users")
-      .insert({
-        company_id: companyId,
-        user_id: validUserId,
-        department: dbDept,
-        job_title: jobTitle,
-        role_level: dbRole,
-        permissions,
-        is_active: true,
-      })
-      .select("id")
-      .single();
+  const { data, error } = await supabase
+    .from("company_users")
+    .insert({
+      company_id: companyId,
+      user_id: validUserId,
+      department: dbDept,
+      job_title: jobTitle,
+      role_level: dbRole,
+      permissions,
+      is_active: true,
+    })
+    .select("id")
+    .single();
 
-    if (!error && data) {
-      newUser.id = data.id;
-    }
-  } catch (err) {
-    console.warn("Could not insert company user in Supabase", err);
+  if (error) {
+    console.error("Supabase insert error on company_users:", error);
+    throw new Error(error.message || "Could not assign user to organization.");
   }
 
-  MOCK_COMPANY_USERS.push(newUser);
+  if (data?.id) {
+    newUser.id = data.id;
+  }
+
   return newUser;
 }
 
@@ -1109,6 +1128,7 @@ export async function updateCompanyUser(
   updates: Partial<CompanyUser>
 ): Promise<CompanyUser | null> {
   const user = MOCK_COMPANY_USERS.find((u) => u.id === id);
+  let targetUserId = updates.userId || user?.userId;
 
   try {
     if (isValidUuid(id)) {
@@ -1121,16 +1141,25 @@ export async function updateCompanyUser(
       if (updates.permissions !== undefined) payload.permissions = updates.permissions;
       if (updates.isActive !== undefined) payload.is_active = updates.isActive;
 
-      await supabase.from("company_users").update(payload).eq("id", id);
+      const { data: updatedCu } = await supabase
+        .from("company_users")
+        .update(payload)
+        .eq("id", id)
+        .select("user_id")
+        .maybeSingle();
 
-      if (updates.fullName && user?.userId) {
+      if (updatedCu?.user_id) {
+        targetUserId = updatedCu.user_id;
+      }
+
+      if (updates.fullName && targetUserId) {
         const parts = updates.fullName.trim().split(" ");
         const firstName = parts[0] || "Staff";
         const lastName = parts.slice(1).join(" ") || "Member";
         await supabase
           .from("users")
           .update({ first_name: firstName, last_name: lastName })
-          .eq("id", user.userId);
+          .eq("id", targetUserId);
       }
     }
   } catch (err) {
@@ -1139,8 +1168,22 @@ export async function updateCompanyUser(
 
   if (user) {
     Object.assign(user, updates);
+    return user;
   }
-  return user || null;
+
+  return {
+    id,
+    companyId: updates.companyId || "",
+    userId: targetUserId || "",
+    email: updates.email || "",
+    fullName: updates.fullName || "",
+    department: updates.department || "admin",
+    jobTitle: updates.jobTitle || "",
+    roleLevel: updates.roleLevel || "staff",
+    permissions: updates.permissions || {},
+    isActive: updates.isActive ?? true,
+    createdAt: new Date().toISOString(),
+  };
 }
 
 /**

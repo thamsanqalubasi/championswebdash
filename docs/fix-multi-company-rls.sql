@@ -110,6 +110,16 @@ TO authenticated, anon
 USING (true)
 WITH CHECK (true);
 
+-- 4b. EXPAND DEPARTMENT & ROLE CONSTRAINTS ON COMPANY_USERS
+DO $$
+BEGIN
+  ALTER TABLE IF EXISTS public.company_users DROP CONSTRAINT IF EXISTS company_users_department_check;
+  ALTER TABLE IF EXISTS public.company_users ADD CONSTRAINT company_users_department_check 
+    CHECK (department in ('admin', 'manager', 'accountant', 'finance', 'front_desk', 'it', 'maintenance', 'housekeeping', 'kitchen', 'human_resources', 'hr', 'procurement', 'stores', 'audit'));
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'Notice: company_users constraint adjustment completed.';
+END $$;
+
 -- 5. FIX PUBLIC.USERS POLICIES (Signature uploads, profile edits)
 ALTER TABLE IF EXISTS public.users ENABLE ROW LEVEL SECURITY;
 
