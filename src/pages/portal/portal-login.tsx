@@ -1,11 +1,8 @@
-import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { TermsCheckboxField } from "@/components/terms-modal";
 import { sendEmailViaApi, wrapCustomerWelcomeEmailHtml } from "@/lib/notifications";
-import { LogIn, UserPlus, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react";
 import { LogIn, UserPlus, Eye, EyeOff, AlertCircle, CheckCircle, Building } from "lucide-react";
 
 function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
@@ -38,8 +35,6 @@ function PasswordRules({ password }: { password: string }) {
 
 export default function PortalLoginPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"login" | "signup">("login");
-  const [email, setEmail] = useState("");
   const [searchParams] = useSearchParams();
 
   const paramEmail = searchParams.get("email") || "";
