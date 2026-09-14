@@ -1225,22 +1225,6 @@ export default function DashboardPage() {
                         </div>
 
                         <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
-                          <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider">
-                            <Building2 size={15} />
-                            <span>Organizations</span>
-                          </div>
-                          <div className="pt-1 flex flex-col gap-1.5">
-                            <Link
-                              to="/companies"
-                              className="flex items-center justify-between rounded-lg bg-surface-elevated p-2 text-xs font-semibold text-foreground hover:bg-surface transition"
-                            >
-                              <span>Manage Organizations</span>
-                              <ArrowUpRight size={13} />
-                            </Link>
-                          </div>
-                        </div>
-
-                        <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2.5">
                           <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider">
                             <FileSignature size={15} />
                             <span>Contracts</span>

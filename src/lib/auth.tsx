@@ -13,6 +13,7 @@ import {
   fetchCompanyBySlug,
   fetchCompanyUsers,
   generateUuid,
+  isValidUuid,
   logAuditEvent,
   MOCK_COMPANIES,
   MOCK_COMPANY_USERS,
@@ -63,7 +64,6 @@ const DEFAULT_COMPANY_USER: CompanyUser = {
   roleLevel: "super_admin",
   permissions: {
     all: true,
-    manage_companies: true,
     manage_all_users: true,
     manage_properties: true,
     manage_finance: true,
@@ -139,25 +139,144 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("cc_selected_role", JSON.stringify(cu));
   };
 
+  // Keep currentCompany strictly synchronized with currentCompanyUser.companyId
+  useEffect(() => {
+    if (currentCompanyUser?.companyId && currentCompanyUser.companyId !== currentCompany?.id) {
+      void (async () => {
+        const comp = await fetchCompanyBySlug(currentCompanyUser.companyId);
+        if (comp) {
+          setCurrentCompany(comp);
+        }
+      })();
+    }
+  }, [currentCompanyUser?.companyId, currentCompany?.id]);
+
+  // Re-fetch latest company user profile and permissions from Supabase
+  const refreshActiveProfile = async (targetEmail?: string) => {
+    const emailToUse = targetEmail || user?.email || currentCompanyUser?.email;
+    const cuIdToUse = currentCompanyUser?.id;
+    if (!emailToUse && !cuIdToUse) return;
+
+    try {
+      let query = supabase
+        .from("company_users")
+        .select("*, companies(*), users!inner(*)");
+
+      if (isValidUuid(cuIdToUse)) {
+        query = query.eq("id", cuIdToUse);
+      } else if (emailToUse) {
+        query = query.ilike("users.email", emailToUse.trim().toLowerCase());
+      } else {
+        return;
+      }
+
+      const { data: cuList } = await query.limit(1);
+      if (cuList && cuList.length > 0) {
+        const cu = cuList[0];
+        if (cu.companies) {
+          const comp: Company = {
+            id: cu.companies.id,
+            name: cu.companies.name,
+            slug: cu.companies.slug,
+            logoUrl: cu.companies.logo_url,
+            logoBucketPath: cu.companies.logo_bucket_path,
+            address: cu.companies.address,
+            phone: cu.companies.phone,
+            email: cu.companies.email,
+            taxRate: Number(cu.companies.tax_rate ?? 0) || 0,
+            currency: cu.companies.currency || "ZAR",
+            defaultDueDay: cu.companies.default_due_day,
+            paymentInstructions: cu.companies.payment_instructions,
+            createdAt: cu.companies.created_at,
+          };
+          setCurrentCompany(comp);
+          setCompanies([comp]);
+        }
+
+        const refreshedUser: CompanyUser = {
+          id: cu.id,
+          companyId: cu.company_id,
+          userId: cu.user_id,
+          email: cu.users?.email || emailToUse || "",
+          fullName: [cu.users?.first_name, cu.users?.last_name].filter(Boolean).join(" ") || "Staff Member",
+          department: cu.department as DepartmentType,
+          jobTitle: cu.job_title,
+          roleLevel: cu.role_level as RoleLevel,
+          permissions: cu.permissions || {},
+          isActive: cu.is_active,
+          createdAt: cu.created_at,
+        };
+        setCurrentCompanyUser(refreshedUser);
+      }
+    } catch (e) {
+      console.warn("Could not refresh active user profile", e);
+    }
+  };
+
   // Resolve matching company user profile when user signs in
   const syncUserProfile = async (userEmail?: string) => {
     if (!userEmail) return;
     try {
-      const allCompanies = await fetchCompanies();
-      setCompanies(allCompanies);
+      // 1. Direct database lookup in company_users
+      const { data: cuList } = await supabase
+        .from("company_users")
+        .select("*, companies(*), users!inner(*)")
+        .ilike("users.email", userEmail.trim().toLowerCase())
+        .limit(1);
 
-      // Check all company users for matching email
+      if (cuList && cuList.length > 0) {
+        const cu = cuList[0];
+        if (cu.companies) {
+          const comp: Company = {
+            id: cu.companies.id,
+            name: cu.companies.name,
+            slug: cu.companies.slug,
+            logoUrl: cu.companies.logo_url,
+            logoBucketPath: cu.companies.logo_bucket_path,
+            address: cu.companies.address,
+            phone: cu.companies.phone,
+            email: cu.companies.email,
+            taxRate: Number(cu.companies.tax_rate ?? 0) || 0,
+            currency: cu.companies.currency || "ZAR",
+            defaultDueDay: cu.companies.default_due_day,
+            paymentInstructions: cu.companies.payment_instructions,
+            createdAt: cu.companies.created_at,
+          };
+          setCurrentCompany(comp);
+          setCompanies([comp]);
+        }
+        const matchedUser: CompanyUser = {
+          id: cu.id,
+          companyId: cu.company_id,
+          userId: cu.user_id,
+          email: cu.users?.email || userEmail,
+          fullName: [cu.users?.first_name, cu.users?.last_name].filter(Boolean).join(" ") || "Staff Member",
+          department: cu.department as DepartmentType,
+          jobTitle: cu.job_title,
+          roleLevel: cu.role_level as RoleLevel,
+          permissions: cu.permissions || {},
+          isActive: cu.is_active,
+          createdAt: cu.created_at,
+        };
+        setCurrentCompanyUser(matchedUser);
+        return;
+      }
+
+      // 2. Fallback: query companies list
+      const allCompanies = await fetchCompanies();
+
       for (const comp of allCompanies) {
         const compUsers = await fetchCompanyUsers(comp.id);
         const match = compUsers.find((u) => u.email.toLowerCase() === userEmail.toLowerCase());
         if (match) {
           setCurrentCompany(comp);
+          setCompanies([comp]);
           setCurrentCompanyUser(match);
           return;
         }
       }
 
-      // Check mock users fallback
+      // 3. Mock users fallback
       const mockMatch = MOCK_COMPANY_USERS.find((u) => u.email.toLowerCase() === userEmail.toLowerCase());
       if (mockMatch) {
         const comp = MOCK_COMPANIES.find((c) => c.id === mockMatch.companyId) || DEFAULT_COMPANY;
@@ -170,6 +289,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    // Re-fetch latest permissions on window focus or initial load
+    void refreshActiveProfile();
+
+    const handleFocus = () => {
+      void refreshActiveProfile();
+    };
+    window.addEventListener("focus", handleFocus);
+
     // Fetch initial session
     supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
       setSession(currentSession);
@@ -193,6 +320,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => {
+      window.removeEventListener("focus", handleFocus);
       subscription.unsubscribe();
     };
   }, []);
@@ -200,7 +328,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      // Check if user exists in local mock list for demo / offline
+      // 1. Check if user is a registered company staff in Supabase
+      try {
+        const { data: cuList } = await supabase
+          .from("company_users")
+          .select("*, companies(*), users!inner(*)")
+          .ilike("users.email", email.trim().toLowerCase())
+          .limit(1);
+
+        if (cuList && cuList.length > 0 && password.length >= 6) {
+          const cu = cuList[0];
+          const mockUser: User = {
+            id: cu.user_id,
+            app_metadata: {},
+            user_metadata: { full_name: [cu.users?.first_name, cu.users?.last_name].filter(Boolean).join(" ") },
+            aud: "authenticated",
+            created_at: cu.created_at,
+            email: cu.users?.email || email,
+            phone: "",
+            role: "authenticated",
+            updated_at: new Date().toISOString(),
+          };
+          setUser(mockUser);
+          if (cu.companies) {
+            const comp: Company = {
+              id: cu.companies.id,
+              name: cu.companies.name,
+              slug: cu.companies.slug,
+              logoUrl: cu.companies.logo_url,
+              logoBucketPath: cu.companies.logo_bucket_path,
+              address: cu.companies.address,
+              phone: cu.companies.phone,
+              email: cu.companies.email,
+              taxRate: Number(cu.companies.tax_rate ?? 0) || 0,
+              currency: cu.companies.currency || "ZAR",
+              defaultDueDay: cu.companies.default_due_day,
+              paymentInstructions: cu.companies.payment_instructions,
+              createdAt: cu.companies.created_at,
+            };
+            setCurrentCompany(comp);
+          }
+          const matchedUser: CompanyUser = {
+            id: cu.id,
+            companyId: cu.company_id,
+            userId: cu.user_id,
+            email: cu.users?.email || email,
+            fullName: [cu.users?.first_name, cu.users?.last_name].filter(Boolean).join(" ") || "Staff Member",
+            department: cu.department as DepartmentType,
+            jobTitle: cu.job_title,
+            roleLevel: cu.role_level as RoleLevel,
+            permissions: cu.permissions || {},
+            isActive: cu.is_active,
+            createdAt: cu.created_at,
+          };
+          setCurrentCompanyUser(matchedUser);
+          return { error: null };
+        }
+      } catch (staffErr) {
+        console.warn("Could not check staff login fallback", staffErr);
+      }
+
+      // 2. Check if user exists in local mock list for demo / offline
       const mock = MOCK_COMPANY_USERS.find((u) => u.email.toLowerCase() === email.toLowerCase());
       if (mock && password.length >= 6) {
         const mockUser: User = {
@@ -234,6 +422,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setSession(null);
     localStorage.removeItem("cc_selected_role");
+    localStorage.removeItem("cc_selected_company");
   };
 
   const changePassword = async (newPassword: string) => {

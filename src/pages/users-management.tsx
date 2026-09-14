@@ -17,7 +17,9 @@ import {
   Send,
   Globe,
   Network,
+  Crown,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 import {
   fetchCompanyUsers,
   createCompanyUser,
@@ -93,7 +95,7 @@ const JOB_TITLES_BY_DEPARTMENT: Record<DepartmentType, Array<{ title: string; de
 };
 
 export default function UsersManagementPage() {
-  const { currentCompany, currentCompanyUser, isSuperAdmin, isAdmin, isManager } = useAuth();
+  const { currentCompany, currentCompanyUser, isSuperAdmin, isAdmin, isManager, user } = useAuth();
   const [users, setUsers] = useState<CompanyUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -201,6 +203,97 @@ export default function UsersManagementPage() {
       setPasswordResetError(err instanceof Error ? err.message : "Failed to send password reset email.");
     } finally {
       setPasswordResetLoading(false);
+    }
+  };
+
+  // Appoint Super Admin Modal State (Requires Password Verification)
+  const [appointModalOpen, setAppointModalOpen] = useState(false);
+  const [appointTarget, setAppointTarget] = useState<CompanyUser | null>(null);
+  const [superAdminPassword, setSuperAdminPassword] = useState("");
+  const [appointLoading, setAppointLoading] = useState(false);
+  const [appointSuccess, setAppointSuccess] = useState<string | null>(null);
+  const [appointError, setAppointError] = useState<string | null>(null);
+
+  const openAppointSuperAdminModal = (u: CompanyUser) => {
+    setAppointTarget(u);
+    setSuperAdminPassword("");
+    setAppointSuccess(null);
+    setAppointError(null);
+    setAppointModalOpen(true);
+  };
+
+  const handleExecuteAppointSuperAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!appointTarget) return;
+    if (!superAdminPassword || superAdminPassword.trim().length === 0) {
+      setAppointError("Please enter your Super Admin password to confirm.");
+      return;
+    }
+
+    setAppointLoading(true);
+    setAppointError(null);
+    setAppointSuccess(null);
+
+    try {
+      // 1. Verify Super Admin password with Supabase Auth
+      const adminEmail = user?.email || currentCompanyUser.email;
+      if (adminEmail) {
+        const { error: authErr } = await supabase.auth.signInWithPassword({
+          email: adminEmail,
+          password: superAdminPassword,
+        });
+        if (authErr) {
+          throw new Error("Password verification failed: " + (authErr.message || "Incorrect password."));
+        }
+      }
+
+      // 2. Grant full Super Admin privileges
+      const fullPermissions: Record<string, boolean> = {
+        all: true,
+        view_dashboard: true,
+        manage_all_users: true,
+        manage_user_rights: true,
+        manage_roles_organogram: true,
+        manage_properties: true,
+        manage_finance: true,
+        manage_maintenance: true,
+        manage_hr: true,
+        manage_audit: true,
+        checkin_guests: true,
+      };
+
+      const updated = await updateCompanyUser(appointTarget.id, {
+        roleLevel: "super_admin",
+        jobTitle: "Admin - Super Admin",
+        department: "admin",
+        permissions: fullPermissions,
+      });
+
+      if (!updated) {
+        throw new Error("Failed to update user record in database.");
+      }
+
+      await logAuditEvent({
+        companyId: currentCompany.id,
+        action: "APPOINT_SUPER_ADMIN",
+        entityType: "company_user",
+        entityId: appointTarget.id,
+        entityName: `${appointTarget.fullName} (${appointTarget.email})`,
+        actorName: currentCompanyUser.fullName,
+        details: `Appointed ${appointTarget.fullName} as Super Admin for ${currentCompany.name}. Verified with Super Admin password.`,
+      });
+
+      setAppointSuccess(`Successfully appointed ${appointTarget.fullName} as Super Admin!`);
+      setTimeout(() => {
+        setAppointModalOpen(false);
+        setAppointTarget(null);
+        setSuperAdminPassword("");
+        loadUsers();
+      }, 1500);
+    } catch (err: any) {
+      setAppointError(err instanceof Error ? err.message : "Failed to appoint user as Super Admin.");
+    } finally {
+      setAppointLoading(false);
     }
   };
 
@@ -397,10 +490,15 @@ export default function UsersManagementPage() {
       }
     });
 
-    return isManager && !isAdmin
+    const isHrPersonnel =
+      currentCompanyUser?.department === "human_resources" ||
+      currentCompanyUser?.permissions?.manage_hr === true ||
+      currentCompanyUser?.permissions?.manage_all_users === true;
+
+    return isManager && !isAdmin && !isHrPersonnel
       ? combined.filter((j) => j.defaultLevel !== "manager" && j.defaultLevel !== "super_admin" && j.defaultLevel !== "admin")
       : combined;
-  }, [department, customRoles, isManager, isAdmin]);
+  }, [department, customRoles, isManager, isAdmin, currentCompanyUser]);
 
   // When department changes in modal, update available job titles
   useEffect(() => {
@@ -418,8 +516,13 @@ export default function UsersManagementPage() {
     setPassword("TempPassword123!");
     setSendInviteEmail(true);
 
-    // If manager, lock to their department
-    if (isManager && !isAdmin) {
+    const isHrPersonnel =
+      currentCompanyUser?.department === "human_resources" ||
+      currentCompanyUser?.permissions?.manage_hr === true ||
+      currentCompanyUser?.permissions?.manage_all_users === true;
+
+    // If manager (except HR personnel who onboard company-wide), lock to their department
+    if (isManager && !isAdmin && !isHrPersonnel) {
       setDepartment(currentCompanyUser.department);
     } else {
       setDepartment("front_desk");
@@ -435,10 +538,15 @@ export default function UsersManagementPage() {
       return;
     }
 
-    // Manager validation: cannot add managers or add outside their department
-    if (isManager && !isAdmin) {
+    const isHrPersonnel =
+      currentCompanyUser?.department === "human_resources" ||
+      currentCompanyUser?.permissions?.manage_hr === true ||
+      currentCompanyUser?.permissions?.manage_all_users === true;
+
+    // Manager validation: cannot add managers or add outside their department (unless HR Manager)
+    if (isManager && !isAdmin && !isHrPersonnel) {
       if (department !== currentCompanyUser.department) {
-        setErrorMsg("Managers can only add staff in their own department.");
+        setErrorMsg("Department managers can only add staff in their own department. HR Managers can onboard staff company-wide.");
         return;
       }
       if (roleLevel === "manager" || roleLevel === "super_admin" || roleLevel === "admin") {
@@ -704,6 +812,18 @@ export default function UsersManagementPage() {
 
                   <td className="px-4 py-3.5 text-right">
                     <div className="flex items-center justify-end gap-1.5">
+                      {isSuperAdmin && u.roleLevel !== "super_admin" && u.id !== currentCompanyUser.id && (
+                        <button
+                          type="button"
+                          onClick={() => openAppointSuperAdminModal(u)}
+                          className="flex items-center gap-1 rounded-lg border border-purple-500/30 bg-purple-500/10 px-2.5 py-1 text-xs font-semibold text-purple-600 hover:bg-purple-500/20 transition"
+                          title="Appoint as Super Admin (Requires Password Confirmation)"
+                        >
+                          <Crown size={13} className="text-purple-600" />
+                          <span>Appoint Super Admin</span>
+                        </button>
+                      )}
+
                       {canEditUserRights(u) && (
                         <button
                           type="button"
@@ -1439,6 +1559,89 @@ export default function UsersManagementPage() {
                 >
                   <ShieldCheck size={15} />
                   <span>{savingRights ? "Saving Rights..." : "Save User Rights"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Appoint Super Admin Modal (Requires Password Verification) */}
+      {appointModalOpen && appointTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl border border-purple-500/30 bg-surface p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-500/15 text-purple-600">
+                <Crown size={24} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Appoint Super Admin</h3>
+                <p className="text-xs text-muted">Executive Privilege Delegation</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-foreground/80 mb-4 leading-relaxed">
+              You are about to promote <strong className="text-purple-600">{appointTarget.fullName}</strong> (<span className="text-xs text-muted">{appointTarget.email}</span>) to <strong className="text-foreground">Super Admin</strong> of <strong>{currentCompany.name}</strong>.
+            </p>
+
+            <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3.5 mb-4 text-xs text-muted leading-relaxed">
+              <span className="font-bold text-foreground block mb-1">Executive Notice:</span>
+              Super Admins have full administrative authority over this organisation, including staff onboarding, rights assignment, finance, properties, and configuration. To confirm this elevation, please verify your own Super Admin password below.
+            </div>
+
+            {appointError && (
+              <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs font-semibold text-red-600">
+                <AlertCircle size={15} className="shrink-0" />
+                <span>{appointError}</span>
+              </div>
+            )}
+
+            {appointSuccess && (
+              <div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs font-semibold text-emerald-600">
+                <CheckCircle2 size={15} className="shrink-0" />
+                <span>{appointSuccess}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleExecuteAppointSuperAdmin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-foreground mb-1.5">
+                  Confirm Your Super Admin Password
+                </label>
+                <div className="relative">
+                  <Lock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                  <input
+                    type="password"
+                    required
+                    value={superAdminPassword}
+                    onChange={(e) => setSuperAdminPassword(e.target.value)}
+                    placeholder="Enter your current password..."
+                    disabled={appointLoading}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated py-2.5 pl-9 pr-3 text-sm text-foreground placeholder:text-muted focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAppointModalOpen(false);
+                    setAppointTarget(null);
+                    setSuperAdminPassword("");
+                  }}
+                  disabled={appointLoading}
+                  className="rounded-xl border border-border-color px-4 py-2 text-xs font-semibold text-muted hover:bg-surface-elevated transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={appointLoading || !superAdminPassword}
+                  className="flex items-center gap-1.5 rounded-xl bg-purple-600 px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-purple-700 transition disabled:opacity-50"
+                >
+                  <Crown size={14} />
+                  <span>{appointLoading ? "Verifying & Appointing..." : "Confirm & Appoint"}</span>
                 </button>
               </div>
             </form>

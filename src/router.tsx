@@ -122,7 +122,7 @@ export function AppRouter() {
         <Route path="/users-management" element={<UsersManagementPage />} />
         <Route path="/organogram" element={<OrganogramPage />} />
         <Route path="/it" element={<ITPage />} />
-        <Route path="/companies" element={<CompaniesPage />} />
+        <Route path="/companies" element={<Navigate to="/dashboard" replace />} />
         <Route path="/contracts" element={<ContractsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/audit-trail" element={<AuditTrailPage />} />

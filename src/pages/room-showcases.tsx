@@ -12,7 +12,7 @@ import {
   Plus, Pencil, Trash2, BedDouble, Users, Baby, Image as ImageIcon, Upload,
   Loader2, X, ChevronLeft, ChevronRight, Building2, Layers, Star, Wifi,
   Tv, Wind, Coffee, Bath, Dumbbell, ParkingCircle, Utensils, Globe, AlertCircle,
-  Eye, EyeOff, Home, MapPin, DollarSign
+  Eye, EyeOff, Home, MapPin, DollarSign, Calendar
 } from "lucide-react";
 
 const ROOM_TYPE_OPTIONS = [
@@ -96,6 +96,11 @@ export default function ShowcasePage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [rentalPromptOpen, setRentalPromptOpen] = useState(false);
+  const [rentalPromptTarget, setRentalPromptTarget] = useState<any>(null);
+  const [rentalVacancyDate, setRentalVacancyDate] = useState("");
+  const [rentalPromptLoading, setRentalPromptLoading] = useState(false);
+  const [rentalPromptError, setRentalPromptError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -103,7 +108,7 @@ export default function ShowcasePage() {
       try {
         const { data: props } = await supabase.from("properties").select("*").eq("company_id", currentCompany.id).order("name");
         if (props) {
-          const mapped = props.map((p: any) => ({ id: p.id, companyId: p.company_id || currentCompany.id, name: p.name, type: p.type, address: p.address || "", status: p.status || "occupied", monthlyRent: p.monthly_rent || 0, totalRooms: p.total_rooms || 0, defaultRoomPrice: p.default_room_price || 0, defaultBedBreakfast: p.default_bed_breakfast || 0, defaultBedLunch: p.default_bed_lunch || 0, defaultFullBoard: p.default_full_board || 0, photos: p.photos || [], rooms: [], floors: p.floors || [], city: p.city || "", country: p.country || "", isPublished: p.is_published || false }));
+          const mapped = props.map((p: any) => ({ id: p.id, companyId: p.company_id || currentCompany.id, name: p.name, type: p.type, address: p.address || "", status: p.status || "occupied", monthlyRent: p.monthly_rent || 0, totalRooms: p.total_rooms || 0, defaultRoomPrice: p.default_room_price || 0, defaultBedBreakfast: p.default_bed_breakfast || 0, defaultBedLunch: p.default_bed_lunch || 0, defaultFullBoard: p.default_full_board || 0, photos: p.photos || [], rooms: [], floors: p.floors || [], city: p.city || "", country: p.country || "", isPublished: p.is_published || false, availableFrom: p.available_from || "" }));
           setProperties(mapped);
           setRentalProperties(props.filter((p: any) => ["house","apartment","storage"].includes(p.type)));
         }
@@ -153,11 +158,60 @@ export default function ShowcasePage() {
     setListings(prev => prev.map(x => x.id === r.id ? { ...x, isActive: next } : x));
   };
 
-  const toggleRentalVisibility = async (p: any) => {
-    const next = !p.is_published;
+  const toggleRentalVisibility = async (p: any, nextPublishState?: boolean) => {
+    const next = nextPublishState !== undefined ? nextPublishState : !p.is_published;
     await supabase.from("properties").update({ is_published: next }).eq("id", p.id);
     setRentalProperties(prev => prev.map(x => x.id === p.id ? { ...x, is_published: next } : x));
     setProperties(prev => prev.map(x => x.id === p.id ? { ...x, isPublished: next } : x));
+  };
+
+  const handleToggleRental = (p: any) => {
+    if (p.is_published) {
+      void toggleRentalVisibility(p, false);
+      return;
+    }
+    if (p.status !== "vacant") {
+      setRentalPromptTarget(p);
+      setRentalVacancyDate(p.available_from || "");
+      setRentalPromptError(null);
+      setRentalPromptOpen(true);
+      return;
+    }
+    void toggleRentalVisibility(p, true);
+  };
+
+  const handleConfirmPublishOccupiedRental = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rentalPromptTarget) return;
+    if (!rentalVacancyDate) {
+      setRentalPromptError("Please select the date and month this property will become vacant.");
+      return;
+    }
+
+    setRentalPromptLoading(true);
+    setRentalPromptError(null);
+    try {
+      const updatePayload: Record<string, any> = {
+        is_published: true,
+        available_from: rentalVacancyDate,
+      };
+      const { error: err } = await supabase.from("properties").update(updatePayload).eq("id", rentalPromptTarget.id);
+      if (err) {
+        const { error: fErr } = await supabase.from("properties").update({ is_published: true }).eq("id", rentalPromptTarget.id);
+        if (fErr) throw fErr;
+      }
+
+      setRentalProperties(prev => prev.map(x => x.id === rentalPromptTarget.id ? { ...x, is_published: true, available_from: rentalVacancyDate } : x));
+      setProperties(prev => prev.map(x => x.id === rentalPromptTarget.id ? { ...x, isPublished: true, availableFrom: rentalVacancyDate } : x));
+
+      setRentalPromptOpen(false);
+      setRentalPromptTarget(null);
+      setRentalVacancyDate("");
+    } catch (err) {
+      setRentalPromptError(err instanceof Error ? err.message : "Failed to publish property.");
+    } finally {
+      setRentalPromptLoading(false);
+    }
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -293,20 +347,23 @@ export default function ShowcasePage() {
                       <div className="flex items-center gap-1 text-xs text-muted mb-2"><MapPin size={10}/>{[p.city,p.country].filter(Boolean).join(", ")||p.address}</div>
                       <div className="flex items-center justify-between mb-3">
                         <div><span className="text-lg font-bold text-blue-700">{formatCurrency(p.monthly_rent||0)}</span><span className="text-xs text-muted">/month</span></div>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${p.status==="vacant"?"bg-green-100 text-green-700":"bg-orange-100 text-orange-700"}`}>{p.status==="vacant"?"Available":"Occupied"}</span>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${p.status==="vacant"?"bg-green-100 text-green-700":"bg-orange-100 text-orange-700"}`}>{p.status==="vacant"?"Available":"Occupied"}</span>
+                          {p.status === "occupied" && p.available_from && (
+                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
+                              <Calendar size={10}/> Vacant {new Date(p.available_from).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       {p.is_published ? (
-                        <button type="button" onClick={() => toggleRentalVisibility(p)} className="w-full flex items-center justify-center gap-2 rounded-xl border border-orange-300 px-3 py-2 text-sm font-bold text-orange-600 hover:bg-orange-50 transition">
+                        <button type="button" onClick={() => handleToggleRental(p)} className="w-full flex items-center justify-center gap-2 rounded-xl border border-orange-300 px-3 py-2 text-sm font-bold text-orange-600 hover:bg-orange-50 transition">
                           <EyeOff size={14}/> Unpublish
                         </button>
-                      ) : p.status === "vacant" ? (
-                        <button type="button" onClick={() => toggleRentalVisibility(p)} className="w-full flex items-center justify-center gap-2 rounded-xl border border-green-400 bg-green-50 px-3 py-2 text-sm font-bold text-green-700 hover:bg-green-100 transition">
+                      ) : (
+                        <button type="button" onClick={() => handleToggleRental(p)} className="w-full flex items-center justify-center gap-2 rounded-xl border border-green-400 bg-green-50 px-3 py-2 text-sm font-bold text-green-700 hover:bg-green-100 transition">
                           <Eye size={14}/> Publish
                         </button>
-                      ) : (
-                        <div className="w-full flex items-center justify-center gap-2 rounded-xl border border-border-color px-3 py-2 text-sm text-muted cursor-not-allowed opacity-60">
-                          <EyeOff size={14}/> Occupied — cannot publish
-                        </div>
                       )}
                     </div>
                   </div>
@@ -381,6 +438,64 @@ export default function ShowcasePage() {
             <button type="button" onClick={onSave} disabled={saving} className="rounded-xl bg-purple-600 px-5 py-2 text-sm font-bold text-white shadow-md hover:bg-purple-700 disabled:opacity-50">{saving?"Saving...":editingId?"Save Changes":"Create Room Type"}</button>
           </div>
         </div>
+      </Modal>
+
+      {/* Occupied Rental Vacancy Date Prompt Modal */}
+      <Modal
+        open={rentalPromptOpen}
+        onClose={() => { if (!rentalPromptLoading) { setRentalPromptOpen(false); setRentalPromptTarget(null); } }}
+        title="Scheduled Vacancy Date Required"
+      >
+        <form onSubmit={handleConfirmPublishOccupiedRental} className="space-y-4">
+          <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-700 dark:text-amber-400">
+            <p className="font-semibold mb-1">
+              Publishing Occupied Property: {rentalPromptTarget?.name}
+            </p>
+            <p>
+              To avoid confusion on the public portal, occupied listings must display the date and month they will become vacant and available for new tenants.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1 block font-medium text-foreground text-xs">
+              When will this property become vacant? *
+            </label>
+            <input
+              type="date"
+              required
+              value={rentalVacancyDate}
+              min={new Date().toISOString().split("T")[0]}
+              onChange={(e) => setRentalVacancyDate(e.target.value)}
+              className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground outline-none focus:border-purple-600"
+            />
+            <p className="text-[11px] text-muted mt-1">
+              Visitors on the main portal will see: <strong>Occupied · Available [Date]</strong>
+            </p>
+          </div>
+
+          {rentalPromptError && (
+            <p className="text-xs text-red-500">{rentalPromptError}</p>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-border-color">
+            <button
+              type="button"
+              disabled={rentalPromptLoading}
+              onClick={() => { setRentalPromptOpen(false); setRentalPromptTarget(null); }}
+              className="rounded-xl border border-border-color px-4 py-2 text-xs font-semibold text-muted hover:bg-surface-elevated"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={rentalPromptLoading || !rentalVacancyDate}
+              className="rounded-xl bg-purple-600 px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-purple-700 disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {rentalPromptLoading && <Loader2 size={13} className="animate-spin" />}
+              <span>{rentalPromptLoading ? "Publishing..." : "Confirm & Publish"}</span>
+            </button>
+          </div>
+        </form>
       </Modal>
     </ModulePage>
   );

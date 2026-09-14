@@ -1,9 +1,69 @@
--- Seed default "Main Contract" template and sections
--- Safe to run multiple times.
+-- ==============================================================================
+-- SEED DEFAULT "MAIN CONTRACT" TEMPLATE & SECTIONS
+-- 100% Safe to run multiple times (Fully Idempotent)
+-- Run this in Supabase SQL Editor (Dashboard > SQL Editor > New Query)
+-- ==============================================================================
 
-begin;
+BEGIN;
 
-insert into public.contract_templates (
+-- 1. Ensure required extensions exist
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- 2. Ensure parent contract_templates table exists with all required columns
+CREATE TABLE IF NOT EXISTS public.contract_templates (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  company_id uuid,
+  title text NOT NULL,
+  category text DEFAULT 'residential',
+  content text DEFAULT '',
+  description text DEFAULT '',
+  monthly_rent numeric DEFAULT 0,
+  deposit_amount numeric DEFAULT 0,
+  is_default boolean DEFAULT false,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Ensure all expected columns exist if the table was created previously
+ALTER TABLE public.contract_templates ADD COLUMN IF NOT EXISTS company_id uuid;
+ALTER TABLE public.contract_templates ADD COLUMN IF NOT EXISTS category text DEFAULT 'residential';
+ALTER TABLE public.contract_templates ADD COLUMN IF NOT EXISTS content text DEFAULT '';
+ALTER TABLE public.contract_templates ADD COLUMN IF NOT EXISTS description text DEFAULT '';
+ALTER TABLE public.contract_templates ADD COLUMN IF NOT EXISTS monthly_rent numeric DEFAULT 0;
+ALTER TABLE public.contract_templates ADD COLUMN IF NOT EXISTS deposit_amount numeric DEFAULT 0;
+ALTER TABLE public.contract_templates ADD COLUMN IF NOT EXISTS is_default boolean DEFAULT false;
+ALTER TABLE public.contract_templates ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+
+-- Ensure unique constraint on title so ON CONFLICT (title) never throws 42P10
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'contract_templates_title_key'
+  ) THEN
+    ALTER TABLE public.contract_templates ADD CONSTRAINT contract_templates_title_key UNIQUE (title);
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+-- 3. Ensure contract_template_sections table exists with both order_index and sort_order
+CREATE TABLE IF NOT EXISTS public.contract_template_sections (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  template_id uuid NOT NULL REFERENCES public.contract_templates(id) ON DELETE CASCADE,
+  section_key text,
+  order_index integer DEFAULT 0,
+  sort_order integer DEFAULT 0,
+  title text NOT NULL,
+  content text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE public.contract_template_sections ADD COLUMN IF NOT EXISTS section_key text;
+ALTER TABLE public.contract_template_sections ADD COLUMN IF NOT EXISTS order_index integer DEFAULT 0;
+ALTER TABLE public.contract_template_sections ADD COLUMN IF NOT EXISTS sort_order integer DEFAULT 0;
+
+-- 4. Upsert the 'Main Contract' Template
+INSERT INTO public.contract_templates (
   title,
   category,
   content,
@@ -12,7 +72,7 @@ insert into public.contract_templates (
   deposit_amount,
   is_default
 )
-values (
+VALUES (
   'Main Contract',
   'residential',
   '<p style="text-align: center;"><strong>LEASE AGREEMENT</strong></p>',
@@ -21,24 +81,45 @@ values (
   4500,
   true
 )
-on conflict (title)
-do update set
-  category = coalesce(public.contract_templates.category, excluded.category),
-  content = case when coalesce(public.contract_templates.content, '') = '' then excluded.content else public.contract_templates.content end,
-  description = excluded.description,
-  monthly_rent = excluded.monthly_rent,
-  deposit_amount = excluded.deposit_amount;
+ON CONFLICT (title)
+DO UPDATE SET
+  category = COALESCE(public.contract_templates.category, EXCLUDED.category),
+  content = CASE WHEN COALESCE(public.contract_templates.content, '') = '' THEN EXCLUDED.content ELSE public.contract_templates.content END,
+  description = EXCLUDED.description,
+  monthly_rent = EXCLUDED.monthly_rent,
+  deposit_amount = EXCLUDED.deposit_amount,
+  is_default = true,
+  updated_at = now();
 
-update public.contract_templates
-set is_default = case when title = 'Main Contract' then true else false end;
+-- Set as only default template
+UPDATE public.contract_templates
+SET is_default = (title = 'Main Contract');
 
-with main_template as (
-  select id
-  from public.contract_templates
-  where title = 'Main Contract'
-  limit 1
-), seed_sections(sort_order, title, content) as (
-  values
+-- 5. Delete any existing sections for 'Main Contract' to prevent duplicate or corrupted clauses
+DELETE FROM public.contract_template_sections
+WHERE template_id IN (
+  SELECT id FROM public.contract_templates WHERE title = 'Main Contract'
+);
+
+-- 6. Insert all 12 complete, legally structured contract sections
+INSERT INTO public.contract_template_sections (
+  template_id,
+  section_key,
+  order_index,
+  sort_order,
+  title,
+  content
+)
+SELECT
+  mt.id,
+  'sec_' || (s.idx + 1),
+  s.idx,
+  s.idx,
+  s.title,
+  s.content
+FROM public.contract_templates mt
+CROSS JOIN (
+  VALUES
     (0, 'Memorandum of Agreement', '<p style="text-align: center;"><strong>LEASE AGREEMENT</strong></p><p style="text-align: center;"><strong>(For Residential Accommodation)</strong></p><p style="text-align: center;"><strong>Memorandum of Agreement</strong></p><p style="text-align: justify;">This Memorandum of Agreement is made and entered into by and between the <strong>Landlord</strong> and the <strong>Lessee</strong> under the terms and conditions set out in this contract.</p>'),
     (1, 'Parties and Contact Details', '<p style="text-align: justify;"><strong>Landlord:</strong> Michael Beukes, ID 74020700079</p><p style="text-align: justify;"><strong>Landlord Address:</strong> 2673 J. James Street, Khomasdal, Windhoek</p><p style="text-align: justify;"><strong>Landlord Contact:</strong> 081 424 1935, michaelfbeukes@gmail.com</p><p style="text-align: justify;"><strong>Lessee:</strong> Mr Tamsanqa Lubasi, Passport EN903112</p><p style="text-align: justify;"><strong>Lessee Contact:</strong> thamulubasi@gmail.com, 081 844 5625</p><p style="text-align: justify;"><strong>Next of Kin:</strong> Nolwazi Dube, 081 811 5624</p><p style="text-align: justify;"><strong>Declaration:</strong> The Lessee confirms that all personal information supplied is correct.</p>'),
     (2, 'Property Description', '<p style="text-align: justify;">The Landlord lets to the Lessee, who hires, the following property ("<strong>The Property</strong>"):</p><p style="text-align: justify;"><strong>One bedroom flat (excluding garage)</strong>, located at <strong>2673 J. James Street, Khomasdal, Windhoek, Namibia</strong>.</p>'),
@@ -51,15 +132,30 @@ with main_template as (
     (9, 'Occupancy, Conduct, and Restrictions', '<p style="text-align: justify;">No sub-letting is allowed.</p><p style="text-align: justify;">The Lessee may not cede or assign this lease without prior written consent of the Landlord.</p><p style="text-align: justify;">Maximum occupancy is <strong>1 adult</strong>, unless otherwise agreed in writing.</p><p style="text-align: justify;">No additional occupants are allowed without prior arrangement with the Landlord.</p><p style="text-align: justify;">No animals causing disturbance to other lessees may be harboured.</p><p style="text-align: justify;">Lessee and visitors may not engage in illegal activity, non-prescribed substance use, or behavior violating neighbors'' rights. Such conduct constitutes grounds for termination under Namibian law.</p><p style="text-align: justify;">The Lessee shall respect the rights of all other lessees and neighbors at all times.</p>'),
     (10, 'Termination, Renewal, and Notice', '<p style="text-align: justify;">This contract is binding on the Lessee for the full period stated in this agreement.</p><p style="text-align: justify;">The Lessee must give the Landlord one full calendar month''s written notice to terminate the lease early.</p><p style="text-align: justify;">In the absence of such notice, the lease may be extended for the same period as originally agreed.</p><p style="text-align: justify;">Failure to provide notice may result in forfeiture of the deposit.</p><p style="text-align: justify;">The Landlord reserves the right to terminate the contract prematurely by written notice to the Lessee.</p>'),
     (11, 'Signatures and Witnesses', '<p style="text-align: justify;">Thus done and signed at Windhoek on this ______ day of ______, in the presence of the undersigned witnesses.</p><p style="text-align: justify;"><strong>Witnesses:</strong> No.1 ____________________  No.2 ____________________</p><p style="text-align: justify;"><strong>Lessee Signature:</strong> ____________________</p><p style="text-align: justify;">Thus done and signed at Windhoek on this ______ day of ______, in the presence of the undersigned witnesses.</p><p style="text-align: justify;"><strong>Witnesses:</strong> No.1 ____________________  No.2 ____________________</p><p style="text-align: justify;"><strong>Landlord Signature:</strong> ____________________</p>')
-)
-insert into public.contract_template_sections (template_id, sort_order, title, content)
-select mt.id, s.sort_order, s.title, s.content
-from main_template mt
-cross join seed_sections s
-where not exists (
-  select 1
-  from public.contract_template_sections cts
-  where cts.template_id = mt.id
-);
+) AS s(idx, title, content)
+WHERE mt.title = 'Main Contract';
 
-commit;
+-- 7. Ensure RLS & permissions are properly configured
+ALTER TABLE public.contract_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.contract_template_sections ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "contract_templates_all" ON public.contract_templates;
+CREATE POLICY "contract_templates_all" ON public.contract_templates FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "contract_template_sections_all" ON public.contract_template_sections;
+CREATE POLICY "contract_template_sections_all" ON public.contract_template_sections FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
+
+GRANT ALL ON public.contract_templates TO anon, authenticated;
+GRANT ALL ON public.contract_template_sections TO anon, authenticated;
+
+COMMIT;
+
+-- Verification
+SELECT 
+  ct.title AS template_title,
+  ct.is_default,
+  count(cts.id) AS section_count
+FROM public.contract_templates ct
+LEFT JOIN public.contract_template_sections cts ON cts.template_id = ct.id
+WHERE ct.title = 'Main Contract'
+GROUP BY ct.title, ct.is_default;

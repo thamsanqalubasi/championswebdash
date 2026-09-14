@@ -38,6 +38,7 @@ import type {
   QuoteContactProfile,
   RoleCapability,
   RoleProfileDefinition,
+  RoleLevel,
 } from "./types";
 import { supabase } from "./supabase";
 import {
@@ -45,6 +46,7 @@ import {
   wrapStaffInvitationEmailHtml,
   wrapStaffPasswordResetEmailHtml,
 } from "./notifications";
+import { buildProfessionalPayslipHtml } from "./document-templates";
 
 function toNumber(value: unknown) {
   return Number(value ?? 0) || 0;
@@ -90,6 +92,66 @@ export function mapRoleLevelToDb(role: string): string {
   if (role === "manager") return "manager";
   return "staff";
 }
+
+export const JOB_TITLES_BY_DEPARTMENT: Record<DepartmentType, Array<{ title: string; defaultLevel: RoleLevel }>> = {
+  admin: [
+    { title: "Admin - Super Admin", defaultLevel: "super_admin" },
+    { title: "Admin - Admin", defaultLevel: "admin" },
+  ],
+  it: [
+    { title: "IT - Manager", defaultLevel: "manager" },
+    { title: "IT - System Admin", defaultLevel: "all_rights" },
+    { title: "IT - Programmer", defaultLevel: "staff" },
+    { title: "IT - Web Developer", defaultLevel: "staff" },
+    { title: "IT - All Rights", defaultLevel: "all_rights" },
+  ],
+  maintenance: [
+    { title: "Maintenance - Manager", defaultLevel: "manager" },
+    { title: "Maintenance - Cleaner", defaultLevel: "staff" },
+    { title: "Maintenance - Repairs", defaultLevel: "staff" },
+    { title: "Maintenance - Plumbing", defaultLevel: "staff" },
+    { title: "Maintenance - All Rights", defaultLevel: "all_rights" },
+  ],
+  accountant: [
+    { title: "Accountant - Manager", defaultLevel: "manager" },
+    { title: "Accountant - Book Keeping", defaultLevel: "staff" },
+    { title: "Accountant - Payments and Bookings", defaultLevel: "staff" },
+    { title: "Accountant - All Rights", defaultLevel: "all_rights" },
+  ],
+  front_desk: [
+    { title: "Front Desk - Admin", defaultLevel: "admin" },
+    { title: "Front Desk - Manager", defaultLevel: "manager" },
+    { title: "Front Desk - Receptionist", defaultLevel: "staff" },
+    { title: "Front Desk - Customer Service", defaultLevel: "staff" },
+    { title: "Front Desk - Bookings", defaultLevel: "staff" },
+    { title: "Front Desk - All Rights", defaultLevel: "all_rights" },
+  ],
+  human_resources: [
+    { title: "HR - Manager", defaultLevel: "manager" },
+    { title: "HR - Officer", defaultLevel: "staff" },
+    { title: "HR - Payroll", defaultLevel: "staff" },
+    { title: "HR - All Rights", defaultLevel: "all_rights" },
+  ],
+  procurement: [
+    { title: "Procurement - Manager", defaultLevel: "manager" },
+    { title: "Procurement - Officer", defaultLevel: "staff" },
+    { title: "Procurement - All Rights", defaultLevel: "all_rights" },
+  ],
+  audit: [
+    { title: "Audit - Manager", defaultLevel: "manager" },
+    { title: "Audit - Auditor", defaultLevel: "staff" },
+    { title: "Audit - All Rights", defaultLevel: "all_rights" },
+  ],
+  stores: [
+    { title: "Stores - Manager", defaultLevel: "manager" },
+    { title: "Stores - Clerk", defaultLevel: "staff" },
+    { title: "Stores - Receiver", defaultLevel: "staff" },
+    { title: "Stores - All Rights", defaultLevel: "all_rights" },
+  ],
+  manager: [
+    { title: "General Operations Manager", defaultLevel: "manager" },
+  ],
+};
 
 export async function ensureDbUser(email: string, fullName?: string): Promise<string | null> {
   try {
@@ -2724,6 +2786,7 @@ export async function createEmployeeContract(contract: Partial<EmployeeContract>
     department: contract.department || "front_desk",
     jobTitle: contract.jobTitle || "Front Desk - Receptionist",
     startDate: contract.startDate || new Date().toISOString().slice(0, 10),
+    endDate: contract.isPermanent ? undefined : contract.endDate,
     isPermanent: contract.isPermanent ?? true,
     monthlySalary: contract.monthlySalary ?? 15000,
     leaveDaysPerYear: contract.leaveDaysPerYear ?? 21,
@@ -2747,6 +2810,7 @@ export async function createEmployeeContract(contract: Partial<EmployeeContract>
           department: dbDept,
           employment_type: newCon.isPermanent ? "permanent" : "fixed_term",
           start_date: newCon.startDate,
+          end_date: newCon.isPermanent ? null : (newCon.endDate || null),
           basic_salary: newCon.monthlySalary,
           working_hours: "40 hours per week",
           status: "active",
@@ -3359,10 +3423,13 @@ export async function fetchDashboardData(companyId: string = MOCK_COMPANIES[0].i
   }
 }
 
-export async function fetchProperties(companyId: string = MOCK_COMPANIES[0].id): Promise<PropertyRow[]> {
+export async function fetchProperties(companyId?: string): Promise<PropertyRow[]> {
+  if (!companyId) return [];
   try {
     let query = supabase.from("properties").select("*");
     if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    } else {
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("name");
@@ -3386,6 +3453,7 @@ export async function fetchProperties(companyId: string = MOCK_COMPANIES[0].id):
         defaultFullBoard: toNumber(p.default_full_board),
         photos: p.photos || [],
         isPublished: p.is_published || false,
+        availableFrom: p.available_from || undefined,
       }));
     }
   } catch (err) {
@@ -3394,10 +3462,13 @@ export async function fetchProperties(companyId: string = MOCK_COMPANIES[0].id):
   return [];
 }
 
-export async function fetchTenants(companyId: string = MOCK_COMPANIES[0].id): Promise<TenantRow[]> {
+export async function fetchTenants(companyId?: string): Promise<TenantRow[]> {
+  if (!companyId) return [];
   try {
     let query = supabase.from("tenants").select("*, properties(name)");
     if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    } else {
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("created_at", { ascending: false });
@@ -3419,12 +3490,11 @@ export async function fetchTenants(companyId: string = MOCK_COMPANIES[0].id): Pr
   return [];
 }
 
-export async function fetchInvoices(companyId: string = MOCK_COMPANIES[0].id): Promise<InvoiceRow[]> {
+export async function fetchInvoices(companyId?: string): Promise<InvoiceRow[]> {
+  if (!companyId) return [];
   try {
     let query = supabase.from("invoices").select("*, tenants(full_name), properties(name)");
-    if (isValidUuid(companyId)) {
-      query = query.eq("company_id", companyId);
-    }
+    query = query.eq("company_id", companyId);
     const { data, error } = await query.order("created_at", { ascending: false });
     if (!error && data) {
       return data.map((inv) => ({
@@ -3444,12 +3514,11 @@ export async function fetchInvoices(companyId: string = MOCK_COMPANIES[0].id): P
   return [];
 }
 
-export async function fetchReportsData(companyId: string = MOCK_COMPANIES[0].id): Promise<ReportsData> {
+export async function fetchReportsData(companyId?: string): Promise<ReportsData> {
+  if (!companyId) return { summary: { totalInvoiced: 0, totalPaid: 0, totalOverdue: 0, collectionRate: 0 }, byStatus: [], monthly: [] };
   try {
     let query = supabase.from("invoices").select("total_amount, status, created_at");
-    if (isValidUuid(companyId)) {
-      query = query.eq("company_id", companyId);
-    }
+    query = query.eq("company_id", companyId);
     const { data: invoices } = await query;
     const invList = invoices || [];
     const totalInvoiced = invList.reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
@@ -3524,12 +3593,11 @@ export async function fetchMaintenanceOverview(companyId: string = MOCK_COMPANIE
   }
 }
 
-export async function fetchWorkOrders(companyId: string = MOCK_COMPANIES[0].id): Promise<WorkOrderRow[]> {
+export async function fetchWorkOrders(companyId?: string): Promise<WorkOrderRow[]> {
+  if (!companyId) return [];
   try {
     let query = supabase.from("maintenance").select("*, properties(name), maintainers(name)");
-    if (isValidUuid(companyId)) {
-      query = query.eq("company_id", companyId);
-    }
+    query = query.eq("company_id", companyId);
     const { data, error } = await query.order("created_at", { ascending: false });
     if (!error && data) {
       return data.map((w) => ({
@@ -3551,12 +3619,11 @@ export async function fetchWorkOrders(companyId: string = MOCK_COMPANIES[0].id):
   return [];
 }
 
-export async function fetchProviders(companyId: string = MOCK_COMPANIES[0].id): Promise<ProviderRow[]> {
+export async function fetchProviders(companyId?: string): Promise<ProviderRow[]> {
+  if (!companyId) return [];
   try {
     let query = supabase.from("maintainers").select("*");
-    if (isValidUuid(companyId)) {
-      query = query.eq("company_id", companyId);
-    }
+    query = query.eq("company_id", companyId);
     const { data, error } = await query.order("name");
     if (!error && data) {
       return data.map((p) => ({
@@ -3576,12 +3643,11 @@ export async function fetchProviders(companyId: string = MOCK_COMPANIES[0].id): 
   return [];
 }
 
-export async function fetchInspections(companyId: string = MOCK_COMPANIES[0].id): Promise<InspectionRow[]> {
+export async function fetchInspections(companyId?: string): Promise<InspectionRow[]> {
+  if (!companyId) return [];
   try {
     let query = supabase.from("inspections").select("*, properties(name), tenants(full_name)");
-    if (isValidUuid(companyId)) {
-      query = query.eq("company_id", companyId);
-    }
+    query = query.eq("company_id", companyId);
     const { data, error } = await query.order("scheduled_date", { ascending: false });
     if (!error && data) {
       return data.map((insp) => ({
@@ -3602,12 +3668,11 @@ export async function fetchInspections(companyId: string = MOCK_COMPANIES[0].id)
   return [];
 }
 
-export async function fetchPreventiveTasks(companyId: string = MOCK_COMPANIES[0].id): Promise<PreventiveTaskRow[]> {
+export async function fetchPreventiveTasks(companyId?: string): Promise<PreventiveTaskRow[]> {
+  if (!companyId) return [];
   try {
     let query = supabase.from("preventive_maintenance").select("*, properties(name), maintainers(name)");
-    if (isValidUuid(companyId)) {
-      query = query.eq("company_id", companyId);
-    }
+    query = query.eq("company_id", companyId);
     const { data, error } = await query.order("next_due");
     if (!error && data) {
       return data.map((t) => ({
@@ -3629,12 +3694,11 @@ export async function fetchPreventiveTasks(companyId: string = MOCK_COMPANIES[0]
   return [];
 }
 
-export async function fetchInventoryItems(companyId: string = MOCK_COMPANIES[0].id): Promise<InventoryItemRow[]> {
+export async function fetchInventoryItems(companyId?: string): Promise<InventoryItemRow[]> {
+  if (!companyId) return [];
   try {
     let query = supabase.from("maintenance_inventory").select("*");
-    if (isValidUuid(companyId)) {
-      query = query.eq("company_id", companyId);
-    }
+    query = query.eq("company_id", companyId);
     const { data, error } = await query.order("name");
     if (!error && data) {
       return data.map((item) => ({
@@ -3656,12 +3720,11 @@ export async function fetchInventoryItems(companyId: string = MOCK_COMPANIES[0].
   return [];
 }
 
-export async function fetchContracts(companyId: string = MOCK_COMPANIES[0].id): Promise<ContractRow[]> {
+export async function fetchContracts(companyId?: string): Promise<ContractRow[]> {
+  if (!companyId) return [];
   try {
     let query = supabase.from("contracts").select("*, tenants(full_name), properties(name)");
-    if (isValidUuid(companyId)) {
-      query = query.eq("company_id", companyId);
-    }
+    query = query.eq("company_id", companyId);
     const { data, error } = await query.order("created_at", { ascending: false });
     if (!error && data) {
       return data.map((c) => ({
@@ -4878,7 +4941,151 @@ export function canUserManageRoles(user?: CompanyUser | null, isSuperAdmin?: boo
   if (isSuperAdmin) return true;
   if (!user) return false;
   if (user.roleLevel === "super_admin" || user.roleLevel === "admin") return true;
-  if (user.permissions && user.permissions["manage_roles_organogram"]) return true;
+  if (user.permissions && (user.permissions["manage_roles_organogram"] || user.permissions["all"])) return true;
+  if (user.department === "human_resources" && (user.roleLevel === "manager" || user.permissions?.["manage_hr"])) return true;
   return false;
+}
+
+/**
+ * Dispatches an official branded payslip email to an employee,
+ * containing one or multiple monthly payslips as separate HTML attachments.
+ */
+export async function sendPayslipEmailViaApi(opts: {
+  employeeEmail: string;
+  employeeName: string;
+  company: Company;
+  payslips: Payslip[];
+  senderName?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const { employeeEmail, employeeName, company, payslips, senderName } = opts;
+  if (!employeeEmail || !employeeEmail.includes("@")) {
+    return { success: false, error: "Invalid employee email address." };
+  }
+  if (!payslips || payslips.length === 0) {
+    return { success: false, error: "No payslips provided to send." };
+  }
+
+  // Maximum 6 payslips allowed per email dispatch
+  const trimmedPayslips = payslips.slice(0, 6);
+
+  const attachments = trimmedPayslips.map((slip) => {
+    const html = buildProfessionalPayslipHtml(
+      {
+        ...slip,
+        paymentMethod: slip.paymentMethod || "Electronic Funds Transfer (EFT)",
+        generatedByName: slip.generatedByName || senderName || "HR & Payroll Administration",
+      },
+      {
+        companyName: company.name,
+        currency: company.currency || "ZAR",
+        address: company.address || "",
+        logoUrl: company.logoUrl || "",
+        phone: company.phone || "",
+        email: company.email || "",
+        taxRate: 15,
+        paymentInstructions: "Direct Bank Deposit / EFT",
+      }
+    );
+
+    const safePeriod = slip.payPeriod.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const safeName = employeeName.replace(/[^a-zA-Z0-9_-]/g, "_");
+    return {
+      filename: `Payslip_${safeName}_${safePeriod}.html`,
+      content: html,
+      contentType: "text/html",
+    };
+  });
+
+  const periodList = trimmedPayslips.map((s) => s.payPeriod).join(", ");
+  const singleOrPlural = trimmedPayslips.length > 1 ? "Payslips" : "Payslip";
+
+  const emailHtml = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 32px 16px; color: #1e293b; }
+      .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+      .header { background: #0f172a; padding: 32px 24px; text-align: center; }
+      .content { padding: 32px 24px; }
+      .card { background: #f1f5f9; border-radius: 12px; padding: 20px; margin: 20px 0; }
+      .badge { display: inline-block; background: #2563eb; color: #ffffff; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 10px; border-radius: 6px; }
+      .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 24px; font-size: 12px; color: #64748b; text-align: center; }
+      table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+      th, td { padding: 8px 12px; text-align: left; font-size: 13px; border-bottom: 1px solid #e2e8f0; }
+      th { font-weight: 700; color: #475569; background: #e2e8f0; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 800;">${company.name}</h1>
+        <p style="color: #94a3b8; margin: 6px 0 0; font-size: 13px;">Human Resources & Payroll Administration</p>
+      </div>
+      <div class="content">
+        <span class="badge">Official Payroll Record</span>
+        <h2 style="font-size: 18px; font-weight: 800; margin: 16px 0 8px; color: #0f172a;">Official ${singleOrPlural} Enclosed</h2>
+        <p style="font-size: 14px; line-height: 1.6; color: #334155;">
+          Dear <strong>${employeeName}</strong>,
+        </p>
+        <p style="font-size: 14px; line-height: 1.6; color: #334155;">
+          Please find attached your official ${singleOrPlural.toLowerCase()} for the period(s): <strong>${periodList}</strong>.
+        </p>
+        <div class="card">
+          <p style="margin: 0 0 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; color: #475569;">Summary of Attached Payroll Records</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Pay Period</th>
+                <th>Gross Pay</th>
+                <th>Net Disbursed</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${trimmedPayslips
+                .map(
+                  (s) => `
+                <tr>
+                  <td><strong>${s.payPeriod}</strong></td>
+                  <td>${company.currency || "ZAR"} ${s.grossPay.toLocaleString()}</td>
+                  <td style="color: #059669; font-weight: 700;">${company.currency || "ZAR"} ${s.netPay.toLocaleString()}</td>
+                </tr>
+              `
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+        <p style="font-size: 13px; color: #64748b; line-height: 1.5;">
+          Each payslip is attached as a distinct standalone document for your official records and tax filing.
+        </p>
+      </div>
+      <div class="footer">
+        <p style="margin: 0;">Dispatched by ${senderName || "HR & Payroll"} on behalf of ${company.name}.</p>
+        <p style="margin: 4px 0 0;">Strictly confidential. If you received this email in error, please notify HR immediately.</p>
+      </div>
+    </div>
+  </body>
+  </html>
+  `;
+
+  const result = await sendEmailViaApi({
+    to: employeeEmail,
+    subject: `Official ${singleOrPlural} (${periodList}) - ${company.name}`,
+    html: emailHtml,
+    attachments,
+  });
+
+  await logAuditEvent({
+    companyId: company.id,
+    action: "SEND_PAYSLIP_EMAIL",
+    entityType: "payslip",
+    entityName: `${employeeName} (${periodList})`,
+    actorName: senderName || "HR & Payroll",
+    details: `Dispatched ${trimmedPayslips.length} payslip(s) via email to ${employeeEmail} for periods: ${periodList}.`,
+  });
+
+  return result;
 }
 

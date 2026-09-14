@@ -19,6 +19,7 @@ type NavItem = {
   href: string;
   icon: LucideIcon;
   departments?: DepartmentType[];
+  permissions?: string[];
   requiresSuperAdmin?: boolean;
 };
 
@@ -32,46 +33,46 @@ const allNavSections: NavSection[] = [
     title: "Hospitality & Core",
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { label: "Statistics", href: "/statistics", icon: BarChart3, departments: ["admin","manager","it","accountant","audit"] },
-      { label: "Front Desk & Bookings", href: "/commercial-bookings", icon: KeyRound, departments: ["admin","front_desk","manager","audit"] },
-      { label: "Rooms & Pricing", href: "/room-management", icon: BedDouble, departments: ["admin","front_desk","manager","maintenance"] },
-      { label: "Properties & Lodges", href: "/properties", icon: Building2, departments: ["admin","manager","front_desk","maintenance"] },
-      { label: "Tenants & Leases", href: "/tenants", icon: Users, departments: ["admin","manager","accountant"] },
+      { label: "Statistics", href: "/statistics", icon: BarChart3, departments: ["admin","manager","it","accountant","audit"], permissions: ["view_dashboard", "manage_finance"] },
+      { label: "Front Desk & Bookings", href: "/commercial-bookings", icon: KeyRound, departments: ["admin","front_desk","manager","audit"], permissions: ["checkin_guests", "manage_properties"] },
+      { label: "Rooms & Pricing", href: "/room-management", icon: BedDouble, departments: ["admin","front_desk","manager","maintenance"], permissions: ["manage_properties"] },
+      { label: "Properties & Lodges", href: "/properties", icon: Building2, departments: ["admin","manager","front_desk","maintenance"], permissions: ["manage_properties"] },
+      { label: "Tenants & Leases", href: "/tenants", icon: Users, departments: ["admin","manager","accountant"], permissions: ["manage_properties", "manage_finance"] },
     ],
   },
   {
     title: "Operations & Maintenance",
     items: [
-      { label: "Maintenance Hub", href: "/maintenance", icon: Wrench, departments: ["admin","maintenance","manager"] },
-      { label: "Work Orders", href: "/maintenance/work-orders", icon: ClipboardList, departments: ["admin","maintenance","manager"] },
-      { label: "Service Providers", href: "/maintenance/providers", icon: Truck, departments: ["admin","maintenance","manager","procurement"] },
-      { label: "Inspections", href: "/maintenance/inspections", icon: SearchCheck, departments: ["admin","maintenance","manager"] },
-      { label: "Scheduled Tasks", href: "/maintenance/scheduled-tasks", icon: CalendarClock, departments: ["admin","maintenance","manager"] },
-      { label: "Inventory & Stock", href: "/maintenance/inventory", icon: Package, departments: ["admin","maintenance","procurement","manager"] },
+      { label: "Maintenance Hub", href: "/maintenance", icon: Wrench, departments: ["admin","maintenance","manager"], permissions: ["manage_maintenance"] },
+      { label: "Work Orders", href: "/maintenance/work-orders", icon: ClipboardList, departments: ["admin","maintenance","manager"], permissions: ["manage_maintenance"] },
+      { label: "Service Providers", href: "/maintenance/providers", icon: Truck, departments: ["admin","maintenance","manager","procurement"], permissions: ["manage_maintenance"] },
+      { label: "Inspections", href: "/maintenance/inspections", icon: SearchCheck, departments: ["admin","maintenance","manager"], permissions: ["manage_maintenance"] },
+      { label: "Scheduled Tasks", href: "/maintenance/scheduled-tasks", icon: CalendarClock, departments: ["admin","maintenance","manager"], permissions: ["manage_maintenance"] },
+      { label: "Inventory & Stock", href: "/maintenance/inventory", icon: Package, departments: ["admin","maintenance","procurement","manager"], permissions: ["manage_maintenance"] },
     ],
   },
   {
     title: "Finance & Accounts",
     items: [
-      { label: "Rent & Revenue", href: "/rent-collection", icon: DollarSign, departments: ["admin","accountant","manager"] },
-      { label: "Invoices", href: "/finance/invoices", icon: ClipboardList, departments: ["admin","accountant","manager","audit"] },
-      { label: "Bills & Schedules", href: "/finance/bills", icon: CalendarClock, departments: ["admin","accountant","manager"] },
-      { label: "Financial Accounts", href: "/finance/accounts", icon: Landmark, departments: ["admin","accountant","manager"] },
-      { label: "Financial Reports", href: "/finance/reports", icon: Layers, departments: ["admin","accountant","manager","audit"] },
+      { label: "Rent & Revenue", href: "/rent-collection", icon: DollarSign, departments: ["admin","accountant","manager"], permissions: ["manage_finance"] },
+      { label: "Invoices", href: "/finance/invoices", icon: ClipboardList, departments: ["admin","accountant","manager","audit"], permissions: ["manage_finance"] },
+      { label: "Bills & Schedules", href: "/finance/bills", icon: CalendarClock, departments: ["admin","accountant","manager"], permissions: ["manage_finance"] },
+      { label: "Financial Accounts", href: "/finance/accounts", icon: Landmark, departments: ["admin","accountant","manager"], permissions: ["manage_finance"] },
+      { label: "Financial Reports", href: "/finance/reports", icon: Layers, departments: ["admin","accountant","manager","audit"], permissions: ["manage_finance"] },
     ],
   },
   {
     title: "Human Resources",
     items: [
-      { label: "HR & Payroll", href: "/hr", icon: Briefcase, departments: ["admin","human_resources","manager"] },
+      { label: "HR & Payroll", href: "/hr", icon: Briefcase, departments: ["admin","human_resources","manager"], permissions: ["manage_hr"] },
     ],
   },
   {
     title: "Procurement & Stores",
     items: [
-      { label: "Procurement Hub", href: "/procurement", icon: Truck, departments: ["admin","procurement","manager"] },
-      { label: "Stores & Inventory", href: "/stores", icon: Package, departments: ["admin","stores","procurement","manager","maintenance"] },
-      { label: "Inventory & Stock", href: "/maintenance/inventory", icon: ClipboardList, departments: ["admin","stores","procurement","manager","maintenance"] },
+      { label: "Procurement Hub", href: "/procurement", icon: Truck, departments: ["admin","procurement","manager"], permissions: ["manage_procurement", "manage_maintenance"] },
+      { label: "Stores & Inventory", href: "/stores", icon: Package, departments: ["admin","stores","procurement","manager","maintenance"], permissions: ["manage_procurement", "manage_maintenance"] },
+      { label: "Inventory & Stock", href: "/maintenance/inventory", icon: ClipboardList, departments: ["admin","stores","procurement","manager","maintenance"], permissions: ["manage_procurement", "manage_maintenance"] },
     ],
   },
   {
@@ -86,13 +87,12 @@ const allNavSections: NavSection[] = [
   {
     title: "IT, Administration & Audit",
     items: [
-      { label: "IT & Systems Hub", href: "/it", icon: Server, departments: ["admin","it","manager"] },
-      { label: "Companies / Orgs", href: "/companies", icon: Building, requiresSuperAdmin: true },
-      { label: "Users & Rights", href: "/users-management", icon: UserCog, departments: ["admin","it","manager"] },
-      { label: "Organogram & Roles", href: "/organogram", icon: Network, departments: ["admin","it","manager"] },
-      { label: "Contracts", href: "/contracts", icon: FileSignature, departments: ["admin","manager"] },
-      { label: "Settings", href: "/settings", icon: Settings, departments: ["admin","it","manager"] },
-      { label: "Audit Department", href: "/audit-trail", icon: History, departments: ["admin","audit","manager","it"] },
+      { label: "IT & Systems Hub", href: "/it", icon: Server, departments: ["admin","it","manager"], permissions: ["manage_all_users"] },
+      { label: "Users & Rights", href: "/users-management", icon: UserCog, departments: ["admin","it","manager"], permissions: ["manage_all_users", "manage_user_rights", "manage_hr"] },
+      { label: "Organogram & Roles", href: "/organogram", icon: Network, departments: ["admin","it","manager"], permissions: ["manage_roles_organogram", "manage_all_users", "manage_hr"] },
+      { label: "Contracts", href: "/contracts", icon: FileSignature, departments: ["admin","manager"], permissions: ["manage_properties", "manage_hr"] },
+      { label: "Settings", href: "/settings", icon: Settings, departments: ["admin","it","manager"], permissions: ["manage_all_users"] },
+      { label: "Audit Department", href: "/audit-trail", icon: History, departments: ["admin","audit","manager","it"], permissions: ["view_audit_trail", "manage_audit"] },
     ],
   },
 ];
@@ -131,7 +131,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [checkinOpen, setCheckinOpen] = useState(false);
-  const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [seeRolesOpen, setSeeRolesOpen] = useState(false);
   const [selectedRoleDept, setSelectedRoleDept] = useState<string>("admin");
@@ -174,8 +173,22 @@ export function AppShell({ children }: { children: ReactNode }) {
       const items = section.items.filter((item) => {
         if (item.requiresSuperAdmin && !isSuperAdmin) return false;
         if (isAdmin) return true;
-        if (!item.departments) return true;
-        return item.departments.includes(currentCompanyUser.department);
+        if (currentCompanyUser.roleLevel === "all_rights") return true;
+
+        // Check if user's base department has access
+        if (!item.departments || item.departments.includes(currentCompanyUser.department)) {
+          return true;
+        }
+
+        // Check if user has explicit granular permissions granted
+        if (item.permissions && currentCompanyUser.permissions) {
+          const hasPerm = item.permissions.some(
+            (p) => currentCompanyUser.permissions?.[p] === true || currentCompanyUser.permissions?.all === true
+          );
+          if (hasPerm) return true;
+        }
+
+        return false;
       });
       return { ...section, items };
     })
@@ -193,11 +206,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className={`flex items-center border-b border-border-color px-3 py-3 ${sidebarCollapsed ? "justify-center" : "justify-between gap-2"}`}>
           {!sidebarCollapsed && (
             <div className="relative flex-1 min-w-0">
-              <button
-                type="button"
-                onClick={() => isSuperAdmin && setCompanyDropdownOpen(!companyDropdownOpen)}
-                className="flex w-full items-center justify-between gap-2 rounded-xl bg-surface-elevated/80 p-2.5 shadow-sm ring-1 ring-border-color/50 text-left transition hover:bg-surface-elevated"
-              >
+              <div className="flex w-full items-center justify-between gap-2 rounded-xl bg-surface-elevated/80 p-2.5 shadow-sm ring-1 ring-border-color/50 text-left">
                 <div className="flex items-center gap-2 min-w-0">
                   {currentCompany.logoUrl ? (
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-color bg-surface-elevated p-0.5 shadow-sm">
@@ -213,21 +222,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <h1 className="truncate text-xs font-bold text-foreground">{currentCompany.name}</h1>
                   </div>
                 </div>
-                {isSuperAdmin && <ChevronDown size={14} className="text-muted shrink-0"/>}
-              </button>
-
-              {/* Company Switcher Dropdown */}
-              {companyDropdownOpen && isSuperAdmin && (
-                <div className="absolute left-0 top-full z-30 mt-1 w-full rounded-xl border border-border-color bg-surface p-2 shadow-xl">
-                  <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted">Switch Organisation</p>
-                  {companies.map((c) => (
-                    <button key={c.id} type="button" onClick={() => { setCurrentCompany(c); setCompanyDropdownOpen(false); }}
-                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${c.id === currentCompany.id ? "bg-blue-600 text-white" : "text-foreground hover:bg-surface-elevated"}`}>
-                      <Building size={12}/><span className="truncate">{c.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+              </div>
             </div>
           )}
 

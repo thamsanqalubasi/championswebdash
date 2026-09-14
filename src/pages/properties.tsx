@@ -10,7 +10,7 @@ import { uploadFileToBucket } from "@/lib/storage";
 import { supabase } from "@/lib/supabase";
 import type { PropertyRow } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
-import { Plus, Pencil, Trash, ChevronRight, Building2, BedDouble, X, Layers, Image as ImageIcon, Loader2, Eye, Globe, EyeOff, MapPin, DollarSign } from "lucide-react";
+import { Plus, Pencil, Trash, ChevronRight, Building2, BedDouble, X, Layers, Image as ImageIcon, Loader2, Eye, Globe, EyeOff, MapPin, DollarSign, Calendar } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 import { useCurrency } from "@/lib/currency";
 
@@ -21,7 +21,7 @@ const HOSPITALITY_TYPES = ["hotel", "motel", "lodge", "guest_house", "commercial
 const RENTAL_TYPES = ["house", "apartment", "storage"];
 function isHospitality(type: string) { return HOSPITALITY_TYPES.includes(type); }
 
-const emptyForm = { name: "", type: "lodge", address: "", city: "", country: "", status: "occupied", monthlyRent: 0, totalRooms: 10, defaultRoomPrice: 1200, defaultBedBreakfast: 1500 };
+const emptyForm = { name: "", type: "lodge", address: "", city: "", country: "", status: "occupied", monthlyRent: 0, totalRooms: 10, defaultRoomPrice: 1200, defaultBedBreakfast: 1500, availableFrom: "" };
 
 export default function PropertiesPage() {
   const navigate = useNavigate();
@@ -40,6 +40,11 @@ export default function PropertiesPage() {
   const [deleteTarget, setDeleteTarget] = useState<PropertyRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [publishPromptOpen, setPublishPromptOpen] = useState(false);
+  const [publishPromptTarget, setPublishPromptTarget] = useState<PropertyRow | null>(null);
+  const [publishVacancyDate, setPublishVacancyDate] = useState("");
+  const [publishPromptLoading, setPublishPromptLoading] = useState(false);
+  const [publishPromptError, setPublishPromptError] = useState<string | null>(null);
   const [viewTarget, setViewTarget] = useState<PropertyRow | null>(null);
   const [formFloors, setFormFloors] = useState<string[]>(["Ground Floor", "1st Floor", "2nd Floor"]);
   const [newFloorInput, setNewFloorInput] = useState("");
@@ -91,7 +96,7 @@ export default function PropertiesPage() {
   const openAdd = () => { setEditingId(null); setForm(emptyForm); setFormFloors(["Ground Floor","1st Floor","2nd Floor"]); setFormPhotos([]); setModalOpen(true); };
   const openEdit = (row: PropertyRow) => {
     setEditingId(row.id);
-    setForm({ name: row.name, type: row.type, address: row.address, city: row.city||"", country: row.country||"", status: row.status, monthlyRent: row.monthlyRent, totalRooms: row.totalRooms||0, defaultRoomPrice: row.defaultRoomPrice||0, defaultBedBreakfast: row.defaultBedBreakfast||0 });
+    setForm({ name: row.name, type: row.type, address: row.address, city: row.city||"", country: row.country||"", status: row.status, monthlyRent: row.monthlyRent, totalRooms: row.totalRooms||0, defaultRoomPrice: row.defaultRoomPrice||0, defaultBedBreakfast: row.defaultBedBreakfast||0, availableFrom: row.availableFrom||"" });
     setFormPhotos(row.photos||[]); fetchPropertyFloors(currentCompany.id, row.id).then(setFormFloors); setModalOpen(true);
   };
 
@@ -118,16 +123,16 @@ export default function PropertiesPage() {
   const onSave = async () => {
     if(!form.name.trim())return; setSaving(true);
     try {
-      const payload: Record<string,unknown> = { name:form.name, type:form.type, address:form.address, city:form.city, country:form.country, status:form.status, monthly_rent:form.monthlyRent, total_rooms:form.totalRooms, default_room_price:form.defaultRoomPrice, default_bed_breakfast:form.defaultBedBreakfast, company_id:currentCompany?.id&&isValidUuid(currentCompany.id)?currentCompany.id:null };
+      const payload: Record<string,unknown> = { name:form.name, type:form.type, address:form.address, city:form.city, country:form.country, status:form.status, monthly_rent:form.monthlyRent, total_rooms:form.totalRooms, default_room_price:form.defaultRoomPrice, default_bed_breakfast:form.defaultBedBreakfast, available_from:form.availableFrom||null, company_id:currentCompany?.id&&isValidUuid(currentCompany.id)?currentCompany.id:null };
       if(formPhotos.length>0)payload.photos=formPhotos;
       let savedId=editingId;
       if(editingId){
         const {error:err}=await supabase.from("properties").update(payload).eq("id",editingId);
-        if(err){const sp={...payload};delete sp.photos;delete sp.city;delete sp.country;const {error:e2}=await supabase.from("properties").update(sp).eq("id",editingId);if(e2)throw e2;}
+        if(err){const sp={...payload};delete sp.available_from;delete sp.photos;delete sp.city;delete sp.country;const {error:e2}=await supabase.from("properties").update(sp).eq("id",editingId);if(e2)throw e2;}
       } else {
         savedId=generateUuid();
         const {data,error:err}=await supabase.from("properties").insert({id:savedId,...payload}).select("id").maybeSingle();
-        if(err){const sp={...payload};delete sp.photos;delete sp.city;delete sp.country;const {data:d2,error:e2}=await supabase.from("properties").insert({id:savedId,...sp}).select("id").maybeSingle();if(e2)throw e2;if(d2?.id)savedId=d2.id;}
+        if(err){const sp={...payload};delete sp.available_from;delete sp.photos;delete sp.city;delete sp.country;const {data:d2,error:e2}=await supabase.from("properties").insert({id:savedId,...sp}).select("id").maybeSingle();if(e2)throw e2;if(d2?.id)savedId=d2.id;}
         else if(data?.id)savedId=data.id;
       }
       if(savedId){await savePropertyFloors(currentCompany.id,savedId,formFloors);localStorage.setItem(`cc_prop_photos_${savedId}`,JSON.stringify(formPhotos));}
@@ -141,13 +146,84 @@ export default function PropertiesPage() {
       alert("Hospitality properties cannot be published as a whole. Please publish specific room types under Showcase → Room Bookings.");
       return;
     }
-    if (row.status !== "vacant" && !row.isPublished) {
-      alert("Occupied properties cannot be published. Only vacant properties can be published to the portal.");
+
+    if (row.isPublished) {
+      setPublishingId(row.id);
+      try {
+        await supabase.from("properties").update({ is_published: false }).eq("id", row.id);
+        setProperties((prev) => prev.map((p) => p.id === row.id ? { ...p, isPublished: false } : p));
+        if (viewTarget?.id === row.id) setViewTarget((prev) => prev ? { ...prev, isPublished: false } : null);
+      } catch {
+        alert("Failed to unpublish property.");
+      } finally {
+        setPublishingId(null);
+      }
       return;
     }
+
+    // Publishing: if occupied, prompt user for date and month it will become vacant
+    if (row.status !== "vacant") {
+      setPublishPromptTarget(row);
+      setPublishVacancyDate(row.availableFrom || "");
+      setPublishPromptError(null);
+      setPublishPromptOpen(true);
+      return;
+    }
+
+    // Vacant property: publish directly
     setPublishingId(row.id);
-    try { const nv=!row.isPublished; await supabase.from("properties").update({is_published:nv}).eq("id",row.id); setProperties((prev)=>prev.map((p)=>p.id===row.id?{...p,isPublished:nv}:p)); }
-    catch{} finally{setPublishingId(null);}
+    try {
+      await supabase.from("properties").update({ is_published: true }).eq("id", row.id);
+      setProperties((prev) => prev.map((p) => p.id === row.id ? { ...p, isPublished: true } : p));
+      if (viewTarget?.id === row.id) setViewTarget((prev) => prev ? { ...prev, isPublished: true } : null);
+    } catch {
+      alert("Failed to publish property.");
+    } finally {
+      setPublishingId(null);
+    }
+  };
+
+  const handleConfirmPublishOccupied = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!publishPromptTarget) return;
+    if (!publishVacancyDate) {
+      setPublishPromptError("Please select the date and month this property will become vacant.");
+      return;
+    }
+
+    setPublishPromptLoading(true);
+    setPublishPromptError(null);
+    try {
+      const updatePayload: Record<string, any> = {
+        is_published: true,
+        available_from: publishVacancyDate,
+      };
+
+      const { error: err } = await supabase.from("properties").update(updatePayload).eq("id", publishPromptTarget.id);
+      if (err) {
+        const { error: fErr } = await supabase.from("properties").update({ is_published: true }).eq("id", publishPromptTarget.id);
+        if (fErr) throw fErr;
+      }
+
+      setProperties((prev) =>
+        prev.map((p) =>
+          p.id === publishPromptTarget.id
+            ? { ...p, isPublished: true, availableFrom: publishVacancyDate }
+            : p
+        )
+      );
+      if (viewTarget?.id === publishPromptTarget.id) {
+        setViewTarget((prev) => prev ? { ...prev, isPublished: true, availableFrom: publishVacancyDate } : null);
+      }
+
+      setPublishPromptOpen(false);
+      setPublishPromptTarget(null);
+      setPublishVacancyDate("");
+    } catch (err) {
+      setPublishPromptError(err instanceof Error ? err.message : "Failed to publish property.");
+    } finally {
+      setPublishPromptLoading(false);
+    }
   };
 
   const handleTriggerDeleteProperty=(row:PropertyRow)=>{setDeleteTarget(row);setPinDialogForProperty(true);};
@@ -201,7 +277,7 @@ export default function PropertiesPage() {
                         <td className="px-6 py-4" onClick={(e)=>e.stopPropagation()}>
                           <TableRowActions>
                             <TableActionButton icon={Eye} label="View" onClick={()=>setViewTarget(row)}/>
-                            {!hosp && (row.isPublished || row.status === "vacant") && (
+                            {!hosp && (
                               <TableActionButton icon={row.isPublished?EyeOff:Globe} label={row.isPublished?"Unpublish":"Publish"} onClick={()=>handleTogglePublish(row)} disabled={publishingId===row.id}/>
                             )}
                             <TableActionButton icon={Pencil} label="Edit" onClick={()=>openEdit(row)}/>
@@ -234,11 +310,14 @@ export default function PropertiesPage() {
               <div className="rounded-xl bg-surface-elevated/50 border border-border-color p-3"><p className="text-[10px] font-bold uppercase text-muted/60 mb-1">Address</p><div className="flex items-start gap-1.5"><MapPin size={13} className="mt-0.5 shrink-0 text-muted"/><span className="font-semibold text-foreground">{viewTarget.address||"—"}</span></div></div>
               {(viewTarget.city||viewTarget.country)&&(<div className="rounded-xl bg-surface-elevated/50 border border-border-color p-3"><p className="text-[10px] font-bold uppercase text-muted/60 mb-1">Location</p><div className="flex items-center gap-1.5"><Globe size={13} className="shrink-0 text-muted"/><span className="font-semibold text-foreground">{[viewTarget.city,viewTarget.country].filter(Boolean).join(", ")}</span></div></div>)}
               <div className="rounded-xl bg-surface-elevated/50 border border-border-color p-3"><p className="text-[10px] font-bold uppercase text-muted/60 mb-1">{isHospitality(viewTarget.type)?"Rate":"Monthly Rent"}</p><div className="flex items-center gap-1.5"><DollarSign size={13} className="shrink-0 text-muted"/><span className="font-bold text-foreground">{isHospitality(viewTarget.type)?`${viewTarget.totalRooms||0} rooms from ${formatCurrency(viewTarget.defaultRoomPrice||0)}/night`:formatCurrency(viewTarget.monthlyRent)+"/month"}</span></div></div>
+              {viewTarget.availableFrom && (
+                <div className="rounded-xl bg-surface-elevated/50 border border-border-color p-3"><p className="text-[10px] font-bold uppercase text-muted/60 mb-1">Scheduled Vacancy</p><div className="flex items-center gap-1.5"><Calendar size={13} className="shrink-0 text-amber-500"/><span className="font-semibold text-foreground">{new Date(viewTarget.availableFrom).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</span></div></div>
+              )}
             </div>
             <div className="flex items-center justify-between pt-2 border-t border-border-color">
               <button type="button" onClick={()=>{setViewTarget(null);navigate(`/properties/${viewTarget.id}`);}} className="rounded-xl border border-border-color px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-elevated transition">Full Details →</button>
               <div className="flex gap-2">
-                {!isHospitality(viewTarget.type) && (viewTarget.isPublished || viewTarget.status === "vacant") && (
+                {!isHospitality(viewTarget.type) && (
                   <button type="button" onClick={()=>handleTogglePublish(viewTarget)} disabled={publishingId===viewTarget.id} className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${viewTarget.isPublished?"bg-orange-500/10 text-orange-600 hover:bg-orange-500/20":"bg-green-500/10 text-green-600 hover:bg-green-500/20"}`}>{viewTarget.isPublished?"Unpublish":"Publish to Portal"}</button>
                 )}
                 <button type="button" onClick={()=>{const t=viewTarget;setViewTarget(null);openEdit(t);}} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 transition">Edit Property</button>
@@ -264,11 +343,72 @@ export default function PropertiesPage() {
               <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3 space-y-2.5"><div className="flex items-center justify-between"><label className="font-bold text-foreground flex items-center gap-1.5"><Layers size={14} className="text-blue-600"/><span>Floors ({formFloors.length})</span></label></div><div className="flex flex-wrap gap-1.5">{formFloors.map((fl)=>(<span key={fl} className="inline-flex items-center gap-1 rounded-lg bg-surface border border-border-color px-2.5 py-1 text-xs font-semibold text-foreground"><span>{fl}</span><button type="button" onClick={()=>handleRemoveFloor(fl)} className="text-muted hover:text-red-500 rounded p-0.5"><X size={12}/></button></span>))}</div><div className="flex items-center gap-2 pt-1"><input type="text" value={newFloorInput} onChange={(e)=>setNewFloorInput(e.target.value)} onKeyDown={(e)=>{if(e.key==="Enter"){e.preventDefault();handleAddFloor(e);}}} placeholder="e.g. 3rd Floor" className="flex-1 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs text-foreground outline-none focus:border-blue-600"/><button type="button" onClick={handleAddFloor} disabled={!newFloorInput.trim()} className="flex items-center gap-1 rounded-lg bg-surface border border-border-color px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated disabled:opacity-40"><Plus size={13}/>Add</button></div></div>
             </>
           ):(
-            <div><label className="mb-1 block font-medium text-foreground">Monthly Rent ({currency})</label><input type="number" value={form.monthlyRent} onChange={(e)=>setForm({...form,monthlyRent:Number(e.target.value)})} className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"/></div>
+            <div className="space-y-3">
+              <div><label className="mb-1 block font-medium text-foreground">Monthly Rent ({currency})</label><input type="number" value={form.monthlyRent} onChange={(e)=>setForm({...form,monthlyRent:Number(e.target.value)})} className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"/></div>
+              <div><label className="mb-1 block font-medium text-foreground">Available / Vacant From (Optional)</label><input type="date" value={form.availableFrom||""} onChange={(e)=>setForm({...form,availableFrom:e.target.value})} className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"/><p className="text-[10px] text-muted mt-0.5">Required before publishing occupied properties to the public portal.</p></div>
+            </div>
           )}
           <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3 space-y-2.5"><div className="flex items-center justify-between"><label className="font-bold text-foreground flex items-center gap-1.5"><ImageIcon size={14} className="text-emerald-600"/><span>Photos ({formPhotos.length})</span></label><div className="flex items-center gap-2"><input type="file" ref={fileInputRef} onChange={handlePhotoUpload} accept="image/*" multiple className="hidden" id="property-photo-upload"/><label htmlFor="property-photo-upload" className={`inline-flex items-center gap-1.5 cursor-pointer rounded-lg bg-surface border border-border-color px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-surface-elevated ${uploadingPhoto?"opacity-50 pointer-events-none":""}`}>{uploadingPhoto?<Loader2 size={12} className="animate-spin"/>:<Plus size={12}/>}<span>{uploadingPhoto?"Uploading...":"Upload"}</span></label></div></div>{formPhotos.length===0?(<p className="text-[11px] text-muted italic py-1">No photos yet.</p>):(<div className="grid grid-cols-4 gap-2 pt-1">{formPhotos.map((url,idx)=>(<div key={idx} className="group relative aspect-video rounded-lg overflow-hidden border border-border-color bg-black/10"><img src={url} alt={`${idx+1}`} className="h-full w-full object-cover"/><button type="button" onClick={()=>promptDeletePhoto(idx)} className="absolute top-1 right-1 rounded-md bg-black/70 p-1 text-white hover:bg-red-600 opacity-0 group-hover:opacity-100 transition"><Trash size={12}/></button></div>))}</div>)}</div>
           <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={()=>setModalOpen(false)} className="rounded-xl border border-border-color px-3.5 py-1.5 text-muted hover:bg-surface-elevated">Cancel</button><button type="button" onClick={onSave} disabled={saving} className="rounded-xl bg-blue-600 px-5 py-1.5 font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-50">{saving?"Saving...":"Save Property"}</button></div>
         </div>
+      </Modal>
+
+      {/* Occupied Listing Vacancy Date Prompt Modal */}
+      <Modal
+        open={publishPromptOpen}
+        onClose={() => { if (!publishPromptLoading) { setPublishPromptOpen(false); setPublishPromptTarget(null); } }}
+        title="Scheduled Vacancy Date Required"
+      >
+        <form onSubmit={handleConfirmPublishOccupied} className="space-y-4">
+          <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-700 dark:text-amber-400">
+            <p className="font-semibold mb-1">
+              Publishing Occupied Property: {publishPromptTarget?.name}
+            </p>
+            <p>
+              To avoid confusion on the public portal, occupied listings must display the date and month they will become vacant and available for new tenants.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1 block font-medium text-foreground text-xs">
+              When will this property become vacant? *
+            </label>
+            <input
+              type="date"
+              required
+              value={publishVacancyDate}
+              min={new Date().toISOString().split("T")[0]}
+              onChange={(e) => setPublishVacancyDate(e.target.value)}
+              className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground outline-none focus:border-blue-600"
+            />
+            <p className="text-[11px] text-muted mt-1">
+              Visitors on the main portal will see: <strong>Occupied · Available [Date]</strong>
+            </p>
+          </div>
+
+          {publishPromptError && (
+            <p className="text-xs text-red-500">{publishPromptError}</p>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-border-color">
+            <button
+              type="button"
+              disabled={publishPromptLoading}
+              onClick={() => { setPublishPromptOpen(false); setPublishPromptTarget(null); }}
+              className="rounded-xl border border-border-color px-4 py-2 text-xs font-semibold text-muted hover:bg-surface-elevated"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={publishPromptLoading || !publishVacancyDate}
+              className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {publishPromptLoading && <Loader2 size={13} className="animate-spin" />}
+              <span>{publishPromptLoading ? "Publishing..." : "Confirm & Publish"}</span>
+            </button>
+          </div>
+        </form>
       </Modal>
 
       <PinPromptDialog isOpen={pinDialogForProperty} onClose={()=>{setPinDialogForProperty(false);setDeleteTarget(null);}} onSuccess={confirmDeleteProperty} title={`Delete "${deleteTarget?.name}"`} description="This will permanently remove this property." actionLabel="Verify PIN & Delete" actionVariant="danger"/>

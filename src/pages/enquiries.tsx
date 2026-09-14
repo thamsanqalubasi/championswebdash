@@ -4,7 +4,8 @@ import { EmptyState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
-import { MessageSquare, Clock, CheckCircle, X, Send, AlertTriangle, Mail, Phone, Calendar, Users } from "lucide-react";
+import { MessageSquare, Clock, CheckCircle, X, Send, AlertTriangle, Mail, Phone, Calendar, Users, HelpCircle } from "lucide-react";
+import { DEFAULT_ENQUIRY_QUESTIONS, sendEnquiryResponseEmail } from "@/lib/enquiry-templates";
 
 type Enquiry = {
   id: string; customer_name: string; customer_email: string; customer_phone: string;
@@ -110,6 +111,20 @@ export default function EnquiriesPage() {
       await supabase.from("enquiries").update({ status: "in_progress" }).eq("id", selected.id);
       setThread(prev => [...prev, { id: Date.now().toString(), sender_type: "staff", sender_name: staffName, body: reply, created_at: new Date().toISOString() }]);
       setEnquiries(prev => prev.map(e => e.id === selected.id ? { ...e, status: "in_progress" } : e));
+      setSelected(prev => prev ? { ...prev, status: "in_progress" } : null);
+
+      if (selected.customer_email) {
+        void sendEnquiryResponseEmail({
+          toEmail: selected.customer_email,
+          customerName: selected.customer_name || "Customer",
+          propertyName: (selected as any).property_name,
+          enquiryId: selected.id,
+          question: selected.message || "Enquiry",
+          response: reply,
+          companyName: currentCompany?.name || "Paimbabook",
+        });
+      }
+
       setReply("");
     } catch { alert("Failed to send reply. The enquiry messages table may not exist yet."); }
     setSending(false);
@@ -222,10 +237,26 @@ export default function EnquiriesPage() {
               ))}
             </div>
 
-            {/* Reply */}
+            {/* Quick Templates & Reply */}
             {selected.status !== "resolved" && selected.status !== "auto_closed" && selected.status !== "cancelled" && (
               <div className="space-y-2">
-                <textarea rows={3} value={reply} onChange={e=>setReply(e.target.value)} placeholder="Type your reply..." className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground outline-none focus:border-blue-600 resize-none"/>
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                  <span className="text-[10px] font-bold uppercase text-muted/60 shrink-0 mr-1 flex items-center gap-1">
+                    <HelpCircle size={12} /> Templates:
+                  </span>
+                  {DEFAULT_ENQUIRY_QUESTIONS.map((q) => (
+                    <button
+                      key={q.id}
+                      type="button"
+                      onClick={() => setReply(q.defaultResponse)}
+                      className="shrink-0 text-[11px] px-2.5 py-1 rounded-lg border border-border-color bg-surface-elevated hover:bg-surface-elevated/80 text-foreground transition font-medium"
+                      title={q.question}
+                    >
+                      {q.shortLabel}
+                    </button>
+                  ))}
+                </div>
+                <textarea rows={3} value={reply} onChange={e=>setReply(e.target.value)} placeholder="Type your reply or click a template above..." className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground outline-none focus:border-blue-600 resize-none"/>
                 <div className="flex items-center justify-between">
                   <div className="flex gap-2">
                     <button onClick={markResolved} className="flex items-center gap-1.5 rounded-xl bg-green-500/10 px-3 py-1.5 text-xs font-semibold text-green-600 hover:bg-green-500/20 transition"><CheckCircle size={13}/>Mark Resolved</button>
@@ -235,7 +266,24 @@ export default function EnquiriesPage() {
                 </div>
               </div>
             )}
-            {(selected.status==="resolved"||selected.status==="auto_closed") && <div className="flex items-center gap-2 rounded-xl bg-green-50 border border-green-200 p-3 text-sm text-green-700"><CheckCircle size={15}/>Ticket closed. {selected.resolved_by_name&&`Resolved by ${selected.resolved_by_name}.`}</div>}
+            {(selected.status==="resolved"||selected.status==="auto_closed"||selected.status==="cancelled") && (
+              <div className="flex items-center justify-between rounded-xl bg-green-50 border border-green-200 p-3 text-sm text-green-700">
+                <div className="flex items-center gap-2">
+                  <CheckCircle size={15}/>
+                  <span>Ticket {selected.status.replace(/_/g, " ")}. {selected.resolved_by_name && `Resolved by ${selected.resolved_by_name}.`}</span>
+                </div>
+                <button
+                  onClick={async () => {
+                    await supabase.from("enquiries").update({ status: "in_progress", resolved_at: null, resolved_by_name: null }).eq("id", selected.id);
+                    setSelected(prev => prev ? { ...prev, status: "in_progress" } : null);
+                    setEnquiries(prev => prev.map(e => e.id === selected.id ? { ...e, status: "in_progress" } : e));
+                  }}
+                  className="rounded-lg bg-white border border-green-300 px-3 py-1 text-xs font-bold text-green-800 hover:bg-green-100 transition"
+                >
+                  Re-open Ticket
+                </button>
+              </div>
+            )}
           </div>
         )}
       </Modal>

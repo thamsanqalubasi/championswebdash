@@ -37,9 +37,17 @@ import {
   CalendarClock,
   UserMinus,
   RotateCcw,
+  UserPlus,
+  Send,
+  CheckSquare,
+  Square,
+  Network,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import {
   fetchCompanyUsers,
+  createCompanyUser,
+  sendStaffInvitation,
   fetchSalaryScales,
   saveSalaryScale,
   fetchPayslips,
@@ -55,6 +63,9 @@ import {
   fetchLeaveRecords,
   requestLeave,
   updateLeaveStatus,
+  sendPayslipEmailViaApi,
+  JOB_TITLES_BY_DEPARTMENT,
+  fetchCustomRoleDefinitions,
 } from "@/lib/data";
 import type {
   CompanyUser,
@@ -63,6 +74,8 @@ import type {
   EmployeeContract,
   EmployeeContractTemplate,
   LeaveRecord,
+  RoleProfileDefinition,
+  RoleLevel,
   DepartmentType,
 } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
@@ -109,10 +122,56 @@ export default function HRPage() {
   const [contractTerminationReason, setContractTerminationReason] = useState("Contract ended by mutual agreement");
   const [deactivateEmployeeOnContractEnd, setDeactivateEmployeeOnContractEnd] = useState(true);
 
-  // Mass Payroll Run Modal
-  const [massPayrollModalOpen, setMassPayrollModalOpen] = useState(false);
-  const [massPayPeriod, setMassPayPeriod] = useState("2026-09");
-  const [massPayrollRunning, setMassPayrollRunning] = useState(false);
+  // Create Contract modal state
+  const [createContractTarget, setCreateContractTarget] = useState<CompanyUser | null>(null);
+  const [newContractIsPermanent, setNewContractIsPermanent] = useState(false);
+  const [newContractStartDate, setNewContractStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [newContractEndDate, setNewContractEndDate] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 12);
+    return d.toISOString().slice(0, 10);
+  });
+  const [newContractSalary, setNewContractSalary] = useState(15000);
+  const [newContractLeaveDays, setNewContractLeaveDays] = useState(21);
+  const [creatingContract, setCreatingContract] = useState(false);
+
+  // Add Staff Modal State (HR Manager quick onboarding)
+  const [addStaffModalOpen, setAddStaffModalOpen] = useState(false);
+  const [staffFullName, setStaffFullName] = useState("");
+  const [staffEmail, setStaffEmail] = useState("");
+  const [staffDepartment, setStaffDepartment] = useState<DepartmentType>("front_desk");
+  const [staffJobTitle, setStaffJobTitle] = useState("Front Desk - Receptionist");
+  const [staffRoleLevel, setStaffRoleLevel] = useState<RoleLevel>("staff");
+  const [staffSendInvite, setStaffSendInvite] = useState(true);
+  const [staffSaving, setStaffSaving] = useState(false);
+  const [staffError, setStaffError] = useState<string | null>(null);
+  const [staffSuccess, setStaffSuccess] = useState<string | null>(null);
+  const [customRoles, setCustomRoles] = useState<RoleProfileDefinition[]>([]);
+
+  // Advanced Single & Multi-Month Bulk Payslip Suite State
+  const [batchGeneratorModalOpen, setBatchGeneratorModalOpen] = useState(false);
+  const [batchStep, setBatchStep] = useState<"select" | "review">("select");
+  const [batchSelectedEmployeeIds, setBatchSelectedEmployeeIds] = useState<string[]>([]);
+  const [batchSelectedMonths, setBatchSelectedMonths] = useState<string[]>([new Date().toISOString().slice(0, 7)]);
+  const [batchDrafts, setBatchDrafts] = useState<
+    Array<{
+      id: string;
+      user: CompanyUser;
+      month: string;
+      basicSalary: number;
+      allowances: Record<string, number>;
+      deductions: Record<string, number>;
+      grossPay: number;
+      netPay: number;
+      eligible: boolean;
+      ineligibleReason?: string;
+      selectedForDispatch: boolean;
+      emailSent?: boolean;
+    }>
+  >([]);
+  const [batchSending, setBatchSending] = useState(false);
+  const [batchSendProgress, setBatchSendProgress] = useState({ current: 0, total: 0 });
+  const [batchResultMsg, setBatchResultMsg] = useState<string | null>(null);
 
   // Directory filters
   const [directorySearch, setDirectorySearch] = useState("");
@@ -133,7 +192,7 @@ export default function HRPage() {
   // Printing state indicator
   const [printingSlipId, setPrintingSlipId] = useState<string | null>(null);
 
-  // Single Payslip Modal State
+  // Single Payslip Modal State (Legacy quick launcher)
   const [payslipModalOpen, setPayslipModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [payPeriod, setPayPeriod] = useState("2026-08");
@@ -285,28 +344,293 @@ export default function HRPage() {
     }
   };
 
-  // Mass generate payroll for all active employees
-  const handleRunMassPayroll = async () => {
-    setMassPayrollRunning(true);
+  // Past 6 months calculation for payslip generation
+  const pastSixMonths = useMemo(() => {
+    const months: string[] = [];
+    const now = new Date();
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      months.push(monthStr);
+    }
+    return months;
+  }, []);
+
+  // Contract creation modal opener
+  const openCreateContractModal = (employee: CompanyUser) => {
+    setCreateContractTarget(employee);
+    setNewContractIsPermanent(false);
+    setNewContractStartDate(new Date().toISOString().slice(0, 10));
+    const d = new Date();
+    d.setMonth(d.getMonth() + 12);
+    setNewContractEndDate(d.toISOString().slice(0, 10));
+    const scale = salaryScales.find(
+      (s) => s.jobTitle.toLowerCase() === employee.jobTitle.toLowerCase() || s.department === employee.department
+    );
+    setNewContractSalary(scale?.midSalary || scale?.minSalary || 15000);
+    setNewContractLeaveDays(21);
+  };
+
+  // Contract creation submit
+  const handleCreateContractSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createContractTarget) return;
+    setCreatingContract(true);
     try {
-      const result = await massGeneratePayroll({
+      await createEmployeeContract({
         companyId: currentCompany.id,
-        payPeriod: massPayPeriod,
-        generatedByName: currentCompanyUser.fullName,
+        userId: createContractTarget.userId || createContractTarget.id,
+        employeeName: createContractTarget.fullName,
+        department: createContractTarget.department,
+        jobTitle: createContractTarget.jobTitle,
+        startDate: newContractStartDate,
+        endDate: newContractIsPermanent ? undefined : newContractEndDate,
+        isPermanent: newContractIsPermanent,
+        monthlySalary: newContractSalary,
+        leaveDaysPerYear: newContractLeaveDays,
+      });
+      setCreateContractTarget(null);
+      await loadData();
+      alert(`Contract created successfully for ${createContractTarget.fullName}!`);
+    } catch (err: any) {
+      alert(err.message || "Failed to create contract.");
+    } finally {
+      setCreatingContract(false);
+    }
+  };
+
+  // Add staff modal opener
+  const openAddStaffModal = async () => {
+    setStaffFullName("");
+    setStaffEmail("");
+    setStaffDepartment("front_desk");
+    setStaffJobTitle("Front Desk - Receptionist");
+    setStaffRoleLevel("staff");
+    setStaffSendInvite(true);
+    setStaffError(null);
+    setStaffSuccess(null);
+    setAddStaffModalOpen(true);
+    try {
+      const roles = await fetchCustomRoleDefinitions(currentCompany.id);
+      setCustomRoles(roles);
+    } catch {}
+  };
+
+  // Add staff modal submit
+  const handleCreateStaffSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStaffSaving(true);
+    setStaffError(null);
+    setStaffSuccess(null);
+    try {
+      const newUser = await createCompanyUser({
+        companyId: currentCompany.id,
+        email: staffEmail.trim().toLowerCase(),
+        fullName: staffFullName.trim(),
+        roleLevel: staffRoleLevel,
+        department: staffDepartment,
+        jobTitle: staffJobTitle,
       });
 
-      alert(
-        `✅ Mass Payroll Run Completed!\n\n• Generated: ${result.generated.length} payslips for active employees\n• Excluded: ${result.skippedInactiveCount} inactive/deactivated personnel\n• Pay Period: ${massPayPeriod}`
-      );
-      setMassPayrollModalOpen(false);
+      if (staffSendInvite) {
+        try {
+          await sendStaffInvitation({
+            company: currentCompany,
+            targetUser: {
+              fullName: staffFullName.trim(),
+              email: staffEmail.trim().toLowerCase(),
+              department: staffDepartment,
+              jobTitle: staffJobTitle,
+            },
+            inviter: {
+              fullName: currentCompanyUser?.fullName || "HR Manager",
+              jobTitle: currentCompanyUser?.jobTitle || "HR & Payroll Administration",
+            },
+          });
+        } catch (e) {
+          console.warn("Could not send email invite automatically", e);
+        }
+      }
+
+      setStaffSuccess(`Successfully added ${staffFullName} as ${staffJobTitle}!`);
       await loadData();
-      setActiveTab("payslips");
+      setTimeout(() => {
+        setAddStaffModalOpen(false);
+      }, 1000);
     } catch (err: any) {
-      console.error(err);
-      alert("Error executing mass payroll run: " + (err.message || "Unknown error"));
+      setStaffError(err.message || "Failed to add staff member.");
     } finally {
-      setMassPayrollRunning(false);
+      setStaffSaving(false);
     }
+  };
+
+  // Open multi-month payslip suite (optionally preselected for a single employee)
+  const openBatchGenerator = (preselectedUserId?: string) => {
+    if (preselectedUserId) {
+      setBatchSelectedEmployeeIds([preselectedUserId]);
+    } else {
+      setBatchSelectedEmployeeIds(activeEmployees.map((e) => e.id));
+    }
+    setBatchSelectedMonths([pastSixMonths[0]]);
+    setBatchDrafts([]);
+    setBatchStep("select");
+    setBatchResultMsg(null);
+    setBatchGeneratorModalOpen(true);
+  };
+
+  // Generate batch drafts with strict tenure verification
+  const handleGenerateBatchDrafts = () => {
+    if (batchSelectedEmployeeIds.length === 0) {
+      alert("Please select at least one employee.");
+      return;
+    }
+    if (batchSelectedMonths.length === 0) {
+      alert("Please select at least one month.");
+      return;
+    }
+    if (batchSelectedMonths.length > 6) {
+      alert("Maximum of 6 months can be selected per generation run.");
+      return;
+    }
+
+    const drafts: typeof batchDrafts = [];
+
+    for (const empId of batchSelectedEmployeeIds) {
+      const emp = users.find((u) => u.id === empId);
+      if (!emp) continue;
+
+      // Determine joining month boundary from createdAt (e.g., "2026-08")
+      const joinMonth = emp.createdAt ? emp.createdAt.slice(0, 7) : "2020-01";
+
+      const scale = salaryScales.find(
+        (s) => s.jobTitle.toLowerCase() === emp.jobTitle.toLowerCase() || s.department === emp.department
+      );
+      const bSalary = scale?.midSalary || scale?.minSalary || 15000;
+      const allowances = {
+        housing: scale?.housingAllowance || 1500,
+        transport: scale?.transportAllowance || 1000,
+        medical: scale?.medicalAllowance || 800,
+      };
+      const gross = bSalary + allowances.housing + allowances.transport + allowances.medical;
+      const deductions = {
+        paye_tax: gross * 0.15,
+        pension: bSalary * 0.05,
+        uif: Math.min(bSalary * 0.01, 177.12),
+      };
+      const net = gross - (deductions.paye_tax + deductions.pension + deductions.uif);
+
+      for (const m of batchSelectedMonths) {
+        // Tenure check: cannot generate payslips before person was hired / joined
+        const isEligible = m >= joinMonth;
+        const ineligibleReason = !isEligible
+          ? `Joined in ${joinMonth} (Before tenure start)`
+          : undefined;
+
+        drafts.push({
+          id: `${emp.id}-${m}`,
+          user: emp,
+          month: m,
+          basicSalary: bSalary,
+          allowances,
+          deductions,
+          grossPay: gross,
+          netPay: net,
+          eligible: isEligible,
+          ineligibleReason,
+          selectedForDispatch: isEligible,
+        });
+      }
+    }
+
+    setBatchDrafts(drafts);
+    setBatchStep("review");
+  };
+
+  // Dispatch batch payslips via email (single employee or all selected)
+  const handleDispatchBatchEmails = async (targetEmployeeId?: string) => {
+    const eligibleSelected = batchDrafts.filter(
+      (d) => d.eligible && d.selectedForDispatch && (targetEmployeeId ? d.user.id === targetEmployeeId : true)
+    );
+
+    if (eligibleSelected.length === 0) {
+      alert("No eligible payslips selected for email dispatch.");
+      return;
+    }
+
+    setBatchSending(true);
+    setBatchResultMsg(null);
+
+    // Group by employee
+    const groupedByUser = new Map<string, typeof eligibleSelected>();
+    for (const d of eligibleSelected) {
+      const list = groupedByUser.get(d.user.id) || [];
+      list.push(d);
+      groupedByUser.set(d.user.id, list);
+    }
+
+    const userEntries = Array.from(groupedByUser.entries());
+    setBatchSendProgress({ current: 0, total: userEntries.length });
+
+    let sentUsersCount = 0;
+    let failedUsersCount = 0;
+
+    for (let i = 0; i < userEntries.length; i++) {
+      const [, userDrafts] = userEntries[i];
+      const emp = userDrafts[0].user;
+
+      // Cap to at most 6 payslips per employee email
+      const cappedDrafts = userDrafts.slice(0, 6);
+      const createdSlips: Payslip[] = [];
+
+      for (const draft of cappedDrafts) {
+        try {
+          const slip = await generatePayslip({
+            companyId: currentCompany.id,
+            userId: emp.userId || emp.id,
+            employeeName: emp.fullName,
+            jobTitle: emp.jobTitle,
+            department: emp.department,
+            payPeriod: draft.month,
+            basicSalary: draft.basicSalary,
+            allowances: draft.allowances,
+            deductions: draft.deductions,
+            generatedByName: currentCompanyUser?.fullName || "HR & Payroll",
+          });
+          createdSlips.push(slip);
+        } catch (e) {
+          console.error("Error generating slip for", emp.fullName, draft.month, e);
+        }
+      }
+
+      if (createdSlips.length > 0 && emp.email) {
+        const sendResult = await sendPayslipEmailViaApi({
+          employeeEmail: emp.email,
+          employeeName: emp.fullName,
+          company: currentCompany,
+          payslips: createdSlips,
+          senderName: currentCompanyUser?.fullName || "HR & Payroll",
+        });
+
+        if (sendResult.success) {
+          sentUsersCount++;
+          setBatchDrafts((prev) =>
+            prev.map((d) => (d.user.id === emp.id ? { ...d, emailSent: true } : d))
+          );
+        } else {
+          failedUsersCount++;
+        }
+      }
+
+      setBatchSendProgress({ current: i + 1, total: userEntries.length });
+    }
+
+    setBatchSending(false);
+    setBatchResultMsg(
+      `Batch Dispatch Complete: Successfully dispatched email(s) to ${sentUsersCount} employee(s) with separate payslip attachments.${
+        failedUsersCount > 0 ? ` (${failedUsersCount} failed)` : ""
+      }`
+    );
+    await loadData();
   };
 
   // Deactivate employee confirmation
@@ -606,27 +930,31 @@ export default function HRPage() {
             <>
               <button
                 type="button"
-                onClick={() => setMassPayrollModalOpen(true)}
-                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:from-emerald-700 hover:to-teal-700 transition"
-                title="Mass generate payslips for all active employees"
+                onClick={openAddStaffModal}
+                className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3.5 py-2 text-xs font-bold text-foreground shadow-sm hover:border-blue-500 hover:text-blue-600 transition"
+                title="Add and onboard a new company staff member"
               >
-                <Sparkles size={15} />
-                <span>Mass Generate Payroll</span>
+                <UserPlus size={15} />
+                <span>Add Staff Member</span>
               </button>
+
+              <Link
+                to="/organogram"
+                className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3.5 py-2 text-xs font-bold text-foreground shadow-sm hover:border-blue-500 hover:text-blue-600 transition"
+                title="Manage company job titles, role hierarchy & organogram"
+              >
+                <Network size={15} />
+                <span>Roles & Organogram</span>
+              </Link>
 
               <button
                 type="button"
-                onClick={() => {
-                  if (activeEmployees.length === 0) {
-                    alert("No active employees available to generate payslips for.");
-                    return;
-                  }
-                  setPayslipModalOpen(true);
-                }}
-                className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition"
+                onClick={() => openBatchGenerator()}
+                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:from-blue-700 hover:to-indigo-700 transition"
+                title="Generate, review and dispatch single or multi-month payslips"
               >
-                <DollarSign size={15} />
-                <span>Issue Payslip</span>
+                <FileText size={15} />
+                <span>Generate & Review Payslips</span>
               </button>
             </>
           )}
@@ -908,14 +1236,53 @@ export default function HRPage() {
                               <>
                                 {isActive ? (
                                   <>
+                                    {contract ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openExtendContractModal(contract);
+                                          }}
+                                          className="rounded-lg border border-border-color bg-surface-elevated px-2 py-1 text-xs font-semibold text-foreground hover:border-blue-500 hover:text-blue-600 transition-colors"
+                                          title="Extend / Renew employee contract"
+                                        >
+                                          Renew
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openTerminateContractModal(contract);
+                                          }}
+                                          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-700 dark:text-amber-400 hover:bg-amber-600 hover:text-white transition-colors"
+                                          title="End / Terminate contract agreement"
+                                        >
+                                          End
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openCreateContractModal(u);
+                                        }}
+                                        className="rounded-lg border border-border-color bg-surface-elevated px-2 py-1 text-xs font-semibold text-foreground hover:border-blue-500 hover:text-blue-600 transition-colors"
+                                        title="Issue new employee contract"
+                                      >
+                                        + Contract
+                                      </button>
+                                    )}
+
                                     <button
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        openPayslipModalForEmployee(u);
+                                        openBatchGenerator(u.id);
                                       }}
                                       className="rounded-lg bg-blue-600/10 px-2.5 py-1 text-xs font-bold text-blue-600 hover:bg-blue-600 hover:text-white transition-colors"
-                                      title="Generate individual payslip"
+                                      title="Generate & Review payslip(s) for this employee"
                                     >
                                       Issue Slip
                                     </button>
@@ -1309,11 +1676,11 @@ export default function HRPage() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setMassPayrollModalOpen(true)}
-                  className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-xs font-bold text-white shadow hover:from-emerald-700 hover:to-teal-700 transition"
+                  onClick={() => openBatchGenerator()}
+                  className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-xs font-bold text-white shadow hover:from-blue-700 hover:to-indigo-700 transition"
                 >
                   <Sparkles size={14} />
-                  <span>Mass Payroll Run</span>
+                  <span>Batch & Mass Payroll Suite</span>
                 </button>
 
                 <button
@@ -1697,113 +2064,6 @@ export default function HRPage() {
         </div>
       )}
 
-      {/* MASS PAYROLL RUN MODAL */}
-      {massPayrollModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-4 text-xs">
-            <div className="flex items-center justify-between border-b border-border-color pb-3">
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600">
-                  <Sparkles size={18} />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-foreground">Mass Payroll Run (Batch Generator)</h3>
-                  <p className="text-xs text-muted">Generate official salary payslips for all active personnel</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setMassPayrollModalOpen(false)}
-                className="text-muted hover:text-foreground"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1 block font-bold text-foreground">Pay Period (YYYY-MM) *</label>
-                <input
-                  type="text"
-                  value={massPayPeriod}
-                  onChange={(e) => setMassPayPeriod(e.target.value)}
-                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground font-mono font-bold focus:border-blue-600 focus:outline-none"
-                  placeholder="2026-09"
-                />
-              </div>
-
-              {/* Active vs Inactive calculation review */}
-              <div className="rounded-xl border border-border-color bg-surface-elevated p-4 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted font-medium">Eligible Active Employees:</span>
-                  <span className="font-extrabold text-emerald-600 flex items-center gap-1">
-                    <CheckCircle2 size={14} />
-                    {activeEmployees.length} Staff
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-border-color/50 pt-2">
-                  <span className="text-muted font-medium">Excluded Inactive/Deactivated:</span>
-                  <span className="font-bold text-red-600 flex items-center gap-1">
-                    <UserX size={14} />
-                    {inactiveEmployees.length} Staff Excluded
-                  </span>
-                </div>
-
-                {inactiveEmployees.length > 0 && (
-                  <div className="rounded-lg bg-red-500/10 p-2.5 text-[11px] text-red-700 dark:text-red-400 space-y-1">
-                    <p className="font-bold">Excluded Deactivated Personnel:</p>
-                    {inactiveEmployees.map((inact) => (
-                      <p key={inact.id} className="truncate">
-                        • {inact.fullName} ({inact.deactivationReason || "Inactive"})
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-lg bg-blue-500/10 p-3 text-[11px] text-blue-600 space-y-1">
-                <p className="font-bold flex items-center gap-1">
-                  <ShieldCheck size={14} />
-                  Strict Active Compliance
-                </p>
-                <p>
-                  Payslips will only be created for employees with active status. Salaries are automatically pulled from each employee's contract or assigned salary scale.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-color">
-                <button
-                  type="button"
-                  onClick={() => setMassPayrollModalOpen(false)}
-                  className="rounded-xl border border-border-color px-4 py-2 font-semibold text-muted hover:bg-surface-elevated"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleRunMassPayroll}
-                  disabled={massPayrollRunning || activeEmployees.length === 0}
-                  className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2 font-bold text-white shadow hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 transition"
-                >
-                  {massPayrollRunning ? (
-                    <>
-                      <RefreshCw size={14} className="animate-spin" />
-                      <span>Generating...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles size={14} />
-                      <span>Execute Payroll for {activeEmployees.length} Staff</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* EMPLOYEE DEACTIVATION MODAL */}
       {deactivatingEmployee && (
@@ -2166,15 +2426,55 @@ export default function HRPage() {
               </div>
 
               <div className="rounded-xl border border-border-color bg-surface-elevated p-4 space-y-2">
-                <h4 className="font-bold text-foreground text-xs uppercase tracking-wider text-muted">
-                  Contract & Tenure
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-foreground text-xs uppercase tracking-wider text-muted">
+                    Contract & Tenure
+                  </h4>
+                  {(() => {
+                    const contract = contracts.find(
+                      (c) => c.userId === selectedEmployee.userId || c.userId === selectedEmployee.id
+                    );
+                    if (contract) {
+                      return (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openExtendContractModal(contract)}
+                            className="rounded px-2 py-0.5 text-[10px] font-bold border border-blue-500/30 bg-blue-500/10 text-blue-600 hover:bg-blue-600 hover:text-white transition"
+                          >
+                            Renew
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openTerminateContractModal(contract)}
+                            className="rounded px-2 py-0.5 text-[10px] font-bold border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-600 hover:text-white transition"
+                          >
+                            End
+                          </button>
+                        </div>
+                      );
+                    }
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => openCreateContractModal(selectedEmployee)}
+                        className="rounded px-2 py-0.5 text-[10px] font-bold border border-border-color bg-surface text-foreground hover:border-blue-500 hover:text-blue-600 transition"
+                      >
+                        + Issue Contract
+                      </button>
+                    );
+                  })()}
+                </div>
                 {(() => {
                   const contract = contracts.find(
                     (c) => c.userId === selectedEmployee.userId || c.userId === selectedEmployee.id
                   );
                   if (!contract) {
-                    return <p className="text-muted text-xs">Standard staff employment agreement.</p>;
+                    return (
+                      <div className="space-y-1 text-xs">
+                        <p className="text-muted italic">Standard staff agreement (no fixed-term expiry).</p>
+                      </div>
+                    );
                   }
                   const countdown = getContractCountdown(contract);
                   return (
@@ -2290,12 +2590,12 @@ export default function HRPage() {
                           onClick={() => {
                             const emp = selectedEmployee;
                             setSelectedEmployee(null);
-                            openPayslipModalForEmployee(emp);
+                            openBatchGenerator(emp.id);
                           }}
                           className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 font-bold text-white shadow hover:bg-blue-700 transition"
                         >
                           <DollarSign size={14} />
-                          <span>Generate Payslip</span>
+                          <span>Generate & Review Payslips</span>
                         </button>
                       </>
                     ) : (
@@ -2576,6 +2876,681 @@ export default function HRPage() {
                 <Printer size={14} />
                 <span>Print Official Payslip (New Tab)</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD STAFF MODAL (HR MANAGER QUICK ONBOARDING) */}
+      {addStaffModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-border-color pb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600">
+                  <UserPlus size={16} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Add New Staff Member</h3>
+                  <p className="text-[11px] text-muted">Onboard personnel across company departments</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAddStaffModalOpen(false)}
+                className="text-muted hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+
+            {staffError && (
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-red-600 font-semibold">
+                {staffError}
+              </div>
+            )}
+            {staffSuccess && (
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-emerald-600 font-semibold">
+                {staffSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateStaffSubmit} className="space-y-3">
+              <div>
+                <label className="mb-1 block font-bold text-foreground">Full Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Sarah Jenkins"
+                  value={staffFullName}
+                  onChange={(e) => setStaffFullName(e.target.value)}
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block font-bold text-foreground">Email Address *</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="e.g. s.jenkins@company.com"
+                  value={staffEmail}
+                  onChange={(e) => setStaffEmail(e.target.value)}
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block font-bold text-foreground">Department *</label>
+                  <select
+                    value={staffDepartment}
+                    onChange={(e) => {
+                      const dept = e.target.value as DepartmentType;
+                      setStaffDepartment(dept);
+                      const titles = JOB_TITLES_BY_DEPARTMENT[dept] || [];
+                      if (titles.length > 0) {
+                        setStaffJobTitle(titles[0].title);
+                        setStaffRoleLevel(titles[0].defaultLevel as RoleLevel);
+                      }
+                    }}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none capitalize"
+                  >
+                    <option value="front_desk">Front Desk</option>
+                    <option value="maintenance">Maintenance</option>
+                    <option value="accountant">Finance & Accounts</option>
+                    <option value="human_resources">Human Resources</option>
+                    <option value="procurement">Procurement</option>
+                    <option value="stores">Stores & Inventory</option>
+                    <option value="it">Information Technology</option>
+                    <option value="manager">Management</option>
+                    <option value="admin">Administration</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block font-bold text-foreground">Role Level *</label>
+                  <select
+                    value={staffRoleLevel}
+                    onChange={(e) => setStaffRoleLevel(e.target.value as RoleLevel)}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none capitalize"
+                  >
+                    <option value="staff">Staff</option>
+                    <option value="supervisor">Supervisor</option>
+                    <option value="manager">Manager</option>
+                    <option value="all_rights">All Rights</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block font-bold text-foreground">Job Title / Designation *</label>
+                <div className="space-y-1.5">
+                  <select
+                    value={staffJobTitle}
+                    onChange={(e) => setStaffJobTitle(e.target.value)}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                  >
+                    {(JOB_TITLES_BY_DEPARTMENT[staffDepartment] || []).map((item) => (
+                      <option key={item.title} value={item.title}>
+                        {item.title}
+                      </option>
+                    ))}
+                    <option value="__custom__">+ Custom Title...</option>
+                  </select>
+                  {staffJobTitle === "__custom__" && (
+                    <input
+                      type="text"
+                      placeholder="Enter custom job title..."
+                      onChange={(e) => setStaffJobTitle(e.target.value)}
+                      className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                      required
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="staffSendInvite"
+                  checked={staffSendInvite}
+                  onChange={(e) => setStaffSendInvite(e.target.checked)}
+                  className="rounded border-border-color text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor="staffSendInvite" className="text-muted cursor-pointer select-none">
+                  Send welcome email invitation with login instructions
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-border-color">
+                <button
+                  type="button"
+                  onClick={() => setAddStaffModalOpen(false)}
+                  className="rounded-xl border border-border-color px-4 py-2 text-muted hover:bg-surface-elevated"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={staffSaving}
+                  className="rounded-xl bg-blue-600 px-5 py-2 font-bold text-white hover:bg-blue-700 shadow disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {staffSaving ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus size={13} />
+                      <span>Create Staff Profile</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE EMPLOYEE CONTRACT MODAL */}
+      {createContractTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-border-color pb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
+                  <FileSignature size={16} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Issue Staff Contract</h3>
+                  <p className="text-[11px] text-muted">
+                    {createContractTarget.fullName} · {createContractTarget.jobTitle}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreateContractTarget(null)}
+                className="text-muted hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateContractSubmit} className="space-y-3">
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-surface-elevated border border-border-color">
+                <input
+                  type="checkbox"
+                  id="newContractIsPermanent"
+                  checked={newContractIsPermanent}
+                  onChange={(e) => setNewContractIsPermanent(e.target.checked)}
+                  className="rounded border-border-color text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor="newContractIsPermanent" className="text-foreground font-bold cursor-pointer select-none">
+                  Permanent Employment (Indefinite Tenure)
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block font-bold text-foreground">Start Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={newContractStartDate}
+                    onChange={(e) => setNewContractStartDate(e.target.value)}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                  />
+                </div>
+
+                {!newContractIsPermanent && (
+                  <div>
+                    <label className="mb-1 block font-bold text-foreground">End Date *</label>
+                    <input
+                      type="date"
+                      required={!newContractIsPermanent}
+                      value={newContractEndDate}
+                      onChange={(e) => setNewContractEndDate(e.target.value)}
+                      className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block font-bold text-foreground">Monthly Salary ({currency}) *</label>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    value={newContractSalary}
+                    onChange={(e) => setNewContractSalary(Number(e.target.value))}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block font-bold text-foreground">Annual Leave Days</label>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    value={newContractLeaveDays}
+                    onChange={(e) => setNewContractLeaveDays(Number(e.target.value))}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-border-color">
+                <button
+                  type="button"
+                  onClick={() => setCreateContractTarget(null)}
+                  className="rounded-xl border border-border-color px-4 py-2 text-muted hover:bg-surface-elevated"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingContract}
+                  className="rounded-xl bg-blue-600 px-5 py-2 font-bold text-white hover:bg-blue-700 shadow disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {creatingContract ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" />
+                      <span>Creating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={13} />
+                      <span>Issue Contract</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADVANCED MULTI-MONTH & BULK PAYSLIP SUITE MODAL */}
+      {batchGeneratorModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl border border-border-color bg-surface shadow-2xl overflow-hidden text-xs">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-border-color p-5 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md">
+                  <Receipt size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-foreground">
+                    Multi-Month & Bulk Payslip Generator & Email Dispatch
+                  </h3>
+                  <p className="text-[11px] text-muted">
+                    Generate up to 6 months of historical or current payslips, review drafts, and email separate file attachments.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBatchGeneratorModalOpen(false)}
+                className="text-muted hover:text-foreground text-sm p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {batchResultMsg && (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-2">
+                  <CheckCircle2 size={16} />
+                  <span>{batchResultMsg}</span>
+                </div>
+              )}
+
+              {/* STEP 1: SELECTION */}
+              {batchStep === "select" && (
+                <div className="space-y-5">
+                  {/* Month Selection */}
+                  <div className="rounded-2xl border border-border-color bg-surface-elevated p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="font-black text-foreground text-xs uppercase tracking-wider flex items-center gap-1.5">
+                        <Calendar size={14} className="text-blue-600" />
+                        <span>Select Pay Periods (Up to 6 Months) *</span>
+                      </label>
+                      <span className="text-[11px] font-bold text-muted">
+                        Selected: <b className="text-blue-600">{batchSelectedMonths.length}</b> / 6 max
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted">
+                      Select past months to generate historical arrears or catch-up payslips. System tenure rules prevent generating slips before employee hire date.
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 pt-1">
+                      {pastSixMonths.map((m) => {
+                        const isSelected = batchSelectedMonths.includes(m);
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                if (batchSelectedMonths.length === 1) {
+                                  alert("At least one month must remain selected.");
+                                  return;
+                                }
+                                setBatchSelectedMonths(batchSelectedMonths.filter((x) => x !== m));
+                              } else {
+                                if (batchSelectedMonths.length >= 6) {
+                                  alert("You can select a maximum of 6 months per batch.");
+                                  return;
+                                }
+                                setBatchSelectedMonths([...batchSelectedMonths, m].sort().reverse());
+                              }
+                            }}
+                            className={`flex items-center justify-between rounded-xl border p-2.5 font-bold transition-all text-xs ${
+                              isSelected
+                                ? "border-blue-600 bg-blue-600/10 text-blue-600 shadow-sm"
+                                : "border-border-color bg-surface hover:bg-surface-elevated text-muted hover:text-foreground"
+                            }`}
+                          >
+                            <span className="font-mono">{m}</span>
+                            {isSelected ? <CheckCircle2 size={14} /> : <div className="h-3.5 w-3.5 rounded-full border border-border-color" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Employee Selection */}
+                  <div className="rounded-2xl border border-border-color bg-surface-elevated p-4 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <div>
+                        <label className="font-black text-foreground text-xs uppercase tracking-wider flex items-center gap-1.5">
+                          <Users size={14} className="text-blue-600" />
+                          <span>Select Active Personnel *</span>
+                        </label>
+                        <p className="text-[11px] text-muted">
+                          Choose individual employees or select all active staff for mass batch generation.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setBatchSelectedEmployeeIds(activeEmployees.map((e) => e.id))}
+                          className="rounded-lg border border-border-color bg-surface px-2.5 py-1 font-bold text-[11px] text-foreground hover:border-blue-500 hover:text-blue-600 transition"
+                        >
+                          Select All Active ({activeEmployees.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBatchSelectedEmployeeIds([])}
+                          className="rounded-lg border border-border-color bg-surface px-2.5 py-1 font-bold text-[11px] text-muted hover:text-foreground transition"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto rounded-xl border border-border-color bg-surface divide-y divide-border-color">
+                      {activeEmployees.length === 0 ? (
+                        <p className="p-4 text-center text-muted">No active employees found.</p>
+                      ) : (
+                        activeEmployees.map((emp) => {
+                          const isChecked = batchSelectedEmployeeIds.includes(emp.id);
+                          const joinMonth = emp.createdAt ? emp.createdAt.slice(0, 7) : "Unknown";
+                          return (
+                            <label
+                              key={emp.id}
+                              className="flex items-center justify-between p-3 hover:bg-surface-elevated/60 cursor-pointer select-none transition"
+                            >
+                              <div className="flex items-center gap-3">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setBatchSelectedEmployeeIds([...batchSelectedEmployeeIds, emp.id]);
+                                    } else {
+                                      setBatchSelectedEmployeeIds(batchSelectedEmployeeIds.filter((id) => id !== emp.id));
+                                    }
+                                  }}
+                                  className="rounded border-border-color text-blue-600 focus:ring-blue-500"
+                                />
+                                <div>
+                                  <p className="font-bold text-foreground text-xs">{emp.fullName}</p>
+                                  <p className="text-[11px] text-muted">
+                                    {emp.jobTitle} · <span className="capitalize">{emp.department.replace(/_/g, " ")}</span>
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="text-right text-[11px]">
+                                <span className="font-mono text-muted">Joined: {joinMonth}</span>
+                                <p className="text-[10px] text-muted">{emp.email}</p>
+                              </div>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 2: REVIEW GENERATED DRAFTS & DISPATCH */}
+              {batchStep === "review" && (
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-surface-elevated p-4 rounded-2xl border border-border-color">
+                    <div>
+                      <h4 className="font-black text-foreground text-sm">
+                        Review Generated Payslips ({batchDrafts.length} Total Drafts)
+                      </h4>
+                      <p className="text-[11px] text-muted">
+                        Inspect earnings, statutory deductions and tenure eligibility before finalizing and emailing attachments.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setBatchDrafts((prev) =>
+                            prev.map((d) => (d.eligible ? { ...d, selectedForDispatch: true } : d))
+                          )
+                        }
+                        className="rounded-lg border border-border-color bg-surface px-2.5 py-1 text-[11px] font-bold text-foreground hover:border-blue-500 transition"
+                      >
+                        Select All Eligible
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setBatchDrafts((prev) => prev.map((d) => ({ ...d, selectedForDispatch: false })))
+                        }
+                        className="rounded-lg border border-border-color bg-surface px-2.5 py-1 text-[11px] font-bold text-muted hover:text-foreground transition"
+                      >
+                        Deselect All
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Batch Review Table */}
+                  <div className="rounded-2xl border border-border-color bg-surface overflow-hidden shadow-sm">
+                    <div className="max-h-80 overflow-y-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="sticky top-0 bg-surface-elevated border-b border-border-color font-bold text-[11px] uppercase tracking-wider text-muted z-10">
+                          <tr>
+                            <th className="p-3">Send</th>
+                            <th className="p-3">Employee</th>
+                            <th className="p-3">Period</th>
+                            <th className="p-3">Gross Remuneration</th>
+                            <th className="p-3">Net Disbursed</th>
+                            <th className="p-3">Tenure / Status</th>
+                            <th className="p-3 text-right">Individual Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border-color">
+                          {batchDrafts.map((d) => (
+                            <tr
+                              key={d.id}
+                              className={`transition-colors ${
+                                !d.eligible
+                                  ? "bg-red-500/5 opacity-70"
+                                  : d.emailSent
+                                  ? "bg-emerald-500/5"
+                                  : "hover:bg-surface-elevated/50"
+                              }`}
+                            >
+                              <td className="p-3">
+                                <input
+                                  type="checkbox"
+                                  disabled={!d.eligible || batchSending}
+                                  checked={d.selectedForDispatch && d.eligible}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setBatchDrafts((prev) =>
+                                      prev.map((item) => (item.id === d.id ? { ...item, selectedForDispatch: checked } : item))
+                                    );
+                                  }}
+                                  className="rounded border-border-color text-blue-600 focus:ring-blue-500 disabled:opacity-30"
+                                />
+                              </td>
+                              <td className="p-3">
+                                <p className="font-bold text-foreground">{d.user.fullName}</p>
+                                <p className="text-[10px] text-muted">{d.user.email}</p>
+                              </td>
+                              <td className="p-3 font-mono font-bold text-blue-600">{d.month}</td>
+                              <td className="p-3 font-semibold text-foreground">
+                                {currency} {d.grossPay.toLocaleString()}
+                              </td>
+                              <td className="p-3 font-black text-emerald-600">
+                                {currency} {d.netPay.toLocaleString()}
+                              </td>
+                              <td className="p-3">
+                                {d.eligible ? (
+                                  d.emailSent ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600">
+                                      <CheckCircle2 size={11} />
+                                      Email Dispatched
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold text-blue-600">
+                                      ✓ Valid Tenure
+                                    </span>
+                                  )
+                                ) : (
+                                  <span
+                                    className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-600"
+                                    title={d.ineligibleReason}
+                                  >
+                                    <XCircle size={11} />
+                                    {d.ineligibleReason || "Ineligible"}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-3 text-right">
+                                {d.eligible && (
+                                  <button
+                                    type="button"
+                                    disabled={batchSending}
+                                    onClick={() => handleDispatchBatchEmails(d.user.id)}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-600 hover:text-white transition disabled:opacity-50"
+                                  >
+                                    <Mail size={11} />
+                                    <span>Email Person</span>
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-border-color p-5 bg-surface shrink-0">
+              {batchStep === "select" ? (
+                <>
+                  <div className="text-xs text-muted">
+                    Total Estimated Records:{" "}
+                    <b className="text-foreground">
+                      {batchSelectedEmployeeIds.length * batchSelectedMonths.length}
+                    </b>{" "}
+                    ({batchSelectedEmployeeIds.length} staff × {batchSelectedMonths.length} month(s))
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setBatchGeneratorModalOpen(false)}
+                      className="rounded-xl border border-border-color px-4 py-2 font-semibold text-muted hover:bg-surface-elevated transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleGenerateBatchDrafts}
+                      disabled={batchSelectedEmployeeIds.length === 0 || batchSelectedMonths.length === 0}
+                      className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2 font-bold text-white shadow-md hover:bg-blue-700 transition disabled:opacity-50"
+                    >
+                      <Sparkles size={14} />
+                      <span>Review Generated Drafts ({batchSelectedEmployeeIds.length * batchSelectedMonths.length})</span>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-xs text-muted">
+                    Selected for Emailing:{" "}
+                    <b className="text-blue-600">
+                      {batchDrafts.filter((d) => d.eligible && d.selectedForDispatch).length}
+                    </b>{" "}
+                    of {batchDrafts.filter((d) => d.eligible).length} eligible payslips
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={batchSending}
+                      onClick={() => setBatchStep("select")}
+                      className="rounded-xl border border-border-color px-4 py-2 font-semibold text-muted hover:bg-surface-elevated transition disabled:opacity-50"
+                    >
+                      Back to Selection
+                    </button>
+                    <button
+                      type="button"
+                      disabled={
+                        batchSending ||
+                        batchDrafts.filter((d) => d.eligible && d.selectedForDispatch).length === 0
+                      }
+                      onClick={() => handleDispatchBatchEmails()}
+                      className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2 font-bold text-white shadow-md hover:from-emerald-700 hover:to-teal-700 transition disabled:opacity-50"
+                    >
+                      {batchSending ? (
+                        <>
+                          <RefreshCw size={14} className="animate-spin" />
+                          <span>
+                            Sending ({batchSendProgress.current} / {batchSendProgress.total})...
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Send size={14} />
+                          <span>
+                            Email All Selected Payslips (
+                            {batchDrafts.filter((d) => d.eligible && d.selectedForDispatch).length})
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -29,6 +29,7 @@ export type PropertyRow = {
   defaultFullBoard?: number;
   photos?: string[];
   isPublished?: boolean;
+  availableFrom?: string;
 };
 
 export type RoomTypeListing = {
