@@ -92,6 +92,12 @@ const JOB_TITLES_BY_DEPARTMENT: Record<DepartmentType, Array<{ title: string; de
   manager: [
     { title: "General Operations Manager", defaultLevel: "manager" },
   ],
+  marketing: [
+    { title: "Marketing - Manager", defaultLevel: "manager" },
+    { title: "Marketing - Growth & Ad Specialist", defaultLevel: "staff" },
+    { title: "Marketing - Social Media & Content", defaultLevel: "staff" },
+    { title: "Marketing - All Rights", defaultLevel: "all_rights" },
+  ],
 };
 
 export default function UsersManagementPage() {

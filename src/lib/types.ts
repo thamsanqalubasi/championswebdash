@@ -79,6 +79,7 @@ export type DepartmentType =
   | "human_resources"
   | "procurement"
   | "stores"
+  | "marketing"
   | "audit";
 
 export type RoleLevel =
@@ -784,4 +785,82 @@ export type RoleProfileDefinition = {
 export type CompanyReminderSettings = {
   reminderThresholdHours: number; // default 24
 };
+
+// ─── MARKETING & GROWTH TYPES ──────────────────────────────────────────────────
+
+export type MarketingAdPlacement = "hero_banner" | "ticker" | "in_feed" | "popup";
+
+export type MarketingAd = {
+  id: string;
+  company_id: string;
+  campaign_id?: string | null;
+  title: string;
+  subtitle?: string | null;
+  placement: MarketingAdPlacement;
+  image_url?: string | null;
+  cta_text: string;
+  link_url?: string | null;
+  target_property_id?: string | null;
+  badge_text?: string | null;
+  is_active: boolean;
+  impressions_count: number;
+  clicks_count: number;
+  starts_at?: string | null;
+  expires_at?: string | null;
+  created_at: string;
+};
+
+export type BoostTier = "standard" | "featured" | "premium_sponsor";
+
+export type MarketingBoostedListing = {
+  id: string;
+  company_id: string;
+  listing_type: "property" | "room_type" | "agent_listing";
+  listing_id: string;
+  boost_tier: BoostTier;
+  badge_label: string;
+  priority_score: number;
+  starts_at: string;
+  expires_at?: string | null;
+  is_active: boolean;
+  impressions_count: number;
+  clicks_count: number;
+  created_at: string;
+};
+
+export type MarketingCampaign = {
+  id: string;
+  company_id: string;
+  title: string;
+  description?: string | null;
+  target_audience?: string;
+  budget: number;
+  spent: number;
+  start_date?: string | null;
+  end_date?: string | null;
+  status: "draft" | "active" | "paused" | "completed";
+  created_by?: string | null;
+  created_at: string;
+};
+
+export type TenantPaymentProof = {
+  id: string;
+  company_id: string;
+  tenant_id?: string | null;
+  customer_email: string;
+  customer_name?: string | null;
+  property_id?: string | null;
+  invoice_id?: string | null;
+  amount: number;
+  payment_date: string;
+  reference_number?: string | null;
+  document_url: string;
+  notes?: string | null;
+  status: "pending_review" | "verified" | "rejected";
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  created_at: string;
+};
+
 

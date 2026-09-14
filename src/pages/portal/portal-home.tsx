@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { getAllCountries, getCitiesForCountry } from "@/lib/geo-data";
-import { MapPin, BedDouble, Home, Search, ChevronLeft, ChevronRight, Users, Baby, Star, DollarSign, Phone, X, Calendar } from "lucide-react";
+import { MapPin, BedDouble, Home, Search, ChevronLeft, ChevronRight, Users, Baby, Star, DollarSign, Phone, X, Calendar, Flame, Megaphone, Sparkles, ExternalLink } from "lucide-react";
 
 type RentalProp = {
   id: string;
@@ -77,6 +77,8 @@ export default function PortalHomePage() {
   const [roomListings, setRoomListings] = useState<RoomListing[]>([]);
   const [saleListings, setSaleListings] = useState<AgentListing[]>([]);
   const [reviewsMap, setReviewsMap] = useState<Record<string, { avg: number; count: number }>>({});
+  const [ads, setAds] = useState<any[]>([]);
+  const [boostedMap, setBoostedMap] = useState<Record<string, { badge: string; tier: string; score: number }>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -143,10 +145,51 @@ export default function PortalHomePage() {
         }
       } catch {}
 
+      try {
+        const { data: adsData } = await supabase
+          .from("marketing_ads")
+          .select("*")
+          .eq("is_active", true)
+          .order("created_at", { ascending: false });
+        if (adsData) setAds(adsData);
+      } catch {}
+
+      try {
+        const { data: boostData } = await supabase
+          .from("marketing_boosted_listings")
+          .select("*")
+          .eq("is_active", true);
+        if (boostData) {
+          const bMap: Record<string, { badge: string; tier: string; score: number }> = {};
+          boostData.forEach((b: any) => {
+            bMap[b.listing_id] = {
+              badge: b.badge_label || "🔥 Featured",
+              tier: b.boost_tier,
+              score: b.priority_score || 10,
+            };
+          });
+          setBoostedMap(bMap);
+        }
+      } catch {}
+
       setLoading(false);
     }
     void load();
   }, []);
+
+  const trackAdClick = async (adId: string) => {
+    try {
+      await supabase.from("marketing_ad_events").insert({
+        ad_id: adId,
+        event_type: "click",
+        page_url: window.location.href,
+      });
+    } catch {}
+  };
+
+  const tickerAd = useMemo(() => ads.find((a) => a.placement === "ticker"), [ads]);
+  const heroBannerAd = useMemo(() => ads.find((a) => a.placement === "hero_banner"), [ads]);
+  const inFeedAds = useMemo(() => ads.filter((a) => a.placement === "in_feed"), [ads]);
 
   const allListingsGeo = useMemo(() => {
     return [
@@ -182,19 +225,76 @@ export default function PortalHomePage() {
     matchGeo(s) &&
     (!search || s.name.toLowerCase().includes(q) || (s.city||'').toLowerCase().includes(q) || (s.country||'').toLowerCase().includes(q));
 
-  const filteredRentals = filter === "booking" || filter === "sale" ? [] : rentals.filter(matchRental);
-  const filteredRooms = filter === "rental" || filter === "sale" ? [] : roomListings.filter(matchRoom);
-  const filteredSales = (filter === 'rental' || filter === 'booking') ? [] : saleListings.filter(matchSale);
+  const filteredRentals = useMemo(() => {
+    if (filter === "booking" || filter === "sale") return [];
+    return rentals.filter(matchRental).sort((a, b) => (boostedMap[b.id]?.score || 0) - (boostedMap[a.id]?.score || 0));
+  }, [filter, rentals, search, selectedCountry, selectedCity, boostedMap]);
+
+  const filteredRooms = useMemo(() => {
+    if (filter === "rental" || filter === "sale") return [];
+    return roomListings.filter(matchRoom).sort((a, b) => (boostedMap[b.id]?.score || 0) - (boostedMap[a.id]?.score || 0));
+  }, [filter, roomListings, search, selectedCountry, selectedCity, boostedMap]);
+
+  const filteredSales = useMemo(() => {
+    if (filter === "rental" || filter === "booking") return [];
+    return saleListings.filter(matchSale).sort((a, b) => (boostedMap[b.id]?.score || 0) - (boostedMap[a.id]?.score || 0));
+  }, [filter, saleListings, search, selectedCountry, selectedCity, boostedMap]);
+
   const total = filteredRentals.length + filteredRooms.length + filteredSales.length;
 
   const lowestPrice = (r: RoomListing) => Math.min(...[r.price_room_only,r.price_bed_breakfast,r.price_full_board].filter(p=>p>0)) || 0;
 
   return (
     <div className="bg-slate-50 dark:bg-slate-950 transition-colors">
+      {/* Top Announcement Ticker Ad */}
+      {tickerAd && (
+        <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 text-white px-4 py-2.5 text-xs text-center font-bold flex items-center justify-center gap-2 shadow-xs">
+          <span className="bg-black/30 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider">{tickerAd.badge_text || "PROMOTION"}</span>
+          <span>{tickerAd.title}</span>
+          {tickerAd.subtitle && <span className="hidden sm:inline text-white/90 font-normal">— {tickerAd.subtitle}</span>}
+          {tickerAd.link_url && (
+            <a
+              href={tickerAd.link_url}
+              onClick={() => trackAdClick(tickerAd.id)}
+              className="inline-flex items-center gap-1 rounded-full bg-white/20 hover:bg-white/30 px-2.5 py-0.5 text-[11px] font-black underline ml-1"
+            >
+              {tickerAd.cta_text || "Explore"} <ExternalLink size={10} />
+            </a>
+          )}
+        </div>
+      )}
+
       {/* Hero Search Section */}
       <div className="bg-gradient-to-br from-blue-700 via-blue-600 to-purple-700 dark:from-blue-900 dark:via-indigo-950 dark:to-purple-950 py-16 sm:py-20 px-4 text-center text-white">
         <h1 className="text-3xl sm:text-5xl font-bold mb-3 sm:mb-4 tracking-tight">Find Your Perfect Stay or Home</h1>
         <p className="text-sm sm:text-lg text-blue-100 dark:text-blue-200 mb-6 sm:mb-8 max-w-2xl mx-auto px-2">Browse available rooms, lodges, and rental properties with verified customer reviews.</p>
+
+        {/* Promotional Hero Banner Ad */}
+        {heroBannerAd && (
+          <div className="mx-auto max-w-3xl mb-8 rounded-2xl overflow-hidden bg-white/10 backdrop-blur-md border border-white/20 p-4 text-left flex flex-col sm:flex-row items-center gap-4 shadow-xl">
+            {heroBannerAd.image_url && (
+              <img src={heroBannerAd.image_url} alt={heroBannerAd.title} className="w-full sm:w-48 aspect-video rounded-xl object-cover shrink-0" />
+            )}
+            <div className="flex-1 min-w-0">
+              {heroBannerAd.badge_text && (
+                <span className="inline-block rounded-md bg-amber-400 text-slate-900 px-2 py-0.5 text-[10px] font-black uppercase mb-1">
+                  {heroBannerAd.badge_text}
+                </span>
+              )}
+              <h3 className="font-extrabold text-base sm:text-lg text-white leading-tight">{heroBannerAd.title}</h3>
+              {heroBannerAd.subtitle && <p className="text-xs text-blue-100 mt-1 line-clamp-2">{heroBannerAd.subtitle}</p>}
+            </div>
+            {heroBannerAd.link_url && (
+              <a
+                href={heroBannerAd.link_url}
+                onClick={() => trackAdClick(heroBannerAd.id)}
+                className="shrink-0 rounded-xl bg-white text-blue-700 font-extrabold px-4 py-2.5 text-xs shadow-md hover:bg-blue-50 transition"
+              >
+                {heroBannerAd.cta_text || "View Offer →"}
+              </a>
+            )}
+          </div>
+        )}
         
         {/* Search Bar Container - Fully responsive with cascaded Country & City selectors */}
         <div className="mx-auto max-w-3xl flex flex-col gap-2.5 bg-white dark:bg-slate-900 rounded-2xl p-3 shadow-2xl border border-gray-100 dark:border-slate-800 text-left">
@@ -330,6 +430,38 @@ export default function PortalHomePage() {
           </div>
         )}
 
+        {/* In-Feed Sponsored Ads */}
+        {inFeedAds.length > 0 && (
+          <div className="mb-14 grid gap-6 grid-cols-1 md:grid-cols-2">
+            {inFeedAds.map((ad) => (
+              <div key={ad.id} className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-purple-900 via-indigo-900 to-blue-900 text-white p-6 shadow-xl flex flex-col justify-between border border-purple-400/30">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="rounded-full bg-amber-400 text-slate-900 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide">
+                    {ad.badge_text || "Sponsored Highlight"}
+                  </span>
+                  <Megaphone size={16} className="text-amber-300" />
+                </div>
+                <div className="mb-4">
+                  <h3 className="text-xl font-black mb-1">{ad.title}</h3>
+                  {ad.subtitle && <p className="text-sm text-purple-200">{ad.subtitle}</p>}
+                </div>
+                {ad.image_url && (
+                  <img src={ad.image_url} alt={ad.title} className="w-full h-40 object-cover rounded-xl mb-4" />
+                )}
+                {ad.link_url && (
+                  <a
+                    href={ad.link_url}
+                    onClick={() => trackAdClick(ad.id)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-white text-purple-900 font-bold px-4 py-2.5 text-sm hover:bg-purple-50 transition shadow"
+                  >
+                    {ad.cta_text || "Learn More"} <ExternalLink size={14} />
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Book a Room — room_type_listings */}
         {!loading && filteredRooms.length > 0 && (
           <section className="mb-14">
@@ -341,8 +473,15 @@ export default function PortalHomePage() {
             <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               {filteredRooms.map(r => {
                 const stat = reviewsMap[r.id] || reviewsMap[r.property_id];
+                const boost = boostedMap[r.id] || boostedMap[r.property_id];
                 return (
-                  <Link key={r.id} to={`/listing/${r.id}`} className="group rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:shadow-lg transition-all hover:-translate-y-1">
+                  <Link key={r.id} to={`/listing/${r.id}`} className={`group relative rounded-2xl border ${boost ? "border-amber-400 dark:border-amber-500 shadow-md ring-2 ring-amber-400/30" : "border-gray-200 dark:border-slate-800"} bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:shadow-lg transition-all hover:-translate-y-1`}>
+                    {boost && (
+                      <div className="absolute top-3 left-3 z-20 flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white px-2.5 py-1 text-[11px] font-black shadow-md tracking-wider uppercase">
+                        <Sparkles size={11} className="fill-white" />
+                        {boost.badge}
+                      </div>
+                    )}
                     <PhotoSlider photos={r.photos||[]} name={r.display_name}/>
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-2 mb-1">
@@ -396,46 +535,55 @@ export default function PortalHomePage() {
               <span className="rounded-full bg-emerald-100 dark:bg-emerald-950/80 px-2.5 py-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-300">{filteredSales.length}</span>
             </div>
             <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredSales.map(s => (
-                <div key={s.id} className="rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:shadow-lg transition-all">
-                  <PhotoSlider photos={s.photos||[]} name={s.name}/>
-                  <div className="p-4">
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <h3 className="font-bold text-gray-900 dark:text-white">{s.name}</h3>
-                      <span className="shrink-0 rounded-full bg-emerald-100 dark:bg-emerald-950/80 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase">For Sale</span>
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-slate-400 mb-2 flex items-center gap-1"><MapPin size={11}/>{[s.city, s.country].filter(Boolean).join(', ') || s.address}</p>
-                    {s.description && <p className="text-xs text-gray-500 dark:text-slate-400 mb-3 line-clamp-2">{s.description}</p>}
-                    <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-slate-400 mb-3">
-                      {s.bedrooms > 0 && <span>{s.bedrooms} Bed</span>}
-                      {s.bathrooms > 0 && <span>{s.bathrooms} Bath</span>}
-                      {s.area_sqm > 0 && <span>{s.area_sqm} m²</span>}
-                    </div>
-                    <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-slate-800 mb-3">
-                      <div><span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">R{(s.price||0).toLocaleString()}</span></div>
-                      <span className="rounded-full bg-emerald-100 dark:bg-emerald-950/80 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">For Sale</span>
-                    </div>
-                    {/* Agent Contact Card */}
-                    {s.agent_name && (
-                      <div className="rounded-xl bg-gray-50 dark:bg-slate-800/80 border border-gray-100 dark:border-slate-700/60 p-3 flex items-center gap-3">
-                        {s.agent_photo_url ? (
-                          <img src={s.agent_photo_url} alt={s.agent_name} className="w-10 h-10 rounded-full object-cover border-2 border-white dark:border-slate-700 shadow"/>
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold text-sm">{s.agent_name.charAt(0)}</div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-sm text-gray-900 dark:text-white truncate">{s.agent_name}</div>
-                          <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">
-                            {s.agent_phone && <span className="flex items-center gap-1"><Phone size={11} className="text-gray-400 shrink-0" /> {s.agent_phone}</span>}
-                            {s.agent_whatsapp && <a href={`https://wa.me/${s.agent_whatsapp.replace(/[^0-9]/g,'')}`} target="_blank" rel="noreferrer" className="text-green-600 dark:text-green-400 hover:underline">WhatsApp</a>}
-                          </div>
-                          {s.agent_email && <div className="text-[10px] text-gray-400 dark:text-slate-500 truncate">{s.agent_email}</div>}
-                        </div>
+              {filteredSales.map(s => {
+                const boost = boostedMap[s.id];
+                return (
+                  <div key={s.id} className={`relative rounded-2xl border ${boost ? "border-amber-400 dark:border-amber-500 shadow-md ring-2 ring-amber-400/30" : "border-gray-200 dark:border-slate-800"} bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:shadow-lg transition-all`}>
+                    {boost && (
+                      <div className="absolute top-3 left-3 z-20 flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white px-2.5 py-1 text-[11px] font-black shadow-md tracking-wider uppercase">
+                        <Sparkles size={11} className="fill-white" />
+                        {boost.badge}
                       </div>
                     )}
+                    <PhotoSlider photos={s.photos||[]} name={s.name}/>
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <h3 className="font-bold text-gray-900 dark:text-white">{s.name}</h3>
+                        <span className="shrink-0 rounded-full bg-emerald-100 dark:bg-emerald-950/80 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase">For Sale</span>
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 mb-2 flex items-center gap-1"><MapPin size={11}/>{[s.city, s.country].filter(Boolean).join(', ') || s.address}</p>
+                      {s.description && <p className="text-xs text-gray-500 dark:text-slate-400 mb-3 line-clamp-2">{s.description}</p>}
+                      <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-slate-400 mb-3">
+                        {s.bedrooms > 0 && <span>{s.bedrooms} Bed</span>}
+                        {s.bathrooms > 0 && <span>{s.bathrooms} Bath</span>}
+                        {s.area_sqm > 0 && <span>{s.area_sqm} m²</span>}
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-slate-800 mb-3">
+                        <div><span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">R{(s.price||0).toLocaleString()}</span></div>
+                        <span className="rounded-full bg-emerald-100 dark:bg-emerald-950/80 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">For Sale</span>
+                      </div>
+                      {/* Agent Contact Card */}
+                      {s.agent_name && (
+                        <div className="rounded-xl bg-gray-50 dark:bg-slate-800/80 border border-gray-100 dark:border-slate-700/60 p-3 flex items-center gap-3">
+                          {s.agent_photo_url ? (
+                            <img src={s.agent_photo_url} alt={s.agent_name} className="w-10 h-10 rounded-full object-cover border-2 border-white dark:border-slate-700 shadow"/>
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold text-sm">{s.agent_name.charAt(0)}</div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-sm text-gray-900 dark:text-white truncate">{s.agent_name}</div>
+                            <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">
+                              {s.agent_phone && <span className="flex items-center gap-1"><Phone size={11} className="text-gray-400 shrink-0" /> {s.agent_phone}</span>}
+                              {s.agent_whatsapp && <a href={`https://wa.me/${s.agent_whatsapp.replace(/[^0-9]/g,'')}`} target="_blank" rel="noreferrer" className="text-green-600 dark:text-green-400 hover:underline">WhatsApp</a>}
+                            </div>
+                            {s.agent_email && <div className="text-[10px] text-gray-400 dark:text-slate-500 truncate">{s.agent_email}</div>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}
@@ -451,8 +599,15 @@ export default function PortalHomePage() {
             <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               {filteredRentals.map(l => {
                 const stat = reviewsMap[l.id];
+                const boost = boostedMap[l.id];
                 return (
-                  <Link key={l.id} to={`/listing/${l.id}`} className="group rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:shadow-lg transition-all hover:-translate-y-1">
+                  <Link key={l.id} to={`/listing/${l.id}`} className={`group relative rounded-2xl border ${boost ? "border-amber-400 dark:border-amber-500 shadow-md ring-2 ring-amber-400/30" : "border-gray-200 dark:border-slate-800"} bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:shadow-lg transition-all hover:-translate-y-1`}>
+                    {boost && (
+                      <div className="absolute top-3 left-3 z-20 flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white px-2.5 py-1 text-[11px] font-black shadow-md tracking-wider uppercase">
+                        <Sparkles size={11} className="fill-white" />
+                        {boost.badge}
+                      </div>
+                    )}
                     <PhotoSlider photos={l.photos||[]} name={l.name}/>
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-2 mb-2">

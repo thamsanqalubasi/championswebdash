@@ -4,6 +4,7 @@ import { ErrorState, LoadingState } from "@/components/data-state";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
+import { isValidUuid } from "@/lib/data";
 import { fetchAdminInfo, fetchCompanyInfo, downloadPdfDocument } from "@/lib/storage";
 import { DocumentShareModal } from "@/components/document-share-modal";
 import { Download, Mail, Eye } from "lucide-react";
@@ -378,10 +379,12 @@ export default function FinanceAccountsPage() {
     let cancelled = false;
 
     async function loadProperties() {
-      const { data, error: propsError } = await supabase
-        .from("properties")
-        .select("id, name")
-        .order("name");
+      const compId = currentCompany?.id;
+      let query = supabase.from("properties").select("id, name").order("name");
+      if (isValidUuid(compId)) {
+        query = query.eq("company_id", compId);
+      }
+      const { data, error: propsError } = await query;
 
       if (propsError) {
         if (!cancelled) setError(propsError.message);
@@ -397,10 +400,10 @@ export default function FinanceAccountsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [currentCompany?.id]);
 
   const scopeLabel = useMemo(() => {
-    if (scope === "system") return "Whole System";
+    if (scope === "system") return "Company Portfolio (All Properties)";
     const selected = properties.find((item) => item.id === propertyId);
     return selected ? `Property: ${selected.name}` : "Property";
   }, [scope, propertyId, properties]);
@@ -480,9 +483,12 @@ export default function FinanceAccountsPage() {
         });
       });
 
+      const companyPropertyIds = new Set(properties.map((p) => p.id));
+
       payments.forEach((row) => {
         const tenantPropertyId = row.tenantPropertyId;
         if (scope === "property" && tenantPropertyId !== propertyId) return;
+        if (scope === "system" && companyPropertyIds.size > 0 && !companyPropertyIds.has(tenantPropertyId)) return;
         const month = toMonthKey(row.paymentDate);
         if (!monthMap.has(month)) return;
         monthMap.get(month)!.rentCollected += Number(row.amountPaid ?? 0);
@@ -500,7 +506,9 @@ export default function FinanceAccountsPage() {
       });
 
       maintenanceRows.forEach((row) => {
-        if (scope === "property" && String(row.property_id ?? "") !== propertyId) return;
+        const maintPropId = String(row.property_id ?? "");
+        if (scope === "property" && maintPropId !== propertyId) return;
+        if (scope === "system" && companyPropertyIds.size > 0 && maintPropId && !companyPropertyIds.has(maintPropId)) return;
         const month = toMonthKey(String(row.created_at ?? ""));
         if (!monthMap.has(month)) return;
         const amount = Number(row.actual_cost ?? row.cost ?? 0);
@@ -539,7 +547,9 @@ export default function FinanceAccountsPage() {
       });
 
       renovations.forEach((row) => {
-        if (scope === "property" && String(row.property_id ?? "") !== propertyId) return;
+        const renoPropId = String(row.property_id ?? "");
+        if (scope === "property" && renoPropId !== propertyId) return;
+        if (scope === "system" && companyPropertyIds.size > 0 && renoPropId && !companyPropertyIds.has(renoPropId)) return;
         const month = toMonthKey(String(row.created_at ?? ""));
         if (!monthMap.has(month)) return;
         const amount = Number(row.actual_cost ?? row.cost ?? 0);
@@ -558,7 +568,9 @@ export default function FinanceAccountsPage() {
       });
 
       bills.forEach((row) => {
-        if (scope === "property" && String(row.property_id ?? "") !== propertyId) return;
+        const billPropId = String(row.property_id ?? "");
+        if (scope === "property" && billPropId !== propertyId) return;
+        if (scope === "system" && companyPropertyIds.size > 0 && billPropId && !companyPropertyIds.has(billPropId)) return;
         const month = toMonthKey(String(row.created_at ?? ""));
         if (!monthMap.has(month)) return;
         const amount = Number(row.amount ?? 0);
@@ -720,7 +732,7 @@ export default function FinanceAccountsPage() {
           <div>
             <label className="mb-1 block text-sm text-muted">Scope</label>
             <select value={scope} onChange={(event) => setScope(event.target.value as ScopeMode)} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm">
-              <option value="system">Whole system</option>
+              <option value="system">Company Portfolio (All Properties)</option>
               <option value="property">Specific property</option>
             </select>
           </div>

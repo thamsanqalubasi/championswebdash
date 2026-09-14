@@ -9,7 +9,7 @@ import {
   Truck, SearchCheck, CalendarClock, Package, FileSignature, Settings,
   History, Landmark, BedDouble, KeyRound, Briefcase, Layers, ChevronDown,
   Building, Inbox, Globe, UserCog, ChevronLeft, ChevronRight, Menu,
-  ShieldCheck, Check, X, Network, Server, BarChart3,
+  ShieldCheck, Check, X, Network, Server, BarChart3, Megaphone,
   type LucideIcon,
 } from "lucide-react";
 import type { DepartmentType } from "@/lib/types";
@@ -82,6 +82,12 @@ const allNavSections: NavSection[] = [
       { label: "Enquiries & Tickets", href: "/enquiries", icon: Inbox, departments: ["admin","manager","front_desk","accountant"] },
       { label: "Public Portal", href: "/portal", icon: Globe, departments: ["admin","manager","front_desk"] },
       { label: "Agent Mode", href: "/agent-mode", icon: Briefcase, departments: ["admin","manager","front_desk"] },
+    ],
+  },
+  {
+    title: "Marketing & Growth",
+    items: [
+      { label: "Marketing Hub", href: "/marketing", icon: Megaphone, departments: ["admin","manager","marketing"] },
     ],
   },
   {

@@ -250,11 +250,21 @@ export default function PropertyDetailsPage() {
           return (fallback.data ?? []).map((row) => ({ ...row, frequency: "monthly" as const }));
         };
 
+        const compId = currentCompany?.id;
+        let unassignedQuery = supabase
+          .from("tenants")
+          .select("id, full_name")
+          .is("property_id", null)
+          .order("full_name", { ascending: true });
+        if (isValidUuid(compId)) {
+          unassignedQuery = unassignedQuery.eq("company_id", compId);
+        }
+
         const [propertyResult, assignedTenantsResult, unassignedTenantsResult, invoicesResult, maintenanceResult, billSchedules, billMonthlyResult] =
           await Promise.all([
             supabase
               .from("properties")
-              .select("id, name, type, address, status, monthly_rent, photos")
+              .select("id, name, type, address, status, monthly_rent, photos, company_id")
               .eq("id", propertyId)
               .single(),
             supabase
@@ -262,11 +272,7 @@ export default function PropertyDetailsPage() {
               .select("id, full_name, email, phone, whatsapp_number")
               .eq("property_id", propertyId)
               .order("full_name", { ascending: true }),
-            supabase
-              .from("tenants")
-              .select("id, full_name")
-              .is("property_id", null)
-              .order("full_name", { ascending: true }),
+            unassignedQuery,
             supabase
               .from("invoices")
               .select("id, tenant_id, month, due_date, total_amount, status, pdf_url, tenants(full_name)")
@@ -287,6 +293,9 @@ export default function PropertyDetailsPage() {
           ]);
 
         if (propertyResult.error) throw propertyResult.error;
+        if (isValidUuid(compId) && propertyResult.data?.company_id && propertyResult.data.company_id !== compId) {
+          throw new Error("Property not found or does not belong to your organization.");
+        }
         if (assignedTenantsResult.error) throw assignedTenantsResult.error;
         if (unassignedTenantsResult.error) throw unassignedTenantsResult.error;
         if (invoicesResult.error) throw invoicesResult.error;
@@ -443,10 +452,15 @@ export default function PropertyDetailsPage() {
     setAssigning(true);
 
     try {
-      const { error: assignError } = await supabase
+      const compId = currentCompany?.id;
+      let assignQuery = supabase
         .from("tenants")
         .update({ property_id: propertyId })
         .eq("id", selectedTenantId);
+      if (isValidUuid(compId)) {
+        assignQuery = assignQuery.eq("company_id", compId);
+      }
+      const { error: assignError } = await assignQuery;
 
       if (assignError) throw assignError;
 
