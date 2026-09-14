@@ -23,6 +23,8 @@ import {
   Wrench,
   Flame,
   FileText,
+  ArrowLeft,
+  AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
@@ -219,10 +221,36 @@ export function PropertyStatsModal({ isOpen, onClose, property }: PropertyStatsM
     });
   }, [bookings, timeRange, dateThreshold, customStartDate, customEndDate]);
 
+  const [guestFilter, setGuestFilter] = useState<"all" | "overdue" | "extended">("all");
+
+  const isBookingOverdue = (b: CommercialBooking) => {
+    if (b.bookingStatus !== "checked_in") return false;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return Boolean(b.checkOutDate && b.checkOutDate <= todayStr);
+  };
+
   // Current Checked-in Guests
   const checkedInGuests = useMemo(() => {
     return bookings.filter((b) => b.bookingStatus === "checked_in");
   }, [bookings]);
+
+  const overdueGuestsCount = useMemo(() => {
+    return checkedInGuests.filter((b) => isBookingOverdue(b)).length;
+  }, [checkedInGuests]);
+
+  const extendedGuestsCount = useMemo(() => {
+    return checkedInGuests.filter((b) => b.isExtended || (b.extensionHistory && b.extensionHistory.length > 0)).length;
+  }, [checkedInGuests]);
+
+  const displayedGuests = useMemo(() => {
+    if (guestFilter === "overdue") {
+      return checkedInGuests.filter((b) => isBookingOverdue(b));
+    }
+    if (guestFilter === "extended") {
+      return checkedInGuests.filter((b) => b.isExtended || (b.extensionHistory && b.extensionHistory.length > 0));
+    }
+    return checkedInGuests;
+  }, [checkedInGuests, guestFilter]);
 
   // Financial Metrics
   const financials = useMemo(() => {
@@ -294,6 +322,14 @@ export function PropertyStatsModal({ isOpen, onClose, property }: PropertyStatsM
         {/* Header with Title & Action Controls */}
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border-color pb-5 print:border-b-2">
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border-color bg-surface text-muted hover:bg-surface-elevated hover:text-foreground transition shadow-xs print:hidden"
+              title="Back / Close Modal"
+            >
+              <ArrowLeft size={18} />
+            </button>
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600/10 text-blue-600 print:hidden">
               <Building2 size={24} />
             </div>
@@ -614,16 +650,71 @@ export function PropertyStatsModal({ isOpen, onClose, property }: PropertyStatsM
           {/* SECTION 5: CHECKED-IN GUESTS & ACTIVITY AUDIT TRAIL */}
           {canViewAuditTrail && (reportType === "all" || reportType === "guests") && (
             <section className="space-y-3">
-              <div className="flex items-center justify-between border-b border-border-color pb-2">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
-                  <Users size={16} className="text-indigo-600" />
-                  Current Checked-In Guests ({checkedInGuests.length}) &amp; Activity History
-                </h3>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-color pb-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
+                    <Users size={16} className="text-indigo-600" />
+                    Current Checked-In Guests ({checkedInGuests.length}) &amp; Live Turnaround
+                  </h3>
+                </div>
+
+                {/* Sub-filters for Guests */}
+                <div className="flex items-center gap-1.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setGuestFilter("all")}
+                    className={`rounded-lg px-2.5 py-1 font-bold transition ${
+                      guestFilter === "all"
+                        ? "bg-indigo-600 text-white"
+                        : "bg-surface-elevated text-muted hover:text-foreground"
+                    }`}
+                  >
+                    All Active ({checkedInGuests.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGuestFilter("extended")}
+                    className={`rounded-lg px-2.5 py-1 font-bold transition ${
+                      guestFilter === "extended"
+                        ? "bg-blue-600 text-white"
+                        : "bg-surface-elevated text-muted hover:text-foreground"
+                    }`}
+                  >
+                    Extended ({extendedGuestsCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGuestFilter("overdue")}
+                    className={`rounded-lg px-2.5 py-1 font-bold transition ${
+                      guestFilter === "overdue"
+                        ? "bg-red-600 text-white"
+                        : overdueGuestsCount > 0
+                        ? "bg-red-500/10 text-red-600 border border-red-500/20"
+                        : "bg-surface-elevated text-muted hover:text-foreground"
+                    }`}
+                  >
+                    ⚠️ Overdue Checkout ({overdueGuestsCount})
+                  </button>
+                </div>
               </div>
 
-              {checkedInGuests.length === 0 ? (
+              {/* Overdue Urgent Banner */}
+              {overdueGuestsCount > 0 && (
+                <div className="flex items-center gap-2 rounded-xl bg-red-500/10 border border-red-500/25 p-3 text-xs font-bold text-red-600 dark:text-red-400 animate-pulse">
+                  <AlertTriangle size={16} className="shrink-0" />
+                  <span>
+                    URGENT ATTENTION: {overdueGuestsCount} room(s) have passed their checkout time without checkout completed! Front desk staff must inspect rooms immediately.
+                  </span>
+                </div>
+              )}
+
+              {displayedGuests.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-border-color p-8 text-center text-xs text-muted">
-                  No guests currently checked into {property.name}.
+                  {guestFilter === "overdue"
+                    ? "No overdue checkouts. All rooms are within valid scheduled stay time."
+                    : guestFilter === "extended"
+                    ? "No extended stay guests found."
+                    : `No guests currently checked into ${property.name}.`}
                 </div>
               ) : (
                 <div className="overflow-x-auto rounded-2xl border border-border-color bg-surface">
@@ -632,50 +723,104 @@ export function PropertyStatsModal({ isOpen, onClose, property }: PropertyStatsM
                       <tr>
                         <th className="p-3">Room</th>
                         <th className="p-3">Guest Name &amp; Contact</th>
-                        <th className="p-3">Meal Package</th>
-                        <th className="p-3">Stay Dates</th>
+                        <th className="p-3">Meal Plan</th>
+                        <th className="p-3">Scheduled Stay &amp; Checkout</th>
+                        <th className="p-3">Extensions History</th>
                         <th className="p-3">Paid / Total</th>
-                        <th className="p-3">Checked In By</th>
+                        <th className="p-3">Staff / Clerk Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border-color/40">
-                      {checkedInGuests.map((g) => (
-                        <tr key={g.id} className="hover:bg-surface-elevated/30 transition">
-                          <td className="p-3 font-black text-foreground">
-                            {g.roomNumber}
-                            <span className="block text-[10px] font-normal text-muted capitalize">
-                              {g.roomType}
-                            </span>
-                          </td>
-                          <td className="p-3">
-                            <span className="font-bold text-foreground block">{g.guestName}</span>
-                            <span className="text-[10px] text-muted">{g.guestPhone}</span>
-                            {g.guestEmail && (
-                              <span className="text-[10px] text-muted block">{g.guestEmail}</span>
-                            )}
-                          </td>
-                          <td className="p-3 capitalize font-medium text-blue-600">
-                            {g.mealPlan?.replace(/_/g, " ") || "Bed & Breakfast"}
-                          </td>
-                          <td className="p-3 text-[11px]">
-                            <span>{g.checkInDate}</span> &rarr; <span>{g.checkOutDate}</span>
-                            <span className="block text-[10px] text-muted font-bold">
-                              {g.nights} Night(s)
-                            </span>
-                          </td>
-                          <td className="p-3">
-                            <span className="font-bold text-emerald-600 block">
-                              {formatCurrency(g.amountPaid || g.totalAmount)}
-                            </span>
-                            <span className="text-[10px] text-muted">
-                              of {formatCurrency(g.totalAmount)}
-                            </span>
-                          </td>
-                          <td className="p-3 text-[11px] text-muted">
-                            {g.checkedInByName || "Front Desk"}
-                          </td>
-                        </tr>
-                      ))}
+                      {displayedGuests.map((g) => {
+                        const isOverdue = isBookingOverdue(g);
+                        const extHistory = (g.extensionHistory || []) as any[];
+
+                        return (
+                          <tr
+                            key={g.id}
+                            className={`transition ${
+                              isOverdue
+                                ? "bg-red-500/5 hover:bg-red-500/10"
+                                : "hover:bg-surface-elevated/30"
+                            }`}
+                          >
+                            <td className="p-3 font-black text-foreground">
+                              {g.roomNumber}
+                              <span className="block text-[10px] font-normal text-muted capitalize">
+                                {g.roomType}
+                              </span>
+                              {isOverdue && (
+                                <span className="inline-block mt-1 rounded bg-red-600 px-1.5 py-0.5 text-[9px] font-black text-white uppercase">
+                                  Overstay
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <span className="font-bold text-foreground block">{g.guestName}</span>
+                              <span className="text-[10px] text-muted">{g.guestPhone}</span>
+                              {g.guestEmail && (
+                                <span className="text-[10px] text-muted block">{g.guestEmail}</span>
+                              )}
+                            </td>
+                            <td className="p-3 capitalize font-medium text-blue-600">
+                              {g.mealPlan?.replace(/_/g, " ") || "Bed & Breakfast"}
+                            </td>
+                            <td className="p-3 text-[11px]">
+                              <div>
+                                <span className="text-muted">{g.checkInDate}</span> &rarr;{" "}
+                                <span className={`font-bold ${isOverdue ? "text-red-600 font-black" : "text-foreground"}`}>
+                                  {g.checkOutDate}
+                                </span>
+                              </div>
+                              <span className="block text-[10px] text-muted font-semibold">
+                                {g.nights} Night(s)
+                              </span>
+                              {/* Overdue Alert message */}
+                              {isOverdue && (
+                                <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-red-500/15 border border-red-500/30 px-2 py-0.5 text-[10px] font-bold text-red-600 animate-pulse">
+                                  <AlertTriangle size={11} className="shrink-0" />
+                                  <span>Checkout time passed but no checkout done, must check room</span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-3 text-[11px]">
+                              {g.isExtended || extHistory.length > 0 ? (
+                                <div className="space-y-1">
+                                  <span className="inline-block rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 font-bold px-2 py-0.5 text-[10px]">
+                                    Extended (+{extHistory.length || 1})
+                                  </span>
+                                  {extHistory.map((ext: any, i: number) => (
+                                    <p key={i} className="text-[10px] text-muted">
+                                      Prev: {ext.previousCheckOut} &rarr; {ext.newCheckOut}
+                                      {ext.extendedByName && ` (by ${ext.extendedByName})`}
+                                    </p>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-muted text-[10px] italic">Original Stay</span>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <span className="font-bold text-emerald-600 block">
+                                {formatCurrency(g.amountPaid || g.totalAmount)}
+                              </span>
+                              <span className="text-[10px] text-muted">
+                                of {formatCurrency(g.totalAmount)}
+                              </span>
+                            </td>
+                            <td className="p-3 text-[11px] text-muted space-y-0.5">
+                              <p className="font-medium text-foreground">
+                                Check-in: <span className="font-normal text-muted">{g.checkedInByName || "Front Desk Staff"}</span>
+                              </p>
+                              {g.actualCheckIn && (
+                                <p className="text-[10px] text-muted">
+                                  Time: {new Date(g.actualCheckIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                </p>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

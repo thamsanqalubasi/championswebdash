@@ -12,6 +12,7 @@ import {
   AlertCircle,
   Clock,
   Sparkles,
+  ArrowLeft,
 } from "lucide-react";
 import {
   fetchCommercialRooms,
@@ -219,6 +220,14 @@ export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) 
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border-color pb-4">
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border-color bg-surface text-muted hover:bg-surface-elevated hover:text-foreground transition shadow-xs"
+              title="Back"
+            >
+              <ArrowLeft size={16} />
+            </button>
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600">
               <KeyRound size={22} />
             </div>

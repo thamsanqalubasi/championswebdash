@@ -28,6 +28,7 @@ export type PropertyRow = {
   defaultBedLunch?: number;
   defaultFullBoard?: number;
   photos?: string[];
+  floors?: string[];
   isPublished?: boolean;
   availableFrom?: string;
 };
@@ -367,6 +368,7 @@ export type TenantStatus = "active" | "notice" | "ended" | string;
 export type TenantRow = {
   id: string;
   companyId?: string;
+  propertyId?: string;
   fullName: string;
   propertyName: string;
   phone: string;

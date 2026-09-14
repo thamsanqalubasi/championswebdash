@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from "react";
+import { ArrowLeft } from "lucide-react";
 
 type ModalProps = {
   open: boolean;
@@ -38,13 +39,23 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
     >
       {/* Backdrop */}
       <div
-        className="pointer-events-auto absolute inset-0 bg-black/50"
+        className="pointer-events-auto absolute inset-0 bg-black/50 backdrop-blur-xs"
         onMouseDown={onClose}
       />
       {/* Panel */}
-      <div className="pointer-events-auto relative z-10 mx-4 w-full max-w-lg rounded-lg border border-border-color bg-surface p-6 text-foreground shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">{title}</h3>
+      <div className="pointer-events-auto relative z-10 mx-4 w-full max-w-lg rounded-xl border border-border-color bg-surface p-6 text-foreground shadow-2xl">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-color bg-surface-elevated text-muted hover:text-foreground transition shadow-xs"
+              title="Back / Close"
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
+          </div>
           <button type="button" onClick={onClose} className="text-muted hover:text-foreground text-xl leading-none">&times;</button>
         </div>
         {children}
@@ -118,7 +129,17 @@ export function SideDrawer({ open, onClose, title, children }: SideDrawerProps) 
       {/* Centered Panel - Wider than before */}
       <aside className="relative z-10 flex h-full max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border-color bg-surface text-foreground shadow-2xl transition-all">
         <header className="flex shrink-0 items-center justify-between border-b border-border-color/50 bg-surface-elevated/50 px-6 py-4">
-          <h3 className="text-lg font-bold tracking-tight">{title}</h3>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-color bg-surface text-muted hover:text-foreground transition shadow-xs"
+              title="Back"
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <h3 className="text-lg font-bold tracking-tight">{title}</h3>
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -127,7 +148,9 @@ export function SideDrawer({ open, onClose, title, children }: SideDrawerProps) 
             <span className="text-2xl leading-none">&times;</span>
           </button>
         </header>
-        <div className="flex-1 overflow-y-auto p-6 no-scrollbar">
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto p-6">
           {children}
         </div>
       </aside>

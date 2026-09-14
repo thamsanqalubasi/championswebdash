@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { StatusBadge } from "@/components/data-table";
 import { PropertyStatsModal } from "@/components/property-stats-modal";
+import { ManageRoomsRatesModal } from "@/components/manage-rooms-rates-modal";
 import { fetchCommercialRooms } from "@/lib/data";
 import type { CommercialRoom } from "@/lib/types";
 
@@ -219,9 +220,10 @@ export default function PropertyDetailsPage() {
   const [billPaymentPin, setBillPaymentPin] = useState("");
   const [savingBillPayment, setSavingBillPayment] = useState(false);
 
-  // Hospitality commercial rooms & stats modal
+  // Hospitality commercial rooms, rates modal & stats modal
   const [rooms, setRooms] = useState<CommercialRoom[]>([]);
   const [statsModalOpen, setStatsModalOpen] = useState(false);
+  const [manageRoomsModalOpen, setManageRoomsModalOpen] = useState(false);
 
   const occupiedRoomsCount = useMemo(() => {
     return rooms.filter((r) => r.status === "occupied").length;
@@ -1018,6 +1020,15 @@ export default function PropertyDetailsPage() {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             {/* Primary Details Panel */}
             <article className="lg:col-span-2 space-y-6">
+              <div className="flex items-center justify-between">
+                <Link
+                  to="/properties"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated/70 px-3 py-1.5 text-xs font-bold text-muted hover:text-foreground hover:bg-surface-elevated transition shadow-xs"
+                >
+                  <ArrowLeft size={14} />
+                  <span>Back to Properties</span>
+                </Link>
+              </div>
               <section className="rounded-2xl border border-border-color bg-surface overflow-hidden">
                 <header className="px-6 py-4 border-b border-border-color/50 bg-surface-elevated/30 flex items-center justify-between">
                   <h3 className="text-sm font-bold uppercase tracking-widest text-muted/60">Property Location</h3>
@@ -1059,13 +1070,14 @@ export default function PropertyDetailsPage() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3 pt-2">
-                      <Link
-                        to="/hospitality/rooms"
+                      <button
+                        type="button"
+                        onClick={() => setManageRoomsModalOpen(true)}
                         className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-4 py-2 text-xs font-bold text-white hover:bg-purple-700 transition shadow-sm"
                       >
                         <BedDouble size={14} />
                         <span>Manage Rooms &amp; Rates</span>
-                      </Link>
+                      </button>
                       <Link
                         to="/hospitality/checkins"
                         className="inline-flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-4 py-2 text-xs font-bold text-foreground hover:bg-surface transition"
@@ -1457,15 +1469,24 @@ export default function PropertyDetailsPage() {
       />
 
       {property && (
-        <PropertyStatsModal
-          isOpen={statsModalOpen}
-          onClose={() => setStatsModalOpen(false)}
-          property={{
-            id: property.id,
-            name: property.name,
-            type: property.type,
-          }}
-        />
+        <>
+          <PropertyStatsModal
+            isOpen={statsModalOpen}
+            onClose={() => setStatsModalOpen(false)}
+            property={{
+              id: property.id,
+              name: property.name,
+              type: property.type,
+            }}
+          />
+          <ManageRoomsRatesModal
+            isOpen={manageRoomsModalOpen}
+            onClose={() => setManageRoomsModalOpen(false)}
+            property={property as any}
+            companyId={currentCompany?.id || ""}
+            onUpdated={reload}
+          />
+        </>
       )}
     </ModulePage>
   );

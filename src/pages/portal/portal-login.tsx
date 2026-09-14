@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { TermsCheckboxField } from "@/components/terms-modal";
 import { sendEmailViaApi, wrapCustomerWelcomeEmailHtml } from "@/lib/notifications";
 import { LogIn, UserPlus, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react";
+import { LogIn, UserPlus, Eye, EyeOff, AlertCircle, CheckCircle, Building } from "lucide-react";
 
 function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   const [show, setShow] = useState(false);
@@ -37,6 +40,15 @@ export default function PortalLoginPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
+  const [searchParams] = useSearchParams();
+
+  const paramEmail = searchParams.get("email") || "";
+  const paramMode = searchParams.get("mode") === "signup" ? "signup" : (paramEmail ? "signup" : "login");
+  const propertyIdParam = searchParams.get("property_id") || "";
+  const tenantIdParam = searchParams.get("tenant_id") || "";
+
+  const [mode, setMode] = useState<"login" | "signup">(paramMode);
+  const [email, setEmail] = useState(paramEmail);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
@@ -45,11 +57,63 @@ export default function PortalLoginPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  useEffect(() => {
+    if (paramEmail && !email) {
+      setEmail(paramEmail);
+    }
+    if (searchParams.get("mode") === "signup") {
+      setMode("signup");
+    }
+  }, [paramEmail, searchParams]);
+
+  const bindTenantProperty = async (userEmail: string) => {
+    const normalized = userEmail.trim().toLowerCase();
+    try {
+      // Upsert public.users with customer role
+      await supabase.from("users").upsert(
+        {
+          email: normalized,
+          first_name: name ? name.split(" ")[0] : "Customer",
+          last_name: name ? name.split(" ").slice(1).join(" ") : "",
+          role: "customer",
+        },
+        { onConflict: "email" }
+      );
+    } catch {}
+
+    if (propertyIdParam) {
+      try {
+        if (tenantIdParam) {
+          await supabase.from("tenants").update({
+            property_id: propertyIdParam,
+            tenure_status: "active",
+            tenure_start_date: new Date().toISOString().slice(0, 10),
+          }).eq("id", tenantIdParam);
+        } else {
+          const { data: matched } = await supabase
+            .from("tenants")
+            .select("id")
+            .eq("email", normalized);
+          if (matched && matched.length > 0) {
+            await supabase.from("tenants").update({
+              property_id: propertyIdParam,
+              tenure_status: "active",
+              tenure_start_date: new Date().toISOString().slice(0, 10),
+            }).eq("id", matched[0].id);
+          }
+        }
+      } catch (bindErr) {
+        console.warn("Could not bind tenant property:", bindErr);
+      }
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault(); setError(""); setLoading(true);
     try {
       const { error: err } = await supabase.auth.signInWithPassword({ email, password });
       if (err) throw err;
+      await bindTenantProperty(email);
       navigate("/portal/dashboard");
     } catch (err: any) { setError(err.message || "Login failed."); }
     setLoading(false);
@@ -69,6 +133,8 @@ export default function PortalLoginPage() {
       const { error: err } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
       if (err) throw err;
 
+      await bindTenantProperty(email);
+
       try {
         const origin = typeof window !== "undefined" ? window.location.origin : "https://paimbabook.com";
         const emailHtml = wrapCustomerWelcomeEmailHtml({
@@ -86,6 +152,7 @@ export default function PortalLoginPage() {
       }
 
       setSuccess("Account created! Please check your email to confirm your account, then sign in.");
+      setSuccess("Account created! If email confirmation is required, please check your inbox, then sign in.");
     } catch (err: any) { setError(err.message || "Signup failed."); }
     setLoading(false);
   };
@@ -94,10 +161,24 @@ export default function PortalLoginPage() {
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-8 sm:py-12 bg-slate-50 dark:bg-slate-950 transition-colors">
       <div className="w-full max-w-md">
         <div className="rounded-3xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-xl">
+          {propertyIdParam && (
+            <div className="mb-6 flex items-start gap-3 rounded-2xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/50 p-4 text-xs text-blue-900 dark:text-blue-200">
+              <Building size={18} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-sm">Tenant Invitation</p>
+                <p className="mt-0.5 opacity-90">
+                  You are invited to access your tenant portal and assigned unit. Complete registration to unlock invoice access, lease contracts, POP uploads, and direct staff chat.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="text-center mb-8">
             <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white mb-4 shadow-xs">{mode === "login" ? <LogIn size={24}/> : <UserPlus size={24}/>}</div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{mode === "login" ? "Welcome Back" : "Create Account"}</h1>
             <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">{mode === "login" ? "Sign in to view your enquiries and bookings" : "Join to book rooms and track enquiries"}</p>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{mode === "login" ? "Welcome Back" : "Create Tenant & Customer Account"}</h1>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">{mode === "login" ? "Sign in to view your lease, enquiries and bookings" : "Join to access your tenancy, contracts and bookings"}</p>
           </div>
 
           {error && (<div className="mb-4 flex items-start gap-2 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/50 p-3 text-sm text-red-700 dark:text-red-300"><AlertCircle size={15} className="mt-0.5 shrink-0"/>{error}</div>)}

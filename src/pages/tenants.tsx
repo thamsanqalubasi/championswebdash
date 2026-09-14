@@ -10,10 +10,67 @@ import { fetchCompanyInfo, fetchAdminInfo, uploadPdfFromHtml, createPdfAttachmen
 import { DocumentShareModal } from "@/components/document-share-modal";
 import { buildProfessionalInvoiceHtml, buildProfessionalContractHtml } from "@/lib/document-templates";
 import type { ContractSection } from "@/lib/document-templates";
-import { sendEmail, sendWhatsApp } from "@/lib/notifications";
+import {
+  sendEmail,
+  sendWhatsApp,
+  sendCustomHtmlEmail,
+  wrapTenantInvitationEmailHtml,
+  wrapStaffDeregistrationNoticeEmailHtml,
+} from "@/lib/notifications";
+import { uploadFileToBucket } from "@/lib/storage";
 import type { TenantRow } from "@/lib/types";
-import { Plus, User, Phone, Mail, Pencil, Trash, UserX, UserCheck, ChevronRight, MapPin, Calendar, CreditCard, Receipt, FileSignature, Activity, Send, Eye, Download } from "lucide-react";
+import {
+  Plus,
+  User,
+  Phone,
+  Mail,
+  Pencil,
+  Trash,
+  UserX,
+  UserCheck,
+  ChevronRight,
+  MapPin,
+  Calendar,
+  CreditCard,
+  Receipt,
+  FileSignature,
+  Activity,
+  Send,
+  Eye,
+  Download,
+  AlertTriangle,
+  CheckCircle2,
+  Copy,
+  Check,
+  UploadCloud,
+  FileText,
+  ArrowLeft,
+  ShieldAlert,
+  Sparkles,
+  ExternalLink,
+} from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
+
+export type AccountStatusInfo = {
+  type: "has_account" | "other_org_staff" | "no_account";
+  label: string;
+  orgName?: string;
+};
+
+export type PaymentTimelineItem = {
+  id: string;
+  source: "tenant_pop" | "staff_recorded";
+  date: string;
+  amount: number;
+  method: string;
+  actorName: string;
+  actorRole: "Tenant" | "Staff";
+  receiptUrl?: string;
+  monthLabel?: string;
+  notes?: string;
+  status?: string;
+  paymentId?: string;
+};
 
 type TenantPaymentRow = {
   id: string;
@@ -198,6 +255,27 @@ export default function TenantsPage() {
     documentTitle: "",
   });
 
+  // Account status detection state
+  const [accountStatusMap, setAccountStatusMap] = useState<Record<string, AccountStatusInfo>>({});
+  const [sendingInvitation, setSendingInvitation] = useState(false);
+  const [invitationSuccessMessage, setInvitationSuccessMessage] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  // Traceable Payment Timeline & Staff POP Recording State
+  const [paymentTimeline, setPaymentTimeline] = useState<PaymentTimelineItem[]>([]);
+  const [recordRentModalOpen, setRecordRentModalOpen] = useState(false);
+  const [rentRecordForm, setRentRecordForm] = useState({
+    paymentDate: new Date().toISOString().slice(0, 10),
+    amountPaid: "",
+    paidMonth: new Date().toISOString().slice(0, 7),
+    paymentMethod: "EFT / Bank Transfer",
+    receiptUrl: "",
+    referenceNumber: "",
+    notes: "",
+  });
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const [recordingPayment, setRecordingPayment] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -221,6 +299,69 @@ export default function TenantsPage() {
 
         if (!cancelled && props) {
           setProperties(props.map((item) => ({ id: String(item.id), name: String(item.name) })));
+        }
+
+        // Detect account status for each tenant
+        try {
+          const [usersRes, cuRes] = await Promise.allSettled([
+            supabase.from("users").select("id, email, role"),
+            supabase.from("company_users").select("user_id, company_id, companies(id, name), users(id, email)"),
+          ]);
+
+          const customerEmails = new Set<string>();
+          const otherOrgStaff = new Map<string, string>();
+          const currentCompanyStaff = new Set<string>();
+
+          if (cuRes.status === "fulfilled" && cuRes.value.data) {
+            cuRes.value.data.forEach((cu: any) => {
+              const em = (cu.users?.email || "").toLowerCase().trim();
+              if (!em) return;
+              if (cu.company_id === currentCompany?.id) {
+                currentCompanyStaff.add(em);
+              } else {
+                const orgName = cu.companies?.name || "Another Organization";
+                otherOrgStaff.set(em, orgName);
+              }
+            });
+          }
+
+          if (usersRes.status === "fulfilled" && usersRes.value.data) {
+            usersRes.value.data.forEach((u: any) => {
+              const em = (u.email || "").toLowerCase().trim();
+              if (!em) return;
+              if (u.role === "customer" || (!currentCompanyStaff.has(em) && !otherOrgStaff.has(em))) {
+                customerEmails.add(em);
+              }
+            });
+          }
+
+          const accMap: Record<string, AccountStatusInfo> = {};
+          result.forEach((t) => {
+            const em = (t.email || "").toLowerCase().trim();
+            if (otherOrgStaff.has(em)) {
+              accMap[em] = {
+                type: "other_org_staff",
+                label: `Registered with ${otherOrgStaff.get(em)} as staff`,
+                orgName: otherOrgStaff.get(em),
+              };
+            } else if (customerEmails.has(em)) {
+              accMap[em] = {
+                type: "has_account",
+                label: "Has Account",
+              };
+            } else {
+              accMap[em] = {
+                type: "no_account",
+                label: "No Account Yet",
+              };
+            }
+          });
+
+          if (!cancelled) {
+            setAccountStatusMap(accMap);
+          }
+        } catch (accErr) {
+          console.warn("Could not load tenant account statuses:", accErr);
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -379,15 +520,15 @@ export default function TenantsPage() {
     setDetailsError(null);
 
     try {
-      const [tenantResult, paymentsResult, invoicesResult, sharesResult, contractsResult] = await Promise.all([
+      const [tenantResult, paymentsResult, invoicesResult, sharesResult, contractsResult, proofsResult] = await Promise.all([
         supabase
           .from("tenants")
-          .select("id, property_id, tenure_start_date, created_at, properties(name)")
+          .select("id, property_id, email, full_name, tenure_start_date, created_at, properties(name)")
           .eq("id", tenantId)
           .single(),
         supabase
           .from("tenant_rent_payments")
-          .select("id, payment_date, amount_paid")
+          .select("id, payment_date, amount_paid, paid_month, notes")
           .eq("tenant_id", tenantId)
           .order("payment_date", { ascending: false }),
         supabase
@@ -407,6 +548,11 @@ export default function TenantsPage() {
           .select("id, title, start_date, end_date, monthly_rent, deposit_amount, status, notes, document_url, properties(name)")
           .eq("tenant_id", tenantId)
           .order("created_at", { ascending: false }),
+        supabase
+          .from("tenant_payment_proofs")
+          .select("*")
+          .eq("tenant_id", tenantId)
+          .order("payment_date", { ascending: false }),
       ]);
 
       if (tenantResult.error) throw tenantResult.error;
@@ -490,6 +636,82 @@ export default function TenantsPage() {
         })),
       );
 
+      // Also gather proofs by email if exists
+      let allProofs = proofsResult.data ?? [];
+      if (tenant.email) {
+        try {
+          const { data: emailProofs } = await supabase
+            .from("tenant_payment_proofs")
+            .select("*")
+            .eq("customer_email", tenant.email)
+            .order("payment_date", { ascending: false });
+          if (emailProofs && emailProofs.length > 0) {
+            const existingIds = new Set(allProofs.map((p) => p.id));
+            emailProofs.forEach((ep) => {
+              if (!existingIds.has(ep.id)) allProofs.push(ep);
+            });
+          }
+        } catch {}
+      }
+
+      // Build unified Proof of Payment & Collection Timeline
+      const timelineItems: PaymentTimelineItem[] = [];
+
+      paymentRows.forEach((p) => {
+        const notesStr = String(p.notes || "");
+        let method = "Cash / Recorded";
+        let receiptUrl: string | undefined = undefined;
+
+        const mMatch = notesStr.match(/Means:\s*([^|]+)/i) || notesStr.match(/Method:\s*([^|]+)/i);
+        if (mMatch) method = mMatch[1].trim();
+
+        const rMatch = notesStr.match(/Receipt:\s*(https?:\/\/[^\s|]+)/i);
+        if (rMatch) receiptUrl = rMatch[1].trim();
+
+        const clerk = recordedByMap.get(String(p.id)) || "Staff";
+
+        timelineItems.push({
+          id: `staff-${p.id}`,
+          source: "staff_recorded",
+          date: String(p.payment_date || ""),
+          amount: Number(p.amount_paid || 0),
+          method,
+          actorName: clerk,
+          actorRole: "Staff",
+          receiptUrl,
+          monthLabel: String(p.paid_month || ""),
+          notes: notesStr,
+          paymentId: String(p.id),
+        });
+      });
+
+      allProofs.forEach((proof) => {
+        const notesStr = String(proof.notes || "");
+        let method = "EFT / Uploaded Proof";
+        const mMatch = notesStr.match(/Method:\s*([^|]+)/i) || notesStr.match(/Means:\s*([^|]+)/i);
+        if (mMatch) method = mMatch[1].trim();
+
+        const isStaffRecorded = notesStr.includes("Recorded by Staff:");
+
+        timelineItems.push({
+          id: `proof-${proof.id}`,
+          source: isStaffRecorded ? "staff_recorded" : "tenant_pop",
+          date: String(proof.payment_date || proof.created_at?.slice(0, 10) || ""),
+          amount: Number(proof.amount || 0),
+          method,
+          actorName: isStaffRecorded
+            ? notesStr.match(/Recorded by Staff:\s*([^|]+)/i)?.[1]?.trim() || "Staff"
+            : String(proof.customer_name || tenant.full_name || "Tenant"),
+          actorRole: isStaffRecorded ? "Staff" : "Tenant",
+          receiptUrl: String(proof.document_url || ""),
+          notes: notesStr,
+          status: String(proof.status || "verified"),
+        });
+      });
+
+      timelineItems.sort((a, b) => b.date.localeCompare(a.date));
+      setPaymentTimeline(timelineItems);
+
       setInvoices(
         (invoicesResult.data ?? []).map((row) => ({
           id: String(row.id ?? ""),
@@ -569,6 +791,196 @@ export default function TenantsPage() {
       alert(assignError instanceof Error ? assignError.message : "Could not update assignment.");
     } finally {
       setAssigningProperty(false);
+    }
+  };
+
+  /* ---- Tenant Account Invitation & Dispute Handlers ---- */
+
+  const sendTenantInvitation = async (isNoticeForCrossOrgStaff: boolean = false) => {
+    if (!detailsRow || !detailsRow.email) {
+      alert("Tenant email is missing.");
+      return;
+    }
+
+    setSendingInvitation(true);
+    setInvitationSuccessMessage(null);
+
+    try {
+      const origin = typeof window !== "undefined" ? window.location.origin : "https://paimbabook.com";
+      const signupUrl = `${origin}/portal-login?mode=signup&email=${encodeURIComponent(detailsRow.email)}&property_id=${detailsPropertyId || detailsRow.propertyId || ""}&company_id=${currentCompany?.id || ""}`;
+
+      const emailLower = detailsRow.email.toLowerCase().trim();
+      const accStatus = accountStatusMap[emailLower];
+
+      let emailHtml = "";
+      let subject = "";
+
+      if (isNoticeForCrossOrgStaff && accStatus?.orgName) {
+        subject = `Action Required: Account Conflict Notice - ${currentCompany?.name || "Paimbabook"}`;
+        emailHtml = wrapStaffDeregistrationNoticeEmailHtml({
+          recipientName: detailsRow.fullName,
+          staffEmail: detailsRow.email,
+          propertyName: detailsPropertyName || "Assigned Property",
+          staffCompanyName: accStatus.orgName,
+          tenantCompanyName: currentCompany?.name || "Paimbabook",
+          companyLogo: currentCompany?.logoUrl,
+          inviteUrl: signupUrl,
+        });
+      } else {
+        subject = `Resident Portal Invitation - ${detailsPropertyName || "Your Residence"} | ${currentCompany?.name || "Paimbabook"}`;
+        emailHtml = wrapTenantInvitationEmailHtml({
+          recipientName: detailsRow.fullName,
+          propertyName: detailsPropertyName || "Assigned Property",
+          companyName: currentCompany?.name || "Paimbabook",
+          companyLogo: currentCompany?.logoUrl,
+          inviteUrl: signupUrl,
+        });
+      }
+
+      const res = await sendCustomHtmlEmail({
+        to: detailsRow.email,
+        subject,
+        html: emailHtml,
+        bodyFallback: `Dear ${detailsRow.fullName},\n\nYou are invited to activate your resident portal for ${detailsPropertyName || "your unit"}.\nSign up here: ${signupUrl}`,
+      });
+
+      // Log in audit_log
+      await supabase.from("audit_log").insert({
+        user_email: user?.email || "admin@paimbabook.com",
+        user_name: (user as any)?.fullName || user?.email || "Staff",
+        action: isNoticeForCrossOrgStaff ? "tenant_staff_conflict_notice_sent" : "tenant_invitation_sent",
+        entity_type: "tenant",
+        entity_id: detailsRow.id,
+        company_id: currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null,
+        details: {
+          tenant_name: detailsRow.fullName,
+          email: detailsRow.email,
+          signupUrl,
+          sent: res.sent,
+        },
+      });
+
+      setInvitationSuccessMessage(
+        res.sent
+          ? `Invitation successfully delivered to ${detailsRow.email}!`
+          : `Email client opened for ${detailsRow.email}.`,
+      );
+    } catch (err) {
+      alert("Could not send invitation: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSendingInvitation(false);
+    }
+  };
+
+  const copyInvitationLink = () => {
+    if (!detailsRow) return;
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://paimbabook.com";
+    const signupUrl = `${origin}/portal-login?mode=signup&email=${encodeURIComponent(detailsRow.email)}&property_id=${detailsPropertyId || detailsRow.propertyId || ""}&company_id=${currentCompany?.id || ""}`;
+    navigator.clipboard.writeText(signupUrl);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 3000);
+  };
+
+  /* ---- Staff Rent Payment & POP Receipt Upload Handlers ---- */
+
+  const handleReceiptFileUpload = async (file: File | null) => {
+    if (!file) return;
+    setUploadingReceipt(true);
+    try {
+      const actorEmail = user?.email || "staff";
+      const url = await uploadFileToBucket("payment-proofs", actorEmail, file);
+      setRentRecordForm((prev) => ({ ...prev, receiptUrl: url }));
+    } catch (err) {
+      alert("Could not upload receipt: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setUploadingReceipt(false);
+    }
+  };
+
+  const handleSaveRentPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!detailsRow) return;
+    if (!rentRecordForm.amountPaid || Number(rentRecordForm.amountPaid) <= 0) {
+      alert("Please enter a valid payment amount.");
+      return;
+    }
+
+    setRecordingPayment(true);
+    try {
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      const staffName = (user as any)?.fullName || user?.email || "Staff";
+      const propId = detailsPropertyId && isValidUuid(detailsPropertyId) ? detailsPropertyId : detailsRow.propertyId && isValidUuid(detailsRow.propertyId) ? detailsRow.propertyId : null;
+
+      const notesPayload = `Means: ${rentRecordForm.paymentMethod} | Ref: ${rentRecordForm.referenceNumber || "None"}${rentRecordForm.receiptUrl ? ` | Receipt: ${rentRecordForm.receiptUrl}` : ""} ${rentRecordForm.notes ? `| Notes: ${rentRecordForm.notes}` : ""}`.trim();
+
+      const { data: insertedPayment, error: payError } = await supabase
+        .from("tenant_rent_payments")
+        .insert({
+          tenant_id: detailsRow.id,
+          property_id: propId,
+          payment_date: rentRecordForm.paymentDate,
+          amount_paid: Number(rentRecordForm.amountPaid),
+          paid_month: rentRecordForm.paidMonth,
+          notes: notesPayload,
+          company_id: compId,
+        })
+        .select()
+        .single();
+
+      if (payError) throw payError;
+
+      if (rentRecordForm.receiptUrl) {
+        await supabase.from("tenant_payment_proofs").insert({
+          company_id: compId,
+          tenant_id: detailsRow.id,
+          property_id: propId,
+          customer_email: detailsRow.email,
+          customer_name: detailsRow.fullName,
+          amount: Number(rentRecordForm.amountPaid),
+          payment_date: rentRecordForm.paymentDate,
+          reference_number: rentRecordForm.referenceNumber || `${rentRecordForm.paidMonth} Rent`,
+          document_url: rentRecordForm.receiptUrl,
+          notes: `Recorded by Staff: ${staffName} | Means: ${rentRecordForm.paymentMethod}${rentRecordForm.notes ? " | " + rentRecordForm.notes : ""}`,
+          status: "verified",
+        });
+      }
+
+      await supabase.from("audit_log").insert({
+        user_email: user?.email || "admin@paimbabook.com",
+        user_name: staffName,
+        action: "rent_payment_recorded",
+        entity_type: "tenant_rent_payment",
+        entity_id: insertedPayment?.id && isValidUuid(insertedPayment.id) ? insertedPayment.id : null,
+        company_id: compId,
+        details: {
+          tenant_name: detailsRow.fullName,
+          tenant_id: detailsRow.id,
+          amount_paid: Number(rentRecordForm.amountPaid),
+          payment_date: rentRecordForm.paymentDate,
+          paid_month: rentRecordForm.paidMonth,
+          means: rentRecordForm.paymentMethod,
+          receipt_url: rentRecordForm.receiptUrl,
+        },
+      });
+
+      setRecordRentModalOpen(false);
+      setRentRecordForm({
+        paymentDate: new Date().toISOString().slice(0, 10),
+        amountPaid: "",
+        paidMonth: new Date().toISOString().slice(0, 7),
+        paymentMethod: "EFT / Bank Transfer",
+        receiptUrl: "",
+        referenceNumber: "",
+        notes: "",
+      });
+
+      await loadTenantDetails(detailsRow.id);
+      reload();
+      alert("Rent payment and POP recorded successfully!");
+    } catch (err) {
+      alert("Could not record payment: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setRecordingPayment(false);
     }
   };
 
@@ -973,6 +1385,7 @@ export default function TenantsPage() {
                     <th className="px-6 py-4 font-bold">Tenant</th>
                     <th className="px-6 py-4 font-bold">Property</th>
                     <th className="px-6 py-4 font-bold">Contact</th>
+                    <th className="px-6 py-4 font-bold text-center">Account</th>
                     <th className="px-6 py-4 font-bold text-center">Tenure</th>
                     <th className="px-6 py-4 font-bold text-center">Rent Status</th>
                     <th className="px-6 py-4 font-bold text-right">Actions</th>
@@ -1007,6 +1420,36 @@ export default function TenantsPage() {
                             <span>{row.email}</span>
                           </div>
                         </div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        {(() => {
+                          const emailLower = (row.email || "").toLowerCase().trim();
+                          const acc = accountStatusMap[emailLower];
+                          if (acc?.type === "other_org_staff") {
+                            return (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                                title={`Registered with ${acc.orgName} as staff`}
+                              >
+                                <AlertTriangle size={11} className="shrink-0" />
+                                <span className="truncate max-w-[150px]">Registered with {acc.orgName} as staff</span>
+                              </span>
+                            );
+                          }
+                          if (acc?.type === "has_account") {
+                            return (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                <CheckCircle2 size={11} className="shrink-0" />
+                                <span>Has Account</span>
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-muted/10 px-2.5 py-1 text-[11px] font-medium text-muted border border-border-color/40">
+                              <span>No Account Yet</span>
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-6 py-4 text-center">
                         <StatusBadge status={row.tenureStatus} />
@@ -1171,35 +1614,159 @@ export default function TenantsPage() {
         {detailsRow && !detailsLoading && !detailsError && (
           <div className="space-y-8 pb-10">
             {/* Header Section */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 bg-surface-elevated/50 p-6 rounded-2xl ring-1 ring-border-color/50 shadow-sm">
-              <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-foreground text-surface shadow-lg">
-                  <User size={28} />
+            <div className="bg-surface-elevated/50 p-6 rounded-2xl ring-1 ring-border-color/50 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-foreground text-surface shadow-lg">
+                    <User size={28} />
+                  </div>
+                  <div>
+                    <h4 className="text-xl font-bold tracking-tight text-foreground">{detailsRow.fullName}</h4>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <StatusBadge status={detailsRow.tenureStatus} />
+                      <StatusBadge status={detailsRow.rentStatus} />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-xl font-bold tracking-tight text-foreground">{detailsRow.fullName}</h4>
-                  <div className="flex items-center gap-3 mt-1">
-                    <StatusBadge status={detailsRow.tenureStatus} />
-                    <StatusBadge status={detailsRow.rentStatus} />
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60">Assigned Property</p>
+                    <div className="flex items-center gap-1.5 font-bold text-foreground">
+                      <MapPin size={14} className="text-muted/40" />
+                      <span>{detailsPropertyName || "Unassigned"}</span>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60">Joined Since</p>
+                    <div className="flex items-center gap-1.5 font-bold text-foreground">
+                      <Calendar size={14} className="text-muted/40" />
+                      <span>{formatDate(assignmentDate)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60">Assigned Property</p>
-                  <div className="flex items-center gap-1.5 font-bold text-foreground">
-                    <MapPin size={14} className="text-muted/40" />
-                    <span>{detailsPropertyName || "Unassigned"}</span>
+
+              {/* Account Status and Invitation Banner */}
+              {(() => {
+                const emailLower = (detailsRow.email || "").toLowerCase().trim();
+                const acc = accountStatusMap[emailLower];
+                if (acc?.type === "other_org_staff") {
+                  return (
+                    <div className="pt-3 border-t border-border-color/50">
+                      <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <AlertTriangle size={18} className="shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                          <div>
+                            <p className="font-bold text-sm">Registered as Staff with Another Organization</p>
+                            <p className="text-[11px] text-amber-700 dark:text-amber-400/90 mt-0.5">
+                              This email ({detailsRow.email}) is registered as active staff with <strong>{acc.orgName}</strong>. To access tenant features, the resident must de-register that staff role or provide a personal email.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => void sendTenantInvitation(true)}
+                            disabled={sendingInvitation}
+                            className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700 transition shadow-xs disabled:opacity-50"
+                          >
+                            <Mail size={13} />
+                            <span>{sendingInvitation ? "Sending..." : "Send Invitation & Notice"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={copyInvitationLink}
+                            className="flex items-center gap-1 rounded-lg border border-amber-300 dark:border-amber-700 bg-surface px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-surface-elevated transition"
+                            title="Copy invitation link"
+                          >
+                            {copiedLink ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                            <span>{copiedLink ? "Copied" : "Copy Link"}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                if (acc?.type === "has_account") {
+                  return (
+                    <div className="pt-3 border-t border-border-color/50">
+                      <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5">
+                          <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <div>
+                            <p className="font-bold">Active Resident Portal Account Linked</p>
+                            <p className="text-[11px] text-emerald-700 dark:text-emerald-400/90">
+                              Resident has an active customer account ({detailsRow.email}) and can log in to view contracts, upload POPs, and chat.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => void sendTenantInvitation(false)}
+                            disabled={sendingInvitation}
+                            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-xs disabled:opacity-50"
+                          >
+                            <Send size={12} />
+                            <span>{sendingInvitation ? "Sending..." : "Resend Access Link"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={copyInvitationLink}
+                            className="flex items-center gap-1 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-surface px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-surface-elevated transition"
+                            title="Copy portal access link"
+                          >
+                            {copiedLink ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                            <span>{copiedLink ? "Copied" : "Copy Link"}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="pt-3 border-t border-border-color/50">
+                    <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-800 dark:text-blue-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <Mail size={16} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold">Resident Has Not Registered Yet</p>
+                          <p className="text-[11px] text-blue-700 dark:text-blue-400/90 mt-0.5">
+                            Invite {detailsRow.fullName} to register on Paimbabook to access digital invoices, lease contracts, direct chat, and maintenance ticketing.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => void sendTenantInvitation(false)}
+                          disabled={sendingInvitation}
+                          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition shadow-xs disabled:opacity-50"
+                        >
+                          <Send size={12} />
+                          <span>{sendingInvitation ? "Sending..." : "Send Invitation Email"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={copyInvitationLink}
+                          className="flex items-center gap-1 rounded-lg border border-blue-300 dark:border-blue-700 bg-surface px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-surface-elevated transition"
+                          title="Copy registration link"
+                        >
+                          {copiedLink ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                          <span>{copiedLink ? "Copied" : "Copy Link"}</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
+                );
+              })()}
+
+              {invitationSuccessMessage && (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
+                  <CheckCircle2 size={14} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <span>{invitationSuccessMessage}</span>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60">Joined Since</p>
-                  <div className="flex items-center gap-1.5 font-bold text-foreground">
-                    <Calendar size={14} className="text-muted/40" />
-                    <span>{formatDate(assignmentDate)}</span>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Quick Actions / Assignment */}
@@ -1229,58 +1796,139 @@ export default function TenantsPage() {
               </div>
             </section>
 
-            {/* Payments Section */}
+            {/* Proof of Payment & Collection Timeline */}
             <section className="space-y-4">
-              <div className="flex items-center justify-between px-1">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
                 <div className="flex items-center gap-2">
-                  <CreditCard size={16} className="text-muted/40" />
-                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40">Recent Transactions</h5>
+                  <CreditCard size={18} className="text-muted/60" />
+                  <div>
+                    <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/60">
+                      Proof of Payment &amp; Collection Timeline
+                    </h5>
+                    <p className="text-[10px] text-muted">
+                      Traceable ledger combining tenant POP receipts and staff recorded collections
+                    </p>
+                  </div>
                 </div>
-                <p className="text-[10px] text-muted italic">Select items to batch into invoice</p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRecordRentModalOpen(true)}
+                    className="flex items-center gap-1.5 rounded-xl bg-foreground px-4 py-2 text-xs font-bold text-surface hover:opacity-90 transition shadow-sm"
+                  >
+                    <Plus size={14} />
+                    <span>Record Payment / Upload POP</span>
+                  </button>
+                </div>
               </div>
 
-              {payments.length === 0 ? (
-                <EmptyState title="No transactions" description="Tenant has no recorded payments yet." />
+              {paymentTimeline.length === 0 ? (
+                <EmptyState
+                  title="No payment history recorded"
+                  description="Tenant has no recorded collections or submitted proof of payments yet. Use the button above to record a payment."
+                />
               ) : (
-                <div className="overflow-hidden rounded-xl border border-border-color bg-surface">
-                  <table className="min-w-full border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b border-border-color/50 bg-surface-elevated/30 text-left text-muted/50 uppercase text-[9px] font-bold tracking-wider">
-                        <th className="px-4 py-3 text-center">Batch</th>
-                        <th className="px-4 py-3">Date</th>
-                        <th className="px-4 py-3">Amount</th>
-                        <th className="px-4 py-3">Verified By</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border-color/30">
-                      {payments.map((payment) => (
-                        <tr key={payment.id} className={`group hover:bg-surface-elevated/20 transition-colors ${selectedPaymentIds.includes(payment.id) ? "bg-foreground/[0.02]" : ""}`}>
-                          <td className="px-4 py-4 text-center">
-                            <input
-                              type="checkbox"
-                              checked={selectedPaymentIds.includes(payment.id)}
-                              onChange={() => togglePaymentSelection(payment.id)}
-                              className="h-4 w-4 rounded border-border-color accent-foreground"
-                            />
-                          </td>
-                          <td className="px-4 py-4 font-medium text-foreground">{payment.paymentDate}</td>
-                          <td className="px-4 py-4 font-bold text-foreground">{formatCurrency(payment.amountPaid)}</td>
-                          <td className="px-4 py-4 text-muted/80">{payment.recordedBy}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div className="p-4 border-t border-border-color/50 bg-surface-elevated/20">
-                    <button
-                      type="button"
-                      onClick={generateInvoiceFromSelectedPayments}
-                      disabled={generatingInvoice || selectedPaymentIds.length === 0}
-                      className="w-full flex items-center justify-center gap-2 rounded-xl bg-foreground py-3 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50 shadow-md"
-                    >
-                      <Receipt size={18} />
-                      <span>{generatingInvoice ? "Generating..." : `Generate Invoice from ${selectedPaymentIds.length} Selected`}</span>
-                    </button>
+                <div className="overflow-hidden rounded-2xl border border-border-color bg-surface shadow-xs">
+                  <div className="divide-y divide-border-color/30">
+                    {paymentTimeline.map((item) => {
+                      const isSelected = item.paymentId ? selectedPaymentIds.includes(item.paymentId) : false;
+                      return (
+                        <div
+                          key={item.id}
+                          className={`p-4 hover:bg-surface-elevated/30 transition-colors ${
+                            isSelected ? "bg-foreground/[0.02]" : ""
+                          }`}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                              {item.paymentId && (
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => togglePaymentSelection(item.paymentId!)}
+                                  className="h-4 w-4 rounded border-border-color accent-foreground mt-1 cursor-pointer"
+                                  title="Select to batch into invoice"
+                                />
+                              )}
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {item.source === "tenant_pop" ? (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                                      <User size={11} />
+                                      <span>Uploaded by Tenant: {item.actorName}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                      <ShieldAlert size={11} />
+                                      <span>Recorded by Staff: {item.actorName}</span>
+                                    </span>
+                                  )}
+                                  <span className="text-xs font-semibold text-muted">
+                                    {formatDate(item.date)}
+                                  </span>
+                                  {item.monthLabel && (
+                                    <span className="rounded-md bg-surface-elevated px-2 py-0.5 text-[10px] font-bold text-foreground">
+                                      Period: {item.monthLabel}
+                                    </span>
+                                  )}
+                                  {item.status && (
+                                    <StatusBadge status={item.status} />
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-3 text-xs">
+                                  <span className="font-bold text-foreground text-sm">
+                                    {formatCurrency(item.amount)}
+                                  </span>
+                                  <span className="rounded-md bg-surface-elevated px-2 py-0.5 text-[11px] font-medium text-muted">
+                                    Means: {item.method}
+                                  </span>
+                                </div>
+
+                                {item.notes && (
+                                  <p className="text-[11px] text-muted/80 line-clamp-1">{item.notes}</p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                              {item.receiptUrl ? (
+                                <a
+                                  href={item.receiptUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated/80 transition"
+                                >
+                                  <FileText size={13} className="text-blue-600 dark:text-blue-400" />
+                                  <span>View Attached POP / Receipt</span>
+                                  <ExternalLink size={11} className="text-muted" />
+                                </a>
+                              ) : (
+                                <span className="text-[11px] text-muted/40 italic">No receipt attached</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
+
+                  {selectedPaymentIds.length > 0 && (
+                    <div className="p-4 border-t border-border-color/50 bg-surface-elevated/20 flex items-center justify-between gap-4">
+                      <p className="text-xs font-medium text-muted">
+                        {selectedPaymentIds.length} payment transaction(s) selected
+                      </p>
+                      <button
+                        type="button"
+                        onClick={generateInvoiceFromSelectedPayments}
+                        disabled={generatingInvoice}
+                        className="flex items-center gap-2 rounded-xl bg-foreground px-5 py-2.5 text-xs font-bold text-surface hover:opacity-90 transition disabled:opacity-50 shadow-md"
+                      >
+                        <Receipt size={16} />
+                        <span>{generatingInvoice ? "Generating..." : `Generate Invoice from ${selectedPaymentIds.length} Selected`}</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </section>
@@ -1474,6 +2122,187 @@ export default function TenantsPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Record Rent Payment & Proof of Payment Modal */}
+      <Modal
+        open={recordRentModalOpen}
+        onClose={() => setRecordRentModalOpen(false)}
+        title="Record Rent Payment & Proof of Payment"
+      >
+        <form onSubmit={handleSaveRentPayment} className="space-y-4">
+          <div className="rounded-lg bg-surface-elevated/40 p-3 border border-border-color/60 text-xs text-muted flex items-center justify-between">
+            <div>
+              <p className="font-bold text-foreground">{detailsRow?.fullName || "Tenant"}</p>
+              <p className="text-[11px] text-muted">{detailsPropertyName || "Assigned Property"}</p>
+            </div>
+            <span className="rounded-md bg-emerald-500/10 px-2 py-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              Staff Collection
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1">
+                Payment Date <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                required
+                value={rentRecordForm.paymentDate}
+                onChange={(e) => setRentRecordForm((prev) => ({ ...prev, paymentDate: e.target.value }))}
+                className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm text-foreground focus:border-foreground focus:outline-hidden"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1">
+                Paid Period / Month <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="month"
+                required
+                value={rentRecordForm.paidMonth}
+                onChange={(e) => setRentRecordForm((prev) => ({ ...prev, paidMonth: e.target.value }))}
+                className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm text-foreground focus:border-foreground focus:outline-hidden"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1">
+                Amount Paid <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                required
+                placeholder="0.00"
+                value={rentRecordForm.amountPaid}
+                onChange={(e) => setRentRecordForm((prev) => ({ ...prev, amountPaid: e.target.value }))}
+                className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm font-bold text-foreground focus:border-foreground focus:outline-hidden"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1">
+                Means of Collection <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={rentRecordForm.paymentMethod}
+                onChange={(e) => setRentRecordForm((prev) => ({ ...prev, paymentMethod: e.target.value }))}
+                className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm text-foreground focus:border-foreground focus:outline-hidden"
+              >
+                <option value="Cash">Cash</option>
+                <option value="EFT / Bank Transfer">EFT / Bank Transfer</option>
+                <option value="POS Card">POS Card</option>
+                <option value="Mobile Money">Mobile Money</option>
+                <option value="Cheque">Cheque</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-foreground mb-1">
+              Reference / Receipt Number
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. TXN-829103, Bank Slip #, Cheque # (optional)"
+              value={rentRecordForm.referenceNumber}
+              onChange={(e) => setRentRecordForm((prev) => ({ ...prev, referenceNumber: e.target.value }))}
+              className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm text-foreground focus:border-foreground focus:outline-hidden"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-foreground mb-1">
+              Proof of Payment / Receipt Document (PDF or Image)
+            </label>
+            <div className="rounded-xl border border-dashed border-border-color p-4 bg-surface-elevated/20 text-center">
+              {rentRecordForm.receiptUrl ? (
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface border border-border-color">
+                  <div className="flex items-center gap-2 truncate">
+                    <FileText size={16} className="text-blue-500 shrink-0" />
+                    <span className="text-xs text-foreground truncate max-w-[220px]">
+                      {rentRecordForm.receiptUrl.split("/").pop() || "Attached Receipt"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <a
+                      href={rentRecordForm.receiptUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1 rounded-md text-xs font-semibold text-blue-600 hover:bg-surface-elevated"
+                      title="View"
+                    >
+                      <ExternalLink size={14} />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setRentRecordForm((prev) => ({ ...prev, receiptUrl: "" }))}
+                      className="p-1 rounded-md text-xs font-semibold text-red-500 hover:bg-surface-elevated"
+                      title="Remove"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center cursor-pointer">
+                  <UploadCloud size={24} className="text-muted/60 mb-1" />
+                  <span className="text-xs font-bold text-foreground">
+                    {uploadingReceipt ? "Uploading receipt..." : "Click to upload POP / Receipt"}
+                  </span>
+                  <span className="text-[10px] text-muted">Supports JPG, PNG, PDF</span>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    disabled={uploadingReceipt}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      if (file) void handleReceiptFileUpload(file);
+                    }}
+                    className="hidden"
+                  />
+                </label>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-foreground mb-1">
+              Notes / Remarks
+            </label>
+            <textarea
+              rows={2}
+              placeholder="Add any internal notes about this payment..."
+              value={rentRecordForm.notes}
+              onChange={(e) => setRentRecordForm((prev) => ({ ...prev, notes: e.target.value }))}
+              className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm text-foreground focus:border-foreground focus:outline-hidden"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-4 border-t border-border-color/50">
+            <button
+              type="button"
+              onClick={() => setRecordRentModalOpen(false)}
+              className="rounded-lg border border-border-color px-4 py-2 text-sm hover:bg-surface-elevated transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={recordingPayment || uploadingReceipt}
+              className="flex items-center gap-2 rounded-lg bg-foreground px-5 py-2 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50"
+            >
+              <CreditCard size={15} />
+              <span>{recordingPayment ? "Recording..." : "Save Payment & Proof"}</span>
+            </button>
+          </div>
+        </form>
       </Modal>
     </ModulePage>
   );

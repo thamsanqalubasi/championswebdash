@@ -3485,6 +3485,7 @@ export async function fetchTenants(companyId?: string): Promise<TenantRow[]> {
       return data.map((t) => ({
         id: t.id,
         companyId: t.company_id || companyId,
+        propertyId: t.property_id || undefined,
         fullName: t.full_name,
         propertyName: t.properties?.name || "Unassigned Property",
         phone: t.phone || "",

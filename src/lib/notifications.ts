@@ -580,6 +580,217 @@ export function wrapCustomerWelcomeEmailHtml(opts: {
 </html>`;
 }
 
+export function wrapTenantInvitationEmailHtml(opts: {
+  recipientName: string;
+  companyName: string;
+  propertyName: string;
+  inviteUrl: string;
+  companyLogo?: string;
+}): string {
+  const { recipientName, companyName, propertyName, inviteUrl, companyLogo } = opts;
+  const safeCompany = (!companyName || companyName.toLowerCase().includes("champions"))
+    ? "Paimbabook Hospitality & Properties"
+    : companyName.trim();
+  const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
+    ? "https://paimbabook.com/paimbabook-logo.svg"
+    : companyLogo;
+  const year = new Date().getFullYear();
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tenant Account Invitation - ${propertyName}</title>
+<style>
+  body { margin: 0; padding: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1e293b; }
+  .wrapper { padding: 32px 16px; }
+  .card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 12px 36px rgba(0,0,0,0.18); }
+  .header { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); padding: 36px 32px; text-align: center; color: #ffffff; }
+  .logo { max-height: 46px; margin-bottom: 12px; }
+  .header h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+  .header p { margin: 6px 0 0; font-size: 13px; color: #93c5fd; }
+  .content { padding: 32px; }
+  .greeting { font-size: 18px; font-weight: 700; color: #0f172a; margin: 0 0 12px; }
+  .body-text { font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 20px; }
+  .highlight-box { background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 14px; padding: 18px 20px; margin: 0 0 24px; }
+  .highlight-row { display: flex; justify-content: space-between; font-size: 13px; padding: 7px 0; border-bottom: 1px solid #f1f5f9; }
+  .highlight-row:last-child { border-bottom: none; }
+  .highlight-label { color: #64748b; font-weight: 500; }
+  .highlight-val { color: #0f172a; font-weight: 700; text-align: right; }
+  .feature-list { margin: 0 0 24px; padding: 0; list-style: none; }
+  .feature-item { font-size: 13px; color: #334155; padding: 6px 0; display: flex; align-items: center; gap: 8px; }
+  .btn-container { text-align: center; margin: 28px 0 16px; }
+  .btn { display: inline-block; background: #2563eb; color: #ffffff !important; text-decoration: none; font-size: 15px; font-weight: 700; padding: 14px 34px; border-radius: 12px; box-shadow: 0 6px 18px rgba(37,99,235,0.35); }
+  .direct-link { font-size: 11px; color: #64748b; word-break: break-all; padding: 10px; background: #f1f5f9; border-radius: 8px; margin-top: 10px; }
+  .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="card">
+    <div class="header">
+      <div style="text-align: center; margin-bottom: 10px;">
+        <img src="${logo}" alt="${safeCompany}" style="max-height: 46px; max-width: 220px; object-fit: contain; display: inline-block;" />
+      </div>
+      <h1>Welcome to Your Tenant Portal</h1>
+      <p>${safeCompany} &bull; Property Management</p>
+    </div>
+    <div class="content">
+      <p class="greeting">Hello ${recipientName},</p>
+      <p class="body-text">
+        You have been registered as an assigned tenant for <strong>${propertyName}</strong> managed by <strong>${safeCompany}</strong>.
+      </p>
+      <div class="highlight-box">
+        <div class="highlight-row">
+          <span class="highlight-label">Assigned Property:</span>
+          <span class="highlight-val">${propertyName}</span>
+        </div>
+        <div class="highlight-row">
+          <span class="highlight-label">Managing Organization:</span>
+          <span class="highlight-val">${safeCompany}</span>
+        </div>
+        <div class="highlight-row">
+          <span class="highlight-label">Portal:</span>
+          <span class="highlight-val">paimbabook.com</span>
+        </div>
+      </div>
+      <p class="body-text" style="margin-bottom: 8px; font-weight: 600; color: #0f172a;">
+        Create your free tenant account to access all resident benefits:
+      </p>
+      <ul class="feature-list">
+        <li class="feature-item">📄 <strong>Lease Agreements &amp; Contracts:</strong> Access, review, and download your contracts anytime.</li>
+        <li class="feature-item">🧾 <strong>Digital Rent Invoices:</strong> View monthly invoices and itemized billing statements.</li>
+        <li class="feature-item">💳 <strong>Submit Proof of Payment (POP):</strong> Upload bank slips or payment receipts directly for instant ledger reconciliation.</li>
+        <li class="feature-item">🔧 <strong>Maintenance Requests:</strong> Report plumbing, electrical, or structural repairs with photo attachments.</li>
+        <li class="feature-item">💬 <strong>Direct Property Chat:</strong> Message your property manager and maintenance staff directly.</li>
+      </ul>
+      <div class="btn-container">
+        <a href="${inviteUrl}" target="_blank" class="btn">Create Your Tenant Account &rarr;</a>
+      </div>
+      <p style="font-size: 11px; color: #94a3b8; text-align: center; margin-top: 14px;">Or copy and paste this onboarding link into your browser:</p>
+      <div class="direct-link">${inviteUrl}</div>
+    </div>
+    <div class="footer">
+      &copy; ${year} ${safeCompany}. Powered by Paimbabook Tenant Services.
+    </div>
+  </div>
+</div>
+</body>
+</html>`;
+}
+
+export function wrapStaffDeregistrationNoticeEmailHtml(opts: {
+  recipientName: string;
+  staffCompanyName: string;
+  tenantCompanyName: string;
+  propertyName: string;
+  inviteUrl: string;
+  staffEmail: string;
+  companyLogo?: string;
+}): string {
+  const { recipientName, staffCompanyName, tenantCompanyName, propertyName, inviteUrl, staffEmail, companyLogo } = opts;
+  const safeCompany = (!tenantCompanyName || tenantCompanyName.toLowerCase().includes("champions"))
+    ? "Paimbabook Hospitality & Properties"
+    : tenantCompanyName.trim();
+  const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
+    ? "https://paimbabook.com/paimbabook-logo.svg"
+    : companyLogo;
+  const year = new Date().getFullYear();
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Important Notice: Tenant Registration &amp; Account Status</title>
+<style>
+  body { margin: 0; padding: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1e293b; }
+  .wrapper { padding: 32px 16px; }
+  .card { max-width: 620px; margin: 0 auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 14px 40px rgba(0,0,0,0.2); }
+  .header { background: linear-gradient(135deg, #7c2d12 0%, #b45309 100%); padding: 34px 32px; text-align: center; color: #ffffff; }
+  .logo { max-height: 46px; margin-bottom: 12px; }
+  .header h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+  .header p { margin: 6px 0 0; font-size: 13px; color: #fde68a; }
+  .content { padding: 32px; }
+  .greeting { font-size: 18px; font-weight: 700; color: #0f172a; margin: 0 0 12px; }
+  .body-text { font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 18px; }
+  .alert-banner { background: #fffbeb; border: 1.5px solid #fef3c7; border-left: 5px solid #d97706; border-radius: 12px; padding: 16px 20px; margin: 0 0 22px; }
+  .alert-title { font-size: 14px; font-weight: 700; color: #92400e; margin: 0 0 6px; }
+  .alert-body { font-size: 13px; color: #78350f; line-height: 1.5; margin: 0; }
+  .options-box { background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 14px; padding: 20px; margin: 0 0 24px; }
+  .option-card { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid #e2e8f0; }
+  .option-card:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+  .option-num { font-size: 12px; font-weight: 800; text-transform: uppercase; color: #2563eb; }
+  .option-title { font-size: 14px; font-weight: 700; color: #0f172a; margin: 2px 0 4px; }
+  .option-desc { font-size: 13px; color: #475569; line-height: 1.5; margin: 0; }
+  .reassurance-box { background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 12px; padding: 14px 18px; margin: 0 0 24px; font-size: 13px; color: #166534; line-height: 1.5; }
+  .btn-container { text-align: center; margin: 24px 0 12px; }
+  .btn { display: inline-block; background: #b45309; color: #ffffff !important; text-decoration: none; font-size: 14px; font-weight: 700; padding: 13px 30px; border-radius: 10px; }
+  .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="card">
+    <div class="header">
+      <div style="text-align: center; margin-bottom: 10px;">
+        <img src="${logo}" alt="${safeCompany}" style="max-height: 46px; max-width: 220px; object-fit: contain; display: inline-block;" />
+      </div>
+      <h1>Tenant Registration &amp; Account Advisory</h1>
+      <p>${propertyName} &bull; ${safeCompany}</p>
+    </div>
+    <div class="content">
+      <p class="greeting">Dear ${recipientName},</p>
+      <p class="body-text">
+        You are registered as a tenant for <strong>${propertyName}</strong> under <strong>${safeCompany}</strong>.
+      </p>
+
+      <div class="alert-banner">
+        <p class="alert-title">⚠️ Existing Staff Account Detected</p>
+        <p class="alert-body">
+          Our system detected that your email address (<strong>${staffEmail}</strong>) is currently registered as a staff or administrator profile for <strong>${staffCompanyName}</strong>.
+        </p>
+      </div>
+
+      <p class="body-text">
+        Because administrative staff accounts have elevated company permissions, a user profile cannot simultaneously operate as an internal staff member for one organization and an external tenant for another. To activate your tenant portal features for <strong>${propertyName}</strong>, please choose one of the following options:
+      </p>
+
+      <div class="options-box">
+        <div class="option-card">
+          <span class="option-num">Option 1 (Recommended)</span>
+          <p class="option-title">Register with an Alternative Personal Email</p>
+          <p class="option-desc">
+            Create a tenant account using your personal email address, and notify your property manager at <strong>${safeCompany}</strong> so they can update your tenancy contact records.
+          </p>
+        </div>
+        <div class="option-card">
+          <span class="option-num">Option 2</span>
+          <p class="option-title">De-register from ${staffCompanyName}</p>
+          <p class="option-desc">
+            If you are no longer employed with or managing <strong>${staffCompanyName}</strong>, ask their administrator to remove your staff profile, after which you can register as a tenant using this email.
+          </p>
+        </div>
+      </div>
+
+      <div class="reassurance-box">
+        ✅ <strong>Your Invoices &amp; Contracts are Secure:</strong> Even while registered under another organization, all your official lease contracts, monthly invoices, and payment receipts will continue to be sent directly to <strong>${staffEmail}</strong> as downloadable PDF attachments.
+      </div>
+
+      <div class="btn-container">
+        <a href="${inviteUrl}" target="_blank" class="btn">View Registration Portal &rarr;</a>
+      </div>
+    </div>
+    <div class="footer">
+      &copy; ${year} ${safeCompany}. Account Security Advisory.
+    </div>
+  </div>
+</div>
+</body>
+</html>`;
+}
+
 /* ------------------------------------------------------------------ */
 /*  API callers                                                        */
 /* ------------------------------------------------------------------ */
@@ -750,3 +961,27 @@ export async function sendWhatsApp(opts: {
   window.open(`https://wa.me/${phone}?text=${encodeURIComponent(fallbackMessage)}`, "_blank", "noopener,noreferrer");
   return { sent: false, fallback: true };
 }
+
+export async function sendCustomHtmlEmail(opts: {
+  to: string;
+  subject: string;
+  html: string;
+  bodyFallback?: string;
+}): Promise<{ sent: boolean; fallback: boolean }> {
+  const result = await sendEmailViaApi({
+    to: opts.to,
+    subject: opts.subject,
+    html: opts.html,
+  });
+
+  if (result.success) {
+    return { sent: true, fallback: false };
+  }
+
+  // Fallback to mailto:
+  const subject = encodeURIComponent(opts.subject);
+  const body = encodeURIComponent(opts.bodyFallback || "Please check your notification.");
+  window.open(`mailto:${opts.to}?subject=${subject}&body=${body}`, "_blank", "noopener,noreferrer");
+  return { sent: false, fallback: true };
+}
+
