@@ -1403,7 +1403,10 @@ export async function fetchCommercialRooms(
 
 export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise<CommercialRoom> {
   const companyId = room.companyId || MOCK_COMPANIES[0].id;
-  const propertyId = room.propertyId || MOCK_COMMERCIAL_ROOMS[0].propertyId;
+  const propertyId = room.propertyId || "";
+  if (!propertyId) {
+    throw new Error("Property selection is required. All rooms must belong to an accommodation property (Hotel, Motel, Lodge, Guest House).");
+  }
   const roomNumber = room.roomNumber || "Room 100";
   const roomType = room.roomType || "standard";
   const floor = room.floor || "Ground Floor";

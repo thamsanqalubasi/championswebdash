@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
@@ -138,9 +139,11 @@ export default function ShowcasePage() {
     void fetchRoomTypes();
   }, [form.property_id, currentCompany.id]);
 
+  const hospProps = properties.filter(p => ["hotel","motel","lodge","guest_house","commercial"].includes(p.type));
+
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!form.property_id) e.property_id = "Please select a property.";
+    if (!form.property_id) e.property_id = "All rooms must belong to an accommodation property (Hotel, Motel, Lodge, Guest House).";
     if (!form.type_key) e.type_key = "Please select a room type.";
     if (!form.display_name.trim()) e.display_name = "Room name is required.";
     if ((Number(form.price_room_only)||0) <= 0 && (Number(form.price_bed_breakfast)||0) <= 0 && (Number(form.price_full_board)||0) <= 0) e.price = "At least one price must be greater than 0.";
@@ -149,7 +152,21 @@ export default function ShowcasePage() {
     return Object.keys(e).length === 0;
   };
 
-  const openAdd = () => { setEditingId(null); setForm({ ...emptyForm }); setFormPhotos([]); setErrors({}); setPropertyRoomTypes([]); setModalOpen(true); };
+  const openAdd = () => {
+    if (hospProps.length === 0) {
+      alert("All rooms must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial). Please create an accommodation property first.");
+      return;
+    }
+    setEditingId(null);
+    setForm({
+      ...emptyForm,
+      property_id: hospProps.length > 0 ? hospProps[0].id : "",
+    });
+    setFormPhotos([]);
+    setErrors({});
+    setPropertyRoomTypes([]);
+    setModalOpen(true);
+  };
   const openEdit = (r: RoomTypeListing) => { setEditingId(r.id); setForm({ property_id: r.propertyId, type_key: r.typeKey, display_name: r.displayName, adults_capacity: r.adultsCapacity, kids_capacity: r.kidsCapacity, total_rooms_of_type: r.totalRoomsOfType, price_room_only: r.priceRoomOnly || "", price_bed_breakfast: r.priceBedBreakfast || "", price_full_board: r.priceFullBoard || "", description: r.description, amenities: r.amenities, sort_order: r.sortOrder, is_active: r.isActive }); setFormPhotos(r.photos); setErrors({}); setModalOpen(true); };
 
   const toggleBookingVisibility = async (r: RoomTypeListing) => {
@@ -252,7 +269,6 @@ export default function ShowcasePage() {
     setListings(prev => prev.filter(x => x.id !== r.id));
   };
 
-  const hospProps = properties.filter(p => ["hotel","motel","lodge","guest_house","commercial"].includes(p.type));
   const availableTypeOptions = propertyRoomTypes.length > 0 ? ROOM_TYPE_OPTIONS.filter(o => propertyRoomTypes.includes(o.key)) : ROOM_TYPE_OPTIONS;
   const inputCls = (field: string) => `w-full rounded-xl border px-3 py-2 text-foreground outline-none focus:border-purple-600 bg-surface-elevated text-sm ${errors[field] ? "border-red-500" : "border-border-color"}`;
 
@@ -278,18 +294,85 @@ export default function ShowcasePage() {
           <div className="flex items-center gap-3">
             <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder={tab === "bookings" ? "Search room types..." : "Search rental properties..."} className="rounded-xl border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-purple-600 w-full max-w-sm"/>
             {tab === "bookings" && (
-              <button type="button" onClick={openAdd} className="ml-auto flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-sm font-bold text-white shadow-md hover:bg-purple-700 transition">
+              <button
+                type="button"
+                onClick={openAdd}
+                disabled={hospProps.length === 0}
+                className="ml-auto flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2 text-sm font-bold text-white shadow-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                title={hospProps.length === 0 ? "You must have an accommodation property in the system before adding room types" : "Add Room Type"}
+              >
                 <Plus size={16}/> Add Room Type
               </button>
             )}
           </div>
 
+          {/* Accommodation Property Requirement Banner */}
+          {tab === "bookings" && (
+            <div
+              className={`rounded-2xl border p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs ${
+                hospProps.length === 0
+                  ? "border-amber-400 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+                  : "border-purple-200 dark:border-purple-900/50 bg-purple-50/70 dark:bg-purple-950/30 text-purple-900 dark:text-purple-200"
+              }`}
+            >
+              <div className="flex items-start sm:items-center gap-3">
+                <Building2
+                  size={20}
+                  className={`shrink-0 mt-0.5 sm:mt-0 ${
+                    hospProps.length === 0 ? "text-amber-600 dark:text-amber-400" : "text-purple-600 dark:text-purple-400"
+                  }`}
+                />
+                <div>
+                  <span className="font-bold text-sm block sm:inline mr-1.5">
+                    {hospProps.length === 0 ? "⚠️ Accommodation Property Required:" : "🏨 Accommodation Property Assignment:"}
+                  </span>
+                  <span>
+                    All rooms and booking types must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial). Without selecting a property or having an accommodation property in the system, you cannot create or showcase rooms.
+                  </span>
+                </div>
+              </div>
+              {hospProps.length === 0 ? (
+                <Link
+                  to="/properties"
+                  className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-amber-700 transition"
+                >
+                  <Plus size={14} /> Create Property First
+                </Link>
+              ) : (
+                <div className="shrink-0 text-[11px] font-semibold bg-white/70 dark:bg-slate-900/70 px-3 py-1.5 rounded-xl border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300">
+                  {hospProps.length} Accommodation {hospProps.length === 1 ? "Property" : "Properties"} Active
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── BOOKINGS TAB ── */}
           {tab === "bookings" && (
             <section>
-              {filteredListings.length === 0 && <EmptyState title="No room types yet" description="Add hospitality room types to showcase on the booking portal."/>}
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {filteredListings.map(r => (
+              {hospProps.length === 0 ? (
+                <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-amber-500/30 bg-amber-500/5 p-12 text-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 mb-4">
+                    <Building2 size={28} />
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground mb-1">
+                    Accommodation Property Required
+                  </h3>
+                  <p className="max-w-md text-xs text-muted mb-5">
+                    All rooms and booking types must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial).
+                    Without having an accommodation property in the system, you cannot create room types.
+                  </p>
+                  <Link
+                    to="/properties"
+                    className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-amber-700 transition"
+                  >
+                    <Plus size={16} /> Create Accommodation Property First
+                  </Link>
+                </div>
+              ) : (
+                <>
+                  {filteredListings.length === 0 && <EmptyState title="No room types yet" description="Add hospitality room types to showcase on the booking portal."/>}
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {filteredListings.map(r => (
                   <div key={r.id} className={`rounded-2xl border bg-surface-elevated overflow-hidden shadow-sm ${r.isActive ? "border-border-color" : "border-dashed border-border-color/50 opacity-70"}`}>
                     <div className="relative">
                       <PhotoCarousel photos={r.photos}/>
@@ -322,6 +405,8 @@ export default function ShowcasePage() {
                   </div>
                 ))}
               </div>
+            </>
+          )}
             </section>
           )}
 
@@ -377,6 +462,32 @@ export default function ShowcasePage() {
       {/* ── Modal: Add/Edit Booking Room ── */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? "Edit Room Type" : "Add Room Type"}>
         <div className="space-y-4 text-xs">
+          {/* Modal Accommodation Property Requirement Banner */}
+          <div
+            className={`rounded-xl border p-3 flex items-start gap-2.5 text-xs ${
+              hospProps.length === 0
+                ? "border-amber-400 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+                : "border-purple-200 dark:border-purple-900/40 bg-purple-50/70 dark:bg-purple-950/30 text-purple-900 dark:text-purple-200"
+            }`}
+          >
+            <Building2
+              size={16}
+              className={`shrink-0 mt-0.5 ${
+                hospProps.length === 0 ? "text-amber-600" : "text-purple-600"
+              }`}
+            />
+            <div>
+              <p className="font-bold">
+                {hospProps.length === 0
+                  ? "⚠️ Accommodation Property Required"
+                  : "🏨 Accommodation Property Assignment"}
+              </p>
+              <p className="text-[11px] opacity-90 mt-0.5">
+                All rooms and showcase listings must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial). Without selecting a property, room listings cannot be saved.
+              </p>
+            </div>
+          </div>
+
           <div>
             <label className="mb-1 block font-semibold text-foreground">Property <span className="text-red-500">*</span></label>
             <select value={form.property_id} onChange={e => { setForm(f=>({...f,property_id:e.target.value,type_key:"",display_name:""})); setErrors(v=>({...v,property_id:""})); }} className={inputCls("property_id")}>
@@ -435,7 +546,14 @@ export default function ShowcasePage() {
           </label>
           <div className="flex justify-end gap-2 pt-2 border-t border-border-color">
             <button type="button" onClick={()=>setModalOpen(false)} className="rounded-xl border border-border-color px-4 py-2 text-sm text-muted hover:bg-surface-elevated">Cancel</button>
-            <button type="button" onClick={onSave} disabled={saving} className="rounded-xl bg-purple-600 px-5 py-2 text-sm font-bold text-white shadow-md hover:bg-purple-700 disabled:opacity-50">{saving?"Saving...":editingId?"Save Changes":"Create Room Type"}</button>
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving || hospProps.length === 0 || !form.property_id}
+              className="rounded-xl bg-purple-600 px-5 py-2 text-sm font-bold text-white shadow-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? "Saving..." : editingId ? "Save Changes" : "Create Room Type"}
+            </button>
           </div>
         </div>
       </Modal>

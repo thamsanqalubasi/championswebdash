@@ -144,3 +144,4 @@ CREATE POLICY "Allow users to view their payment proofs" ON public.tenant_paymen
 
 DROP POLICY IF EXISTS "Allow staff to update payment proofs" ON public.tenant_payment_proofs;
 CREATE POLICY "Allow staff to update payment proofs" ON public.tenant_payment_proofs FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+

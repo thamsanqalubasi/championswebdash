@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import {
   BedDouble,
   Plus,
@@ -136,14 +137,22 @@ export default function RoomManagementPage() {
     const props = await fetchProperties(currentCompany.id);
     setProperties(props);
 
-    const activePropId = selectedPropertyId || props[0]?.id || "";
+    const accomm = props.filter((p) =>
+      ["hotel", "motel", "lodge", "guest_house", "commercial"].includes(p.type)
+    );
+    const candidateList = accomm.length > 0 ? accomm : props;
+
+    let activePropId = selectedPropertyId;
+    if (!activePropId || !props.some((p) => p.id === activePropId)) {
+      activePropId = candidateList[0]?.id || "";
+    }
     setSelectedPropertyId(activePropId);
 
     const [allRooms, hk, rs, floors] = await Promise.all([
-      fetchCommercialRooms(currentCompany.id, activePropId),
+      activePropId ? fetchCommercialRooms(currentCompany.id, activePropId) : Promise.resolve([]),
       fetchHousekeepingSchedules(currentCompany.id),
       fetchRoomServiceSchedules(currentCompany.id),
-      fetchPropertyFloors(currentCompany.id, activePropId),
+      activePropId ? fetchPropertyFloors(currentCompany.id, activePropId) : Promise.resolve(["Ground Floor", "1st Floor", "2nd Floor"]),
     ]);
 
     setRooms(allRooms);
@@ -158,6 +167,10 @@ export default function RoomManagementPage() {
   }, [currentCompany.id, selectedPropertyId]);
 
   const openAddRoom = () => {
+    if (properties.length === 0 || !selectedPropertyId) {
+      alert("All rooms must belong to an accommodation property (Hotel, Motel, Lodge, Guest House). Please create or select an accommodation property first.");
+      return;
+    }
     setEditingRoom(null);
     setRoomNumber(`Room ${rooms.length + 101}`);
     setRoomType("standard");
@@ -176,6 +189,9 @@ export default function RoomManagementPage() {
   };
 
   const openEditRoom = (r: CommercialRoom) => {
+    if (r.propertyId) {
+      setSelectedPropertyId(r.propertyId);
+    }
     setEditingRoom(r);
     setRoomNumber(r.roomNumber);
     setRoomType(r.roomType);
@@ -262,6 +278,10 @@ export default function RoomManagementPage() {
 
   const handleSaveRoom = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedPropertyId) {
+      alert("Please select an accommodation property (Hotel, Motel, Lodge, Guest House) first. All rooms must belong to a property.");
+      return;
+    }
     await saveCommercialRoom({
       id: editingRoom?.id,
       companyId: currentCompany.id,
@@ -317,29 +337,76 @@ export default function RoomManagementPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <select
-            value={selectedPropertyId}
-            onChange={(e) => setSelectedPropertyId(e.target.value)}
-            className="rounded-xl border border-border-color bg-surface px-4 py-2.5 text-sm font-semibold text-foreground focus:border-blue-600 focus:outline-none"
-          >
-            {properties.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({p.type.toUpperCase()})
-              </option>
-            ))}
-          </select>
+          {properties.length > 0 ? (
+            <select
+              value={selectedPropertyId}
+              onChange={(e) => setSelectedPropertyId(e.target.value)}
+              className="rounded-xl border border-border-color bg-surface px-4 py-2.5 text-sm font-semibold text-foreground focus:border-blue-600 focus:outline-none"
+            >
+              {properties.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.type.replace(/_/g, " ").toUpperCase()})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 bg-amber-500/10 px-3 py-2 rounded-xl border border-amber-500/20">
+              <AlertCircle size={14} />
+              <span>No Accommodation Property</span>
+            </div>
+          )}
 
           {activeTab === "rooms" && (
             <button
               type="button"
               onClick={openAddRoom}
-              className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition"
+              disabled={properties.length === 0 || !selectedPropertyId}
+              className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              title={properties.length === 0 ? "All rooms must belong to an accommodation property. Add a property first." : "Add New Room"}
             >
               <Plus size={16} />
               <span>Add New Room</span>
             </button>
           )}
         </div>
+      </div>
+
+      {/* Short Accommodation Property Requirement Banner */}
+      <div
+        className={`rounded-2xl border p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs ${
+          properties.length === 0
+            ? "border-amber-400 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+            : "border-blue-200 dark:border-blue-900/50 bg-blue-50/70 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200"
+        }`}
+      >
+        <div className="flex items-start sm:items-center gap-3">
+          <Building2
+            size={20}
+            className={`shrink-0 mt-0.5 sm:mt-0 ${
+              properties.length === 0 ? "text-amber-600 dark:text-amber-400" : "text-blue-600 dark:text-blue-400"
+            }`}
+          />
+          <div>
+            <span className="font-bold text-sm block sm:inline mr-1.5">
+              {properties.length === 0 ? "⚠️ Accommodation Property Required:" : "🏨 Accommodation Property Assignment:"}
+            </span>
+            <span>
+              All rooms must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial). Without selecting a property or having an accommodation property in the system, you cannot create or manage rooms.
+            </span>
+          </div>
+        </div>
+        {properties.length === 0 ? (
+          <Link
+            to="/properties"
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-amber-700 transition"
+          >
+            <Plus size={14} /> Create Property First
+          </Link>
+        ) : (
+          <div className="shrink-0 text-[11px] font-semibold bg-white/70 dark:bg-slate-900/70 px-3 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300">
+            Selected: <strong>{selectedProperty?.name}</strong> ({selectedProperty?.type.replace(/_/g, " ").toUpperCase()})
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -399,8 +466,48 @@ export default function RoomManagementPage() {
 
       {/* TAB 1: ROOMS DIRECTORY */}
       {activeTab === "rooms" && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {rooms.map((r) => (
+        <>
+          {properties.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-amber-500/30 bg-amber-500/5 p-12 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 mb-4">
+                <Building2 size={28} />
+              </div>
+              <h3 className="text-lg font-bold text-foreground mb-1">
+                Accommodation Property Required
+              </h3>
+              <p className="max-w-md text-xs text-muted mb-5">
+                All rooms must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial).
+                Without selecting a property or having an accommodation property in the system, you cannot create or manage rooms.
+              </p>
+              <Link
+                to="/properties"
+                className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-amber-700 transition"
+              >
+                <Plus size={16} /> Create Accommodation Property First
+              </Link>
+            </div>
+          ) : rooms.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border-color bg-surface p-12 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-600 mb-4">
+                <BedDouble size={28} />
+              </div>
+              <h3 className="text-lg font-bold text-foreground mb-1">
+                No Rooms Found in {selectedProperty?.name}
+              </h3>
+              <p className="max-w-md text-xs text-muted mb-5">
+                Start adding room units to this accommodation property to manage availability, meal rates, and guest services.
+              </p>
+              <button
+                type="button"
+                onClick={openAddRoom}
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition"
+              >
+                <Plus size={16} /> Add First Room
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {rooms.map((r) => (
             <div
               key={r.id}
               className="rounded-2xl border border-border-color bg-surface overflow-hidden shadow-sm transition hover:shadow-md flex flex-col justify-between"
@@ -508,6 +615,8 @@ export default function RoomManagementPage() {
           ))}
         </div>
       )}
+    </>
+  )}
 
       {/* TAB 2: UNIFORM PRICING CONFIGURATOR */}
       {activeTab === "pricing" && (
@@ -733,7 +842,61 @@ export default function RoomManagementPage() {
               </button>
             </div>
 
+            {/* Modal Accommodation Property Warning Banner */}
+            <div
+              className={`rounded-xl border p-3 flex items-start gap-2.5 text-xs ${
+                properties.length === 0
+                  ? "border-amber-400 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+                  : "border-blue-200 dark:border-blue-900/40 bg-blue-50/70 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200"
+              }`}
+            >
+              <Building2
+                size={16}
+                className={`shrink-0 mt-0.5 ${
+                  properties.length === 0 ? "text-amber-600" : "text-blue-600"
+                }`}
+              />
+              <div>
+                <p className="font-bold">
+                  {properties.length === 0
+                    ? "⚠️ Accommodation Property Required"
+                    : "🏨 Accommodation Property Assignment"}
+                </p>
+                <p className="text-[11px] opacity-90 mt-0.5">
+                  All rooms must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial). Without selecting a property or having an accommodation property in the system, you cannot create or manage rooms.
+                </p>
+              </div>
+            </div>
+
             <form onSubmit={handleSaveRoom} className="space-y-4 text-xs">
+              <div>
+                <label className="mb-1 block font-semibold text-foreground">
+                  Accommodation Property <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedPropertyId}
+                  onChange={(e) => setSelectedPropertyId(e.target.value)}
+                  disabled={properties.length === 0}
+                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none disabled:opacity-50"
+                  required
+                >
+                  {properties.length === 0 ? (
+                    <option value="">No accommodation property found</option>
+                  ) : (
+                    properties.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.type.replace(/_/g, " ").toUpperCase()})
+                      </option>
+                    ))
+                  )}
+                </select>
+                {properties.length === 0 && (
+                  <p className="mt-1 text-[11px] text-amber-600 font-medium">
+                    You cannot create a room without an accommodation property. Please create a property first.
+                  </p>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1 block font-medium text-foreground">Room Number / Name *</label>
@@ -1007,7 +1170,8 @@ export default function RoomManagementPage() {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-blue-600 px-5 py-1.5 font-semibold text-white shadow-md hover:bg-blue-700"
+                  disabled={properties.length === 0 || !selectedPropertyId}
+                  className="rounded-lg bg-blue-600 px-5 py-1.5 font-semibold text-white shadow-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Save Room
                 </button>
