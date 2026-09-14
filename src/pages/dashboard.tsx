@@ -8,6 +8,7 @@ import {
   fetchStoresInventory,
   fetchCompanyUsers,
   fetchAuditEvents,
+  fetchProperties,
 } from "@/lib/data";
 import type {
   DashboardData,
@@ -17,6 +18,7 @@ import type {
   DepartmentType,
   CompanyUser,
   AuditEventRow,
+  PropertyRow,
 } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
@@ -26,6 +28,7 @@ import {
   Users,
   Building2,
   DollarSign,
+  MapPin,
   Wrench,
   AlertCircle,
   ArrowUpRight,
@@ -156,6 +159,9 @@ export default function DashboardPage() {
   const { currentCompany, currentCompanyUser, isSuperAdmin, isAdmin } = useAuth();
   const { formatWhole: formatCurrency, currency, symbol } = useCurrency();
   const [data, setData] = useState<DashboardData | null>(null);
+  const [allCommercialBookings, setAllCommercialBookings] = useState<CommercialBooking[]>([]);
+  const [properties, setProperties] = useState<PropertyRow[]>([]);
+  const [expandedPropertyIds, setExpandedPropertyIds] = useState<Record<string, boolean>>({});
   const [recentBookings, setRecentBookings] = useState<CommercialBooking[]>([]);
   const [procurementRequests, setProcurementRequests] = useState<ProcurementRequest[]>([]);
   const [storesInventory, setStoresInventory] = useState<StoresItem[]>([]);
@@ -165,6 +171,19 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [checkinOpen, setCheckinOpen] = useState(false);
+
+  const togglePropertyAccordion = (propId: string) => {
+    setExpandedPropertyIds((prev) => ({
+      ...prev,
+      [propId]: !prev[propId],
+    }));
+  };
+
+  const accommodationProperties = useMemo(() => {
+    return properties.filter((p) =>
+      ["hotel", "motel", "lodge", "guest_house", "commercial"].includes(p.type)
+    );
+  }, [properties]);
 
   // Accordion drop toggler state for all departments
   const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({
@@ -223,21 +242,30 @@ export default function DashboardPage() {
       setLoading(true);
       setError(null);
       try {
-        const [result, bks, procReqs, storesItems, users, audits] = await Promise.all([
+        const [result, bks, procReqs, storesItems, users, audits, propsData] = await Promise.all([
           fetchDashboardData(currentCompany.id),
           fetchCommercialBookings(currentCompany.id),
           fetchProcurementRequests(currentCompany.id),
           fetchStoresInventory(currentCompany.id),
           fetchCompanyUsers(currentCompany.id),
           fetchAuditEvents(currentCompany.id),
+          fetchProperties(currentCompany.id),
         ]);
         if (!cancelled) {
           setData(result);
-          setRecentBookings(bks.slice(0, 5));
+          setAllCommercialBookings(bks || []);
+          setRecentBookings((bks || []).slice(0, 5));
           setProcurementRequests(procReqs || []);
           setStoresInventory(storesItems || []);
           setCompanyUsers(users || []);
           setAuditEvents(audits || []);
+          setProperties(propsData || []);
+          const firstAccomm = (propsData || []).find((p) =>
+            ["hotel", "motel", "lodge", "guest_house", "commercial"].includes(p.type)
+          );
+          if (firstAccomm) {
+            setExpandedPropertyIds({ [firstAccomm.id]: true });
+          }
         }
       } catch (loadError) {
         if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Could not load dashboard data.");
@@ -1662,6 +1690,229 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+
+          {/* ========================================================================= */}
+          {/* PROPERTY CHECK-IN & LIVE GUEST ACTIVITY ACCORDION                         */}
+          {/* ========================================================================= */}
+          <section className="rounded-2xl border border-border-color bg-surface shadow-sm overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-4 p-5 border-b border-border-color bg-surface-elevated/30">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-600/10 text-purple-600">
+                  <BedDouble size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-foreground">
+                      Property Check-In &amp; Guest Roster
+                    </h3>
+                    <span className="rounded-full bg-purple-500/10 px-2.5 py-0.5 text-[10px] font-bold text-purple-600 border border-purple-500/20 uppercase tracking-wider">
+                      Live Operations
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted mt-0.5">
+                    Expand any accommodation property below to inspect active guests, meal packages, stay dates, and collected payments.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCheckinOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition"
+                >
+                  <KeyRound size={14} />
+                  <span>Check In Guest</span>
+                </button>
+                <Link
+                  to="/commercial-bookings"
+                  className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3.5 py-2 text-xs font-semibold text-foreground hover:bg-surface transition"
+                >
+                  <span>All Bookings</span>
+                  <ExternalLink size={13} />
+                </Link>
+              </div>
+            </div>
+
+            {accommodationProperties.length === 0 ? (
+              <div className="p-8 text-center">
+                <EmptyState
+                  title="No Accommodation Properties Found"
+                  description="Add a Hotel, Lodge, Motel, or Guest House under Properties to view live guest check-in data."
+                />
+              </div>
+            ) : (
+              <div className="divide-y divide-border-color/60">
+                {accommodationProperties.map((prop) => {
+                  const propBookings = allCommercialBookings.filter((b) => b.propertyId === prop.id);
+                  const activeGuests = propBookings.filter(
+                    (b) => b.bookingStatus === "checked_in" || b.bookingStatus === "confirmed"
+                  );
+                  const isExpanded = Boolean(expandedPropertyIds[prop.id]);
+                  const totalCollected = propBookings.reduce(
+                    (sum, b) => sum + (b.amountPaid || b.totalAmount || 0),
+                    0
+                  );
+
+                  return (
+                    <div key={prop.id} className="transition">
+                      {/* Property Header Bar / Accordion Trigger */}
+                      <button
+                        type="button"
+                        onClick={() => togglePropertyAccordion(prop.id)}
+                        className="w-full flex flex-wrap items-center justify-between gap-4 p-4 text-left hover:bg-surface-elevated/40 transition"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-600/10 text-purple-600 shrink-0 font-black text-xs">
+                            <BedDouble size={18} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="font-bold text-foreground text-sm truncate">
+                                {prop.name}
+                              </p>
+                              <span className="rounded-full bg-surface-elevated border border-border-color px-2 py-0.5 text-[10px] font-bold uppercase text-muted">
+                                {prop.type.replace(/_/g, " ")}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted flex items-center gap-1 mt-0.5">
+                              <MapPin size={11} className="shrink-0" />
+                              <span className="truncate">
+                                {[prop.address, prop.city, prop.country].filter(Boolean).join(", ")}
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 text-xs">
+                          <div className="text-right hidden sm:block">
+                            <p className="font-bold text-foreground">
+                              {activeGuests.length} Active / Checked In
+                            </p>
+                            <p className="text-[11px] text-muted">
+                              {propBookings.length} Total Bookings Recorded
+                            </p>
+                          </div>
+
+                          <div className="text-right hidden md:block">
+                            <p className="font-bold text-emerald-600">
+                              {formatCurrency(totalCollected)}
+                            </p>
+                            <p className="text-[11px] text-muted">Revenue Collected</p>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface-elevated px-2.5 py-1 text-xs font-semibold text-foreground">
+                            <span>{isExpanded ? "Collapse" : "View Roster"}</span>
+                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          </div>
+                        </div>
+                      </button>
+
+                      {/* Expanded Guest Roster Content */}
+                      {isExpanded && (
+                        <div className="bg-muted/5 border-t border-border-color/60 p-4 space-y-3">
+                          {propBookings.length === 0 ? (
+                            <div className="p-6 text-center rounded-xl border border-dashed border-border-color bg-surface">
+                              <p className="text-xs text-muted font-medium">
+                                No guest bookings or check-ins recorded for {prop.name} yet.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => setCheckinOpen(true)}
+                                className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition"
+                              >
+                                <KeyRound size={12} />
+                                <span>Check In First Guest</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto rounded-xl border border-border-color bg-surface shadow-xs">
+                              <table className="w-full text-left text-xs">
+                                <thead className="border-b border-border-color bg-surface-elevated/70 text-[10px] font-bold uppercase tracking-wider text-muted">
+                                  <tr>
+                                    <th className="px-4 py-3">Guest</th>
+                                    <th className="px-4 py-3">Room</th>
+                                    <th className="px-4 py-3">Board Package</th>
+                                    <th className="px-4 py-3">Dates &amp; Nights</th>
+                                    <th className="px-4 py-3">Status</th>
+                                    <th className="px-4 py-3 text-right">Payment</th>
+                                    <th className="px-4 py-3">Clerk / Notes</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border-color/40">
+                                  {propBookings.map((b) => (
+                                    <tr key={b.id} className="hover:bg-surface-elevated/30 transition">
+                                      <td className="px-4 py-3 font-bold text-foreground">
+                                        <div>{b.guestName}</div>
+                                        <div className="text-[10px] text-muted font-normal">
+                                          {b.guestPhone || b.guestEmail || "-"}
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        <span className="font-semibold text-foreground">
+                                          {b.roomNumber}
+                                        </span>
+                                        <span className="block text-[10px] text-muted uppercase">
+                                          {b.roomType}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 capitalize">
+                                        <span className="inline-flex items-center gap-1 rounded-md bg-surface-elevated border border-border-color px-2 py-0.5 text-[10px] font-semibold text-foreground">
+                                          <Utensils size={10} className="text-amber-500" />
+                                          <span>{b.mealPlan ? b.mealPlan.replace(/_/g, " ") : "Room Only"}</span>
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 text-muted">
+                                        <div>{b.checkInDate} → {b.checkOutDate}</div>
+                                        <div className="text-[10px] font-semibold text-foreground">{b.nights} Night(s)</div>
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        <span
+                                          className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                            b.bookingStatus === "checked_in"
+                                              ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                                              : b.bookingStatus === "confirmed"
+                                              ? "bg-blue-500/10 text-blue-600 border border-blue-500/20"
+                                              : b.bookingStatus === "checked_out"
+                                              ? "bg-muted/20 text-muted"
+                                              : "bg-rose-500/10 text-rose-600"
+                                          }`}
+                                        >
+                                          {b.bookingStatus ? b.bookingStatus.replace(/_/g, " ") : "confirmed"}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 text-right">
+                                        <div className="font-bold text-foreground">
+                                          {formatCurrency(b.amountPaid || b.totalAmount || 0)}
+                                        </div>
+                                        {b.amountPaid !== undefined && b.totalAmount !== undefined && b.amountPaid !== b.totalAmount && (
+                                          <span className="text-[9px] font-bold text-rose-500 block">
+                                            Diff: {formatCurrency(Math.abs(b.totalAmount - b.amountPaid))}
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="px-4 py-3 text-muted text-[11px] max-w-xs truncate">
+                                        {b.checkedInByName && (
+                                          <span className="font-semibold text-foreground">
+                                            {b.checkedInByName}:{" "}
+                                          </span>
+                                        )}
+                                        <span>{b.notes || "Standard check-in"}</span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
 
           {/* ========================================================================= */}
           {/* FRONT DESK DEDICATED VIEW                                                */}

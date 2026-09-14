@@ -35,10 +35,20 @@ import {
   Download,
   Eye,
   RefreshCw,
+  BedDouble,
+  TrendingUp,
 } from "lucide-react";
 import { StatusBadge } from "@/components/data-table";
+import { PropertyStatsModal } from "@/components/property-stats-modal";
+import { fetchCommercialRooms } from "@/lib/data";
+import type { CommercialRoom } from "@/lib/types";
 
 const PAGE_SIZE = 8;
+
+const HOSPITALITY_TYPES = ["hotel", "motel", "lodge", "guest_house", "commercial"];
+function isHospitality(type?: string) {
+  return type ? HOSPITALITY_TYPES.includes(type) : false;
+}
 
 type PropertyDetails = {
   id: string;
@@ -209,6 +219,22 @@ export default function PropertyDetailsPage() {
   const [billPaymentPin, setBillPaymentPin] = useState("");
   const [savingBillPayment, setSavingBillPayment] = useState(false);
 
+  // Hospitality commercial rooms & stats modal
+  const [rooms, setRooms] = useState<CommercialRoom[]>([]);
+  const [statsModalOpen, setStatsModalOpen] = useState(false);
+
+  const occupiedRoomsCount = useMemo(() => {
+    return rooms.filter((r) => r.status === "occupied").length;
+  }, [rooms]);
+
+  const vacantRoomsCount = useMemo(() => {
+    return rooms.filter((r) => r.status === "available" || !r.status).length;
+  }, [rooms]);
+
+  const totalRoomsCount = useMemo(() => {
+    return rooms.length;
+  }, [rooms]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -260,37 +286,46 @@ export default function PropertyDetailsPage() {
           unassignedQuery = unassignedQuery.eq("company_id", compId);
         }
 
-        const [propertyResult, assignedTenantsResult, unassignedTenantsResult, invoicesResult, maintenanceResult, billSchedules, billMonthlyResult] =
-          await Promise.all([
-            supabase
-              .from("properties")
-              .select("id, name, type, address, status, monthly_rent, photos, company_id")
-              .eq("id", propertyId)
-              .single(),
-            supabase
-              .from("tenants")
-              .select("id, full_name, email, phone, whatsapp_number")
-              .eq("property_id", propertyId)
-              .order("full_name", { ascending: true }),
-            unassignedQuery,
-            supabase
-              .from("invoices")
-              .select("id, tenant_id, month, due_date, total_amount, status, pdf_url, tenants(full_name)")
-              .eq("property_id", propertyId)
-              .order("created_at", { ascending: false }),
-            supabase
-              .from("maintenance")
-              .select("id, category, status, cost, created_at")
-              .eq("property_id", propertyId)
-              .order("created_at", { ascending: false })
-              .limit(30),
-            loadBillSchedules(),
-            supabase
-              .from("property_monthly_bills")
-              .select("schedule_id, month, amount, status, paid_at")
-              .eq("property_id", propertyId)
-              .order("month", { ascending: false }),
-          ]);
+        const [
+          propertyResult,
+          assignedTenantsResult,
+          unassignedTenantsResult,
+          invoicesResult,
+          maintenanceResult,
+          billSchedules,
+          billMonthlyResult,
+          roomsData,
+        ] = await Promise.all([
+          supabase
+            .from("properties")
+            .select("id, name, type, address, status, monthly_rent, photos, company_id")
+            .eq("id", propertyId)
+            .single(),
+          supabase
+            .from("tenants")
+            .select("id, full_name, email, phone, whatsapp_number")
+            .eq("property_id", propertyId)
+            .order("full_name", { ascending: true }),
+          unassignedQuery,
+          supabase
+            .from("invoices")
+            .select("id, tenant_id, month, due_date, total_amount, status, pdf_url, tenants(full_name)")
+            .eq("property_id", propertyId)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("maintenance")
+            .select("id, category, status, cost, created_at")
+            .eq("property_id", propertyId)
+            .order("created_at", { ascending: false })
+            .limit(30),
+          loadBillSchedules(),
+          supabase
+            .from("property_monthly_bills")
+            .select("schedule_id, month, amount, status, paid_at")
+            .eq("property_id", propertyId)
+            .order("month", { ascending: false }),
+          fetchCommercialRooms(isValidUuid(compId) ? compId : undefined, propertyId),
+        ]);
 
         if (propertyResult.error) throw propertyResult.error;
         if (isValidUuid(compId) && propertyResult.data?.company_id && propertyResult.data.company_id !== compId) {
@@ -304,6 +339,21 @@ export default function PropertyDetailsPage() {
 
         if (!cancelled) {
           const propertyRow = propertyResult.data;
+          let photosList: string[] = [];
+          if (Array.isArray(propertyRow.photos) && propertyRow.photos.length > 0) {
+            photosList = propertyRow.photos.map((photo: any) => String(photo));
+          } else {
+            try {
+              const cached = localStorage.getItem(`cc_prop_photos_${propertyId}`);
+              if (cached) {
+                const parsed = JSON.parse(cached);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  photosList = parsed;
+                }
+              }
+            } catch {}
+          }
+
           setProperty({
             id: String(propertyRow.id),
             name: String(propertyRow.name ?? "Unnamed"),
@@ -311,10 +361,9 @@ export default function PropertyDetailsPage() {
             address: String(propertyRow.address ?? "-"),
             status: String(propertyRow.status ?? "vacant"),
             monthlyRent: Number(propertyRow.monthly_rent ?? 0),
-            photos: Array.isArray(propertyRow.photos)
-              ? propertyRow.photos.map((photo) => String(photo))
-              : [],
+            photos: photosList,
           });
+          setRooms(roomsData || []);
 
           setAssignedTenants(
             (assignedTenantsResult.data ?? []).map((row) => ({
@@ -501,12 +550,13 @@ export default function PropertyDetailsPage() {
 
     try {
       const updatedPhotos = [...property.photos, trimmedUrl];
-      const { error: updateError } = await supabase
-        .from("properties")
-        .update({ photos: updatedPhotos })
-        .eq("id", propertyId);
-
-      if (updateError) throw updateError;
+      try {
+        await supabase
+          .from("properties")
+          .update({ photos: updatedPhotos })
+          .eq("id", propertyId);
+      } catch {}
+      localStorage.setItem(`cc_prop_photos_${propertyId}`, JSON.stringify(updatedPhotos));
 
       setPhotoUrlInput("");
       reload();
@@ -522,11 +572,13 @@ export default function PropertyDetailsPage() {
     setDeletingPhoto(true);
     try {
       const updatedPhotos = property.photos.filter((_, i) => i !== index);
-      const { error: updateError } = await supabase
-        .from("properties")
-        .update({ photos: updatedPhotos })
-        .eq("id", propertyId);
-      if (updateError) throw updateError;
+      try {
+        await supabase
+          .from("properties")
+          .update({ photos: updatedPhotos })
+          .eq("id", propertyId);
+      } catch {}
+      localStorage.setItem(`cc_prop_photos_${propertyId}`, JSON.stringify(updatedPhotos));
       // Adjust gallery index if needed
       if (index >= updatedPhotos.length && updatedPhotos.length > 0) {
         setGalleryIndex(updatedPhotos.length - 1);
@@ -548,11 +600,13 @@ export default function PropertyDetailsPage() {
     try {
       const url = await uploadFileToBucket("property-photos", propertyId, file);
       const updatedPhotos = [...property.photos, url];
-      const { error: updateError } = await supabase
-        .from("properties")
-        .update({ photos: updatedPhotos })
-        .eq("id", propertyId);
-      if (updateError) throw updateError;
+      try {
+        await supabase
+          .from("properties")
+          .update({ photos: updatedPhotos })
+          .eq("id", propertyId);
+      } catch {}
+      localStorage.setItem(`cc_prop_photos_${propertyId}`, JSON.stringify(updatedPhotos));
       reload();
     } catch (uploadError) {
       alert(uploadError instanceof Error ? uploadError.message : "Could not upload photo.");
@@ -889,11 +943,28 @@ export default function PropertyDetailsPage() {
         </Link>
         {property && (
           <div className="flex items-center gap-3">
-            <StatusBadge status={property.status} />
+            {isHospitality(property.type) ? (
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-500/10 border border-purple-500/25 px-3 py-1 text-xs font-bold text-purple-700 dark:text-purple-300">
+                  <BedDouble size={14} />
+                  <span>{occupiedRoomsCount} Occupied · {vacantRoomsCount} Vacant of {totalRoomsCount} Rooms</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setStatsModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-purple-700 transition"
+                >
+                  <TrendingUp size={14} />
+                  <span>Stats &amp; Reports</span>
+                </button>
+              </div>
+            ) : (
+              <StatusBadge status={property.status} />
+            )}
             <div className="h-4 w-px bg-border-color/50 mx-1" />
             <div className="flex items-center gap-1.5 text-xs font-bold text-muted">
               <Home size={14} />
-              <span className="capitalize">{property.type}</span>
+              <span className="capitalize">{property.type.replace(/_/g, " ")}</span>
             </div>
           </div>
         )}
@@ -904,6 +975,38 @@ export default function PropertyDetailsPage() {
 
       {!loading && !error && property && (
         <div className="space-y-6">
+          {/* Hero Photo Banner */}
+          {property.photos.length > 0 && (
+            <div className="relative w-full h-64 md:h-80 rounded-2xl overflow-hidden border border-border-color shadow-sm group">
+              <img
+                src={property.photos[0]}
+                alt={property.name}
+                className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent pointer-events-none" />
+              <div className="absolute bottom-4 left-6 right-6 flex items-end justify-between">
+                <div className="text-white">
+                  <span className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider mb-1.5 ${isHospitality(property.type) ? "bg-purple-600 text-white" : "bg-blue-600 text-white"}`}>
+                    {isHospitality(property.type) ? "Hospitality Property" : "Rental Property"}
+                  </span>
+                  <h2 className="text-2xl md:text-3xl font-black">{property.name}</h2>
+                  <p className="text-xs text-white/80 flex items-center gap-1 mt-1">
+                    <MapPin size={13} />
+                    <span>{property.address}</span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setGalleryIndex(0); setGalleryOpen(true); }}
+                  className="flex items-center gap-1.5 rounded-xl bg-black/60 hover:bg-black/80 backdrop-blur-md px-3.5 py-2 text-xs font-bold text-white border border-white/20 transition shadow"
+                >
+                  <ImageIcon size={14} />
+                  <span>View Gallery ({property.photos.length})</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Top Metrics Row */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <DetailStat label="Monthly Rent" value={formatCurrency(property.monthlyRent)} icon={DollarSign} colorClass="text-foreground" />
@@ -925,81 +1028,137 @@ export default function PropertyDetailsPage() {
                 </div>
               </section>
 
-              {/* Assigned Tenants Section */}
-              <section className="rounded-2xl border border-border-color bg-surface overflow-hidden">
-                <header className="px-6 py-4 border-b border-border-color/50 bg-surface-elevated/30 flex items-center justify-between">
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-muted/60">Occupancy & Tenants</h3>
-                  <Users size={16} className="text-muted/40" />
-                </header>
-                <div className="p-6 space-y-6">
-                  <div className="flex flex-wrap items-center gap-3 bg-surface-elevated/50 p-4 rounded-xl ring-1 ring-border-color/40">
-                    <select
-                      value={selectedTenantId}
-                      onChange={(event) => setSelectedTenantId(event.target.value)}
-                      className="flex-1 min-w-[200px] rounded-lg border border-border-color bg-surface px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
-                    >
-                      <option value="">Assign a new tenant...</option>
-                      {unassignedTenants.map((tenant) => (
-                        <option key={tenant.id} value={tenant.id}>{tenant.full_name}</option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={assignTenant}
-                      disabled={!selectedTenantId || assigning}
-                      className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50"
-                    >
-                      <Plus size={16} />
-                      <span>{assigning ? "Assigning..." : "Assign Tenant"}</span>
-                    </button>
-                  </div>
-
-                  {assignedTenants.length === 0 ? (
-                    <EmptyState title="No active tenants" description="This unit is currently listed as vacant." />
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full border-collapse text-sm">
-                        <thead>
-                          <tr className="border-b border-border-color/40 text-left text-muted/50 uppercase text-[10px] font-bold tracking-wider">
-                            <th className="px-4 py-3">Full Name</th>
-                            <th className="px-4 py-3">Contact</th>
-                            <th className="px-4 py-3 text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border-color/30">
-                          {assignedTenants.slice(0, tenantsLimit).map((tenant) => (
-                            <tr key={tenant.id} className="group hover:bg-surface-elevated/20 transition-colors">
-                              <td className="px-4 py-4 font-bold text-foreground">{tenant.fullName}</td>
-                              <td className="px-4 py-4">
-                                <div className="flex items-center gap-4 text-muted/80">
-                                  {tenant.phone && <div className="flex items-center gap-1.5"><Phone size={12} /><span>{tenant.phone}</span></div>}
-                                  {tenant.email && <div className="flex items-center gap-1.5"><Mail size={12} /><span>{tenant.email}</span></div>}
-                                </div>
-                              </td>
-                              <td className="px-4 py-4 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => generateInvoiceForTenant(tenant)}
-                                  disabled={generatingTenantId === tenant.id}
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-bold text-muted hover:text-foreground transition-all disabled:opacity-50"
-                                >
-                                  <FileText size={14} />
-                                  <span>{generatingTenantId === tenant.id ? "Processing..." : "Generate Invoice"}</span>
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      {assignedTenants.length > tenantsLimit && (
-                        <button type="button" onClick={() => setTenantsLimit((v) => v + PAGE_SIZE)} className="mt-4 w-full rounded-xl border border-border-color/50 py-2.5 text-xs font-bold uppercase tracking-wider text-muted hover:bg-surface-elevated transition-all">
-                          Load More Tenants
-                        </button>
-                      )}
+              {/* Occupancy / Turnaround / Tenants Section */}
+              {isHospitality(property.type) ? (
+                <section className="rounded-2xl border border-border-color bg-surface overflow-hidden">
+                  <header className="px-6 py-4 border-b border-border-color/50 bg-surface-elevated/30 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold uppercase tracking-widest text-muted/60">
+                        Hospitality Rooms &amp; Turnaround
+                      </h3>
+                      <p className="text-[11px] text-muted mt-0.5">
+                        Commercial guest accommodation. Does not assign permanent long-term tenants.
+                      </p>
                     </div>
-                  )}
-                </div>
-              </section>
+                    <BedDouble size={16} className="text-purple-600" />
+                  </header>
+                  <div className="p-6 space-y-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="rounded-xl border border-border-color bg-surface-elevated/50 p-4">
+                        <p className="text-xs text-muted font-medium">Total Inventory</p>
+                        <p className="text-2xl font-black text-foreground mt-1">{totalRoomsCount} Rooms</p>
+                      </div>
+                      <div className="rounded-xl border border-purple-500/20 bg-purple-500/10 p-4">
+                        <p className="text-xs text-purple-700 dark:text-purple-300 font-medium">Occupied Rooms</p>
+                        <p className="text-2xl font-black text-purple-700 dark:text-purple-300 mt-1">{occupiedRoomsCount} Rooms</p>
+                      </div>
+                      <div className="rounded-xl border border-green-500/20 bg-green-500/10 p-4">
+                        <p className="text-xs text-green-700 dark:text-green-300 font-medium">Vacant &amp; Available</p>
+                        <p className="text-2xl font-black text-green-700 dark:text-green-300 mt-1">{vacantRoomsCount} Rooms</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 pt-2">
+                      <Link
+                        to="/hospitality/rooms"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-4 py-2 text-xs font-bold text-white hover:bg-purple-700 transition shadow-sm"
+                      >
+                        <BedDouble size={14} />
+                        <span>Manage Rooms &amp; Rates</span>
+                      </Link>
+                      <Link
+                        to="/hospitality/checkins"
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-4 py-2 text-xs font-bold text-foreground hover:bg-surface transition"
+                      >
+                        <span>Check-In &amp; Guest Desk</span>
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => setStatsModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-purple-500/30 bg-purple-500/10 px-4 py-2 text-xs font-bold text-purple-600 hover:bg-purple-500/20 transition"
+                      >
+                        <TrendingUp size={14} />
+                        <span>Open Stats &amp; Reports</span>
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              ) : (
+                <section className="rounded-2xl border border-border-color bg-surface overflow-hidden">
+                  <header className="px-6 py-4 border-b border-border-color/50 bg-surface-elevated/30 flex items-center justify-between">
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-muted/60">Occupancy &amp; Tenants</h3>
+                    <Users size={16} className="text-muted/40" />
+                  </header>
+                  <div className="p-6 space-y-6">
+                    <div className="flex flex-wrap items-center gap-3 bg-surface-elevated/50 p-4 rounded-xl ring-1 ring-border-color/40">
+                      <select
+                        value={selectedTenantId}
+                        onChange={(event) => setSelectedTenantId(event.target.value)}
+                        className="flex-1 min-w-[200px] rounded-lg border border-border-color bg-surface px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
+                      >
+                        <option value="">Assign a new tenant...</option>
+                        {unassignedTenants.map((tenant) => (
+                          <option key={tenant.id} value={tenant.id}>{tenant.full_name}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={assignTenant}
+                        disabled={!selectedTenantId || assigning}
+                        className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50"
+                      >
+                        <Plus size={16} />
+                        <span>{assigning ? "Assigning..." : "Assign Tenant"}</span>
+                      </button>
+                    </div>
+
+                    {assignedTenants.length === 0 ? (
+                      <EmptyState title="No active tenants" description="This unit is currently listed as vacant." />
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full border-collapse text-sm">
+                          <thead>
+                            <tr className="border-b border-border-color/40 text-left text-muted/50 uppercase text-[10px] font-bold tracking-wider">
+                              <th className="px-4 py-3">Full Name</th>
+                              <th className="px-4 py-3">Contact</th>
+                              <th className="px-4 py-3 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border-color/30">
+                            {assignedTenants.slice(0, tenantsLimit).map((tenant) => (
+                              <tr key={tenant.id} className="group hover:bg-surface-elevated/20 transition-colors">
+                                <td className="px-4 py-4 font-bold text-foreground">{tenant.fullName}</td>
+                                <td className="px-4 py-4">
+                                  <div className="flex items-center gap-4 text-muted/80">
+                                    {tenant.phone && <div className="flex items-center gap-1.5"><Phone size={12} /><span>{tenant.phone}</span></div>}
+                                    {tenant.email && <div className="flex items-center gap-1.5"><Mail size={12} /><span>{tenant.email}</span></div>}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-4 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => generateInvoiceForTenant(tenant)}
+                                    disabled={generatingTenantId === tenant.id}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-bold text-muted hover:text-foreground transition-all disabled:opacity-50"
+                                  >
+                                    <FileText size={14} />
+                                    <span>{generatingTenantId === tenant.id ? "Processing..." : "Generate Invoice"}</span>
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {assignedTenants.length > tenantsLimit && (
+                          <button type="button" onClick={() => setTenantsLimit((v) => v + PAGE_SIZE)} className="mt-4 w-full rounded-xl border border-border-color/50 py-2.5 text-xs font-bold uppercase tracking-wider text-muted hover:bg-surface-elevated transition-all">
+                            Load More Tenants
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
 
               {/* Maintenance List Section */}
               <section className="rounded-2xl border border-border-color bg-surface overflow-hidden">
@@ -1296,6 +1455,18 @@ export default function PropertyDetailsPage() {
         defaultSubject={shareModalDoc.defaultSubject}
         defaultMessage={shareModalDoc.defaultMessage}
       />
+
+      {property && (
+        <PropertyStatsModal
+          isOpen={statsModalOpen}
+          onClose={() => setStatsModalOpen(false)}
+          property={{
+            id: property.id,
+            name: property.name,
+            type: property.type,
+          }}
+        />
+      )}
     </ModulePage>
   );
 }

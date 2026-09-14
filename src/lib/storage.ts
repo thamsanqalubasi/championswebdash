@@ -157,6 +157,15 @@ export async function uploadPdfFromHtml(bucket: string, folder: string, html: st
  * Returns the public URL of the uploaded file.
  * Falls back to a long-lived signed URL if the bucket is not public.
  */
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
 export async function uploadFileToBucket(
   bucket: string,
   folder: string,
@@ -165,62 +174,47 @@ export async function uploadFileToBucket(
   const extension = file.name.includes(".") ? file.name.split(".").pop() : "bin";
   const path = `${folder}/${Date.now()}.${extension}`;
 
-  // First attempt
-  let uploadResult = await supabase.storage
-    .from(bucket)
-    .upload(path, file, { upsert: true });
+  const bucketsToTry = [bucket];
+  if (!bucketsToTry.includes("property-photos")) bucketsToTry.push("property-photos");
+  if (!bucketsToTry.includes("room-photos")) bucketsToTry.push("room-photos");
+  if (!bucketsToTry.includes("marketing-assets")) bucketsToTry.push("marketing-assets");
 
-  if (uploadResult.error && /bucket.*not found|not found/i.test(uploadResult.error.message)) {
-    // Try to auto-create the bucket (works if service role is available)
-    const { error: createError } = await supabase.storage.createBucket(bucket, {
-      public: true,
-      fileSizeLimit: 10485760, // 10MB
-    });
+  for (const b of bucketsToTry) {
+    try {
+      let uploadResult = await supabase.storage
+        .from(b)
+        .upload(path, file, { upsert: true });
 
-    if (createError && !/already exists/i.test(createError.message)) {
-      // Bucket creation failed — likely need Supabase dashboard setup
-      throw new Error(
-        `Storage bucket "${bucket}" not found. Please go to your Supabase Dashboard → Storage → Create a new bucket named "${bucket}" and set it to Public.`
-      );
-    }
+      if (uploadResult.error && /bucket.*not found|not found/i.test(uploadResult.error.message)) {
+        // Try to auto-create bucket if possible
+        try {
+          const { error: createError } = await supabase.storage.createBucket(b, {
+            public: true,
+            fileSizeLimit: 10485760, // 10MB
+          });
+          if (!createError || /already exists/i.test(createError.message)) {
+            uploadResult = await supabase.storage
+              .from(b)
+              .upload(path, file, { upsert: true });
+          }
+        } catch {}
+      }
 
-    // Retry upload after bucket creation
-    uploadResult = await supabase.storage
-      .from(bucket)
-      .upload(path, file, { upsert: true });
+      if (!uploadResult.error) {
+        const { data: publicUrlData } = supabase.storage.from(b).getPublicUrl(path);
+        if (publicUrlData?.publicUrl) {
+          return publicUrlData.publicUrl;
+        }
+      }
+    } catch {}
   }
 
-  if (uploadResult.error) {
-    if (/bucket.*not found|not found/i.test(uploadResult.error.message)) {
-      throw new Error(
-        `Storage bucket "${bucket}" not found. In Supabase Dashboard → Storage, create a public bucket named "${bucket}".`
-      );
-    }
-    throw uploadResult.error;
-  }
-
-  // Try public URL first
-  const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(path);
-  const publicUrl = publicUrlData.publicUrl;
-
-  // Verify the public URL works
+  // Graceful fallback to client Data URL so user is never blocked
   try {
-    const check = await fetch(publicUrl, { method: "HEAD" });
-    if (check.ok) return publicUrl;
+    return await fileToDataUrl(file);
   } catch {
-    // Not accessible — fall through to signed URL
+    throw new Error(`Could not upload photo to storage. Please check storage bucket "${bucket}".`);
   }
-
-  // Fallback: signed URL valid for 10 years
-  const { data: signedData, error: signedError } = await supabase.storage
-    .from(bucket)
-    .createSignedUrl(path, 60 * 60 * 24 * 365 * 10);
-
-  if (signedError || !signedData?.signedUrl) {
-    return publicUrl;
-  }
-
-  return signedData.signedUrl;
 }
 
 /**

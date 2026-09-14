@@ -282,6 +282,10 @@ export default function RoomManagementPage() {
       alert("Please select an accommodation property (Hotel, Motel, Lodge, Guest House) first. All rooms must belong to a property.");
       return;
     }
+    if (!roomPhotos || roomPhotos.length === 0) {
+      alert("Room photo is mandatory! Please upload at least one picture of the room before saving.");
+      return;
+    }
     await saveCommercialRoom({
       id: editingRoom?.id,
       companyId: currentCompany.id,
@@ -1100,11 +1104,16 @@ export default function RoomManagementPage() {
               </div>
 
               {/* Room Photos Section */}
-              <div className="space-y-2 rounded-xl border border-border-color bg-surface-elevated/40 p-3">
+              <div className={`space-y-2 rounded-xl border p-3 ${
+                roomPhotos.length === 0
+                  ? "border-amber-500/40 bg-amber-500/5 dark:bg-amber-950/20"
+                  : "border-border-color bg-surface-elevated/40"
+              }`}>
                 <div className="flex items-center justify-between">
                   <label className="font-bold text-foreground flex items-center gap-1.5">
                     <ImageIcon size={14} className="text-emerald-600" />
                     <span>Room Pictures ({roomPhotos.length})</span>
+                    <span className="text-red-500 text-xs font-semibold">* (Mandatory)</span>
                   </label>
                   <div className="flex items-center gap-2">
                     <input
@@ -1129,7 +1138,10 @@ export default function RoomManagementPage() {
                 </div>
 
                 {roomPhotos.length === 0 ? (
-                  <p className="text-[11px] text-muted italic">No pictures uploaded yet for this room.</p>
+                  <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
+                    <AlertCircle size={14} className="shrink-0" />
+                    <span>A room photo is strictly mandatory before saving. Please click Upload Photo above.</span>
+                  </div>
                 ) : (
                   <div className="grid grid-cols-4 gap-2 pt-1">
                     {roomPhotos.map((url, idx) => (
@@ -1170,7 +1182,7 @@ export default function RoomManagementPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={properties.length === 0 || !selectedPropertyId}
+                  disabled={properties.length === 0 || !selectedPropertyId || roomPhotos.length === 0 || uploadingPhoto}
                   className="rounded-lg bg-blue-600 px-5 py-1.5 font-semibold text-white shadow-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Save Room

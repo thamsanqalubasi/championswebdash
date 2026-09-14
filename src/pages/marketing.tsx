@@ -40,6 +40,8 @@ import {
   Tag,
   HelpCircle,
   X,
+  Upload,
+  Loader2,
 } from "lucide-react";
 
 export default function MarketingPage() {
@@ -94,6 +96,22 @@ export default function MarketingPage() {
 
   // Image Uploading State
   const [uploadingImage, setUploadingImage] = useState(false);
+  const adImageInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleAdImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    try {
+      const url = await uploadFileToBucket("marketing-assets", "ad-banners", file);
+      setAdForm((prev) => ({ ...prev, image_url: url }));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to upload banner image");
+    } finally {
+      setUploadingImage(false);
+      if (adImageInputRef.current) adImageInputRef.current.value = "";
+    }
+  };
 
   // Reload trigger
   const reload = () => setReloadKey((v) => v + 1);
@@ -1007,14 +1025,72 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-semibold text-muted mb-1 block">Banner Image URL</label>
-            <input
-              placeholder="https://images.unsplash.com/... or paste image link"
-              value={adForm.image_url || ""}
-              onChange={(e) => setAdForm({ ...adForm, image_url: e.target.value })}
-              className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none"
-            />
+          {/* Banner Image Graphic Upload & Preview */}
+          <div className="space-y-2 rounded-xl border border-border-color bg-surface-elevated/40 p-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <FileImage size={14} className="text-purple-600" />
+                <span>Banner Graphic / Visual Creative</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  ref={adImageInputRef}
+                  onChange={handleAdImageUpload}
+                  accept="image/*"
+                  className="hidden"
+                  id="ad-banner-file-upload"
+                />
+                <label
+                  htmlFor="ad-banner-file-upload"
+                  className={`inline-flex items-center gap-1.5 cursor-pointer rounded-lg bg-surface border border-border-color px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-surface-elevated transition ${
+                    uploadingImage ? "opacity-50 pointer-events-none" : ""
+                  }`}
+                >
+                  {uploadingImage ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                  <span>{uploadingImage ? "Uploading..." : "Upload File"}</span>
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <input
+                placeholder="Or paste direct image link (https://...)"
+                value={adForm.image_url || ""}
+                onChange={(e) => setAdForm({ ...adForm, image_url: e.target.value })}
+                className="w-full rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs text-foreground outline-none focus:border-purple-500"
+              />
+            </div>
+
+            {/* Live Preview */}
+            {adForm.image_url ? (
+              <div className="relative aspect-[21/9] w-full rounded-xl overflow-hidden border border-border-color bg-black/20 group">
+                <img
+                  src={adForm.image_url}
+                  alt="Ad Preview"
+                  className="h-full w-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-3 text-white">
+                  <span className="rounded-md bg-purple-600 px-2 py-0.5 text-[9px] font-bold w-fit uppercase mb-1">
+                    {adForm.badge_text || "Featured"}
+                  </span>
+                  <p className="text-sm font-bold truncate">{adForm.title || "Headline preview"}</p>
+                  <p className="text-[11px] text-white/80 truncate">{adForm.subtitle || "Subtitle preview"}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAdForm({ ...adForm, image_url: "" })}
+                  className="absolute top-2 right-2 rounded-md bg-black/70 p-1 text-white hover:bg-red-600 transition"
+                  title="Remove image"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-border-color py-4 text-center text-xs text-muted">
+                No image uploaded yet. Click <b>Upload File</b> or paste a URL above to preview your ad banner.
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

@@ -55,6 +55,7 @@ export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) 
   const [mealPlan, setMealPlan] = useState<MealPlan>("bed_breakfast");
   const [paymentMethod, setPaymentMethod] = useState("card");
   const [amountPaid, setAmountPaid] = useState<number>(0);
+  const [amountDifferenceReason, setAmountDifferenceReason] = useState("");
   const [notes, setNotes] = useState("");
   const [instantCode, setInstantCode] = useState(() => generateInstantBookingCode("BK"));
 
@@ -118,10 +119,23 @@ export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) 
   }
   const totalAmount = nights * nightlyRate;
 
+  useEffect(() => {
+    if (totalAmount > 0 && amountPaid === 0) {
+      setAmountPaid(totalAmount);
+    }
+  }, [totalAmount]);
+
   const handleInstantSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!guestName || !guestPhone || !guestIdNumber || !selectedRoom) {
-      setErrorMsg("Please fill in all required guest information and select an available room.");
+    if (!guestName.trim() || !guestPhone.trim() || !guestEmail.trim() || !selectedRoom) {
+      setErrorMsg("Please fill in Guest Name, Phone, Email, and select an available room.");
+      return;
+    }
+
+    const effectivePaid = amountPaid > 0 ? amountPaid : totalAmount;
+    const isExact = Math.abs(effectivePaid - totalAmount) < 0.01;
+    if (!isExact && !amountDifferenceReason.trim()) {
+      setErrorMsg("Please provide an explanation reason for the price difference before completing check-in.");
       return;
     }
 
@@ -129,6 +143,15 @@ export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) 
     setErrorMsg("");
 
     try {
+      const combinedNotes = [
+        notes.trim(),
+        !isExact
+          ? `[Payment Discrepancy Note: Expected ${symbol}${totalAmount}, Collected ${symbol}${effectivePaid}. Reason: ${amountDifferenceReason.trim()}]`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" | ");
+
       await createInstantCheckin({
         companyId: currentCompany.id,
         propertyId: selectedPropertyId,
@@ -139,18 +162,18 @@ export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) 
         guestName,
         guestPhone,
         guestEmail,
-        guestIdNumber,
+        guestIdNumber: guestIdNumber.trim() || "N/A",
         checkInDate,
         checkOutDate,
         mealPlan,
         nights,
         ratePerNight: nightlyRate,
         totalAmount,
-        depositAmount: amountPaid,
-        amountPaid: amountPaid > 0 ? amountPaid : totalAmount,
+        depositAmount: effectivePaid,
+        amountPaid: effectivePaid,
         paymentMethod,
         checkedInByName: currentCompanyUser.fullName,
-        notes,
+        notes: combinedNotes,
       });
 
       setSuccessMsg(`Guest ${guestName} checked in successfully into ${selectedRoom.roomNumber}! Booking Code: ${instantCode}`);
@@ -333,10 +356,10 @@ export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) 
             </div>
 
             {/* Guest Details */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <label className="mb-1 block text-xs font-medium text-foreground">
-                  Guest Full Name *
+                  Guest Full Name <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -350,11 +373,11 @@ export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) 
 
               <div>
                 <label className="mb-1 block text-xs font-medium text-foreground">
-                  Phone Number *
+                  Phone Number <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="tel"
-                  placeholder="+27 82 000 0000"
+                  placeholder="+264 81 000 0000"
                   value={guestPhone}
                   onChange={(e) => setGuestPhone(e.target.value)}
                   className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none"
@@ -364,7 +387,21 @@ export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) 
 
               <div>
                 <label className="mb-1 block text-xs font-medium text-foreground">
-                  ID / Passport Number *
+                  Guest Email Address <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  placeholder="guest@example.com"
+                  value={guestEmail}
+                  onChange={(e) => setGuestEmail(e.target.value)}
+                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-foreground">
+                  ID / Passport <span className="text-muted text-[10px]">(Optional)</span>
                 </label>
                 <input
                   type="text"
@@ -372,7 +409,6 @@ export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) 
                   value={guestIdNumber}
                   onChange={(e) => setGuestIdNumber(e.target.value)}
                   className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none"
-                  required
                 />
               </div>
             </div>
@@ -518,16 +554,64 @@ export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) 
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-foreground">
-                    Amount Collected Now ({currency})
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-foreground">
+                      Amount Collected Now ({currency}) <span className="text-red-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAmountPaid(totalAmount);
+                        setAmountDifferenceReason("");
+                      }}
+                      className="text-[10px] text-blue-600 hover:underline font-semibold"
+                    >
+                      Set Exact ({symbol}{totalAmount})
+                    </button>
+                  </div>
                   <input
                     type="number"
-                    placeholder={`Full: ${symbol} ${totalAmount}`}
+                    placeholder={`Expected: ${symbol} ${totalAmount}`}
                     value={amountPaid || ""}
                     onChange={(e) => setAmountPaid(Number(e.target.value))}
-                    className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none"
+                    className={`w-full rounded-lg border px-3 py-2 text-sm font-bold focus:outline-none transition-all ${
+                      Math.abs(amountPaid - totalAmount) < 0.01
+                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-600 focus:border-emerald-600"
+                        : "border-rose-500 bg-rose-500/10 text-rose-600 focus:border-rose-600"
+                    }`}
+                    required
                   />
+
+                  {Math.abs(amountPaid - totalAmount) < 0.01 ? (
+                    <p className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                      <CheckCircle2 size={13} className="shrink-0" />
+                      <span>Exact amount collected in full. Approved for immediate check-in.</span>
+                    </p>
+                  ) : (
+                    <div className="mt-2 space-y-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-2.5">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-rose-600 dark:text-rose-400">
+                        <AlertCircle size={14} className="shrink-0" />
+                        <span>
+                          {amountPaid < totalAmount
+                            ? `Price Difference: Underpayment of ${symbol} ${(totalAmount - amountPaid).toLocaleString()} balance.`
+                            : `Price Difference: Overpayment / Extra buffer of ${symbol} ${(amountPaid - totalAmount).toLocaleString()}.`}
+                        </span>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-foreground mb-1">
+                          Explanation / Reason for Difference <span className="text-rose-600">* (Strictly Required)</span>
+                        </label>
+                        <textarea
+                          value={amountDifferenceReason}
+                          onChange={(e) => setAmountDifferenceReason(e.target.value)}
+                          placeholder="e.g. Approved seasonal discount, paying remaining balance at checkout, corporate voucher..."
+                          rows={2}
+                          required
+                          className="w-full rounded-lg border border-rose-300 dark:border-rose-800 bg-surface px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted outline-none focus:border-rose-600"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

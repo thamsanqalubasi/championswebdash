@@ -10,18 +10,51 @@ import { uploadFileToBucket } from "@/lib/storage";
 import { supabase } from "@/lib/supabase";
 import type { PropertyRow } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
-import { Plus, Pencil, Trash, ChevronRight, Building2, BedDouble, X, Layers, Image as ImageIcon, Loader2, Eye, Globe, EyeOff, MapPin, DollarSign, Calendar } from "lucide-react";
+import { Plus, Pencil, Trash, ChevronRight, Building2, BedDouble, X, Layers, Image as ImageIcon, Loader2, Eye, Globe, EyeOff, MapPin, DollarSign, Calendar, TrendingUp } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 import { useCurrency } from "@/lib/currency";
-
-
-
+import { PropertyStatsModal } from "@/components/property-stats-modal";
 
 const HOSPITALITY_TYPES = ["hotel", "motel", "lodge", "guest_house", "commercial"];
 const RENTAL_TYPES = ["house", "apartment", "storage"];
 function isHospitality(type: string) { return HOSPITALITY_TYPES.includes(type); }
 
-const emptyForm = { name: "", type: "lodge", address: "", city: "", country: "", status: "occupied", monthlyRent: 0, totalRooms: 10, defaultRoomPrice: 1200, defaultBedBreakfast: 1500, availableFrom: "" };
+const COUNTRIES_AND_CITIES: Record<string, string[]> = {
+  Namibia: [
+    "Windhoek", "Walvis Bay", "Swakopmund", "Oshakati", "Rundu",
+    "Katima Mulilo", "Otjiwarongo", "Keetmanshoop", "Tsumeb", "Gobabis",
+    "Ondangwa", "Lüderitz", "Mariental", "Rehoboth", "Henties Bay"
+  ],
+  "South Africa": [
+    "Johannesburg", "Cape Town", "Durban", "Pretoria", "Nelspruit (Mbombela)",
+    "Port Elizabeth (Gqeberha)", "Bloemfontein", "East London", "Polokwane",
+    "Kimberley", "George", "Rustenburg", "Pietermaritzburg"
+  ],
+  Zimbabwe: [
+    "Harare", "Bulawayo", "Victoria Falls", "Mutare", "Gweru", "Kwekwe", "Masvingo", "Chinhoyi"
+  ],
+  Botswana: [
+    "Gaborone", "Francistown", "Maun", "Kasane", "Palapye", "Selebi-Phikwe", "Lobatse"
+  ],
+  Zambia: [
+    "Lusaka", "Livingstone", "Ndola", "Kitwe", "Chipata", "Solwezi"
+  ],
+  Angola: [
+    "Luanda", "Lubango", "Benguela", "Huambo"
+  ],
+  Mozambique: [
+    "Maputo", "Beira", "Nampula", "Vilankulo"
+  ],
+  "United Kingdom": [
+    "London", "Manchester", "Birmingham", "Edinburgh"
+  ],
+  "United States": [
+    "New York", "Los Angeles", "Miami", "Chicago"
+  ],
+  Other: [],
+};
+
+const emptyForm = { name: "", type: "lodge", address: "", city: "Windhoek", country: "Namibia", status: "occupied", monthlyRent: 0, totalRooms: 10, defaultRoomPrice: 1200, defaultBedBreakfast: 1500, availableFrom: "" };
 
 export default function PropertiesPage() {
   const navigate = useNavigate();
@@ -93,11 +126,49 @@ export default function PropertiesPage() {
     return result;
   }, [properties, activeFilter, searchQuery]);
 
-  const openAdd = () => { setEditingId(null); setForm(emptyForm); setFormFloors(["Ground Floor","1st Floor","2nd Floor"]); setFormPhotos([]); setModalOpen(true); };
+  const [floorCount, setFloorCount] = useState<number>(3);
+  const [isCustomCity, setIsCustomCity] = useState(false);
+  const [statsProperty, setStatsProperty] = useState<PropertyRow | null>(null);
+
+  const availableCities = useMemo(() => {
+    return COUNTRIES_AND_CITIES[form.country] || [];
+  }, [form.country]);
+
+  const openAdd = () => {
+    setEditingId(null);
+    setForm({ ...emptyForm, country: "Namibia", city: "Windhoek" });
+    setFloorCount(3);
+    setFormFloors(["Ground Floor", "1st Floor", "2nd Floor"]);
+    setFormPhotos([]);
+    setIsCustomCity(false);
+    setModalOpen(true);
+  };
   const openEdit = (row: PropertyRow) => {
     setEditingId(row.id);
-    setForm({ name: row.name, type: row.type, address: row.address, city: row.city||"", country: row.country||"", status: row.status, monthlyRent: row.monthlyRent, totalRooms: row.totalRooms||0, defaultRoomPrice: row.defaultRoomPrice||0, defaultBedBreakfast: row.defaultBedBreakfast||0, availableFrom: row.availableFrom||"" });
-    setFormPhotos(row.photos||[]); fetchPropertyFloors(currentCompany.id, row.id).then(setFormFloors); setModalOpen(true);
+    const countryVal = row.country || "Namibia";
+    const cityVal = row.city || "";
+    const knownCities = COUNTRIES_AND_CITIES[countryVal] || [];
+    const isCustom = Boolean(cityVal && !knownCities.includes(cityVal));
+    setForm({
+      name: row.name,
+      type: row.type,
+      address: row.address,
+      city: cityVal,
+      country: countryVal,
+      status: row.status,
+      monthlyRent: row.monthlyRent,
+      totalRooms: row.totalRooms || 0,
+      defaultRoomPrice: row.defaultRoomPrice || 0,
+      defaultBedBreakfast: row.defaultBedBreakfast || 0,
+      availableFrom: row.availableFrom || "",
+    });
+    setIsCustomCity(isCustom);
+    setFormPhotos(row.photos || []);
+    fetchPropertyFloors(currentCompany.id, row.id).then((fls) => {
+      setFormFloors(fls);
+      setFloorCount(fls.length || 1);
+    });
+    setModalOpen(true);
   };
 
   const handleAddFloor = (e: React.FormEvent) => { e.preventDefault(); const t=newFloorInput.trim(); if(!t)return; if(!formFloors.includes(t))setFormFloors([...formFloors,t]); setNewFloorInput(""); };
@@ -121,24 +192,60 @@ export default function PropertiesPage() {
   };
 
   const onSave = async () => {
-    if(!form.name.trim())return; setSaving(true);
+    if (!form.name.trim() || !form.country.trim() || !form.city.trim()) {
+      alert("Please fill in Property Name, Country, and City.");
+      return;
+    }
+    setSaving(true);
     try {
-      const payload: Record<string,unknown> = { name:form.name, type:form.type, address:form.address, city:form.city, country:form.country, status:form.status, monthly_rent:form.monthlyRent, total_rooms:form.totalRooms, default_room_price:form.defaultRoomPrice, default_bed_breakfast:form.defaultBedBreakfast, available_from:form.availableFrom||null, company_id:currentCompany?.id&&isValidUuid(currentCompany.id)?currentCompany.id:null };
-      if(formPhotos.length>0)payload.photos=formPhotos;
-      let savedId=editingId;
-      if(editingId){
-        const {error:err}=await supabase.from("properties").update(payload).eq("id",editingId);
-        if(err){const sp={...payload};delete sp.available_from;delete sp.photos;delete sp.city;delete sp.country;const {error:e2}=await supabase.from("properties").update(sp).eq("id",editingId);if(e2)throw e2;}
+      const payload: Record<string, unknown> = {
+        name: form.name.trim(),
+        type: form.type,
+        address: form.address.trim(),
+        city: form.city.trim(),
+        country: form.country.trim(),
+        status: form.status,
+        monthly_rent: form.monthlyRent,
+        total_rooms: form.totalRooms,
+        default_room_price: form.defaultRoomPrice,
+        default_bed_breakfast: form.defaultBedBreakfast,
+        available_from: form.availableFrom || null,
+        company_id: currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null,
+        photos: formPhotos,
+      };
+      let savedId = editingId;
+      if (editingId) {
+        const { error: err } = await supabase.from("properties").update(payload).eq("id", editingId);
+        if (err) {
+          const sp = { ...payload };
+          delete sp.available_from;
+          const { error: e2 } = await supabase.from("properties").update(sp).eq("id", editingId);
+          if (e2) throw e2;
+        }
       } else {
-        savedId=generateUuid();
-        const {data,error:err}=await supabase.from("properties").insert({id:savedId,...payload}).select("id").maybeSingle();
-        if(err){const sp={...payload};delete sp.available_from;delete sp.photos;delete sp.city;delete sp.country;const {data:d2,error:e2}=await supabase.from("properties").insert({id:savedId,...sp}).select("id").maybeSingle();if(e2)throw e2;if(d2?.id)savedId=d2.id;}
-        else if(data?.id)savedId=data.id;
+        savedId = generateUuid();
+        const { data, error: err } = await supabase.from("properties").insert({ id: savedId, ...payload }).select("id").maybeSingle();
+        if (err) {
+          const sp = { ...payload };
+          delete sp.available_from;
+          const { data: d2, error: e2 } = await supabase.from("properties").insert({ id: savedId, ...sp }).select("id").maybeSingle();
+          if (e2) throw e2;
+          if (d2?.id) savedId = d2.id;
+        } else if (data?.id) {
+          savedId = data.id;
+        }
       }
-      if(savedId){await savePropertyFloors(currentCompany.id,savedId,formFloors);localStorage.setItem(`cc_prop_photos_${savedId}`,JSON.stringify(formPhotos));}
-      setModalOpen(false);reload();
-    } catch(e){alert(e instanceof Error?e.message:"Save failed");}
-    finally{setSaving(false);}
+      if (savedId) {
+        await savePropertyFloors(currentCompany.id, savedId, formFloors);
+        localStorage.setItem(`cc_prop_photos_${savedId}`, JSON.stringify(formPhotos));
+      }
+      setModalOpen(false);
+      reload();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleTogglePublish = async (row: PropertyRow) => {
@@ -272,11 +379,35 @@ export default function PropertiesPage() {
                         </td>
                         <td className="px-6 py-4"><div className="flex flex-col gap-1"><span className="font-semibold capitalize text-foreground">{row.type.replace(/_/g," ")}</span><span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase w-fit ${hosp?"bg-purple-500/10 text-purple-600":"bg-blue-500/10 text-blue-600"}`}>{hosp?"Hospitality":"Rental"}</span></div></td>
                         <td className="px-6 py-4 text-xs font-semibold text-muted">{hosp?`${row.totalRooms||0} Rooms`:"Single Unit"}</td>
-                        <td className="px-6 py-4"><StatusBadge status={row.status}/></td>
+                        <td className="px-6 py-4">
+                          {hosp ? (
+                            <div className="flex flex-col gap-1">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-[10px] font-bold text-blue-600 border border-blue-500/20 w-fit">
+                                <BedDouble size={11} /> {row.totalRooms || 0} Total Rooms
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setStatsProperty(row);
+                                }}
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-600 hover:text-purple-700 hover:underline"
+                              >
+                                <TrendingUp size={12} />
+                                <span>Stats &amp; Reports</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <StatusBadge status={row.status}/>
+                          )}
+                        </td>
                         <td className="px-6 py-4 text-right font-bold text-foreground">{hosp?`From ${formatCurrency(row.defaultRoomPrice||0)}/night`:`${formatCurrency(row.monthlyRent)}/mo`}</td>
                         <td className="px-6 py-4" onClick={(e)=>e.stopPropagation()}>
                           <TableRowActions>
                             <TableActionButton icon={Eye} label="View" onClick={()=>setViewTarget(row)}/>
+                            {hosp && (
+                              <TableActionButton icon={TrendingUp} label="Stats" onClick={()=>setStatsProperty(row)}/>
+                            )}
                             {!hosp && (
                               <TableActionButton icon={row.isPublished?EyeOff:Globe} label={row.isPublished?"Unpublish":"Publish"} onClick={()=>handleTogglePublish(row)} disabled={publishingId===row.id}/>
                             )}
@@ -334,13 +465,135 @@ export default function PropertiesPage() {
           <div><label className="mb-1 block font-medium text-foreground">Property Type *</label><select value={form.type} onChange={(e)=>setForm({...form,type:e.target.value})} className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"><optgroup label="Hospitality"><option value="hotel">Hotel</option><option value="lodge">Safari Lodge</option><option value="motel">Motel</option><option value="guest_house">Guest House / B&B</option><option value="commercial">Commercial Complex</option></optgroup><optgroup label="Rental"><option value="house">Residential House</option><option value="apartment">Apartment</option><option value="storage">Storage Unit</option></optgroup></select></div>
           <div><label className="mb-1 block font-medium text-foreground">Street Address</label><input value={form.address} onChange={(e)=>setForm({...form,address:e.target.value})} placeholder="Street address or Plot #" className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"/></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block font-medium text-foreground">City *</label><input value={form.city} onChange={(e)=>setForm({...form,city:e.target.value})} placeholder="e.g. Windhoek" className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"/></div>
-            <div><label className="mb-1 block font-medium text-foreground">Country *</label><input value={form.country} onChange={(e)=>setForm({...form,country:e.target.value})} placeholder="e.g. Namibia" className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"/></div>
+            <div>
+              <label className="mb-1 block font-medium text-foreground">Country *</label>
+              <select
+                value={form.country}
+                onChange={(e) => {
+                  const c = e.target.value;
+                  const firstCity = COUNTRIES_AND_CITIES[c]?.[0] || "";
+                  setForm({
+                    ...form,
+                    country: c,
+                    city: firstCity,
+                  });
+                  setIsCustomCity(c === "Other" || !firstCity);
+                }}
+                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"
+                required
+              >
+                <option value="">— Select Country First —</option>
+                {Object.keys(COUNTRIES_AND_CITIES).map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block font-medium text-foreground">City *</label>
+              <select
+                value={isCustomCity ? "__custom__" : form.city}
+                disabled={!form.country}
+                onChange={(e) => {
+                  if (e.target.value === "__custom__") {
+                    setIsCustomCity(true);
+                    setForm({ ...form, city: "" });
+                  } else {
+                    setIsCustomCity(false);
+                    setForm({ ...form, city: e.target.value });
+                  }
+                }}
+                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600 disabled:opacity-50"
+                required
+              >
+                <option value="">
+                  {!form.country ? "— Select Country First —" : "— Select City —"}
+                </option>
+                {availableCities.map((city) => (
+                  <option key={city} value={city}>
+                    {city}
+                  </option>
+                ))}
+                <option value="__custom__">+ Enter Custom City...</option>
+              </select>
+            </div>
           </div>
-          {HOSPITALITY_TYPES.includes(form.type)?(
+
+          {isCustomCity && (
+            <div>
+              <label className="mb-1 block font-medium text-foreground">Custom City Name *</label>
+              <input
+                value={form.city}
+                onChange={(e) => setForm({ ...form, city: e.target.value })}
+                placeholder="Type city or town name"
+                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"
+                required
+              />
+            </div>
+          )}
+
+          {HOSPITALITY_TYPES.includes(form.type) ? (
             <>
-              <div className="grid grid-cols-2 gap-3"><div><label className="mb-1 block font-medium text-foreground">Total Rooms</label><input type="number" value={form.totalRooms} onChange={(e)=>setForm({...form,totalRooms:Number(e.target.value)})} className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"/></div><div><label className="mb-1 block font-medium text-foreground">Default Rate ({currency}/Night)</label><input type="number" value={form.defaultRoomPrice} onChange={(e)=>setForm({...form,defaultRoomPrice:Number(e.target.value)})} className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"/></div></div>
-              <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3 space-y-2.5"><div className="flex items-center justify-between"><label className="font-bold text-foreground flex items-center gap-1.5"><Layers size={14} className="text-blue-600"/><span>Floors ({formFloors.length})</span></label></div><div className="flex flex-wrap gap-1.5">{formFloors.map((fl)=>(<span key={fl} className="inline-flex items-center gap-1 rounded-lg bg-surface border border-border-color px-2.5 py-1 text-xs font-semibold text-foreground"><span>{fl}</span><button type="button" onClick={()=>handleRemoveFloor(fl)} className="text-muted hover:text-red-500 rounded p-0.5"><X size={12}/></button></span>))}</div><div className="flex items-center gap-2 pt-1"><input type="text" value={newFloorInput} onChange={(e)=>setNewFloorInput(e.target.value)} onKeyDown={(e)=>{if(e.key==="Enter"){e.preventDefault();handleAddFloor(e);}}} placeholder="e.g. 3rd Floor" className="flex-1 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs text-foreground outline-none focus:border-blue-600"/><button type="button" onClick={handleAddFloor} disabled={!newFloorInput.trim()} className="flex items-center gap-1 rounded-lg bg-surface border border-border-color px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated disabled:opacity-40"><Plus size={13}/>Add</button></div></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block font-medium text-foreground">Total Rooms</label>
+                  <input
+                    type="number"
+                    value={form.totalRooms}
+                    onChange={(e) => setForm({ ...form, totalRooms: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block font-medium text-foreground">Default Rate ({currency}/Night)</label>
+                  <input
+                    type="number"
+                    value={form.defaultRoomPrice}
+                    onChange={(e) => setForm({ ...form, defaultRoomPrice: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block font-medium text-foreground">
+                  Number of Floors *
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={floorCount}
+                  onChange={(e) => {
+                    const count = Math.max(1, Number(e.target.value) || 1);
+                    setFloorCount(count);
+                    const generated: string[] = [];
+                    for (let i = 0; i < count; i++) {
+                      if (i === 0) generated.push("Ground Floor");
+                      else if (i === 1) generated.push("1st Floor");
+                      else if (i === 2) generated.push("2nd Floor");
+                      else if (i === 3) generated.push("3rd Floor");
+                      else generated.push(`${i}th Floor`);
+                    }
+                    setFormFloors(generated);
+                  }}
+                  placeholder="e.g. 2, 6, 13"
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"
+                  required
+                />
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {formFloors.map((fl) => (
+                    <span
+                      key={fl}
+                      className="rounded-md bg-surface border border-border-color px-2 py-0.5 text-[10px] font-medium text-muted"
+                    >
+                      {fl}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </>
           ):(
             <div className="space-y-3">
@@ -413,6 +666,12 @@ export default function PropertiesPage() {
 
       <PinPromptDialog isOpen={pinDialogForProperty} onClose={()=>{setPinDialogForProperty(false);setDeleteTarget(null);}} onSuccess={confirmDeleteProperty} title={`Delete "${deleteTarget?.name}"`} description="This will permanently remove this property." actionLabel="Verify PIN & Delete" actionVariant="danger"/>
       <PinPromptDialog isOpen={pinDialogForPhoto} onClose={()=>{setPinDialogForPhoto(false);setPhotoToDeleteIndex(null);}} onSuccess={confirmDeletePhoto} title="Delete Photo" description="Enter PIN to delete this photo." actionLabel="Verify PIN & Delete" actionVariant="danger"/>
+
+      <PropertyStatsModal
+        isOpen={statsProperty !== null}
+        onClose={() => setStatsProperty(null)}
+        property={statsProperty || { id: "", name: "", type: "" }}
+      />
     </ModulePage>
   );
 }
