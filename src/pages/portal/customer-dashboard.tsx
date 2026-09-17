@@ -293,6 +293,106 @@ export default function CustomerDashboardPage() {
         .order("name", { ascending: true })
         .limit(50);
       if (pubProps) setPublishedListings(pubProps);
+      // 3. Load published listings (Rooms, Properties, Agent Listings matching front index)
+      try {
+        const [roomsRes, pubPropsRes, agentRes] = await Promise.all([
+          supabase
+            .from("room_type_listings")
+            .select("id, property_id, display_name, property_name, type_key, adults_capacity, kids_capacity, total_rooms_of_type, price_room_only, price_bed_breakfast, price_full_board, photos, amenities, is_active, properties(city, country, address)")
+            .eq("is_active", true)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("properties")
+            .select("id, name, type, address, city, country, monthly_rent, photos, description, is_published, company_id")
+            .or("is_published.eq.true,is_published.is.null")
+            .order("name", { ascending: true })
+            .limit(50),
+          supabase
+            .from("agent_listings")
+            .select("*")
+            .eq("is_published", true)
+            .order("created_at", { ascending: false }),
+        ]);
+
+        const allUnified: any[] = [];
+
+        // Room Type Showcases
+        (roomsRes.data || []).forEach((r: any) => {
+          const photos = Array.isArray(r.photos)
+            ? r.photos
+            : typeof r.photos === "string"
+            ? (() => { try { return JSON.parse(r.photos); } catch { return []; } })()
+            : [];
+          const price = Number(r.price_room_only || r.price_bed_breakfast || r.price_full_board || 0);
+          allUnified.push({
+            id: r.id,
+            property_id: r.property_id || r.id,
+            name: r.display_name || r.property_name || "Hospitality Suite Showcase",
+            type: r.type_key || "room",
+            category_label: "Hospitality Showcase",
+            address: (r.properties as any)?.address || r.property_name || "",
+            city: (r.properties as any)?.city || "",
+            country: (r.properties as any)?.country || "Namibia",
+            monthly_rent: price,
+            rent_unit: "/night",
+            photos,
+            description: Array.isArray(r.amenities) ? `Amenities: ${r.amenities.join(", ")}` : "Verified hospitality room suite with modern amenities.",
+            listing_type: "room_showcase",
+          });
+        });
+
+        // Properties
+        (pubPropsRes.data || []).forEach((p: any) => {
+          const photos = Array.isArray(p.photos)
+            ? p.photos
+            : typeof p.photos === "string"
+            ? (() => { try { return JSON.parse(p.photos); } catch { return []; } })()
+            : [];
+          allUnified.push({
+            id: p.id,
+            property_id: p.id,
+            name: p.name,
+            type: p.type || "property",
+            category_label: "Rental Property",
+            address: p.address || "",
+            city: p.city || "",
+            country: p.country || "Namibia",
+            monthly_rent: Number(p.monthly_rent || 0),
+            rent_unit: "/mo",
+            photos,
+            description: p.description || `${p.name} - verified managed rental property ready for occupancy.`,
+            listing_type: "property",
+          });
+        });
+
+        // Agent Listings
+        (agentRes.data || []).forEach((a: any) => {
+          const photos = Array.isArray(a.photos)
+            ? a.photos
+            : typeof a.photos === "string"
+            ? (() => { try { return JSON.parse(a.photos); } catch { return []; } })()
+            : [];
+          allUnified.push({
+            id: a.id,
+            property_id: a.id,
+            name: a.name,
+            type: a.type || "house",
+            category_label: a.listing_type === "sale" ? "Property For Sale" : "Agent Rental",
+            address: a.address || "",
+            city: a.city || "",
+            country: a.country || "Namibia",
+            monthly_rent: Number(a.price || 0),
+            rent_unit: a.listing_type === "sale" ? "" : "/mo",
+            photos,
+            description: a.description || `${a.name} - premium agent listing in ${a.city || "prime location"}.`,
+            listing_type: "agent_listing",
+          });
+        });
+
+        setPublishedListings(allUnified);
+      } catch (e) {
+        console.warn("Could not load published listings:", e);
+      }
 
       // 4. If assigned, load assigned property chat, maintenance, and POPs
       if (currentlyAssigned && tenantData?.property_id) {
@@ -1854,6 +1954,7 @@ export default function CustomerDashboardPage() {
                       {/* Type badge */}
                       <span className="absolute top-3 left-3 rounded-lg bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm px-2.5 py-1 text-[10px] font-bold text-gray-800 dark:text-slate-100 uppercase tracking-wider shadow-sm">
                         {listing.type ? listing.type.replace(/_/g, " ") : "Property"}
+                        {listing.category_label || (listing.type ? listing.type.replace(/_/g, " ") : "Property")}
                       </span>
                       {/* Photo count */}
                       {photos.length > 1 && (
@@ -1867,6 +1968,7 @@ export default function CustomerDashboardPage() {
                         <div className="absolute bottom-3 left-3">
                           <span className="rounded-xl bg-indigo-600 px-3 py-1 text-xs font-black text-white shadow-md">
                             NAD {rent.toLocaleString()}<span className="font-normal opacity-80 text-[10px]">/mo</span>
+                            NAD {rent.toLocaleString()}<span className="font-normal opacity-80 text-[10px]">{listing.rent_unit || "/mo"}</span>
                           </span>
                         </div>
                       )}

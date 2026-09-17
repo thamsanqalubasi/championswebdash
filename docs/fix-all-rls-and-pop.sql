@@ -75,3 +75,4 @@ ALTER TABLE public.users
   ADD COLUMN IF NOT EXISTS last_name text;
 
 SELECT 'Migration completed successfully! Boost RLS, POP columns and staff signatures are now active.' AS status;
+
