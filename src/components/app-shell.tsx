@@ -3,6 +3,7 @@ import { useState, useEffect, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { ThemeToggle } from "./theme-toggle";
 import { CheckinModal } from "./checkin-modal";
+import { NotificationsBell } from "./notifications-modal";
 import { ALL_ROLE_CAPABILITIES, fetchReminderThreshold, saveReminderThreshold, fetchRolePermissions, saveRolePermissions } from "@/lib/data";
 import {
   LayoutDashboard, Building2, Users, DollarSign, Wrench, ClipboardList,
@@ -385,6 +386,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
             {/* Action buttons on mobile/tablet/desktop */}
             <div className="flex items-center gap-1.5 sm:gap-2 ml-auto lg:order-last">
+              <NotificationsBell />
               <button
                 type="button"
                 onClick={() => setCheckinOpen(true)}

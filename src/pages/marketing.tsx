@@ -135,18 +135,64 @@ export default function MarketingPage() {
       }
 
       try {
-        const [adsRes, boostRes, propsRes, roomsRes, pubPropsRes] = await Promise.all([
+        const [adsRes, boostRes, propsRes, roomsRes, pubPropsRes, agentRes] = await Promise.all([
           supabase.from("marketing_ads").select("*").eq("company_id", compId).order("created_at", { ascending: false }),
           supabase.from("marketing_boosted_listings").select("*").eq("company_id", compId).order("created_at", { ascending: false }),
           supabase.from("properties").select("id, name, type, address, city, country, status, monthly_rent, photos, available_from").eq("company_id", compId).order("name"),
-          supabase.from("room_type_listings").select("id, property_id, display_name, property_name, price_room_only, price_bed_breakfast, photos, amenities").order("created_at", { ascending: false }),
-          supabase.from("properties").select("id, name, type, address, city, country, monthly_rent, photos, is_published").eq("company_id", compId).eq("is_published", true).order("name"),
+          supabase.from("room_type_listings").select("id, property_id, display_name, property_name, type_key, price_room_only, price_bed_breakfast, price_full_board, photos, amenities, is_active, company_id").or(`company_id.eq.${compId},company_id.is.null`).eq("is_active", true).order("created_at", { ascending: false }),
+          supabase.from("properties").select("id, name, type, address, city, country, monthly_rent, photos, is_published, company_id").or(`company_id.eq.${compId},company_id.is.null`).eq("is_published", true).order("name"),
+          supabase.from("agent_listings").select("id, name, type, address, city, country, price, photos, is_published, company_id").or(`company_id.eq.${compId},company_id.is.null`).eq("is_published", true).order("created_at", { ascending: false }),
         ]);
 
         if (!cancelled) {
           if (adsRes.data) setAds(adsRes.data as MarketingAd[]);
           if (boostRes.data) setBoostedListings(boostRes.data as MarketingBoostedListing[]);
-          if (pubPropsRes.data) setPublishedListingsForBoost(pubPropsRes.data);
+
+          // Unify all published posts (Showcase Posts, Properties, Agent Listings)
+          const roomItems = (roomsRes.data || []).map((r: any) => ({
+            id: r.id,
+            listing_type: "room_type" as const,
+            name: r.display_name || "Room Type Showcase",
+            subtitle: r.property_name ? `At ${r.property_name}` : "Hospitality Suite",
+            type: r.type_key || "room",
+            categoryLabel: "Showcase Post",
+            price: Number(r.price_room_only || r.price_bed_breakfast || r.price_full_board || 0),
+            priceUnit: "/night",
+            city: "",
+            country: "",
+            photos: Array.isArray(r.photos) ? r.photos : typeof r.photos === "string" ? (() => { try { return JSON.parse(r.photos); } catch { return []; } })() : [],
+          }));
+
+          const propItems = (pubPropsRes.data || []).map((p: any) => ({
+            id: p.id,
+            listing_type: "property" as const,
+            name: p.name,
+            subtitle: p.address ? `${p.address}, ${p.city || ""}` : p.city || "",
+            type: p.type || "property",
+            categoryLabel: "Rental Property",
+            price: Number(p.monthly_rent || 0),
+            priceUnit: "/mo",
+            city: p.city || "",
+            country: p.country || "",
+            photos: Array.isArray(p.photos) ? p.photos : typeof p.photos === "string" ? (() => { try { return JSON.parse(p.photos); } catch { return []; } })() : [],
+          }));
+
+          const agentItems = (agentRes.data || []).map((a: any) => ({
+            id: a.id,
+            listing_type: "agent_listing" as const,
+            name: a.name,
+            subtitle: a.address || a.city || "Agent Listing",
+            type: a.type || "property",
+            categoryLabel: "Agent Listing",
+            price: Number(a.price || 0),
+            priceUnit: "/mo",
+            city: a.city || "",
+            country: a.country || "",
+            photos: Array.isArray(a.photos) ? a.photos : typeof a.photos === "string" ? (() => { try { return JSON.parse(a.photos); } catch { return []; } })() : [],
+          }));
+
+          setPublishedListingsForBoost([...roomItems, ...propItems, ...agentItems]);
+
           if (propsRes.data) {
             setProperties(propsRes.data);
             if (propsRes.data.length > 0 && !selectedFlyerPropId) {
@@ -268,21 +314,24 @@ export default function MarketingPage() {
         cities: boostGeoGlobal ? [] : boostGeoCities,
       };
 
-      const rows = boostSelectedIds.map((lid) => ({
-        company_id: currentCompany.id,
-        listing_type: "property" as const,
-        listing_id: lid,
-        boost_tier: boostForm.boost_tier,
-        badge_label: boostForm.badge_label || "🔥 Featured",
-        priority_score: boostForm.boost_tier === "premium_sponsor" ? 30 : boostForm.boost_tier === "featured" ? 20 : 10,
-        starts_at: boostForm.boost_start_date ? new Date(boostForm.boost_start_date).toISOString() : new Date().toISOString(),
-        expires_at: boostForm.boost_end_date ? new Date(boostForm.boost_end_date).toISOString() : new Date(Date.now() + 14 * 86400000).toISOString(),
-        is_active: true,
-        target_geo: geoPayload,
-        budget: boostForm.budget ? Number(boostForm.budget) : 0,
-        boost_start_date: boostForm.boost_start_date || null,
-        boost_end_date: boostForm.boost_end_date || null,
-      }));
+      const rows = boostSelectedIds.map((lid) => {
+        const selectedItem = publishedListingsForBoost.find((p) => p.id === lid);
+        return {
+          company_id: currentCompany.id,
+          listing_type: (selectedItem?.listing_type || "property") as "property" | "room_type" | "agent_listing",
+          listing_id: lid,
+          boost_tier: boostForm.boost_tier,
+          badge_label: boostForm.badge_label || "Sponsored",
+          priority_score: boostForm.boost_tier === "premium_sponsor" ? 30 : boostForm.boost_tier === "featured" ? 20 : 10,
+          starts_at: boostForm.boost_start_date ? new Date(boostForm.boost_start_date).toISOString() : new Date().toISOString(),
+          expires_at: boostForm.boost_end_date ? new Date(boostForm.boost_end_date).toISOString() : new Date(Date.now() + 14 * 86400000).toISOString(),
+          is_active: true,
+          target_geo: geoPayload,
+          budget: boostForm.budget ? Number(boostForm.budget) : 0,
+          boost_start_date: boostForm.boost_start_date || null,
+          boost_end_date: boostForm.boost_end_date || null,
+        };
+      });
 
       const { error } = await supabase.from("marketing_boosted_listings").insert(rows);
       if (error) throw error;
@@ -1227,7 +1276,7 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
             </div>
             {publishedListingsForBoost.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border-color p-6 text-center text-xs text-muted">
-                No published listings found. Publish a property first to boost it.
+                No published listings found. Publish a room showcase or property first to boost it.
               </div>
             ) : (
               <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollSnapType: "x mandatory" }}>
@@ -1235,15 +1284,15 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
                   const isSelected = boostSelectedIds.includes(p.id);
                   const photos = Array.isArray(p.photos) ? p.photos : (typeof p.photos === "string" ? (() => { try { return JSON.parse(p.photos); } catch { return []; } })() : []);
                   const thumb = photos[0] || null;
-                  const rent = Number(p.monthly_rent || 0);
+                  const price = Number(p.price || 0);
                   return (
                     <button
-                      key={p.id}
+                      key={`${p.listing_type}-${p.id}`}
                       type="button"
                       onClick={() => setBoostSelectedIds(prev =>
                         prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]
                       )}
-                      className={`relative flex-none w-52 rounded-2xl overflow-hidden text-left transition-all focus:outline-none shrink-0 ${
+                      className={`relative flex-none w-56 rounded-2xl overflow-hidden text-left transition-all focus:outline-none shrink-0 ${
                         isSelected
                           ? "ring-2 ring-amber-500 shadow-xl scale-[1.02]"
                           : "ring-1 ring-border-color hover:ring-amber-400/60 hover:shadow-md"
@@ -1251,7 +1300,7 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
                       style={{ scrollSnapAlign: "start" }}
                     >
                       {/* Full image card */}
-                      <div className="relative h-40 w-full bg-gradient-to-br from-amber-500/20 to-orange-600/20">
+                      <div className="relative h-44 w-full bg-gradient-to-br from-amber-500/20 to-orange-600/20">
                         {/* Fallback always rendered behind */}
                         <div className="absolute inset-0 flex items-center justify-center">
                           <Flame size={36} className="text-amber-500 opacity-40" />
@@ -1267,26 +1316,37 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
                           />
                         )}
                         {/* Dark gradient overlay */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
-                        {/* Type badge */}
-                        <span className="absolute top-2 left-2 rounded-md bg-black/60 backdrop-blur-sm px-2 py-0.5 text-[9px] font-bold text-white uppercase tracking-wide">
-                          {p.type?.replace(/_/g, " ") || "Property"}
-                        </span>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
+                        
+                        {/* Type & Category badge top-left */}
+                        <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
+                          <span className="rounded-md bg-amber-500 text-black font-black px-1.5 py-0.5 text-[8px] uppercase tracking-wider shadow-sm">
+                            {p.categoryLabel || "Published Post"}
+                          </span>
+                          <span className="rounded-md bg-black/60 backdrop-blur-sm px-1.5 py-0.5 text-[8px] font-bold text-white uppercase tracking-wide">
+                            {p.type?.replace(/_/g, " ") || "Property"}
+                          </span>
+                        </div>
+
                         {/* Selection tick */}
                         <div className={`absolute top-2 right-2 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-all ${
                           isSelected ? "border-amber-400 bg-amber-500" : "border-white/70 bg-black/40"
                         }`}>
                           {isSelected && <Check size={13} className="text-white" />}
                         </div>
+
                         {/* Name + price at bottom */}
                         <div className="absolute bottom-0 left-0 right-0 p-3">
                           <p className="text-white font-bold text-xs truncate leading-tight">{p.name}</p>
-                          {(p.city || p.country) && (
-                            <p className="text-white/60 text-[10px] truncate mt-0.5">{p.city || p.country}</p>
+                          {p.subtitle && (
+                            <p className="text-white/70 text-[10px] truncate mt-0.5">{p.subtitle}</p>
                           )}
-                          {rent > 0 && (
+                          {(p.city || p.country) && (
+                            <p className="text-white/60 text-[9px] truncate mt-0.5">{p.city || p.country}</p>
+                          )}
+                          {price > 0 && (
                             <p className="text-amber-300 font-black text-xs mt-1">
-                              NAD {rent.toLocaleString()}<span className="text-white/60 font-normal text-[10px]">/mo</span>
+                              NAD {price.toLocaleString()}<span className="text-white/60 font-normal text-[10px]">{p.priceUnit || "/mo"}</span>
                             </p>
                           )}
                         </div>
