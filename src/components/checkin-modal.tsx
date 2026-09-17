@@ -220,8 +220,9 @@ export function CheckinModal({ isOpen, onClose, onSuccess, initialPropertyId }: 
         onSuccess?.();
         onClose();
       }, 1800);
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Failed to execute check-in");
+    } catch (err: any) {
+      const msg = err?.message || err?.error_description || (err instanceof Error ? err.message : String(err));
+      setErrorMsg(msg || "Failed to execute check-in");
     } finally {
       setLoading(false);
     }

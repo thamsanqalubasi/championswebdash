@@ -275,6 +275,7 @@ export default function TenantsPage() {
   });
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [recordingPayment, setRecordingPayment] = useState(false);
+  const [detailsRequiredRent, setDetailsRequiredRent] = useState<number>(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -525,7 +526,7 @@ export default function TenantsPage() {
       const [tenantResult, paymentsResult, invoicesResult, sharesResult, contractsResult, proofsResult] = await Promise.allSettled([
         supabase
           .from("tenants")
-          .select("id, property_id, email, full_name, tenure_start_date, created_at, properties(name)")
+          .select("id, property_id, email, full_name, tenure_start_date, created_at, properties(id, name, monthly_rent)")
           .eq("id", tenantId)
           .maybeSingle(),
         supabase
@@ -660,6 +661,30 @@ export default function TenantsPage() {
       setDetailsPropertyId(String(tenant.property_id ?? ""));
       setDetailsPropertyName(String((tenant.properties as { name?: string } | null)?.name ?? "Unassigned"));
       setAssignmentDate(String(tenant.tenure_start_date ?? tenant.created_at ?? ""));
+
+      // Determine required rent from contract or assigned property
+      let reqRent = 0;
+      const activeContract = rawContracts.find((c: any) => c.status === "active") || rawContracts[0];
+      if (activeContract && Number(activeContract.monthly_rent) > 0) {
+        reqRent = Number(activeContract.monthly_rent);
+      } else {
+        const propMonthlyRent = Number((tenant.properties as any)?.monthly_rent || 0);
+        if (propMonthlyRent > 0) {
+          reqRent = propMonthlyRent;
+        } else if (tenant.property_id && isValidUuid(tenant.property_id)) {
+          try {
+            const { data: propRow } = await supabase
+              .from("properties")
+              .select("monthly_rent")
+              .eq("id", tenant.property_id)
+              .maybeSingle();
+            if (propRow && Number(propRow.monthly_rent) > 0) {
+              reqRent = Number(propRow.monthly_rent);
+            }
+          } catch {}
+        }
+      }
+      setDetailsRequiredRent(reqRent);
 
       setPayments(
         paymentRows.map((row) => ({
@@ -953,55 +978,125 @@ export default function TenantsPage() {
 
       const notesPayload = `Means: ${rentRecordForm.paymentMethod} | Ref: ${rentRecordForm.referenceNumber || "None"}${rentRecordForm.receiptUrl ? ` | Receipt: ${rentRecordForm.receiptUrl}` : ""} ${rentRecordForm.notes ? `| Notes: ${rentRecordForm.notes}` : ""}`.trim();
 
-      const { data: insertedPayment, error: payError } = await supabase
+      // Primary insertion: try with paid_months array as per schema
+      let insertedPayment: any = null;
+      let primaryError: any = null;
+
+      const primaryPayload: Record<string, any> = {
+        tenant_id: detailsRow.id,
+        property_id: propId,
+        payment_date: rentRecordForm.paymentDate,
+        amount_paid: Number(rentRecordForm.amountPaid),
+        paid_months: [rentRecordForm.paidMonth],
+        notes: notesPayload,
+      };
+      if (compId) primaryPayload.company_id = compId;
+      if (rentRecordForm.receiptUrl) {
+        primaryPayload.pop_url = rentRecordForm.receiptUrl;
+        primaryPayload.pop_uploaded_by_name = staffName;
+        primaryPayload.pop_uploaded_at = new Date().toISOString();
+      }
+      primaryPayload.payment_method = rentRecordForm.paymentMethod;
+
+      const { data: pData, error: pErr } = await supabase
         .from("tenant_rent_payments")
-        .insert({
-          tenant_id: detailsRow.id,
-          property_id: propId,
-          payment_date: rentRecordForm.paymentDate,
-          amount_paid: Number(rentRecordForm.amountPaid),
-          paid_month: rentRecordForm.paidMonth,
-          notes: notesPayload,
-          company_id: compId,
-        })
+        .insert(primaryPayload)
         .select()
         .single();
 
-      if (payError) throw payError;
-
-      if (rentRecordForm.receiptUrl) {
-        await supabase.from("tenant_payment_proofs").insert({
-          company_id: compId,
+      if (pErr) {
+        primaryError = pErr;
+        console.warn("Primary tenant_rent_payments insert failed, attempting minimal fallback:", pErr);
+        
+        // Fallback with minimal standard columns
+        const fallbackPayload: Record<string, any> = {
           tenant_id: detailsRow.id,
           property_id: propId,
-          customer_email: detailsRow.email,
-          customer_name: detailsRow.fullName,
-          amount: Number(rentRecordForm.amountPaid),
           payment_date: rentRecordForm.paymentDate,
-          reference_number: rentRecordForm.referenceNumber || `${rentRecordForm.paidMonth} Rent`,
-          document_url: rentRecordForm.receiptUrl,
-          notes: `Recorded by Staff: ${staffName} | Means: ${rentRecordForm.paymentMethod}${rentRecordForm.notes ? " | " + rentRecordForm.notes : ""}`,
-          status: "verified",
-        });
+          amount_paid: Number(rentRecordForm.amountPaid),
+          paid_months: [rentRecordForm.paidMonth],
+          notes: notesPayload,
+        };
+        if (compId) fallbackPayload.company_id = compId;
+
+        const { data: fbData, error: fbErr } = await supabase
+          .from("tenant_rent_payments")
+          .insert(fallbackPayload)
+          .select()
+          .single();
+
+        if (fbErr) {
+          // If paid_months array fails, try without paid_months column
+          console.warn("Fallback 1 failed, trying plain payment record:", fbErr);
+          const fallback2: Record<string, any> = {
+            tenant_id: detailsRow.id,
+            property_id: propId,
+            payment_date: rentRecordForm.paymentDate,
+            amount_paid: Number(rentRecordForm.amountPaid),
+            notes: notesPayload,
+          };
+          if (compId) fallback2.company_id = compId;
+
+          const { data: fb2Data, error: fb2Err } = await supabase
+            .from("tenant_rent_payments")
+            .insert(fallback2)
+            .select()
+            .single();
+
+          if (fb2Err) {
+            throw fb2Err || fbErr || primaryError;
+          }
+          insertedPayment = fb2Data;
+        } else {
+          insertedPayment = fbData;
+        }
+      } else {
+        insertedPayment = pData;
       }
 
-      await supabase.from("audit_log").insert({
-        user_email: user?.email || "admin@paimbabook.com",
-        user_name: staffName,
-        action: "rent_payment_recorded",
-        entity_type: "tenant_rent_payment",
-        entity_id: insertedPayment?.id && isValidUuid(insertedPayment.id) ? insertedPayment.id : null,
-        company_id: compId,
-        details: {
-          tenant_name: detailsRow.fullName,
-          tenant_id: detailsRow.id,
-          amount_paid: Number(rentRecordForm.amountPaid),
-          payment_date: rentRecordForm.paymentDate,
-          paid_month: rentRecordForm.paidMonth,
-          means: rentRecordForm.paymentMethod,
-          receipt_url: rentRecordForm.receiptUrl,
-        },
-      });
+      // Record in tenant_payment_proofs (non-fatal if proofs table has column variance)
+      if (rentRecordForm.receiptUrl) {
+        try {
+          await supabase.from("tenant_payment_proofs").insert({
+            company_id: compId,
+            tenant_id: detailsRow.id,
+            property_id: propId,
+            customer_email: detailsRow.email,
+            customer_name: detailsRow.fullName,
+            amount: Number(rentRecordForm.amountPaid),
+            payment_date: rentRecordForm.paymentDate,
+            reference_number: rentRecordForm.referenceNumber || `${rentRecordForm.paidMonth} Rent`,
+            document_url: rentRecordForm.receiptUrl,
+            notes: `Recorded by Staff: ${staffName} | Means: ${rentRecordForm.paymentMethod}${rentRecordForm.notes ? " | " + rentRecordForm.notes : ""}`,
+            status: "verified",
+          });
+        } catch (proofErr) {
+          console.warn("Could not save tenant_payment_proofs (non-fatal):", proofErr);
+        }
+      }
+
+      // Audit log (non-fatal)
+      try {
+        await supabase.from("audit_log").insert({
+          user_email: user?.email || "admin@paimbabook.com",
+          user_name: staffName,
+          action: "rent_payment_recorded",
+          entity_type: "tenant_rent_payment",
+          entity_id: insertedPayment?.id && isValidUuid(insertedPayment.id) ? insertedPayment.id : null,
+          company_id: compId,
+          details: {
+            tenant_name: detailsRow.fullName,
+            tenant_id: detailsRow.id,
+            amount_paid: Number(rentRecordForm.amountPaid),
+            payment_date: rentRecordForm.paymentDate,
+            paid_month: rentRecordForm.paidMonth,
+            means: rentRecordForm.paymentMethod,
+            receipt_url: rentRecordForm.receiptUrl,
+          },
+        });
+      } catch (auditErr) {
+        console.warn("Audit log insert failed (non-fatal):", auditErr);
+      }
 
       setRecordRentModalOpen(false);
       setRentRecordForm({
@@ -1017,8 +1112,9 @@ export default function TenantsPage() {
       await loadTenantDetails(detailsRow.id);
       reload();
       alert("Rent payment and POP recorded successfully!");
-    } catch (err) {
-      alert("Could not record payment: " + (err instanceof Error ? err.message : String(err)));
+    } catch (err: any) {
+      const msg = err?.message || err?.error_description || err?.details || (err instanceof Error ? err.message : JSON.stringify(err));
+      alert("Could not record payment: " + msg);
     } finally {
       setRecordingPayment(false);
     }
@@ -1853,7 +1949,13 @@ export default function TenantsPage() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setRecordRentModalOpen(true)}
+                    onClick={() => {
+                      setRentRecordForm((prev) => ({
+                        ...prev,
+                        amountPaid: prev.amountPaid || (detailsRequiredRent > 0 ? String(detailsRequiredRent) : ""),
+                      }));
+                      setRecordRentModalOpen(true);
+                    }}
                     className="flex items-center gap-1.5 rounded-xl bg-foreground px-4 py-2 text-xs font-bold text-surface hover:opacity-90 transition shadow-sm"
                   >
                     <Plus size={14} />
@@ -2171,14 +2273,38 @@ export default function TenantsPage() {
         title="Record Rent Payment & Proof of Payment"
       >
         <form onSubmit={handleSaveRentPayment} className="space-y-4">
-          <div className="rounded-lg bg-surface-elevated/40 p-3 border border-border-color/60 text-xs text-muted flex items-center justify-between">
-            <div>
-              <p className="font-bold text-foreground">{detailsRow?.fullName || "Tenant"}</p>
-              <p className="text-[11px] text-muted">{detailsPropertyName || "Assigned Property"}</p>
+          <div className="rounded-xl bg-surface-elevated/70 p-3.5 border border-border-color text-xs space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-bold text-foreground text-sm">{detailsRow?.fullName || "Tenant"}</p>
+                <p className="text-[11px] text-muted mt-0.5">
+                  Assigned Property: <span className="font-semibold text-foreground">{detailsPropertyName || "Assigned Property"}</span>
+                </p>
+              </div>
+              <span className="rounded-md bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                Staff Collection
+              </span>
             </div>
-            <span className="rounded-md bg-emerald-500/10 px-2 py-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-              Staff Collection
-            </span>
+
+            {/* Required Rent Display */}
+            <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-blue-800 dark:text-blue-300 block tracking-wider">Required Rent for Property</span>
+                <span className="text-base font-black text-blue-700 dark:text-blue-400">
+                  {detailsRequiredRent > 0 ? formatCurrency(detailsRequiredRent) : "None Set on Property"}
+                </span>
+              </div>
+              {detailsRequiredRent > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setRentRecordForm((prev) => ({ ...prev, amountPaid: String(detailsRequiredRent) }))}
+                  className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 text-xs font-bold shadow-xs transition"
+                  title="Auto-fill exact property rent"
+                >
+                  Fill Required ({formatCurrency(detailsRequiredRent)})
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

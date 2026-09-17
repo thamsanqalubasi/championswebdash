@@ -1,4 +1,3 @@
-import { useEffect, useMemo, useState } from "react";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { ModulePage } from "@/components/module-page";
 import { ErrorState, LoadingState } from "@/components/data-state";
@@ -6,10 +5,8 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
 import { isValidUuid } from "@/lib/data";
-import { fetchAdminInfo, fetchCompanyInfo, downloadPdfDocument } from "@/lib/storage";
 import { fetchAdminInfo, fetchCompanyInfo, downloadPdfDocument, uploadFileToBucket } from "@/lib/storage";
 import { DocumentShareModal } from "@/components/document-share-modal";
-import { Download, Mail, Eye } from "lucide-react";
 import { Modal } from "@/components/modal";
 import {
   Download,
@@ -66,14 +63,10 @@ import {
 } from "@/lib/data";
 import type { ProcurementRequest, ProcurementPipelineEvent } from "@/lib/types";
 
-type ScopeMode = "system" | "property";
-type PresentationMode = "summary" | "expanded";
-type TimePreset = "this_month" | "last_3" | "last_6" | "last_12" | "last_24" | "last_60";
 export type ScopeMode = "system" | "property";
 export type PresentationMode = "summary" | "expanded";
 export type TimePreset = "this_month" | "last_3" | "last_6" | "last_12" | "last_24" | "last_60";
 
-type BalanceSheetSummary = {
 export type BalanceSheetSummary = {
   rentCollected: number;
   maintenance: number;
@@ -476,6 +469,8 @@ type MaintenanceProjection = {
   created_by?: string;
   updated_by?: string;
   executed_by?: string;
+};
+
 const mapUrgencyToPriority = (u?: string): "low" | "normal" | "urgent" | "critical" => {
   if (u === "critical") return "critical";
   if (u === "high" || u === "urgent") return "urgent";
@@ -548,7 +543,6 @@ async function fetchMaintenanceRows(startDate: string, endDate: string): Promise
 }
 
 export default function FinanceAccountsPage() {
-  const { user, currentCompany } = useAuth();
   const { currentCompany, user, currentCompanyUser } = useAuth();
   const { format: formatCurrency } = useCurrency();
   const today = new Date();
@@ -563,19 +557,14 @@ export default function FinanceAccountsPage() {
   const [startDate, setStartDate] = useState(() => toIsoDate(firstDayOfMonth(new Date())));
   const [endDate, setEndDate] = useState(() => toIsoDate(new Date()));
   const [preset, setPreset] = useState<TimePreset>("this_month");
-  const [startDate, setStartDate] = useState(toIsoDate(firstDayOfMonth(today)));
-  const [endDate, setEndDate] = useState(toIsoDate(today));
   const [presentation, setPresentation] = useState<PresentationMode>("summary");
-  const [presentation, setPresentation] = useState<PresentationMode>("expanded");
   const [showSignature, setShowSignature] = useState(true);
   const [showAdminName, setShowAdminName] = useState(true);
   const [showExecutor, setShowExecutor] = useState(true);
   const [dailyMode, setDailyMode] = useState(false);
 
-  const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
   const [summary, setSummary] = useState<BalanceSheetSummary | null>(null);
   const [monthlyRows, setMonthlyRows] = useState<BalanceSheetMonthlyRow[]>([]);
-  const [transactionRows, setTransactionRows] = useState<BalanceSheetTransaction[]>([]);
   const [transactionRows, setTransactionRows] = useState<BalanceSheetTransactionRow[]>([]);
   const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null);
   const [adminInfo, setAdminInfo] = useState<AdminInfo | null>(null);
@@ -589,7 +578,7 @@ export default function FinanceAccountsPage() {
     if (saved) {
       try { return JSON.parse(saved); } catch {}
     }
-    return SEED_FINANCE_TRANSACTIONS;
+    return [];
   });
   const [txSearch, setTxSearch] = useState("");
   const [txTypeFilter, setTxTypeFilter] = useState("all");
@@ -633,16 +622,9 @@ export default function FinanceAccountsPage() {
   const [shareModalDoc, setShareModalDoc] = useState<{
     isOpen: boolean;
     documentTitle: string;
-    documentType?: string;
-    documentHtml?: string;
     documentType: string;
     documentHtml: string;
     documentUrl?: string;
-    fileNameBase?: string;
-    ownerName?: string;
-    ownerEmail?: string;
-    defaultSubject?: string;
-    defaultMessage?: string;
     fileNameBase: string;
     ownerName: string;
     ownerEmail: string;
@@ -667,7 +649,7 @@ export default function FinanceAccountsPage() {
     }
   }, [financeTransactions, currentCompany?.id]);
 
-  // Load properties & procurement requests
+  // Load properties, procurement requests, and finance transactions
   useEffect(() => {
     let cancelled = false;
     async function init() {
@@ -682,13 +664,6 @@ export default function FinanceAccountsPage() {
           setProperties(propData.map((row) => ({ id: String(row.id), name: String(row.name) })));
         }
 
-    async function loadProperties() {
-      const compId = currentCompany?.id;
-      let query = supabase.from("properties").select("id, name").order("name");
-      if (isValidUuid(compId)) {
-        query = query.eq("company_id", compId);
-      }
-      const { data, error: propsError } = await query;
         // Fetch Procurement Requests
         setLoadingProcurement(true);
         const pReqs = await fetchProcurementRequests(compId || undefined);
@@ -696,9 +671,6 @@ export default function FinanceAccountsPage() {
           setProcurementRequests(pReqs);
         }
 
-      if (propsError) {
-        if (!cancelled) setError(propsError.message);
-        return;
         // Fetch database finance transactions if table exists
         if (compId && isValidUuid(compId)) {
           const { data: dbTxs } = await supabase
@@ -743,25 +715,22 @@ export default function FinanceAccountsPage() {
       } finally {
         if (!cancelled) setLoadingProcurement(false);
       }
-
-      if (!cancelled) {
-        setProperties((data ?? []).map((row) => ({ id: String(row.id), name: String(row.name ?? "Unnamed") })));
-      }
     }
 
-    void loadProperties();
+    void init();
     return () => {
       cancelled = true;
     };
-    void init();
-    return () => { cancelled = true; };
   }, [currentCompany?.id]);
 
   const scopeLabel = useMemo(() => {
-    if (scope === "system") return "Company Portfolio (All Properties)";
+    if (scope === "system") {
+      return currentCompany?.name ? `${currentCompany.name} (Portfolio)` : "Company Portfolio (All Properties)";
+    }
     const selected = properties.find((item) => item.id === propertyId);
     return selected ? `Property: ${selected.name}` : "Property";
-  }, [scope, propertyId, properties]);
+  }, [scope, propertyId, properties, currentCompany]);
+
   const applyPreset = (key: TimePreset) => {
     setPreset(key);
     setDailyMode(false);
@@ -773,12 +742,6 @@ export default function FinanceAccountsPage() {
     setEndDate(end);
   };
 
-  const applyPreset = (nextPreset: TimePreset) => {
-    setPreset(nextPreset);
-    const end = new Date();
-    const start = addMonths(firstDayOfMonth(end), -presetMonthOffsets[nextPreset]);
-    setStartDate(toIsoDate(start));
-    setEndDate(toIsoDate(end));
   const applyDailyPreset = (dayOffset = 0) => {
     setDailyMode(true);
     const target = new Date(Date.now() + dayOffset * 86400000);
@@ -787,40 +750,17 @@ export default function FinanceAccountsPage() {
     setEndDate(dateStr);
   };
 
-  const generateBalanceSheet = async () => {
-    if (!startDate || !endDate) {
-      setError("Please select start and end date.");
-      return;
-  const scopeLabel = useMemo(() => {
-    if (scope === "property") {
-      const selected = properties.find((p) => p.id === propertyId);
-      return selected ? selected.name : "Selected property";
-    }
-    return currentCompany?.name ? `${currentCompany.name} (Portfolio)` : "Company Portfolio";
-  }, [scope, propertyId, properties, currentCompany]);
-
-    if (scope === "property" && !propertyId) {
-      setError("Please choose a property.");
-      return;
-    }
-
-    if (startDate > endDate) {
-      setError("Start date cannot be after end date.");
-      return;
-    }
-
   // Generate Balance Sheet Report
   const generateBalanceSheet = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const [company, admin, usersResult, payments, maintenanceRows, renovations, bills] = await Promise.all([
       if (!startDate || !endDate) throw new Error("Select both start and end dates.");
       if (startDate > endDate) throw new Error("Start date cannot be after end date.");
       if (scope === "property" && !propertyId) throw new Error("Select a property when scope is set to 'Specific property'.");
 
-      const [company, admin] = await Promise.all([
+      const [company, admin, usersResult, payments, maintenanceRows, renovations, bills] = await Promise.all([
         fetchCompanyInfo(),
         fetchAdminInfo(user?.email ?? undefined),
         supabase.from("users").select("id, email, first_name, last_name"),
@@ -852,11 +792,9 @@ export default function FinanceAccountsPage() {
       );
 
       const monthKeys = buildMonthRange(startDate, endDate);
-      const months = buildMonthRange(startDate, endDate);
       const monthMap = new Map<string, BalanceSheetMonthlyRow>();
       const transactions: BalanceSheetTransaction[] = [];
       monthKeys.forEach((month) => {
-      months.forEach((month) => {
         monthMap.set(month, {
           month,
           rentCollected: 0,
@@ -870,61 +808,15 @@ export default function FinanceAccountsPage() {
       });
 
       const companyPropertyIds = new Set(properties.map((p) => p.id));
-      // Query rent payments
-      let rentQuery = supabase
-        .from("tenant_rent_payments")
-        .select("payment_date, amount_paid, tenant_id, executed_by_name, created_by, recorded_by, collected_by, tenants(property_id, full_name)")
-        .gte("payment_date", startDate)
-        .lte("payment_date", endDate)
-        .order("payment_date");
-      const rentRes = await rentQuery;
-      const rentPayments = (rentRes.data || []).map((row: any) => ({
-        paymentDate: String(row.payment_date ?? ""),
-        amountPaid: Number(row.amount_paid ?? 0),
-        tenantPropertyId: String(row.tenants?.property_id ?? ""),
-        tenantName: String(row.tenants?.full_name ?? "Tenant"),
-        executor: String(row.executed_by_name ?? "") || pickExecutor(row),
-      }));
 
+      // 1. Process Payments / Rent Collected
       payments.forEach((row) => {
         const tenantPropertyId = row.tenantPropertyId;
         if (scope === "property" && tenantPropertyId !== propertyId) return;
         if (scope === "system" && companyPropertyIds.size > 0 && !companyPropertyIds.has(tenantPropertyId)) return;
-      // Query maintenance
-      const maintRes = await supabase
-        .from("maintenance_requests")
-        .select("property_id, actual_cost, cost, category, description, created_at, executed_by_name, maintainers(name)")
-        .gte("created_at", `${startDate}T00:00:00.000Z`)
-        .lte("created_at", `${endDate}T23:59:59.999Z`);
-      const maintenanceRows = maintRes.data || [];
-
-      // Query renovations
-      const renoRes = await supabase
-        .from("renovations")
-        .select("property_id, actual_cost, cost, created_at, executed_by_name")
-        .gte("created_at", `${startDate}T00:00:00.000Z`)
-        .lte("created_at", `${endDate}T23:59:59.999Z`);
-      const renovations = renoRes.data || [];
-
-      // Query bills
-      const billsRes = await supabase
-        .from("bills")
-        .select("property_id, amount, title, name, category, created_at, executed_by_name")
-        .gte("created_at", `${startDate}T00:00:00.000Z`)
-        .lte("created_at", `${endDate}T23:59:59.999Z`);
-      const bills = billsRes.data || [];
-
-      const transactions: BalanceSheetTransactionRow[] = [];
-
-      // 1. Process Rent
-      rentPayments.forEach((row) => {
-        if (scope === "property" && row.tenantPropertyId !== propertyId) return;
         const month = toMonthKey(row.paymentDate);
         if (!monthMap.has(month)) return;
         monthMap.get(month)!.rentCollected += Number(row.amountPaid ?? 0);
-        if (monthMap.has(month)) {
-          monthMap.get(month)!.rentCollected += row.amountPaid;
-        }
         transactions.push({
           date: row.paymentDate,
           month,
@@ -933,16 +825,12 @@ export default function FinanceAccountsPage() {
           details: `Rent payment accepted: ${row.tenantName}`,
           executor: resolveExecutorName(row.executor, adminLookup),
           amount: Number(row.amountPaid ?? 0),
-          category: "Rent Collection",
-          details: `Rent payment received from ${row.tenantName}`,
-          executor: row.executor || "Accounts",
-          amount: row.amountPaid,
           tax: 0,
           net: Number(row.amountPaid ?? 0),
-          net: row.amountPaid,
         });
       });
 
+      // 2. Process Maintenance
       maintenanceRows.forEach((row) => {
         const maintPropId = String(row.property_id ?? "");
         if (scope === "property" && maintPropId !== propertyId) return;
@@ -957,58 +845,34 @@ export default function FinanceAccountsPage() {
           : String((row.maintainers as { name?: string } | null)?.name ?? "-"));
         if (classifyMaintenanceCategory(String(row.category ?? "")) === "bills") {
           monthMap.get(month)!.bills += amount;
-      // 2. Process Maintenance
-      maintenanceRows.forEach((row: any) => {
-        const pId = String(row.property_id || "");
-        if (scope === "property" && pId !== propertyId) return;
-        const month = toMonthKey(String(row.created_at || ""));
-        const cost = Number(row.actual_cost || row.cost || 0);
-        const cat = humanize(String(row.category || "General Maintenance"));
-        const desc = String(row.description || "").trim();
-        const exec = String(row.executed_by_name || "") || pickExecutor(row) || (row.maintainers?.name || "Maintenance Staff");
-
-        if (classifyMaintenanceCategory(String(row.category || "")) === "bills") {
-          if (monthMap.has(month)) monthMap.get(month)!.bills += cost;
           transactions.push({
-            date: String(row.created_at ?? `${month}-01`),
-            date: String(row.created_at || "").slice(0, 10),
+            date: String(row.created_at ?? `${month}-01`).slice(0, 10),
             month,
             entryType: "expense",
             category: "Bill Payment",
             details: `Bill payment: ${categoryLabel}${description ? ` - ${description}` : ""}`,
             executor: resolveExecutorName(executor, adminLookup),
             amount,
-            category: "Utility / Bill",
-            details: `${cat}: ${desc || "Utility bill payment"}`,
-            executor: exec,
-            amount: cost,
             tax: 0,
             net: -amount,
-            net: -cost,
           });
         } else {
           monthMap.get(month)!.maintenance += amount;
-          if (monthMap.has(month)) monthMap.get(month)!.maintenance += cost;
           transactions.push({
-            date: String(row.created_at ?? `${month}-01`),
-            date: String(row.created_at || "").slice(0, 10),
+            date: String(row.created_at ?? `${month}-01`).slice(0, 10),
             month,
             entryType: "expense",
             category: "Work Order Fee",
             details: `Work order fee: ${categoryLabel}${description ? ` - ${description}` : ""}`,
             executor: resolveExecutorName(executor, adminLookup),
             amount,
-            category: "Work Order",
-            details: `${cat}: ${desc || "Maintenance repair execution"}`,
-            executor: exec,
-            amount: cost,
             tax: 0,
             net: -amount,
-            net: -cost,
           });
         }
       });
 
+      // 3. Process Renovations
       renovations.forEach((row) => {
         const renoPropId = String(row.property_id ?? "");
         if (scope === "property" && renoPropId !== propertyId) return;
@@ -1017,31 +881,20 @@ export default function FinanceAccountsPage() {
         if (!monthMap.has(month)) return;
         const amount = Number(row.actual_cost ?? row.cost ?? 0);
         monthMap.get(month)!.renovations += amount;
-      // 3. Process Renovations
-      renovations.forEach((row: any) => {
-        const pId = String(row.property_id || "");
-        if (scope === "property" && pId !== propertyId) return;
-        const month = toMonthKey(String(row.created_at || ""));
-        const cost = Number(row.actual_cost || row.cost || 0);
-        if (monthMap.has(month)) monthMap.get(month)!.renovations += cost;
         transactions.push({
-          date: String(row.created_at ?? `${month}-01`),
-          date: String(row.created_at || "").slice(0, 10),
+          date: String(row.created_at ?? `${month}-01`).slice(0, 10),
           month,
           entryType: "expense",
           category: "Renovation",
           details: `Renovation expense entry`,
           executor: resolveExecutorName(String((row as Record<string, unknown>).executed_by_name ?? "") || pickExecutor(row as Record<string, unknown>), adminLookup),
           amount,
-          details: `Capital renovation and facility improvement`,
-          executor: String(row.executed_by_name || "") || pickExecutor(row) || "Contractor",
-          amount: cost,
           tax: 0,
           net: -amount,
-          net: -cost,
         });
       });
 
+      // 4. Process Bills
       bills.forEach((row) => {
         const billPropId = String(row.property_id ?? "");
         if (scope === "property" && billPropId !== propertyId) return;
@@ -1052,50 +905,19 @@ export default function FinanceAccountsPage() {
         monthMap.get(month)!.bills += amount;
         const rowRecord = row as Record<string, unknown>;
         const billHint = humanize(String(rowRecord.title ?? rowRecord.name ?? rowRecord.category ?? "general bill"));
-      // 4. Process Bills
-      bills.forEach((row: any) => {
-        const pId = String(row.property_id || "");
-        if (scope === "property" && pId !== propertyId) return;
-        const month = toMonthKey(String(row.created_at || ""));
-        const cost = Number(row.amount || 0);
-        if (monthMap.has(month)) monthMap.get(month)!.bills += cost;
-        const hint = humanize(String(row.title || row.name || row.category || "Utility"));
         transactions.push({
-          date: String(row.created_at ?? `${month}-01`),
-          date: String(row.created_at || "").slice(0, 10),
+          date: String(row.created_at ?? `${month}-01`).slice(0, 10),
           month,
           entryType: "expense",
           category: "Bill Payment",
           details: `Bill payment: ${billHint}`,
           executor: resolveExecutorName(String((row as Record<string, unknown>).executed_by_name ?? "") || pickExecutor(row as Record<string, unknown>), adminLookup),
           amount,
-          category: "Recurring Bill",
-          details: `Bill disbursement: ${hint}`,
-          executor: String(row.executed_by_name || "") || pickExecutor(row) || "Finance",
-          amount: cost,
           tax: 0,
           net: -amount,
-          net: -cost,
         });
       });
 
-      monthMap.forEach((value) => {
-        value.tax = value.rentCollected * ((company.taxRate ?? 0) / 100);
-        value.totalExpenses = value.maintenance + value.bills + value.renovations;
-        value.netProfit = value.rentCollected - value.totalExpenses - value.tax;
-        if (value.tax > 0) {
-          transactions.push({
-            date: `${value.month}-28`,
-            month: value.month,
-            entryType: "tax",
-            category: "Tax",
-            details: `Tax accrued for ${value.month}`,
-            executor: "System",
-            amount: value.tax,
-            tax: value.tax,
-            net: -value.tax,
-          });
-        }
       // 5. Process Approved Daily Finance Transactions
       financeTransactions
         .filter((tx) => tx.status === "approved")
@@ -1137,6 +959,19 @@ export default function FinanceAccountsPage() {
         val.tax = val.rentCollected * ((company.taxRate ?? 0) / 100);
         val.totalExpenses = val.maintenance + val.bills + val.renovations;
         val.netProfit = val.rentCollected - val.totalExpenses - val.tax;
+        if (val.tax > 0) {
+          transactions.push({
+            date: `${val.month}-28`,
+            month: val.month,
+            entryType: "tax",
+            category: "Tax",
+            details: `Tax accrued for ${val.month}`,
+            executor: "System",
+            amount: val.tax,
+            tax: val.tax,
+            net: -val.tax,
+          });
+        }
       });
 
       const monthly = Array.from(monthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
@@ -1148,28 +983,17 @@ export default function FinanceAccountsPage() {
         tax: monthly.reduce((sum, row) => sum + row.tax, 0),
         totalExpenses: monthly.reduce((sum, row) => sum + row.totalExpenses, 0),
         netProfit: monthly.reduce((sum, row) => sum + row.netProfit, 0),
-        rentCollected: monthly.reduce((sum, r) => sum + r.rentCollected, 0),
-        maintenance: monthly.reduce((sum, r) => sum + r.maintenance, 0),
-        bills: monthly.reduce((sum, r) => sum + r.bills, 0),
-        renovations: monthly.reduce((sum, r) => sum + r.renovations, 0),
-        tax: monthly.reduce((sum, r) => sum + r.tax, 0),
-        totalExpenses: monthly.reduce((sum, r) => sum + r.totalExpenses, 0),
-        netProfit: monthly.reduce((sum, r) => sum + r.netProfit, 0),
       };
 
       setMonthlyRows(monthly);
       setTransactionRows(
         transactions
           .filter((row) => row.month && row.date)
-          .sort((a, b) => `${a.date}-${a.category}`.localeCompare(`${b.date}-${b.category}`)),
-          .filter((t) => t.date)
-          .sort((a, b) => b.date.localeCompare(a.date))
+          .sort((a, b) => `${a.date}-${a.category}`.localeCompare(`${b.date}-${b.category}`))
       );
       setSummary(reportSummary);
     } catch (loadError) {
       setError(getErrorMessage(loadError, "Could not generate balance sheet."));
-    } catch (err) {
-      setError(getErrorMessage(err, "Could not generate balance sheet statement."));
     } finally {
       setLoading(false);
     }
@@ -1196,14 +1020,12 @@ export default function FinanceAccountsPage() {
         transactionRows,
       },
       companyInfo,
-      adminInfo,
       adminInfo
     );
 
     const win = window.open("about:blank", "_blank");
     if (!win) {
       setError("Please allow popups to view/download PDF.");
-      setError("Please allow popups to view/print PDF.");
       return;
     }
 
@@ -1216,19 +1038,12 @@ export default function FinanceAccountsPage() {
         win.focus();
         win.print();
       }, 300);
-      setTimeout(() => { win.focus(); win.print(); }, 300);
     }
   };
 
   const getBalanceSheetHtml = () => {
     if (!summary || !companyInfo || !adminInfo) return "";
     return buildBalanceSheetHtml(
-  const handleDownloadBalanceSheetPdf = () => {
-    if (!summary || !companyInfo || !adminInfo) {
-      setError("Please generate the balance sheet first.");
-      return;
-    }
-    const html = buildBalanceSheetHtml(
       {
         scopeLabel,
         startDate,
@@ -1242,7 +1057,6 @@ export default function FinanceAccountsPage() {
         transactionRows,
       },
       companyInfo,
-      adminInfo,
       adminInfo
     );
   };
@@ -1260,26 +1074,9 @@ export default function FinanceAccountsPage() {
   const handleShareBalanceSheet = () => {
     const html = getBalanceSheetHtml();
     if (!html) {
-    if (!summary || !companyInfo || !adminInfo) {
       setError("Please generate the balance sheet first.");
       return;
     }
-    const html = buildBalanceSheetHtml(
-      {
-        scopeLabel,
-        startDate,
-        endDate,
-        presentation,
-        includeSignature: showSignature,
-        includeAdminName: showAdminName,
-        includeExecutor: showExecutor,
-        summary,
-        monthlyRows,
-        transactionRows,
-      },
-      companyInfo,
-      adminInfo
-    );
     const cleanScope = scopeLabel.replace(/[^a-zA-Z0-9_-]/g, "_");
     setShareModalDoc({
       isOpen: true,
@@ -1287,27 +1084,13 @@ export default function FinanceAccountsPage() {
       documentType: "Financial Statement",
       documentHtml: html,
       fileNameBase: `balance-sheet-${cleanScope}-${startDate}-to-${endDate}`,
-      ownerName: "Property Owner / Stakeholder",
       ownerName: "Property Stakeholder",
       ownerEmail: "",
-      defaultSubject: `Balance Sheet: ${scopeLabel} (${startDate} to ${endDate}) - ${companyInfo?.companyName || currentCompany?.name || "Paimbabook"}`,
-      defaultMessage: `Please find attached the official financial balance sheet statement for ${scopeLabel} covering the period ${startDate} to ${endDate}.`,
       defaultSubject: `Official Balance Sheet: ${scopeLabel} (${startDate} to ${endDate})`,
       defaultMessage: `Attached is the certified financial statement for ${scopeLabel} covering ${startDate} to ${endDate}.`,
     });
   };
 
-  return (
-    <ModulePage title="Finance Accounts" description="Generate balance sheets for whole system or specific properties.">
-      <section className="space-y-4 rounded-lg border border-border-color bg-surface p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <label className="mb-1 block text-sm text-muted">Scope</label>
-            <select value={scope} onChange={(event) => setScope(event.target.value as ScopeMode)} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm">
-              <option value="system">Company Portfolio (All Properties)</option>
-              <option value="property">Specific property</option>
-            </select>
-          </div>
   // Upload attachment for new transaction
   const handleUploadTxAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -1317,22 +1100,9 @@ export default function FinanceAccountsPage() {
       return;
     }
 
-          <div>
-            <label className="mb-1 block text-sm text-muted">Property</label>
-            <select value={propertyId} onChange={(event) => setPropertyId(event.target.value)} disabled={scope !== "property"} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm disabled:opacity-50">
-              <option value="">Select property...</option>
-              {properties.map((property) => (
-                <option key={property.id} value={property.id}>{property.name}</option>
-              ))}
-            </select>
-          </div>
     setUploadingAttachment(true);
     const newAttachments = [...txForm.attachments];
 
-          <div>
-            <label className="mb-1 block text-sm text-muted">Start date</label>
-            <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm" />
-          </div>
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       try {
@@ -1360,28 +1130,11 @@ export default function FinanceAccountsPage() {
       }
     }
 
-          <div>
-            <label className="mb-1 block text-sm text-muted">End date</label>
-            <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm" />
-          </div>
-        </div>
     setTxForm((prev) => ({ ...prev, attachments: newAttachments }));
     setUploadingAttachment(false);
     e.target.value = "";
   };
 
-        <div className="flex flex-wrap gap-2">
-          {(Object.keys(presetLabels) as TimePreset[]).map((key) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => applyPreset(key)}
-              className={`rounded-md border border-border-color px-3 py-1.5 text-xs ${preset === key ? "bg-surface-elevated font-medium" : "text-muted"}`}
-            >
-              {presetLabels[key]}
-            </button>
-          ))}
-        </div>
   // Save new transaction
   const handleSaveTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1390,14 +1143,6 @@ export default function FinanceAccountsPage() {
       return;
     }
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-          <div>
-            <label className="mb-1 block text-sm text-muted">Presentation</label>
-            <select value={presentation} onChange={(event) => setPresentation(event.target.value as PresentationMode)} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm">
-              <option value="summary">Summary</option>
-              <option value="expanded">Expanded</option>
-            </select>
-          </div>
     setSavingTx(true);
     try {
       const actorName = currentCompanyUser?.fullName || user?.email?.split("@")[0] || "Accounts Staff";
@@ -1405,13 +1150,6 @@ export default function FinanceAccountsPage() {
       const targetStaff = FINANCE_STAFF_HIERARCHY.find((s) => s.id === txForm.approvalRequestedTo);
       const isApproval = txForm.requestApproval;
 
-          <div>
-            <label className="mb-1 block text-sm text-muted">Show signature</label>
-            <select value={showSignature ? "yes" : "no"} onChange={(event) => setShowSignature(event.target.value === "yes")} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm">
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </div>
       const newTx: FinanceTransaction = {
         id: `tx-${Date.now()}`,
         companyId: currentCompany?.id,
@@ -1438,13 +1176,6 @@ export default function FinanceAccountsPage() {
         updatedAt: new Date().toISOString(),
       };
 
-          <div>
-            <label className="mb-1 block text-sm text-muted">Show admin name</label>
-            <select value={showAdminName ? "yes" : "no"} onChange={(event) => setShowAdminName(event.target.value === "yes")} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm">
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </div>
       // Try inserting into Supabase
       if (currentCompany?.id && isValidUuid(currentCompany.id)) {
         try {
@@ -1471,14 +1202,6 @@ export default function FinanceAccountsPage() {
         }
       }
 
-          <div>
-            <label className="mb-1 block text-sm text-muted">Show executor</label>
-            <select value={showExecutor ? "yes" : "no"} onChange={(event) => setShowExecutor(event.target.value === "yes")} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm">
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </div>
-        </div>
       setFinanceTransactions((prev) => [newTx, ...prev]);
       setRecordModalOpen(false);
       setTxForm({
@@ -1501,10 +1224,6 @@ export default function FinanceAccountsPage() {
       setSavingTx(false);
     }
   };
-
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => void generateBalanceSheet()} className="rounded-md border border-border-color bg-surface-elevated px-4 py-2 text-sm font-medium">
-            Generate Balance Sheet
   // Retroactive upload of proof to existing transaction in voucher modal
   const handleUploadRetroProof = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selectedTxForAudit) return;
@@ -1829,9 +1548,6 @@ export default function FinanceAccountsPage() {
             <Activity size={14} />
             <span>Daily Journal &amp; Transactions</span>
           </button>
-          <button type="button" onClick={() => openPdfWindow(false)} className="inline-flex items-center gap-1.5 rounded-md border border-border-color px-4 py-2 text-sm text-muted hover:bg-surface-elevated">
-            <Eye size={14} />
-            <span>View PDF</span>
 
           <button
             type="button"
@@ -1848,9 +1564,6 @@ export default function FinanceAccountsPage() {
             <FileSpreadsheet size={14} />
             <span>Daily Balance Sheet &amp; Statements</span>
           </button>
-          <button type="button" onClick={handleDownloadBalanceSheetPdf} className="inline-flex items-center gap-1.5 rounded-md border border-border-color px-4 py-2 text-sm text-muted hover:bg-surface-elevated">
-            <Download size={14} />
-            <span>Download as PDF</span>
 
           <button
             type="button"
@@ -1869,9 +1582,6 @@ export default function FinanceAccountsPage() {
               </span>
             )}
           </button>
-          <button type="button" onClick={handleShareBalanceSheet} className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface shadow hover:opacity-90">
-            <Mail size={14} />
-            <span>Email / Share</span>
 
           <button
             type="button"
@@ -1891,10 +1601,7 @@ export default function FinanceAccountsPage() {
             )}
           </button>
         </div>
-      </section>
 
-      {loading && <LoadingState label="Generating balance sheet..." />}
-      {!loading && error && <ErrorState message={error} onRetry={() => void generateBalanceSheet()} />}
         {/* Action Buttons */}
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <button
@@ -1909,26 +1616,6 @@ export default function FinanceAccountsPage() {
             <span>Generate Statement &amp; Report</span>
           </button>
 
-      {!loading && !error && summary && (
-        <section className="mt-4 space-y-4 rounded-lg border border-border-color bg-surface p-4">
-          <h3 className="text-base font-semibold">Generated Summary ({scopeLabel})</h3>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <article className="rounded-md border border-border-color bg-surface-elevated p-3">
-              <p className="text-xs text-muted">Rent Collected</p>
-              <p className="text-lg font-semibold text-green-600">{formatCurrency(summary.rentCollected)}</p>
-            </article>
-            <article className="rounded-md border border-border-color bg-surface-elevated p-3">
-              <p className="text-xs text-muted">Total Expenses</p>
-              <p className="text-lg font-semibold text-red-600">{formatCurrency(summary.totalExpenses)}</p>
-            </article>
-            <article className="rounded-md border border-border-color bg-surface-elevated p-3">
-              <p className="text-xs text-muted">Tax</p>
-              <p className="text-lg font-semibold text-red-600">{formatCurrency(summary.tax)}</p>
-            </article>
-            <article className="rounded-md border border-border-color bg-surface-elevated p-3">
-              <p className="text-xs text-muted">Net Profit</p>
-              <p className="text-lg font-semibold">{formatCurrency(summary.netProfit)}</p>
-            </article>
           <button
             type="button"
             onClick={() => setRecordModalOpen(true)}
@@ -1997,7 +1684,6 @@ export default function FinanceAccountsPage() {
             </div>
           </div>
 
-          {presentation === "expanded" && (
           {/* Search & Filter Toolbar */}
           <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-xs space-y-3">
             <div className="flex flex-wrap items-center gap-3">
@@ -2040,18 +1726,8 @@ export default function FinanceAccountsPage() {
 
             {/* Daily Journal Table */}
             <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse text-sm">
               <table className="min-w-full text-xs text-left">
                 <thead>
-                  <tr className="border-b border-border-color text-left text-muted">
-                    <th className="px-3 py-2 font-medium">Month</th>
-                    <th className="px-3 py-2 font-medium text-right">Rent</th>
-                    <th className="px-3 py-2 font-medium text-right">Maintenance</th>
-                    <th className="px-3 py-2 font-medium text-right">Bills</th>
-                    <th className="px-3 py-2 font-medium text-right">Renovations</th>
-                    <th className="px-3 py-2 font-medium text-right">Tax</th>
-                    <th className="px-3 py-2 font-medium text-right">Expenses</th>
-                    <th className="px-3 py-2 font-medium text-right">Net</th>
                   <tr className="border-b border-border-color text-muted font-bold">
                     <th className="py-2.5 px-3">Date</th>
                     <th className="py-2.5 px-3">Type</th>
@@ -2063,17 +1739,6 @@ export default function FinanceAccountsPage() {
                     <th className="py-2.5 px-3 text-center">Status</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {monthlyRows.map((row) => (
-                    <tr key={row.month} className="border-b border-border-color/60">
-                      <td className="px-3 py-3">{row.month}</td>
-                      <td className="px-3 py-3 text-right text-green-600 font-semibold">{formatCurrency(row.rentCollected)}</td>
-                      <td className="px-3 py-3 text-right text-red-600">{formatCurrency(row.maintenance)}</td>
-                      <td className="px-3 py-3 text-right text-red-600">{formatCurrency(row.bills)}</td>
-                      <td className="px-3 py-3 text-right text-red-600">{formatCurrency(row.renovations)}</td>
-                      <td className="px-3 py-3 text-right text-red-600">{formatCurrency(row.tax)}</td>
-                      <td className="px-3 py-3 text-right text-red-600 font-semibold">{formatCurrency(row.totalExpenses)}</td>
-                      <td className={`px-3 py-3 text-right font-medium ${row.netProfit >= 0 ? "text-green-600" : "text-red-500"}`}>{formatCurrency(row.netProfit)}</td>
                 <tbody className="divide-y divide-border-color/60">
                   {filteredJournalTransactions.length === 0 ? (
                     <tr>
@@ -2082,7 +1747,6 @@ export default function FinanceAccountsPage() {
                         No transactions found matching your filter criteria.
                       </td>
                     </tr>
-                  ))}
                   ) : (
                     filteredJournalTransactions.map((tx) => {
                       const isIncome = tx.type === "income";
@@ -2159,38 +1823,10 @@ export default function FinanceAccountsPage() {
                 </tbody>
               </table>
             </div>
-          )}
           </div>
         </div>
       )}
 
-          {presentation === "expanded" && (
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-border-color text-left text-muted">
-                    <th className="px-3 py-2 font-medium">Date</th>
-                    <th className="px-3 py-2 font-medium">Month</th>
-                    <th className="px-3 py-2 font-medium">Entry</th>
-                    <th className="px-3 py-2 font-medium">Details</th>
-                    {showExecutor && <th className="px-3 py-2 font-medium">Executed By</th>}
-                    <th className="px-3 py-2 font-medium text-right">Amount</th>
-                    <th className="px-3 py-2 font-medium text-right">Tax</th>
-                    <th className="px-3 py-2 font-medium text-right">Net Effect</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transactionRows.map((row, index) => (
-                    <tr key={`${row.date}-${row.category}-${index}`} className="border-b border-border-color/60">
-                      <td className="px-3 py-3">{row.date}</td>
-                      <td className="px-3 py-3">{row.month}</td>
-                      <td className="px-3 py-3">{row.category}</td>
-                      <td className="px-3 py-3">{row.details}</td>
-                      {showExecutor && <td className="px-3 py-3">{row.executor || "-"}</td>}
-                      <td className={`px-3 py-3 text-right font-semibold ${row.entryType === "income" ? "text-green-600" : "text-red-600"}`}>{formatCurrency(row.amount)}</td>
-                      <td className="px-3 py-3 text-right text-red-600">{formatCurrency(row.tax)}</td>
-                      <td className={`px-3 py-3 text-right font-semibold ${row.net >= 0 ? "text-green-600" : "text-red-600"}`}>{formatCurrency(row.net)}</td>
-                    </tr>
       {/* ========================================================================= */}
       {/* TAB 2: DAILY BALANCE SHEET & STATEMENTS (QUICKBOOKS STYLE)                */}
       {/* ========================================================================= */}
@@ -2256,8 +1892,6 @@ export default function FinanceAccountsPage() {
                   {properties.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
-                </tbody>
-              </table>
                 </select>
               </div>
 
@@ -2531,7 +2165,6 @@ export default function FinanceAccountsPage() {
               )}
             </section>
           )}
-        </section>
         </div>
       )}
 

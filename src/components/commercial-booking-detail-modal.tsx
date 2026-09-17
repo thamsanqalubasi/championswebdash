@@ -21,10 +21,11 @@ import {
   Receipt,
   Sparkles,
   Download,
+  KeyRound,
 } from "lucide-react";
 import { DocumentShareModal } from "@/components/document-share-modal";
 import { downloadPdfDocument } from "@/lib/storage";
-import { updateCommercialBooking } from "@/lib/data";
+import { updateCommercialBooking, checkinCommercialBooking } from "@/lib/data";
 import type {
   CommercialBooking,
   CommercialRoom,
@@ -48,7 +49,7 @@ export function CommercialBookingDetailModal({
   onClose,
   onSuccess,
 }: CommercialBookingDetailModalProps) {
-  const { currentCompany } = useAuth();
+  const { currentCompany, currentCompanyUser, user } = useAuth();
   const [isEditMode, setIsEditMode] = useState(false);
 
   // Form edit states
@@ -194,6 +195,25 @@ export function CommercialBookingDetailModal({
     }
   };
 
+  const [checkingIn, setCheckingIn] = useState(false);
+  const handleCheckInNow = async () => {
+    if (!booking) return;
+    setCheckingIn(true);
+    setErrorMsg("");
+    try {
+      await checkinCommercialBooking(booking.id, currentCompanyUser?.fullName || "Front Desk");
+      setSuccessMsg(`Guest ${booking.guestName} has been checked in successfully!`);
+      if (onSuccess) onSuccess();
+      setTimeout(() => {
+        onClose();
+      }, 1500);
+    } catch (err: any) {
+      setErrorMsg(err?.message || "Failed to check in guest.");
+    } finally {
+      setCheckingIn(false);
+    }
+  };
+
   if (!isOpen || !booking) return null;
 
   const currentRoom = rooms.find((r) => r.id === (isEditMode ? roomId : booking.roomId));
@@ -252,6 +272,19 @@ export function CommercialBookingDetailModal({
           </div>
 
           <div className="flex items-center gap-2">
+            {!isEditMode && (booking.bookingStatus === "confirmed" || (booking.bookingStatus as string) === "pending") && (
+              <button
+                type="button"
+                onClick={handleCheckInNow}
+                disabled={checkingIn}
+                className="flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2 text-xs font-bold text-emerald-600 hover:bg-emerald-500/20 transition shadow-xs disabled:opacity-50"
+                title="Check In Guest Now"
+              >
+                <KeyRound size={14} />
+                <span>{checkingIn ? "Checking In..." : "Check In Guest"}</span>
+              </button>
+            )}
+
             {!isEditMode ? (
               <button
                 type="button"
@@ -548,14 +581,28 @@ export function CommercialBookingDetailModal({
                 </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setIsEditMode(true)}
-                className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition"
-              >
-                <Pencil size={14} />
-                <span>Edit Guest & Booking Details</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {!isEditMode && (booking.bookingStatus === "confirmed" || (booking.bookingStatus as string) === "pending") && (
+                  <button
+                    type="button"
+                    onClick={handleCheckInNow}
+                    disabled={checkingIn}
+                    className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-emerald-700 transition disabled:opacity-50"
+                  >
+                    <KeyRound size={14} />
+                    <span>{checkingIn ? "Checking In..." : "Check In Guest"}</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setIsEditMode(true)}
+                  className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition"
+                >
+                  <Pencil size={14} />
+                  <span>Edit Guest & Booking Details</span>
+                </button>
+              </div>
             </div>
           </div>
         ) : (

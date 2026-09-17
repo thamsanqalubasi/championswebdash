@@ -1656,34 +1656,91 @@ export async function createInstantCheckin(params: {
 
   try {
     if (isValidUuid(params.companyId) && isValidUuid(params.propertyId) && isValidUuid(params.roomId)) {
+      const validPaymentMethod = ["cash", "card", "eft", "online", "company_account"].includes(params.paymentMethod)
+        ? params.paymentMethod
+        : "card";
+
+      const validPaymentStatus = params.amountPaid >= params.totalAmount
+        ? "paid"
+        : params.amountPaid > 0
+        ? "partial"
+        : "pending";
+
+      const primaryPayload: Record<string, any> = {
+        id: newBookingId,
+        company_id: params.companyId,
+        property_id: params.propertyId,
+        room_id: params.roomId,
+        booking_code: bookingCode,
+        guest_name: params.guestName,
+        guest_email: params.guestEmail || "",
+        guest_phone: params.guestPhone,
+        guest_id_number: params.guestIdNumber || "N/A",
+        meal_plan: params.mealPlan,
+        check_in_date: params.checkInDate.includes("T") ? params.checkInDate : `${params.checkInDate}T14:00:00Z`,
+        check_out_date: params.checkOutDate.includes("T") ? params.checkOutDate : `${params.checkOutDate}T10:00:00Z`,
+        actual_check_in: new Date().toISOString(),
+        nights: params.nights || 1,
+        rate_per_night: params.ratePerNight,
+        total_amount: params.totalAmount,
+        deposit_amount: params.depositAmount || params.amountPaid,
+        amount_paid: params.amountPaid,
+        booking_status: "checked_in",
+        payment_status: validPaymentStatus,
+        payment_method: validPaymentMethod,
+        checked_in_by_name: params.checkedInByName,
+        notes: params.notes || "",
+      };
+
       const { data, error } = await supabase
         .from("commercial_bookings")
-        .insert({
+        .insert(primaryPayload)
+        .select()
+        .single();
+
+      if (error) {
+        console.warn("Primary commercial_bookings insert failed:", error);
+
+        // Fallback for legacy tables that might use 'status' instead of 'booking_status'
+        const fallbackPayload: Record<string, any> = {
           id: newBookingId,
           company_id: params.companyId,
           property_id: params.propertyId,
           room_id: params.roomId,
           booking_code: bookingCode,
           guest_name: params.guestName,
-          guest_email: params.guestEmail || null,
+          guest_email: params.guestEmail || "",
           guest_phone: params.guestPhone,
-          guest_id_number: params.guestIdNumber || null,
+          guest_id_number: params.guestIdNumber || "N/A",
           meal_plan: params.mealPlan,
           check_in_date: params.checkInDate.slice(0, 10),
           check_out_date: params.checkOutDate.slice(0, 10),
           actual_check_in: new Date().toISOString(),
           status: "checked_in",
+          booking_status: "checked_in",
           rate_per_night: params.ratePerNight,
           total_amount: params.totalAmount,
           paid_amount: params.amountPaid,
-          payment_status: params.amountPaid >= params.totalAmount ? "paid" : "partially_paid",
-          payment_method: params.paymentMethod,
-          special_requests: params.notes || null,
-        })
-        .select()
-        .single();
+          amount_paid: params.amountPaid,
+          payment_status: validPaymentStatus,
+          payment_method: validPaymentMethod,
+          notes: params.notes || "",
+        };
 
-      if (!error && data) {
+        const { data: fbData, error: fbErr } = await supabase
+          .from("commercial_bookings")
+          .insert(fallbackPayload)
+          .select()
+          .single();
+
+        if (fbErr) {
+          console.error("Commercial booking insertion failed completely:", fbErr);
+          throw new Error(fbErr.message || error.message || "Failed to save booking to database.");
+        }
+        if (fbData) {
+          newBooking.id = fbData.id;
+        }
+      } else if (data) {
         newBooking.id = data.id;
       }
 
@@ -1693,7 +1750,8 @@ export async function createInstantCheckin(params: {
         .eq("id", params.roomId);
     }
   } catch (err) {
-    console.warn("Could not insert commercial booking in Supabase", err);
+    console.error("Could not insert commercial booking in Supabase", err);
+    throw err;
   }
 
   MOCK_COMMERCIAL_BOOKINGS.unshift(newBooking);
@@ -1729,20 +1787,36 @@ export async function verifyAndCheckinBookingCode(
       .maybeSingle();
 
     if (!fetchErr && dbBooking) {
-      await Promise.all([
-        supabase
+      const updatePayload: Record<string, any> = {
+        booking_status: "checked_in",
+        actual_check_in: new Date().toISOString(),
+        checked_in_by_name: actorName,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error: updateErr } = await supabase
+        .from("commercial_bookings")
+        .update(updatePayload)
+        .eq("id", dbBooking.id);
+
+      if (updateErr) {
+        await supabase
           .from("commercial_bookings")
           .update({
             status: "checked_in",
             actual_check_in: new Date().toISOString(),
+            checked_in_by_name: actorName,
             updated_at: new Date().toISOString(),
           })
-          .eq("id", dbBooking.id),
-        supabase
+          .eq("id", dbBooking.id);
+      }
+
+      if (dbBooking.room_id) {
+        await supabase
           .from("commercial_rooms")
           .update({ status: "occupied", updated_at: new Date().toISOString() })
-          .eq("id", dbBooking.room_id),
-      ]);
+          .eq("id", dbBooking.room_id);
+      }
 
       const booking: CommercialBooking = {
         id: dbBooking.id,
@@ -1887,6 +1961,80 @@ export async function extendCommercialBooking(params: {
   return true;
 }
 
+export async function checkinCommercialBooking(
+  bookingId: string,
+  actorName: string
+): Promise<boolean> {
+  let booking = MOCK_COMMERCIAL_BOOKINGS.find((b) => b.id === bookingId);
+
+  try {
+    if (isValidUuid(bookingId)) {
+      const { data: dbBooking } = await supabase
+        .from("commercial_bookings")
+        .select("*, properties(name), commercial_rooms(room_number)")
+        .eq("id", bookingId)
+        .maybeSingle();
+
+      if (dbBooking) {
+        const checkinPayload: Record<string, any> = {
+          booking_status: "checked_in",
+          actual_check_in: new Date().toISOString(),
+          checked_in_by_name: actorName,
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error: ciErr } = await supabase
+          .from("commercial_bookings")
+          .update(checkinPayload)
+          .eq("id", bookingId);
+
+        if (ciErr) {
+          await supabase
+            .from("commercial_bookings")
+            .update({
+              status: "checked_in",
+              actual_check_in: new Date().toISOString(),
+              checked_in_by_name: actorName,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", bookingId);
+        }
+
+        if (dbBooking.room_id) {
+          await supabase
+            .from("commercial_rooms")
+            .update({ status: "occupied", updated_at: new Date().toISOString() })
+            .eq("id", dbBooking.room_id);
+        }
+
+        await logAuditEvent({
+          companyId: dbBooking.company_id,
+          action: "CHECKIN_GUEST",
+          entityType: "commercial_booking",
+          entityId: bookingId,
+          entityName: `${dbBooking.guest_name} (${dbBooking.commercial_rooms?.room_number || "Room"})`,
+          actorName,
+          details: `Checked in guest ${dbBooking.guest_name} into room ${dbBooking.commercial_rooms?.room_number || ""}.`,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("Could not check in booking in Supabase", err);
+  }
+
+  if (booking) {
+    booking.bookingStatus = "checked_in";
+    booking.actualCheckIn = new Date().toISOString();
+    booking.checkedInByName = actorName;
+    const room = MOCK_COMMERCIAL_ROOMS.find((r) => r.id === booking!.roomId);
+    if (room) {
+      room.status = "occupied";
+    }
+  }
+
+  return true;
+}
+
 export async function checkoutCommercialBooking(
   bookingId: string,
   actorName: string
@@ -1902,20 +2050,35 @@ export async function checkoutCommercialBooking(
         .maybeSingle();
 
       if (dbBooking) {
-        await Promise.all([
-          supabase
+        const updatePayload: Record<string, any> = {
+          booking_status: "checked_out",
+          actual_check_out: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error: coErr } = await supabase
+          .from("commercial_bookings")
+          .update(updatePayload)
+          .eq("id", bookingId);
+
+        if (coErr) {
+          await supabase
             .from("commercial_bookings")
             .update({
               status: "checked_out",
               actual_check_out: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
-            .eq("id", bookingId),
-          supabase
+            .eq("id", bookingId);
+        }
+
+        if (dbBooking.room_id) {
+          await supabase
             .from("commercial_rooms")
             .update({ status: "cleaning_needed", updated_at: new Date().toISOString() })
-            .eq("id", dbBooking.room_id),
-          supabase
+            .eq("id", dbBooking.room_id);
+
+          await supabase
             .from("housekeeping_schedules")
             .insert({
               company_id: dbBooking.company_id,
@@ -1926,8 +2089,8 @@ export async function checkoutCommercialBooking(
               priority: "high",
               scheduled_date: new Date().toISOString().slice(0, 10),
               notes: `Turnover cleaning after checkout of ${dbBooking.guest_name}.`,
-            }),
-        ]);
+            });
+        }
       }
     }
   } catch (err) {
@@ -2016,7 +2179,6 @@ export async function updateCommercialBooking(
       if (updates.depositAmount !== undefined) payload.deposit_amount = updates.depositAmount;
       if (updates.amountPaid !== undefined) {
         payload.amount_paid = updates.amountPaid;
-        payload.paid_amount = updates.amountPaid;
       }
       if (updates.paymentMethod !== undefined) payload.payment_method = updates.paymentMethod;
       if (updates.paymentStatus !== undefined) payload.payment_status = updates.paymentStatus;
@@ -2027,7 +2189,14 @@ export async function updateCommercialBooking(
         payload.notes = updates.notes;
       }
 
-      await supabase.from("commercial_bookings").update(payload).eq("id", bookingId);
+      const { error: updErr } = await supabase.from("commercial_bookings").update(payload).eq("id", bookingId);
+      if (updErr) {
+        // Fallback for tables with status or paid_amount
+        const fbPayload = { ...payload };
+        if (updates.bookingStatus !== undefined) (fbPayload as any).status = updates.bookingStatus;
+        if (updates.amountPaid !== undefined) (fbPayload as any).paid_amount = updates.amountPaid;
+        await supabase.from("commercial_bookings").update(fbPayload).eq("id", bookingId);
+      }
 
       // Handle room re-assignment
       if (updates.roomId && updates.roomId !== booking?.roomId) {

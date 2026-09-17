@@ -24,6 +24,7 @@ import {
 import {
   fetchCommercialBookings,
   fetchCommercialRooms,
+  checkinCommercialBooking,
   checkoutCommercialBooking,
 } from "@/lib/data";
 import type { CommercialBooking, CommercialRoom } from "@/lib/types";
@@ -154,6 +155,17 @@ export default function CommercialBookingsPage() {
   useEffect(() => {
     loadData();
   }, [currentCompany.id]);
+
+  const handleCheckIn = async (booking: CommercialBooking) => {
+    if (
+      window.confirm(
+        `Confirm front desk check-in for ${booking.guestName} into Room ${booking.roomNumber}?`
+      )
+    ) {
+      await checkinCommercialBooking(booking.id, currentCompanyUser.fullName);
+      loadData();
+    }
+  };
 
   const handleCheckout = async (booking: CommercialBooking) => {
     if (
@@ -390,6 +402,21 @@ export default function CommercialBookingsPage() {
                             <Eye size={13} />
                             <span className="hidden sm:inline">Details</span>
                           </button>
+
+                          {!isStayActive && (b.bookingStatus === "confirmed" || (b.bookingStatus as string) === "pending") && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCheckIn(b);
+                              }}
+                              className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-600 hover:bg-emerald-500/20 shadow-xs transition"
+                              title="Check In Guest Now"
+                            >
+                              <KeyRound size={13} />
+                              <span>Check In</span>
+                            </button>
+                          )}
 
                           {isStayActive && (
                             <>
