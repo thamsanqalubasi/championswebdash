@@ -146,7 +146,6 @@ export default function PortalLoginPage() {
         console.warn("Could not dispatch customer welcome email", emailErr);
       }
 
-      setSuccess("Account created! Please check your email to confirm your account, then sign in.");
       setSuccess("Account created! If email confirmation is required, please check your inbox, then sign in.");
     } catch (err: any) { setError(err.message || "Signup failed."); }
     setLoading(false);
@@ -170,10 +169,9 @@ export default function PortalLoginPage() {
 
           <div className="text-center mb-8">
             <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white mb-4 shadow-xs">{mode === "login" ? <LogIn size={24}/> : <UserPlus size={24}/>}</div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{mode === "login" ? "Welcome Back" : "Create Account"}</h1>
-            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">{mode === "login" ? "Sign in to view your enquiries and bookings" : "Join to book rooms and track enquiries"}</p>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{mode === "login" ? "Welcome Back" : "Create Tenant & Customer Account"}</h1>
-            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">{mode === "login" ? "Sign in to view your lease, enquiries and bookings" : "Join to access your tenancy, contracts and bookings"}</p>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">{mode === "login" ? "Sign in to access your lease, enquiries and bookings" : "Join to access your tenancy, contracts and bookings"}</p>
+            {mode === "login" && <p className="text-xs text-blue-600 dark:text-blue-400 mt-2 font-semibold">Sign in below ↓</p>}
           </div>
 
           {error && (<div className="mb-4 flex items-start gap-2 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/50 p-3 text-sm text-red-700 dark:text-red-300"><AlertCircle size={15} className="mt-0.5 shrink-0"/>{error}</div>)}

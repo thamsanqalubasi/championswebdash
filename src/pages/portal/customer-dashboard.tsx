@@ -215,11 +215,12 @@ export default function CustomerDashboardPage() {
       }
       setSession(data.session);
       const email = data.session.user.email!;
-      void loadAllPortalData(email);
+      const sessionData = data.session;
+      void loadAllPortalData(email, sessionData);
     });
   }, [navigate]);
 
-  async function loadAllPortalData(email: string) {
+  async function loadAllPortalData(email: string, sessionData?: any) {
     setLoading(true);
     try {
       // 1. Check if user is a tenant assigned to a property
@@ -296,7 +297,7 @@ export default function CustomerDashboardPage() {
       // 4. If assigned, load assigned property chat, maintenance, and POPs
       if (currentlyAssigned && tenantData?.property_id) {
         await Promise.all([
-          initAssignedPropertyChat(email, tenantData.property_id, tenantData.properties?.company_id),
+          initAssignedPropertyChat(email, tenantData.property_id, tenantData.properties?.company_id, sessionData),
           loadMaintenanceForProperty(tenantData.property_id),
           loadPaymentProofs(email),
         ]);
@@ -317,14 +318,20 @@ export default function CustomerDashboardPage() {
   }
 
   /* ---- Assigned Property Chat ---- */
-  async function initAssignedPropertyChat(email: string, propertyId: string, companyId?: string) {
+  async function initAssignedPropertyChat(email: string, propertyId: string, companyId?: string, sessionData?: any) {
     try {
+      const tenantName = sessionData?.user?.user_metadata?.full_name || email.split("@")[0] || "Tenant";
+      // Use type 'general' with a special message prefix since enquiries.type CHECK constraint
+      // only allows: rental_enquiry, room_booking, general
+      const CHAT_PREFIX = "[RESIDENT_CHAT]";
+
       const { data: existingChat } = await supabase
         .from("enquiries")
         .select("*")
         .eq("customer_email", email)
         .eq("property_id", propertyId)
-        .eq("type", "assigned_property_chat")
+        .eq("type", "general")
+        .ilike("message", `${CHAT_PREFIX}%`)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -333,20 +340,25 @@ export default function CustomerDashboardPage() {
         setPropertyChatEnquiry(existingChat);
         await loadPropertyChatMessages(existingChat.id);
       } else {
-        // Create initial thread
-        const { data: newChat } = await supabase
+        // Create initial resident chat thread
+        const { data: newChat, error: chatError } = await supabase
           .from("enquiries")
           .insert({
             customer_email: email,
-            customer_name: session?.user?.user_metadata?.full_name || email.split("@")[0] || "Tenant",
+            customer_name: tenantName,
             property_id: propertyId,
             company_id: companyId || null,
-            type: "assigned_property_chat",
+            type: "general",
             status: "open",
-            message: "Assigned Resident Communication Channel initiated.",
+            message: `${CHAT_PREFIX} Assigned Resident Communication Channel`,
           })
           .select()
           .single();
+
+        if (chatError) {
+          console.warn("Could not create resident chat thread:", chatError.message);
+          return;
+        }
 
         if (newChat) {
           setPropertyChatEnquiry(newChat);
@@ -354,7 +366,7 @@ export default function CustomerDashboardPage() {
             enquiry_id: newChat.id,
             sender_type: "staff",
             sender_name: "Property Management",
-            body: "Welcome to your assigned property resident chat! Feel free to message our operations team here anytime for assistance, maintenance guidance, or lease questions.",
+            body: `Welcome ${tenantName}! This is your direct resident chat with property management. Message us anytime for assistance, lease queries, or maintenance guidance.`,
           });
           await loadPropertyChatMessages(newChat.id);
         }
@@ -399,7 +411,7 @@ export default function CustomerDashboardPage() {
         setPropertyChatText("");
       }
     } catch (err) {
-      alert("Could not send message: " + (err instanceof Error ? err.message : String(err)));
+      console.warn("Could not send message:", err);
     } finally {
       setSendingPropertyChat(false);
     }
@@ -1081,6 +1093,20 @@ export default function CustomerDashboardPage() {
             </span>
           )}
         </button>
+
+        {isAssigned && (
+          <button
+            onClick={() => { setActiveTab("tenancy"); setTenancySubTab("chat"); }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition ${
+              activeTab === "tenancy"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-950/60"
+            }`}
+          >
+            <Building2 size={16} />
+            <span>Assigned Residence</span>
+          </button>
+        )}
       </div>
 
       {/* ========================================================================= */}

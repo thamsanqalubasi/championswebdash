@@ -72,16 +72,23 @@ export default function MarketingPage() {
     is_active: true,
   });
 
-  // Boost Modal State
+  // Boost Modal State (redesigned)
   const [boostModalOpen, setBoostModalOpen] = useState(false);
   const [submittingBoost, setSubmittingBoost] = useState(false);
+  const [boostSelectedIds, setBoostSelectedIds] = useState<string[]>([]);
   const [boostForm, setBoostForm] = useState({
-    listing_type: "property" as "property" | "room_type" | "agent_listing",
-    listing_id: "",
     boost_tier: "featured" as BoostTier,
     badge_label: "🔥 Featured",
-    days: 14,
+    budget: "",
+    boost_start_date: new Date().toISOString().slice(0, 10),
+    boost_end_date: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
   });
+  const [boostGeoGlobal, setBoostGeoGlobal] = useState(true);
+  const [boostGeoCountries, setBoostGeoCountries] = useState<string[]>([]);
+  const [boostGeoCities, setBoostGeoCities] = useState<string[]>([]);
+  const [boostGeoCountryFilter, setBoostGeoCountryFilter] = useState("");
+  const [boostGeoCityInput, setBoostGeoCityInput] = useState("");
+  const [publishedListingsForBoost, setPublishedListingsForBoost] = useState<any[]>([]);
 
   // Flyer Studio State
   const [selectedFlyerPropId, setSelectedFlyerPropId] = useState<string>("");
@@ -128,16 +135,18 @@ export default function MarketingPage() {
       }
 
       try {
-        const [adsRes, boostRes, propsRes, roomsRes] = await Promise.all([
+        const [adsRes, boostRes, propsRes, roomsRes, pubPropsRes] = await Promise.all([
           supabase.from("marketing_ads").select("*").eq("company_id", compId).order("created_at", { ascending: false }),
           supabase.from("marketing_boosted_listings").select("*").eq("company_id", compId).order("created_at", { ascending: false }),
           supabase.from("properties").select("id, name, type, address, city, country, status, monthly_rent, photos, available_from").eq("company_id", compId).order("name"),
           supabase.from("room_type_listings").select("id, property_id, display_name, property_name, price_room_only, price_bed_breakfast, photos, amenities").order("created_at", { ascending: false }),
+          supabase.from("properties").select("id, name, type, address, city, country, monthly_rent, photos, is_published").eq("company_id", compId).eq("is_published", true).order("name"),
         ]);
 
         if (!cancelled) {
           if (adsRes.data) setAds(adsRes.data as MarketingAd[]);
           if (boostRes.data) setBoostedListings(boostRes.data as MarketingBoostedListing[]);
+          if (pubPropsRes.data) setPublishedListingsForBoost(pubPropsRes.data);
           if (propsRes.data) {
             setProperties(propsRes.data);
             if (propsRes.data.length > 0 && !selectedFlyerPropId) {
@@ -244,34 +253,46 @@ export default function MarketingPage() {
     }
   };
 
-  // Handlers for Boost
+  // Handlers for Boost (redesigned - multi-select listings with geo targeting)
   const handleSaveBoost = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!boostForm.listing_id) {
-      alert("Please select a listing to boost.");
+    if (boostSelectedIds.length === 0) {
+      alert("Please select at least one published listing to boost.");
       return;
     }
     setSubmittingBoost(true);
     try {
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + Number(boostForm.days));
+      const geoPayload = {
+        global: boostGeoGlobal,
+        countries: boostGeoGlobal ? [] : boostGeoCountries,
+        cities: boostGeoGlobal ? [] : boostGeoCities,
+      };
 
-      const payload = {
+      const rows = boostSelectedIds.map((lid) => ({
         company_id: currentCompany.id,
-        listing_type: boostForm.listing_type,
-        listing_id: boostForm.listing_id,
+        listing_type: "property" as const,
+        listing_id: lid,
         boost_tier: boostForm.boost_tier,
         badge_label: boostForm.badge_label || "🔥 Featured",
         priority_score: boostForm.boost_tier === "premium_sponsor" ? 30 : boostForm.boost_tier === "featured" ? 20 : 10,
-        starts_at: new Date().toISOString(),
-        expires_at: expiresAt.toISOString(),
+        starts_at: boostForm.boost_start_date ? new Date(boostForm.boost_start_date).toISOString() : new Date().toISOString(),
+        expires_at: boostForm.boost_end_date ? new Date(boostForm.boost_end_date).toISOString() : new Date(Date.now() + 14 * 86400000).toISOString(),
         is_active: true,
-      };
+        target_geo: geoPayload,
+        budget: boostForm.budget ? Number(boostForm.budget) : 0,
+        boost_start_date: boostForm.boost_start_date || null,
+        boost_end_date: boostForm.boost_end_date || null,
+      }));
 
-      const { error } = await supabase.from("marketing_boosted_listings").insert(payload);
+      const { error } = await supabase.from("marketing_boosted_listings").insert(rows);
       if (error) throw error;
 
       setBoostModalOpen(false);
+      setBoostSelectedIds([]);
+      setBoostGeoGlobal(true);
+      setBoostGeoCountries([]);
+      setBoostGeoCities([]);
+      setBoostForm(prev => ({ ...prev, budget: "", boost_start_date: new Date().toISOString().slice(0, 10), boost_end_date: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10) }));
       reload();
     } catch (err: any) {
       alert(err?.message || "Failed to boost listing.");
@@ -1148,27 +1169,64 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
         </form>
       </Modal>
 
-      {/* MODAL: BOOST A LISTING */}
-      <Modal open={boostModalOpen} onClose={() => setBoostModalOpen(false)} title="Boost Showcased / Published Listing">
-        <form onSubmit={handleSaveBoost} className="space-y-4">
+      {/* MODAL: BOOST A LISTING (Redesigned - Visual Picker + Geo Targeting) */}
+      <Modal open={boostModalOpen} onClose={() => setBoostModalOpen(false)} title="🔥 Boost Published Listings">
+        <form onSubmit={handleSaveBoost} className="space-y-5">
+          {/* Step 1: Visual listing picker */}
           <div>
-            <label className="text-xs font-semibold text-muted mb-1 block">Select Listing to Boost *</label>
-            <select
-              required
-              value={boostForm.listing_id}
-              onChange={(e) => setBoostForm({ ...boostForm, listing_id: e.target.value })}
-              className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none"
-            >
-              <option value="">-- Choose a Property to Prioritize --</option>
-              {properties.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.type}) — R{Number(p.monthly_rent || 0).toLocaleString()}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-bold uppercase text-muted tracking-wide">Select Listings to Boost *</label>
+              {boostSelectedIds.length > 0 && (
+                <span className="text-xs font-bold text-amber-600">{boostSelectedIds.length} selected</span>
+              )}
+            </div>
+            {publishedListingsForBoost.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border-color p-6 text-center text-xs text-muted">
+                No published listings found. Publish a property first to boost it.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-64 overflow-y-auto pr-1">
+                {publishedListingsForBoost.map((p) => {
+                  const isSelected = boostSelectedIds.includes(p.id);
+                  const thumb = (p.photos || [])[0];
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setBoostSelectedIds(prev =>
+                        prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]
+                      )}
+                      className={`flex items-center gap-3 rounded-xl border-2 p-2.5 text-left transition ${
+                        isSelected
+                          ? "border-amber-500 bg-amber-500/10"
+                          : "border-border-color bg-surface hover:border-amber-400/50 hover:bg-surface-elevated"
+                      }`}
+                    >
+                      {thumb ? (
+                        <img src={thumb} alt={p.name} className="h-10 w-14 rounded-lg object-cover shrink-0" />
+                      ) : (
+                        <div className="h-10 w-14 rounded-lg bg-amber-100 dark:bg-amber-950/30 flex items-center justify-center shrink-0">
+                          <Flame size={16} className="text-amber-500" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-foreground truncate">{p.name}</p>
+                        <p className="text-[10px] text-muted truncate capitalize">{p.type?.replace(/_/g, " ")} • {p.city || p.country || ""}</p>
+                      </div>
+                      <div className={`h-4 w-4 rounded border-2 shrink-0 flex items-center justify-center ${
+                        isSelected ? "border-amber-500 bg-amber-500" : "border-gray-300 dark:border-slate-600"
+                      }`}>
+                        {isSelected && <Check size={10} className="text-white" />}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* Step 2: Boost tier + dates + budget */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-muted mb-1 block">Boost Tier</label>
               <select
@@ -1176,53 +1234,173 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
                 onChange={(e) => setBoostForm({ ...boostForm, boost_tier: e.target.value as any })}
                 className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none"
               >
-                <option value="standard">Standard Boost (+10 Ranking)</option>
-                <option value="featured">Featured Boost (+20 Ranking)</option>
+                <option value="standard">Standard (+10 Ranking)</option>
+                <option value="featured">Featured (+20 Ranking)</option>
                 <option value="premium_sponsor">Premium Sponsor (+30 Ranking)</option>
               </select>
             </div>
-
             <div>
-              <label className="text-xs font-semibold text-muted mb-1 block">Boost Duration</label>
-              <select
-                value={boostForm.days}
-                onChange={(e) => setBoostForm({ ...boostForm, days: Number(e.target.value) })}
+              <label className="text-xs font-semibold text-muted mb-1 block">Budget (optional)</label>
+              <input
+                type="number"
+                min="0"
+                placeholder="e.g. 500"
+                value={boostForm.budget}
+                onChange={(e) => setBoostForm({ ...boostForm, budget: e.target.value })}
                 className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none"
-              >
-                <option value={7}>7 Days</option>
-                <option value={14}>14 Days (2 Weeks)</option>
-                <option value={30}>30 Days (1 Month)</option>
-                <option value={60}>60 Days</option>
-              </select>
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted mb-1 block">Start Date</label>
+              <input
+                type="date"
+                value={boostForm.boost_start_date}
+                onChange={(e) => setBoostForm({ ...boostForm, boost_start_date: e.target.value })}
+                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted mb-1 block">End Date</label>
+              <input
+                type="date"
+                value={boostForm.boost_end_date}
+                onChange={(e) => setBoostForm({ ...boostForm, boost_end_date: e.target.value })}
+                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none"
+              />
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-muted mb-1 block">Promotional Badge Text</label>
+            <label className="text-xs font-semibold text-muted mb-1 block">Badge Text</label>
             <input
-              placeholder="e.g. 🔥 Hot Deal, ⭐ Verified Exclusive, ⚡ Quick Move-In"
+              placeholder="e.g. 🔥 Hot Deal, ⭐ Top Pick, ⚡ Quick Move-In"
               value={boostForm.badge_label}
               onChange={(e) => setBoostForm({ ...boostForm, badge_label: e.target.value })}
               className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none"
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-border-color">
-            <button
-              type="button"
-              onClick={() => setBoostModalOpen(false)}
-              className="rounded-xl border border-border-color px-4 py-2 text-xs font-semibold text-muted hover:bg-surface-elevated"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submittingBoost}
-              className="rounded-xl bg-amber-600 px-5 py-2 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-50 transition shadow-xs flex items-center gap-1.5"
-            >
-              <Flame size={14} />
-              {submittingBoost ? "Activating..." : "Activate Priority Boost"}
-            </button>
+          {/* Step 3: Geo Targeting */}
+          <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3.5 space-y-3">
+            <div className="flex items-center gap-2">
+              <MapPin size={14} className="text-blue-500" />
+              <span className="text-xs font-bold uppercase text-muted tracking-wide">Geo Targeting</span>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={boostGeoGlobal}
+                onChange={(e) => setBoostGeoGlobal(e.target.checked)}
+                className="rounded"
+              />
+              <span className="text-xs font-semibold text-foreground">🌐 Target Globally (All Countries & Cities)</span>
+            </label>
+            {!boostGeoGlobal && (
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs font-semibold text-muted mb-1 block">Target Countries (select multiple)</label>
+                  <input
+                    placeholder="Filter countries..."
+                    value={boostGeoCountryFilter}
+                    onChange={(e) => setBoostGeoCountryFilter(e.target.value)}
+                    className="w-full rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs text-foreground outline-none mb-1.5"
+                  />
+                  <div className="max-h-32 overflow-y-auto rounded-lg border border-border-color bg-surface divide-y divide-border-color/40">
+                    {[
+                      "Namibia","South Africa","Botswana","Zimbabwe","Zambia","Angola","Mozambique",
+                      "Tanzania","Kenya","Uganda","Nigeria","Ghana","Ethiopia","Egypt","Morocco",
+                      "United Kingdom","United States","Germany","France","Australia","Canada","India","China","Brazil"
+                    ].filter(c => !boostGeoCountryFilter || c.toLowerCase().includes(boostGeoCountryFilter.toLowerCase()))
+                    .map(country => (
+                      <label key={country} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-surface-elevated">
+                        <input
+                          type="checkbox"
+                          checked={boostGeoCountries.includes(country)}
+                          onChange={(e) => setBoostGeoCountries(prev =>
+                            e.target.checked ? [...prev, country] : prev.filter(c => c !== country)
+                          )}
+                          className="rounded"
+                        />
+                        <span className="text-xs">{country}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {boostGeoCountries.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {boostGeoCountries.map(c => (
+                        <span key={c} className="flex items-center gap-1 rounded-full bg-blue-500/10 text-blue-600 px-2 py-0.5 text-[10px] font-bold">
+                          {c}
+                          <button type="button" onClick={() => setBoostGeoCountries(prev => prev.filter(x => x !== c))} className="hover:text-red-500"><X size={9} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-muted mb-1 block">Target Cities (type and press Enter)</label>
+                  <div className="flex gap-1.5">
+                    <input
+                      placeholder="e.g. Windhoek, Cape Town..."
+                      value={boostGeoCityInput}
+                      onChange={(e) => setBoostGeoCityInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const city = boostGeoCityInput.trim();
+                          if (city && !boostGeoCities.includes(city)) {
+                            setBoostGeoCities(prev => [...prev, city]);
+                          }
+                          setBoostGeoCityInput("");
+                        }
+                      }}
+                      className="flex-1 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs text-foreground outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const city = boostGeoCityInput.trim();
+                        if (city && !boostGeoCities.includes(city)) setBoostGeoCities(prev => [...prev, city]);
+                        setBoostGeoCityInput("");
+                      }}
+                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white"
+                    >Add</button>
+                  </div>
+                  {boostGeoCities.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {boostGeoCities.map(c => (
+                        <span key={c} className="flex items-center gap-1 rounded-full bg-emerald-500/10 text-emerald-600 px-2 py-0.5 text-[10px] font-bold">
+                          {c}
+                          <button type="button" onClick={() => setBoostGeoCities(prev => prev.filter(x => x !== c))} className="hover:text-red-500"><X size={9} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between gap-2 pt-3 border-t border-border-color">
+            <span className="text-xs text-muted">
+              {boostSelectedIds.length} listing{boostSelectedIds.length !== 1 ? "s" : ""} selected
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { setBoostModalOpen(false); setBoostSelectedIds([]); }}
+                className="rounded-xl border border-border-color px-4 py-2 text-xs font-semibold text-muted hover:bg-surface-elevated"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submittingBoost || boostSelectedIds.length === 0}
+                className="rounded-xl bg-amber-600 px-5 py-2 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-50 transition shadow-xs flex items-center gap-1.5"
+              >
+                <Flame size={14} />
+                {submittingBoost ? "Activating..." : `Boost ${boostSelectedIds.length || ""} Listing${boostSelectedIds.length !== 1 ? "s" : ""}`}
+              </button>
+            </div>
           </div>
         </form>
       </Modal>
