@@ -78,7 +78,7 @@ export default function MarketingPage() {
   const [boostSelectedIds, setBoostSelectedIds] = useState<string[]>([]);
   const [boostForm, setBoostForm] = useState({
     boost_tier: "featured" as BoostTier,
-    badge_label: "🔥 Featured",
+    badge_label: "Sponsored",
     budget: "",
     boost_start_date: new Date().toISOString().slice(0, 10),
     boost_end_date: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
@@ -951,18 +951,63 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="rounded-2xl border border-border-color bg-surface p-5 space-y-4 shadow-xs">
                 <div>
-                  <label className="text-xs font-semibold text-muted mb-1 block">Choose Property</label>
-                  <select
-                    value={copyPropId}
-                    onChange={(e) => setCopyPropId(e.target.value)}
-                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs font-medium text-foreground outline-none"
-                  >
-                    {properties.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.city || "Area"}) — R{Number(p.monthly_rent || 0).toLocaleString()}/mo
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold text-muted block">Choose Property</label>
+                    {copyPropId && <span className="text-xs font-bold text-purple-600">1 selected</span>}
+                  </div>
+                  {properties.length === 0 ? (
+                    <p className="text-xs text-muted italic">No properties found.</p>
+                  ) : (
+                    <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollSnapType: "x mandatory" }}>
+                      {properties.map((p) => {
+                        const isSelected = copyPropId === p.id;
+                        const photos = Array.isArray(p.photos) ? p.photos : (typeof p.photos === "string" ? (() => { try { return JSON.parse(p.photos); } catch { return []; } })() : []);
+                        const thumb = photos[0] || null;
+                        const rent = Number(p.monthly_rent || 0);
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => setCopyPropId(p.id)}
+                            className={`relative flex-none w-44 rounded-2xl overflow-hidden text-left transition-all focus:outline-none shrink-0 ${
+                              isSelected
+                                ? "ring-2 ring-purple-500 shadow-xl scale-[1.02]"
+                                : "ring-1 ring-border-color hover:ring-purple-400/60 hover:shadow-md"
+                            }`}
+                            style={{ scrollSnapAlign: "start" }}
+                          >
+                            <div className="relative h-28 w-full bg-gradient-to-br from-purple-500/20 to-indigo-600/20">
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <Sparkles size={28} className="text-purple-400 opacity-40" />
+                              </div>
+                              {thumb && (
+                                <img
+                                  src={thumb}
+                                  alt={p.name}
+                                  className="absolute inset-0 h-full w-full object-cover"
+                                  onError={(e) => { (e.target as HTMLImageElement).remove(); }}
+                                />
+                              )}
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
+                              <span className="absolute top-2 left-2 rounded-md bg-black/60 backdrop-blur-sm px-1.5 py-0.5 text-[9px] font-bold text-white uppercase">
+                                {p.type?.replace(/_/g, " ") || "Property"}
+                              </span>
+                              <div className={`absolute top-2 right-2 h-5 w-5 rounded-full border-2 flex items-center justify-center ${
+                                isSelected ? "border-purple-400 bg-purple-500" : "border-white/60 bg-black/40"
+                              }`}>
+                                {isSelected && <Check size={11} className="text-white" />}
+                              </div>
+                              <div className="absolute bottom-0 left-0 right-0 p-2">
+                                <p className="text-white font-bold text-[11px] truncate">{p.name}</p>
+                                {p.city && <p className="text-white/60 text-[9px] truncate">{p.city}</p>}
+                                {rent > 0 && <p className="text-purple-300 font-black text-[10px] mt-0.5">NAD {rent.toLocaleString()}<span className="text-white/60 font-normal">/mo</span></p>}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -1185,7 +1230,7 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
                 No published listings found. Publish a property first to boost it.
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-72 overflow-y-auto pr-1">
+              <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollSnapType: "x mandatory" }}>
                 {publishedListingsForBoost.map((p) => {
                   const isSelected = boostSelectedIds.includes(p.id);
                   const photos = Array.isArray(p.photos) ? p.photos : (typeof p.photos === "string" ? (() => { try { return JSON.parse(p.photos); } catch { return []; } })() : []);
@@ -1198,17 +1243,18 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
                       onClick={() => setBoostSelectedIds(prev =>
                         prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]
                       )}
-                      className={`relative rounded-xl overflow-hidden text-left transition-all focus:outline-none ${
+                      className={`relative flex-none w-52 rounded-2xl overflow-hidden text-left transition-all focus:outline-none shrink-0 ${
                         isSelected
-                          ? "ring-2 ring-amber-500 shadow-lg scale-[1.02]"
+                          ? "ring-2 ring-amber-500 shadow-xl scale-[1.02]"
                           : "ring-1 ring-border-color hover:ring-amber-400/60 hover:shadow-md"
                       }`}
+                      style={{ scrollSnapAlign: "start" }}
                     >
-                      {/* Property photo as card background */}
-                      <div className="relative h-28 w-full bg-gradient-to-br from-amber-500/20 to-orange-600/20">
+                      {/* Full image card */}
+                      <div className="relative h-40 w-full bg-gradient-to-br from-amber-500/20 to-orange-600/20">
                         {/* Fallback always rendered behind */}
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <Flame size={28} className="text-amber-500 opacity-40" />
+                          <Flame size={36} className="text-amber-500 opacity-40" />
                         </div>
                         {thumb && (
                           <img
@@ -1220,31 +1266,37 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
                             }}
                           />
                         )}
-                        {/* Dark overlay */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                        {/* Type badge top-left */}
-                        <span className="absolute top-1.5 left-1.5 rounded-md bg-black/60 backdrop-blur-sm px-1.5 py-0.5 text-[9px] font-bold text-white uppercase tracking-wide">
+                        {/* Dark gradient overlay */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
+                        {/* Type badge */}
+                        <span className="absolute top-2 left-2 rounded-md bg-black/60 backdrop-blur-sm px-2 py-0.5 text-[9px] font-bold text-white uppercase tracking-wide">
                           {p.type?.replace(/_/g, " ") || "Property"}
                         </span>
-                        {/* Selection tick top-right */}
-                        <div className={`absolute top-1.5 right-1.5 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                          isSelected ? "border-amber-400 bg-amber-500" : "border-white/60 bg-black/40"
+                        {/* Selection tick */}
+                        <div className={`absolute top-2 right-2 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                          isSelected ? "border-amber-400 bg-amber-500" : "border-white/70 bg-black/40"
                         }`}>
-                          {isSelected && <Check size={11} className="text-white" />}
+                          {isSelected && <Check size={13} className="text-white" />}
                         </div>
-                        {/* Price + name at bottom */}
-                        <div className="absolute bottom-0 left-0 right-0 p-2">
-                          <p className="text-white font-bold text-[11px] truncate leading-tight">{p.name}</p>
-                          {rent > 0 && (
-                            <p className="text-amber-300 font-black text-[10px] mt-0.5">
-                              NAD {rent.toLocaleString()}<span className="text-white/70 font-normal">/mo</span>
-                            </p>
-                          )}
+                        {/* Name + price at bottom */}
+                        <div className="absolute bottom-0 left-0 right-0 p-3">
+                          <p className="text-white font-bold text-xs truncate leading-tight">{p.name}</p>
                           {(p.city || p.country) && (
-                            <p className="text-white/60 text-[9px] truncate">{p.city || p.country}</p>
+                            <p className="text-white/60 text-[10px] truncate mt-0.5">{p.city || p.country}</p>
+                          )}
+                          {rent > 0 && (
+                            <p className="text-amber-300 font-black text-xs mt-1">
+                              NAD {rent.toLocaleString()}<span className="text-white/60 font-normal text-[10px]">/mo</span>
+                            </p>
                           )}
                         </div>
                       </div>
+                      {/* Sponsored label at bottom of card */}
+                      {isSelected && (
+                        <div className="bg-amber-500 px-3 py-1 text-center">
+                          <span className="text-[10px] font-black text-white uppercase tracking-widest">Sponsored</span>
+                        </div>
+                      )}
                     </button>
                   );
                 })}
@@ -1384,12 +1436,28 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-muted mb-1 block">Badge Text</label>
+            <label className="text-xs font-semibold text-muted mb-1 block">Sponsored Label</label>
+            <div className="flex flex-wrap gap-2">
+              {["Sponsored", "🔥 Hot Deal", "⭐ Top Pick", "⚡ Quick Move-In", "🏷️ Special Offer"].map(badge => (
+                <button
+                  key={badge}
+                  type="button"
+                  onClick={() => setBoostForm({ ...boostForm, badge_label: badge })}
+                  className={`rounded-xl px-3 py-1.5 text-xs font-bold border transition ${
+                    boostForm.badge_label === badge
+                      ? "bg-amber-600 border-amber-600 text-white"
+                      : "border-border-color bg-surface text-muted hover:border-amber-500 hover:text-amber-600"
+                  }`}
+                >
+                  {badge}
+                </button>
+              ))}
+            </div>
             <input
-              placeholder="e.g. 🔥 Hot Deal, ⭐ Top Pick, ⚡ Quick Move-In"
+              placeholder="Or type custom label..."
               value={boostForm.badge_label}
               onChange={(e) => setBoostForm({ ...boostForm, badge_label: e.target.value })}
-              className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none"
+              className="mt-2 w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none"
             />
           </div>
 
@@ -1450,36 +1518,30 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
                   )}
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-muted mb-1 block">Target Cities (type and press Enter)</label>
-                  <div className="flex gap-1.5">
-                    <input
-                      placeholder="e.g. Windhoek, Cape Town..."
-                      value={boostGeoCityInput}
-                      onChange={(e) => setBoostGeoCityInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          const city = boostGeoCityInput.trim();
-                          if (city && !boostGeoCities.includes(city)) {
-                            setBoostGeoCities(prev => [...prev, city]);
-                          }
-                          setBoostGeoCityInput("");
-                        }
-                      }}
-                      className="flex-1 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs text-foreground outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const city = boostGeoCityInput.trim();
-                        if (city && !boostGeoCities.includes(city)) setBoostGeoCities(prev => [...prev, city]);
-                        setBoostGeoCityInput("");
-                      }}
-                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white"
-                    >Add</button>
-                  </div>
+                  <label className="text-xs font-semibold text-muted mb-1 block">Target Cities</label>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const city = e.target.value;
+                      if (city && !boostGeoCities.includes(city)) {
+                        setBoostGeoCities(prev => [...prev, city]);
+                      }
+                    }}
+                    className="w-full rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs text-foreground outline-none mb-1.5"
+                  >
+                    <option value="">— Select a city to add —</option>
+                    {[
+                      "Windhoek","Swakopmund","Walvis Bay","Lüderitz","Oshakati","Rundu","Katima Mulilo",
+                      "Cape Town","Johannesburg","Durban","Pretoria","Port Elizabeth",
+                      "Gaborone","Harare","Lusaka","Luanda","Maputo",
+                      "Nairobi","Lagos","Accra","Dar es Salaam","Kampala","Addis Ababa",
+                      "London","New York","Dubai","Sydney","Toronto"
+                    ].filter(c => !boostGeoCities.includes(c)).map(city => (
+                      <option key={city} value={city}>{city}</option>
+                    ))}
+                  </select>
                   {boostGeoCities.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1.5">
+                    <div className="flex flex-wrap gap-1 mt-1">
                       {boostGeoCities.map(c => (
                         <span key={c} className="flex items-center gap-1 rounded-full bg-emerald-500/10 text-emerald-600 px-2 py-0.5 text-[10px] font-bold">
                           {c}
