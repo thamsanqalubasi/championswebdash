@@ -398,7 +398,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 to="/rent-collection"
                 className="hidden sm:flex items-center gap-1.5 rounded-lg border border-emerald-600 bg-emerald-600 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-emerald-700 transition"
               >
-                <DollarSign size={15}/><span>Collect Rent</span>
+                <DollarSign size={15}/><span>Record Rent Payment</span>
               </Link>
               <ThemeToggle variant="compact"/>
               <div className="hidden xl:block max-w-[160px] truncate px-1 py-1 text-xs font-medium text-muted" title={userEmail}>{userEmail}</div>
@@ -471,7 +471,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 onClick={() => setMobileMenuOpen(false)}
                 className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2 text-xs font-bold text-white shadow-xs"
               >
-                <DollarSign size={14} /> Collect Rent
+                <DollarSign size={14} /> Record Rent Payment
               </Link>
             </div>
 

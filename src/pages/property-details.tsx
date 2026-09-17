@@ -6,7 +6,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ImageGallery } from "@/components/image-gallery";
 import { supabase } from "@/lib/supabase";
 import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, uploadPdfFromHtml, createPdfAttachmentFromUrl, downloadHtmlDocument, downloadPdfDocument, downloadPdfFromUrl } from "@/lib/storage";
-import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
+import { buildProfessionalInvoiceHtml, buildProfessionalContractHtml } from "@/lib/document-templates";
 import { useAuth } from "@/lib/auth";
 import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
 import { verifyAdminPin, isValidUuid } from "@/lib/data";
@@ -37,10 +37,12 @@ import {
   RefreshCw,
   BedDouble,
   TrendingUp,
+  KeyRound,
 } from "lucide-react";
 import { StatusBadge } from "@/components/data-table";
 import { PropertyStatsModal } from "@/components/property-stats-modal";
 import { ManageRoomsRatesModal } from "@/components/manage-rooms-rates-modal";
+import { CheckinModal } from "@/components/checkin-modal";
 import { fetchCommercialRooms } from "@/lib/data";
 import type { CommercialRoom } from "@/lib/types";
 
@@ -159,13 +161,38 @@ function DetailStat({ label, value, icon: Icon, colorClass = "text-foreground" }
   );
 }
 
+type UnassignedTenantItem = {
+  id: string;
+  full_name: string;
+  email?: string;
+  phone?: string;
+  createdAt?: string;
+  tag: string;
+  isNew: boolean;
+};
+
+function formatTenantEntryTime(createdAt?: string): { tag: string; isNew: boolean } {
+  if (!createdAt) return { tag: "Unassigned", isNew: false };
+  const diffMs = Date.now() - new Date(createdAt).getTime();
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffHours / 24);
+  
+  if (diffHours < 1) return { tag: "New (entered just now)", isNew: true };
+  if (diffHours < 24) return { tag: `New (entered ${diffHours}h ago)`, isNew: true };
+  if (diffDays <= 30) return { tag: `New (entered ${diffDays}d ago)`, isNew: true };
+  return { tag: `Unassigned (${diffDays}d ago)`, isNew: false };
+}
+
 export default function PropertyDetailsPage() {
   const { propertyId } = useParams<{ propertyId: string }>();
   const { user, currentCompany } = useAuth();
 
   const [property, setProperty] = useState<PropertyDetails | null>(null);
   const [assignedTenants, setAssignedTenants] = useState<AssignedTenant[]>([]);
-  const [unassignedTenants, setUnassignedTenants] = useState<Array<{ id: string; full_name: string }>>([]);
+  const [unassignedTenants, setUnassignedTenants] = useState<UnassignedTenantItem[]>([]);
+  const [generateLease, setGenerateLease] = useState(false);
+  const [includeDigitalSignature, setIncludeDigitalSignature] = useState(true);
+  const [checkinModalOpen, setCheckinModalOpen] = useState(false);
   const [invoices, setInvoices] = useState<PropertyInvoice[]>([]);
   const [maintenance, setMaintenance] = useState<MaintenanceItem[]>([]);
   const [bills, setBills] = useState<PropertyBill[]>([]);
@@ -281,11 +308,10 @@ export default function PropertyDetailsPage() {
         const compId = currentCompany?.id;
         let unassignedQuery = supabase
           .from("tenants")
-          .select("id, full_name")
-          .is("property_id", null)
-          .order("full_name", { ascending: true });
+          .select("id, full_name, email, phone, property_id, company_id, created_at")
+          .order("created_at", { ascending: false });
         if (isValidUuid(compId)) {
-          unassignedQuery = unassignedQuery.eq("company_id", compId);
+          unassignedQuery = unassignedQuery.or(`company_id.eq.${compId},company_id.is.null`);
         }
 
         const [
@@ -377,12 +403,28 @@ export default function PropertyDetailsPage() {
             })),
           );
 
-          setUnassignedTenants(
-            (unassignedTenantsResult.data ?? []).map((row) => ({
+          const rawTenants = unassignedTenantsResult.data ?? [];
+          const unassignedList = rawTenants.filter(
+            (t: any) => !t.property_id || t.property_id === "" || t.property_id === "null"
+          );
+          unassignedList.sort((a: any, b: any) => {
+            const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
+            return tB - tA;
+          });
+          const mappedUnassigned = unassignedList.map((row: any) => {
+            const timeInfo = formatTenantEntryTime(row.created_at);
+            return {
               id: String(row.id ?? ""),
               full_name: String(row.full_name ?? "Unnamed Tenant"),
-            })),
-          );
+              email: row.email,
+              phone: row.phone,
+              createdAt: row.created_at,
+              tag: timeInfo.tag,
+              isNew: timeInfo.isNew,
+            };
+          });
+          setUnassignedTenants(mappedUnassigned);
 
           setInvoices(
             (invoicesResult.data ?? []).map((row) => ({
@@ -496,7 +538,7 @@ export default function PropertyDetailsPage() {
   const reload = () => setReloadKey((value) => value + 1);
 
   const assignTenant = async () => {
-    if (!propertyId || !selectedTenantId) {
+    if (!propertyId || !selectedTenantId || !property) {
       return;
     }
 
@@ -504,9 +546,12 @@ export default function PropertyDetailsPage() {
 
     try {
       const compId = currentCompany?.id;
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const assignedTenantObj = unassignedTenants.find((t) => t.id === selectedTenantId);
+
       let assignQuery = supabase
         .from("tenants")
-        .update({ property_id: propertyId })
+        .update({ property_id: propertyId, tenure_start_date: todayStr })
         .eq("id", selectedTenantId);
       if (isValidUuid(compId)) {
         assignQuery = assignQuery.eq("company_id", compId);
@@ -521,9 +566,75 @@ export default function PropertyDetailsPage() {
         .eq("id", propertyId)
         .eq("status", "vacant");
 
-      if (propertyStatusError) throw propertyStatusError;
+      if (propertyStatusError) {
+        console.warn("Property status update:", propertyStatusError);
+      }
+
+      // Generate Lease Agreement if opted-in
+      if (generateLease) {
+        try {
+          const [company, admin] = await Promise.all([
+            fetchCompanyInfo(),
+            fetchAdminInfo(user?.email ?? undefined),
+          ]);
+
+          const endDate = new Date();
+          endDate.setFullYear(endDate.getFullYear() + 1);
+          const endDateStr = endDate.toISOString().slice(0, 10);
+
+          const contractPayload: Record<string, unknown> = {
+            title: `Residential Lease Agreement - ${property.name}`,
+            tenant_id: selectedTenantId,
+            property_id: propertyId,
+            start_date: todayStr,
+            end_date: endDateStr,
+            monthly_rent: property.monthlyRent || 0,
+            deposit_amount: property.monthlyRent || 0,
+            status: "active",
+            notes: `Generated on unit assignment${includeDigitalSignature ? " (Signed digitally)" : ""}`,
+            company_id: isValidUuid(compId) ? compId : null,
+          };
+
+          const { data: createdContract } = await supabase
+            .from("contracts")
+            .insert(contractPayload)
+            .select("id")
+            .single();
+
+          if (createdContract?.id) {
+            const html = buildProfessionalContractHtml(
+              {
+                contractTitle: `Residential Lease Agreement - ${property.name}`,
+                tenantName: assignedTenantObj?.full_name || "Tenant",
+                propertyName: property.name,
+                startDate: todayStr,
+                endDate: endDateStr,
+                monthlyRent: property.monthlyRent || 0,
+                depositAmount: property.monthlyRent || 0,
+                status: "active",
+                notes: "Standard Residential Lease Agreement generated upon unit assignment.",
+                sections: [
+                  { title: "1. Term of Lease", content: `The lease commences on ${todayStr} and shall continue until ${endDateStr} unless terminated according to lease conditions.` },
+                  { title: "2. Monthly Rent", content: `The Tenant agrees to pay monthly rent of NAD ${property.monthlyRent} on or before the 1st of each calendar month.` },
+                  { title: "3. Property Maintenance & Rules", content: "The Tenant shall maintain the property in clean, hygienic, and tenantable condition throughout the lease period." },
+                ],
+              },
+              company,
+              includeDigitalSignature ? admin : { ...admin, signatureUrl: "" },
+            );
+
+            await supabase
+              .from("contracts")
+              .update({ document_url: html })
+              .eq("id", createdContract.id);
+          }
+        } catch (contractErr) {
+          console.warn("Lease agreement generation warning:", contractErr);
+        }
+      }
 
       setSelectedTenantId("");
+      setGenerateLease(false);
       reload();
     } catch (assignError) {
       alert(assignError instanceof Error ? assignError.message : "Could not assign tenant.");
@@ -1072,6 +1183,14 @@ export default function PropertyDetailsPage() {
                     <div className="flex flex-wrap items-center gap-3 pt-2">
                       <button
                         type="button"
+                        onClick={() => setCheckinModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 transition shadow-sm"
+                      >
+                        <KeyRound size={14} />
+                        <span>Check In Guest</span>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setManageRoomsModalOpen(true)}
                         className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-4 py-2 text-xs font-bold text-white hover:bg-purple-700 transition shadow-sm"
                       >
@@ -1082,7 +1201,7 @@ export default function PropertyDetailsPage() {
                         to="/hospitality/checkins"
                         className="inline-flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-4 py-2 text-xs font-bold text-foreground hover:bg-surface transition"
                       >
-                        <span>Check-In &amp; Guest Desk</span>
+                        <span>Guest Desk</span>
                       </Link>
                       <button
                         type="button"
@@ -1102,26 +1221,55 @@ export default function PropertyDetailsPage() {
                     <Users size={16} className="text-muted/40" />
                   </header>
                   <div className="p-6 space-y-6">
-                    <div className="flex flex-wrap items-center gap-3 bg-surface-elevated/50 p-4 rounded-xl ring-1 ring-border-color/40">
-                      <select
-                        value={selectedTenantId}
-                        onChange={(event) => setSelectedTenantId(event.target.value)}
-                        className="flex-1 min-w-[200px] rounded-lg border border-border-color bg-surface px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
-                      >
-                        <option value="">Assign a new tenant...</option>
-                        {unassignedTenants.map((tenant) => (
-                          <option key={tenant.id} value={tenant.id}>{tenant.full_name}</option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={assignTenant}
-                        disabled={!selectedTenantId || assigning}
-                        className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50"
-                      >
-                        <Plus size={16} />
-                        <span>{assigning ? "Assigning..." : "Assign Tenant"}</span>
-                      </button>
+                    <div className="space-y-3 bg-surface-elevated/50 p-4 rounded-xl ring-1 border border-border-color/40">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <select
+                          value={selectedTenantId}
+                          onChange={(event) => setSelectedTenantId(event.target.value)}
+                          className="flex-1 min-w-[200px] rounded-lg border border-border-color bg-surface px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5 font-medium"
+                        >
+                          <option value="">Select unassigned tenant ({unassignedTenants.length} available)...</option>
+                          {unassignedTenants.map((tenant) => (
+                            <option key={tenant.id} value={tenant.id}>
+                              {tenant.full_name} — {tenant.tag}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={assignTenant}
+                          disabled={!selectedTenantId || assigning}
+                          className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50"
+                        >
+                          <Plus size={16} />
+                          <span>{assigning ? "Assigning..." : "Assign Tenant"}</span>
+                        </button>
+                      </div>
+
+                      {/* Lease generation options */}
+                      <div className="pt-2 border-t border-border-color/40 flex flex-wrap items-center gap-6 text-xs">
+                        <label className="flex items-center gap-2 font-medium text-foreground cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={generateLease}
+                            onChange={(e) => setGenerateLease(e.target.checked)}
+                            className="rounded border-border-color accent-foreground h-4 w-4"
+                          />
+                          <span>Generate Lease Agreement upon assignment</span>
+                        </label>
+
+                        {generateLease && (
+                          <label className="flex items-center gap-2 font-medium text-foreground cursor-pointer select-none bg-surface px-2.5 py-1 rounded-lg border border-border-color/60">
+                            <input
+                              type="checkbox"
+                              checked={includeDigitalSignature}
+                              onChange={(e) => setIncludeDigitalSignature(e.target.checked)}
+                              className="rounded border-border-color accent-foreground h-4 w-4"
+                            />
+                            <span>Include Landlord/Staff digital signature</span>
+                          </label>
+                        )}
+                      </div>
                     </div>
 
                     {assignedTenants.length === 0 ? (
@@ -1485,6 +1633,12 @@ export default function PropertyDetailsPage() {
             property={property as any}
             companyId={currentCompany?.id || ""}
             onUpdated={reload}
+          />
+          <CheckinModal
+            isOpen={checkinModalOpen}
+            onClose={() => setCheckinModalOpen(false)}
+            initialPropertyId={property.id}
+            onSuccess={reload}
           />
         </>
       )}

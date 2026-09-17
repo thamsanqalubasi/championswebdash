@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { isValidUuid } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
-import { fetchCompanyInfo, fetchAdminInfo, downloadHtmlDocument, downloadPdfDocument, downloadPdfFromUrl, uploadPdfFromHtml, createPdfAttachmentFromUrl } from "@/lib/storage";
+import { fetchCompanyInfo, fetchAdminInfo, downloadHtmlDocument, downloadPdfDocument, downloadPdfFromUrl, uploadPdfFromHtml, createPdfAttachmentFromUrl, uploadFileToBucket } from "@/lib/storage";
 import { DocumentShareModal } from "@/components/document-share-modal";
 import { buildProfessionalInvoiceHtml } from "@/lib/document-templates";
 import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
@@ -33,7 +33,11 @@ import {
   UserCheck,
   UserMinus,
   MessageSquare,
-  Receipt
+  Receipt,
+  UploadCloud,
+  FileText,
+  ExternalLink,
+  ShieldCheck
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 
@@ -45,6 +49,8 @@ type RentTenantRow = {
   propertyId: string | null;
   propertyName: string;
   tenureStatus: string;
+  tenureStartDate?: string | null;
+  createdAt?: string | null;
   tenureEndDate: string | null;
   noticeEndDate: string | null;
   paymentStatus: "paid" | "due" | "overdue";
@@ -57,6 +63,13 @@ type TenantPaymentHistoryRow = {
   tenantId: string;
   paymentDate: string;
   amountPaid: number;
+  paymentMethod?: string;
+  popUrl?: string | null;
+  notes?: string | null;
+  executedByName?: string | null;
+  popUploadedByName?: string | null;
+  popUploadedAt?: string | null;
+  createdAt?: string | null;
   invoiceId: string | null;
   invoicePdfUrl: string | null;
 };
@@ -73,8 +86,10 @@ type InvoiceLite = {
 
 const emptyPaymentForm = {
   paymentDate: new Date().toISOString().slice(0, 10),
-  amountPaid: 0,
+  amountPaid: "" as unknown as number,
   paidMonth: new Date().toISOString().slice(0, 7),
+  paymentMethod: "Bank Transfer / EFT",
+  notes: "",
 };
 
 function formatCurrency(amount: number) {
@@ -123,6 +138,13 @@ export default function RentCollectionPage() {
 
   const [selectedTenant, setSelectedTenant] = useState<RentTenantRow | null>(null);
   const [paymentForm, setPaymentForm] = useState(emptyPaymentForm);
+  const [popFile, setPopFile] = useState<File | null>(null);
+  const [selectedPaymentDetail, setSelectedPaymentDetail] = useState<{
+    payment: TenantPaymentHistoryRow;
+    tenant: RentTenantRow;
+  } | null>(null);
+  const [retroPopFile, setRetroPopFile] = useState<File | null>(null);
+  const [savingRetroPop, setSavingRetroPop] = useState(false);
   const [saving, setSaving] = useState(false);
   const [invoiceActionPaymentId, setInvoiceActionPaymentId] = useState<string | null>(null);
   const [sendingPaymentId, setSendingPaymentId] = useState<string | null>(null);
@@ -153,7 +175,7 @@ export default function RentCollectionPage() {
         const compId = currentCompany?.id;
         let tenantsQuery = supabase
           .from("tenants")
-          .select("id, full_name, phone, email, property_id, tenure_status, tenure_end_date, notice_end_date, properties(name)")
+          .select("id, full_name, phone, email, property_id, tenure_status, tenure_start_date, created_at, tenure_end_date, notice_end_date, properties(name)")
           .order("full_name", { ascending: true });
 
         let invoicesQuery = supabase
@@ -166,12 +188,28 @@ export default function RentCollectionPage() {
           invoicesQuery = invoicesQuery.eq("company_id", compId);
         }
 
-        const [{ data: tenantsData, error: tenantsError }, { data: paymentsData, error: paymentsError }, { data: invoicesData, error: invoicesError }, { data: companyData }] = await Promise.all([
-          tenantsQuery,
-          supabase
+        // Resilient payment query
+        let rawPayments: any[] = [];
+        try {
+          const { data: pData, error: pError } = await supabase
             .from("tenant_rent_payments")
-            .select("id, tenant_id, payment_date, amount_paid")
-            .order("payment_date", { ascending: false }),
+            .select("id, tenant_id, payment_date, amount_paid, payment_method, pop_url, notes, executed_by_name, pop_uploaded_by_name, pop_uploaded_at, created_at")
+            .order("payment_date", { ascending: false });
+          if (!pError && pData) {
+            rawPayments = pData;
+          } else {
+            const { data: fallbackData } = await supabase
+              .from("tenant_rent_payments")
+              .select("id, tenant_id, payment_date, amount_paid, notes")
+              .order("payment_date", { ascending: false });
+            if (fallbackData) rawPayments = fallbackData;
+          }
+        } catch {
+          rawPayments = [];
+        }
+
+        const [{ data: tenantsData, error: tenantsError }, { data: invoicesData, error: invoicesError }, { data: companyData }] = await Promise.all([
+          tenantsQuery,
           invoicesQuery,
           isValidUuid(compId)
             ? supabase.from("companies").select("default_due_day").eq("id", compId).maybeSingle()
@@ -179,7 +217,6 @@ export default function RentCollectionPage() {
         ]);
 
         if (tenantsError) throw tenantsError;
-        if (paymentsError) throw paymentsError;
         if (invoicesError) throw invoicesError;
 
         const defaultDueDay = Number(companyData?.default_due_day ?? 1);
@@ -200,19 +237,21 @@ export default function RentCollectionPage() {
         let paymentInvoiceMap = new Map<string, string>();
 
         if (invoiceIds.length > 0) {
-          const { data: invoiceItems, error: invoiceItemsError } = await supabase
-            .from("invoice_items")
-            .select("invoice_id, description")
-            .in("invoice_id", invoiceIds);
+          try {
+            const { data: invoiceItems } = await supabase
+              .from("invoice_items")
+              .select("invoice_id, description")
+              .in("invoice_id", invoiceIds);
 
-          if (invoiceItemsError) throw invoiceItemsError;
-
-          (invoiceItems ?? []).forEach((item) => {
-            const description = String(item.description ?? "");
-            const match = description.match(/Payment ID:\s*([a-f0-9-]+)/i);
-            if (!match?.[1]) return;
-            paymentInvoiceMap.set(match[1], String(item.invoice_id ?? ""));
-          });
+            (invoiceItems ?? []).forEach((item) => {
+              const description = String(item.description ?? "");
+              const match = description.match(/Payment ID:\s*([a-f0-9-]+)/i);
+              if (!match?.[1]) return;
+              paymentInvoiceMap.set(match[1], String(item.invoice_id ?? ""));
+            });
+          } catch {
+            // invoice items non-fatal
+          }
         }
 
         const invoiceByIdMap: Record<string, InvoiceLite> = {};
@@ -221,7 +260,7 @@ export default function RentCollectionPage() {
 
         const tenantIds = new Set((tenantsData ?? []).map((t) => String(t.id)));
         const paymentMap: Record<string, TenantPaymentHistoryRow[]> = {};
-        (paymentsData ?? []).forEach((payment) => {
+        rawPayments.forEach((payment) => {
           const tenantId = String(payment.tenant_id ?? "");
           if (!tenantId || !tenantIds.has(tenantId)) return;
 
@@ -231,6 +270,13 @@ export default function RentCollectionPage() {
             tenantId,
             paymentDate: String(payment.payment_date),
             amountPaid: Number(payment.amount_paid),
+            paymentMethod: payment.payment_method || "Bank Transfer / EFT",
+            popUrl: payment.pop_url || null,
+            notes: payment.notes || null,
+            executedByName: payment.executed_by_name || null,
+            popUploadedByName: payment.pop_uploaded_by_name || null,
+            popUploadedAt: payment.pop_uploaded_at || null,
+            createdAt: payment.created_at || null,
             invoiceId: paymentInvoiceMap.get(String(payment.id)) || null,
             invoicePdfUrl: paymentInvoiceMap.has(String(payment.id)) ? (invoiceByIdMap[paymentInvoiceMap.get(String(payment.id))!]?.pdfUrl ?? null) : null,
           });
@@ -248,17 +294,35 @@ export default function RentCollectionPage() {
 
             if (hasPaidCurrent) {
               paymentStatus = "paid";
+            } else if (!row.property_id) {
+              // Unassigned tenant is not in arrears
+              paymentStatus = "due";
+              daysRemaining = null;
             } else {
-              const dueDate = new Date(now.getFullYear(), now.getMonth(), defaultDueDay);
-              const diffTime = dueDate.getTime() - now.getTime();
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-              
-              if (diffDays < 0) {
-                paymentStatus = "overdue";
-                daysRemaining = Math.abs(diffDays);
-              } else {
+              const joinedDate = row.tenure_start_date || row.created_at;
+              const joinedDateObj = joinedDate ? new Date(joinedDate) : null;
+              const isNewThisMonth = Boolean(
+                joinedDateObj &&
+                joinedDateObj.getFullYear() === now.getFullYear() &&
+                joinedDateObj.getMonth() === now.getMonth()
+              );
+
+              if (isNewThisMonth) {
+                // Onboarded in current month: not overdue
                 paymentStatus = "due";
-                daysRemaining = diffDays;
+                daysRemaining = null;
+              } else {
+                const dueDate = new Date(now.getFullYear(), now.getMonth(), defaultDueDay);
+                const diffTime = dueDate.getTime() - now.getTime();
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                
+                if (diffDays < 0) {
+                  paymentStatus = "overdue";
+                  daysRemaining = Math.abs(diffDays);
+                } else {
+                  paymentStatus = "due";
+                  daysRemaining = diffDays;
+                }
               }
             }
 
@@ -270,6 +334,8 @@ export default function RentCollectionPage() {
               propertyId: row.property_id ? String(row.property_id) : null,
               propertyName: String((row.properties as { name?: string } | null)?.name ?? "Unassigned"),
               tenureStatus: String(row.tenure_status ?? "active"),
+              tenureStartDate: row.tenure_start_date ? String(row.tenure_start_date) : null,
+              createdAt: row.created_at ? String(row.created_at) : null,
               tenureEndDate: row.tenure_end_date ? String(row.tenure_end_date) : null,
               noticeEndDate: row.notice_end_date ? String(row.notice_end_date) : null,
               paymentStatus,
@@ -321,62 +387,205 @@ export default function RentCollectionPage() {
   const reload = () => setReloadKey((value) => value + 1);
 
   const openRecordModal = (tenant: RentTenantRow) => {
-    if (!tenant.propertyId) return;
+    if (!tenant.propertyId) {
+      alert("This tenant is unassigned. Please assign them to a property first before recording rent payments.");
+      return;
+    }
     setSelectedTenant(tenant);
     setPaymentForm({
       paymentDate: new Date().toISOString().slice(0, 10),
-      amountPaid: 0,
+      amountPaid: "" as unknown as number,
       paidMonth: new Date().toISOString().slice(0, 7),
+      paymentMethod: "Bank Transfer / EFT",
+      notes: "",
     });
+    setPopFile(null);
   };
 
   const onSavePayment = async () => {
-    if (!selectedTenant?.propertyId) return;
-    if (!paymentForm.amountPaid || paymentForm.amountPaid <= 0) { alert("Enter a valid payment amount."); return; }
+    if (!selectedTenant?.propertyId) {
+      alert("This tenant is unassigned. Please assign them to a property first.");
+      return;
+    }
+    const numAmount = Number(paymentForm.amountPaid);
+    if (!numAmount || numAmount <= 0) {
+      alert("Enter a valid payment amount.");
+      return;
+    }
     setSaving(true);
     try {
       const admin = await fetchAdminInfo(user?.email ?? undefined);
       const executorName = admin.fullName || user?.email || "Admin";
       const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
 
+      let popUrl: string | null = null;
+      if (popFile) {
+        try {
+          popUrl = await uploadFileToBucket(
+            "tenants",
+            `pop/${selectedTenant.id}`,
+            popFile
+          );
+        } catch (uploadErr) {
+          console.warn("Could not upload POP file to bucket:", uploadErr);
+        }
+      }
+
       const paymentPayload: Record<string, unknown> = {
         tenant_id: selectedTenant.id,
         property_id: selectedTenant.propertyId,
         payment_date: paymentForm.paymentDate,
-        amount_paid: paymentForm.amountPaid,
-        paid_month: paymentForm.paidMonth,
-        notes: `Recorded by ${executorName}`,
+        amount_paid: numAmount,
+        payment_method: paymentForm.paymentMethod,
+        paid_months: [paymentForm.paidMonth],
+        notes: paymentForm.notes ? `${paymentForm.notes} | Recorded by: ${executorName}` : `Recorded by: ${executorName}`,
         company_id: compId,
+        executed_by_name: executorName,
       };
 
-      const { data: insertedPayment, error: paymentError } = await supabase
-        .from("tenant_rent_payments")
-        .insert(paymentPayload)
-        .select("id")
-        .single();
+      if (popUrl) {
+        paymentPayload.pop_url = popUrl;
+        paymentPayload.pop_uploaded_by_name = executorName;
+        paymentPayload.pop_uploaded_at = new Date().toISOString();
+      }
 
-      if (paymentError) throw paymentError;
-
-      await supabase.from("audit_log").insert({
-        user_email: user?.email || "admin@paimbabook.com",
-        user_name: executorName,
-        action: "rent_payment_recorded",
-        entity_type: "tenant_rent_payment",
-        entity_id: insertedPayment?.id && isValidUuid(insertedPayment.id) ? insertedPayment.id : null,
-        company_id: compId,
-        details: {
-          tenant_name: selectedTenant.fullName,
+      let insertedId: string | null = null;
+      try {
+        const { data: inserted, error: pErr } = await supabase
+          .from("tenant_rent_payments")
+          .insert(paymentPayload)
+          .select("id")
+          .single();
+        if (pErr) throw pErr;
+        insertedId = inserted?.id || null;
+      } catch (insertErr) {
+        console.warn("Primary insert failed, attempting fallback:", insertErr);
+        const fallbackPayload: Record<string, unknown> = {
           tenant_id: selectedTenant.id,
           property_id: selectedTenant.propertyId,
-          amount_paid: paymentForm.amountPaid,
           payment_date: paymentForm.paymentDate,
-          paid_month: paymentForm.paidMonth,
-        },
-      });
+          amount_paid: numAmount,
+          paid_months: [paymentForm.paidMonth],
+          notes: `${paymentForm.notes ? paymentForm.notes + " | " : ""}Recorded by: ${executorName}${popUrl ? ` | POP: ${popUrl}` : ""}`,
+          company_id: compId,
+        };
+        const { data: fbInserted, error: fbErr } = await supabase
+          .from("tenant_rent_payments")
+          .insert(fallbackPayload)
+          .select("id")
+          .single();
+        if (fbErr) throw fbErr;
+        insertedId = fbInserted?.id || null;
+      }
 
-      setSelectedTenant(null); reload();
-    } catch (saveError) { alert(saveError instanceof Error ? saveError.message : "Could not record rent payment."); }
-    finally { setSaving(false); }
+      if (popUrl) {
+        try {
+          await supabase.from("tenant_payment_proofs").insert({
+            tenant_id: selectedTenant.id,
+            property_id: selectedTenant.propertyId,
+            customer_name: selectedTenant.fullName,
+            customer_email: selectedTenant.email,
+            customer_phone: selectedTenant.phone,
+            amount: numAmount,
+            payment_date: paymentForm.paymentDate,
+            document_url: popUrl,
+            status: "verified",
+            notes: `Recorded by Staff: ${executorName} | Method: ${paymentForm.paymentMethod}`,
+            company_id: compId,
+          });
+        } catch (proofErr) {
+          console.warn("Could not insert tenant_payment_proofs:", proofErr);
+        }
+      }
+
+      try {
+        await supabase.from("audit_log").insert({
+          user_email: user?.email || "admin@paimbabook.com",
+          user_name: executorName,
+          action: "rent_payment_recorded",
+          entity_type: "tenant_rent_payment",
+          entity_id: insertedId && isValidUuid(insertedId) ? insertedId : null,
+          company_id: compId,
+          details: {
+            tenant_name: selectedTenant.fullName,
+            tenant_id: selectedTenant.id,
+            property_id: selectedTenant.propertyId,
+            amount_paid: numAmount,
+            payment_date: paymentForm.paymentDate,
+            paid_month: paymentForm.paidMonth,
+            payment_method: paymentForm.paymentMethod,
+            pop_url: popUrl,
+            recorded_by: executorName,
+          },
+        });
+      } catch {
+        // audit log is non-fatal
+      }
+
+      setSelectedTenant(null);
+      setPopFile(null);
+      reload();
+    } catch (saveError) {
+      alert(saveError instanceof Error ? saveError.message : "Could not record rent payment.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onUploadRetroPop = async () => {
+    if (!selectedPaymentDetail || !retroPopFile) return;
+    setSavingRetroPop(true);
+    try {
+      const admin = await fetchAdminInfo(user?.email ?? undefined);
+      const executorName = admin.fullName || user?.email || "Admin";
+      const { payment, tenant } = selectedPaymentDetail;
+
+      const popUrl = await uploadFileToBucket(
+        "tenants",
+        `pop/${payment.tenantId}`,
+        retroPopFile
+      );
+
+      try {
+        await supabase
+          .from("tenant_rent_payments")
+          .update({
+            pop_url: popUrl,
+            pop_uploaded_by_name: executorName,
+            pop_uploaded_at: new Date().toISOString(),
+          })
+          .eq("id", payment.id);
+      } catch (err) {
+        console.warn("Could not update pop_url on payment:", err);
+      }
+
+      try {
+        await supabase.from("tenant_payment_proofs").insert({
+          tenant_id: tenant.id,
+          property_id: tenant.propertyId,
+          customer_name: tenant.fullName,
+          customer_email: tenant.email,
+          customer_phone: tenant.phone,
+          amount: payment.amountPaid,
+          payment_date: payment.paymentDate,
+          document_url: popUrl,
+          status: "verified",
+          notes: `POP uploaded by: ${executorName} for payment on ${payment.paymentDate}`,
+          company_id: currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null,
+        });
+      } catch (proofErr) {
+        console.warn("Could not insert tenant_payment_proofs:", proofErr);
+      }
+
+      alert("Proof of payment uploaded successfully!");
+      setSelectedPaymentDetail(null);
+      setRetroPopFile(null);
+      reload();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to upload POP");
+    } finally {
+      setSavingRetroPop(false);
+    }
   };
 
   const generateInvoiceForPayment = async (tenant: RentTenantRow, payment: TenantPaymentHistoryRow) => {
@@ -496,16 +705,16 @@ export default function RentCollectionPage() {
   };
 
   return (
-    <ModulePage title="Rent Collection" description="Monitor payment cycles, record transactions, and automate tenant correspondence.">
+    <ModulePage title="Record Rent Payment" description="Monitor payment cycles, record tenant payments, upload proof of payments (POP), and review verified audit trails.">
       {loading && <LoadingState label="Calculating collection metrics..." />}
       {!loading && error && <ErrorState message={error} onRetry={reload} />}
       {!loading && !error && (
         <div className="space-y-6">
           <div className="grid gap-4 md:grid-cols-4">
-            <StatCard label="Collection Rate" value={`${stats.collectionRate.toFixed(0)}%`} detail="Current cycle efficiency" icon={TrendingUp} colorClass="text-green-600" />
+            <StatCard label="Collection Rate" value={`${stats.total ? Math.round((stats.paid / (stats.assigned || 1)) * 100) : 0}%`} detail="Current cycle efficiency" icon={TrendingUp} colorClass="text-green-600" />
             <StatCard label="Fully Settled" value={String(stats.paid)} detail={`${stats.assigned} active units`} icon={CheckCircle2} colorClass="text-sky-600" />
             <StatCard label="Arrears / Due" value={String(stats.overdue)} detail="Immediate action required" icon={AlertCircle} colorClass="text-red-600" />
-            <StatCard label="Lease Notices" value={String(stats.onNotice)} detail="Vacation countdowns" icon={Clock} colorClass="text-amber-600" />
+            <StatCard label="Managed Tenants" value={String(stats.total)} detail={`${stats.unassigned} unassigned`} icon={Users} colorClass="text-muted" />
           </div>
 
           <section className="rounded-xl border border-border-color bg-surface p-1">
@@ -518,7 +727,7 @@ export default function RentCollectionPage() {
                   { key: "all", label: "All Tenants", count: tenants.length },
                   { key: "overdue", label: "In Arrears", count: stats.overdue },
                   { key: "paid", label: "Settled", count: stats.paid },
-                  { key: "notice", label: "On Notice", count: stats.onNotice }
+                  { key: "notice", label: "On Notice", count: tenants.filter(t => t.tenureStatus === "notice").length }
                 ]}
                 activeFilter={activeFilter}
                 onFilterChange={setActiveFilter}
@@ -604,14 +813,24 @@ export default function RentCollectionPage() {
                           </td>
                           <td className="px-6 py-4 text-right">
                             <div className="flex items-center justify-end gap-2">
-                              {isAssigned && (
+                              {isAssigned ? (
                                 <button
                                   type="button"
                                   onClick={() => openRecordModal(tenant)}
                                   className="flex items-center gap-2 rounded-lg bg-foreground px-3 py-1.5 text-xs font-black text-surface hover:opacity-90 shadow-sm transition-all"
                                 >
                                   <DollarSign size={14} />
-                                  Record Rent
+                                  Record Payment
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => alert("This tenant is not assigned to any property yet. Please assign them to a property on the Properties or Tenants page before recording rent payments.")}
+                                  className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-all"
+                                  title="Cannot record rent for unassigned tenant"
+                                >
+                                  <AlertCircle size={13} />
+                                  Unassigned
                                 </button>
                               )}
                               <button
@@ -639,18 +858,46 @@ export default function RentCollectionPage() {
                                   </div>
                                 ) : (
                                   <div className="grid gap-4">
-                                    {paymentsByTenant[tenant.id].slice(0, 5).map((pay) => (
-                                      <div key={pay.id} className="flex items-center justify-between rounded-xl border border-border-color bg-surface p-4 shadow-sm group/pay hover:border-foreground/20 transition-all">
+                                    {paymentsByTenant[tenant.id].slice(0, 10).map((pay) => (
+                                      <div
+                                        key={pay.id}
+                                        onClick={() => setSelectedPaymentDetail({ payment: pay, tenant })}
+                                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border-color bg-surface p-4 shadow-sm group/pay hover:border-foreground/30 hover:shadow-md transition-all cursor-pointer"
+                                      >
                                         <div className="flex items-center gap-4">
-                                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-50 text-green-600 dark:bg-green-900/20">
+                                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-50 text-green-600 dark:bg-green-900/20 shrink-0">
                                             <CheckCircle2 size={20} />
                                           </div>
                                           <div>
-                                            <p className="font-bold text-foreground">{formatCurrency(pay.amountPaid)}</p>
-                                            <p className="text-xs text-muted font-medium">Settled on {pay.paymentDate}</p>
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              <p className="font-bold text-foreground">{formatCurrency(pay.amountPaid)}</p>
+                                              <span className="rounded-full bg-surface-elevated border border-border-color px-2 py-0.5 text-[10px] font-bold text-muted">
+                                                {pay.paymentMethod || "EFT / Bank"}
+                                              </span>
+                                              {pay.popUrl ? (
+                                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                                                  <FileText size={11} /> POP Attached
+                                                </span>
+                                              ) : (
+                                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                                                  <UploadCloud size={11} /> Missing POP
+                                                </span>
+                                              )}
+                                            </div>
+                                            <p className="text-xs text-muted font-medium mt-0.5">
+                                              Settled on {pay.paymentDate} • Recorded by {pay.executedByName || "Staff"}
+                                            </p>
                                           </div>
                                         </div>
-                                        <div className="flex items-center gap-1 opacity-0 group-hover/pay:opacity-100 transition-all">
+                                        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedPaymentDetail({ payment: pay, tenant })}
+                                            className="rounded-lg border border-border-color bg-surface-elevated px-2.5 py-1.5 text-xs font-bold text-foreground hover:bg-surface transition flex items-center gap-1.5 shadow-2xs"
+                                          >
+                                            <Eye size={13} />
+                                            <span>Details &amp; POP</span>
+                                          </button>
                                           {pay.invoiceId ? (
                                             <Fragment>
                                               <TableActionButton icon={Eye} label="View Invoice" onClick={() => void viewInvoiceForPayment(pay, tenant.fullName, tenant.propertyName)} />
@@ -693,13 +940,13 @@ export default function RentCollectionPage() {
 
       <Modal
         open={Boolean(selectedTenant)}
-        onClose={() => setSelectedTenant(null)}
-        title={selectedTenant ? `Record Rent: ${selectedTenant.fullName}` : "Record Rent"}
+        onClose={() => { setSelectedTenant(null); setPopFile(null); }}
+        title={selectedTenant ? `Record Rent Payment: ${selectedTenant.fullName}` : "Record Rent Payment"}
       >
         <div className="space-y-4">
           <div className="rounded-xl border border-border-color bg-surface-elevated/50 p-4 flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold uppercase text-muted/60">Property Unit</p>
+              <p className="text-[10px] font-bold uppercase text-muted/60">Assigned Property</p>
               <p className="font-bold text-foreground">{selectedTenant?.propertyName ?? "-"}</p>
             </div>
             <Building size={24} className="text-muted/20" />
@@ -708,27 +955,254 @@ export default function RentCollectionPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Payment Date</label>
-              <input type="date" value={paymentForm.paymentDate} onChange={(e) => setPaymentForm((prev) => ({ ...prev, paymentDate: e.target.value }))} className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-foreground/5" />
+              <input
+                type="date"
+                value={paymentForm.paymentDate}
+                onChange={(e) => setPaymentForm((prev) => ({ ...prev, paymentDate: e.target.value }))}
+                className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-foreground/5"
+              />
             </div>
             <div>
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Billing Month</label>
-              <input type="month" value={paymentForm.paidMonth} onChange={(e) => setPaymentForm((prev) => ({ ...prev, paidMonth: e.target.value }))} className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-foreground/5" />
+              <input
+                type="month"
+                value={paymentForm.paidMonth}
+                onChange={(e) => setPaymentForm((prev) => ({ ...prev, paidMonth: e.target.value }))}
+                className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-foreground/5"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Payment Method</label>
+              <select
+                value={paymentForm.paymentMethod}
+                onChange={(e) => setPaymentForm((prev) => ({ ...prev, paymentMethod: e.target.value }))}
+                className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-foreground/5"
+              >
+                <option value="Bank Transfer / EFT">Bank Transfer / EFT</option>
+                <option value="Cash">Cash</option>
+                <option value="Card / POS">Card / POS</option>
+                <option value="Mobile Money">Mobile Money</option>
+                <option value="Cheque">Cheque</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Amount Received (NAD)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted">NAD</span>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  placeholder="0.00"
+                  value={paymentForm.amountPaid === ("" as unknown as number) ? "" : paymentForm.amountPaid}
+                  onChange={(e) => setPaymentForm((prev) => ({ ...prev, amountPaid: e.target.value === "" ? ("" as unknown as number) : Number(e.target.value) }))}
+                  className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 pl-12 text-lg font-black outline-none focus:ring-2 focus:ring-foreground/5"
+                />
+              </div>
             </div>
           </div>
 
           <div>
-            <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Amount Received (NAD)</label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted">NAD</span>
-              <input type="number" min={0} value={paymentForm.amountPaid} onChange={(e) => setPaymentForm((prev) => ({ ...prev, amountPaid: Number(e.target.value) }))} className="w-full rounded-lg border border-border-color bg-surface px-3 py-3 pl-12 text-xl font-black outline-none focus:ring-2 focus:ring-foreground/5" />
+            <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Internal Notes / Payment Reference (Optional)</label>
+            <input
+              type="text"
+              placeholder="e.g. Reference code, receipt #, bank teller slip"
+              value={paymentForm.notes}
+              onChange={(e) => setPaymentForm((prev) => ({ ...prev, notes: e.target.value }))}
+              className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Proof of Payment (POP) File</label>
+            <div className="rounded-xl border border-dashed border-border-color bg-surface-elevated/40 p-4 text-center hover:bg-surface-elevated/70 transition-colors">
+              <input
+                type="file"
+                id="rent-pop-upload"
+                accept="image/*,application/pdf"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    setPopFile(e.target.files[0]);
+                  }
+                }}
+                className="hidden"
+              />
+              <label htmlFor="rent-pop-upload" className="cursor-pointer flex flex-col items-center gap-1.5">
+                <UploadCloud size={24} className="text-muted" />
+                <span className="text-xs font-bold text-foreground">
+                  {popFile ? popFile.name : "Click to select or drop Proof of Payment (PDF / Image)"}
+                </span>
+                <span className="text-[10px] text-muted">Bank confirmation screenshot, scan, or EFT receipt</span>
+              </label>
+              {popFile && (
+                <button
+                  type="button"
+                  onClick={() => setPopFile(null)}
+                  className="mt-2 text-[10px] font-bold text-red-500 hover:underline"
+                >
+                  Remove attached file
+                </button>
+              )}
             </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setSelectedTenant(null)} className="rounded-lg border border-border-color px-4 py-2 text-sm font-bold text-muted hover:text-foreground">Cancel</button>
-            <button type="button" onClick={onSavePayment} disabled={saving} className="rounded-lg bg-foreground px-6 py-2 text-sm font-black text-surface hover:opacity-90 disabled:opacity-50 shadow-md">{saving ? "Processing..." : "Confirm Payment"}</button>
+            <button
+              type="button"
+              onClick={() => { setSelectedTenant(null); setPopFile(null); }}
+              className="rounded-lg border border-border-color px-4 py-2 text-sm font-bold text-muted hover:text-foreground"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onSavePayment}
+              disabled={saving}
+              className="rounded-lg bg-foreground px-6 py-2 text-sm font-black text-surface hover:opacity-90 disabled:opacity-50 shadow-md transition"
+            >
+              {saving ? "Recording..." : "Record Rent Payment"}
+            </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Payment Details & Proof of Payment (POP) Inspection Modal */}
+      <Modal
+        open={Boolean(selectedPaymentDetail)}
+        onClose={() => { setSelectedPaymentDetail(null); setRetroPopFile(null); }}
+        title="Payment Record & Proof of Payment (POP)"
+      >
+        {selectedPaymentDetail && (
+          <div className="space-y-5">
+            <div className="rounded-xl border border-border-color bg-surface-elevated/50 p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-base text-foreground">{selectedPaymentDetail.tenant.fullName}</h4>
+                  <p className="text-xs text-muted">{selectedPaymentDetail.tenant.propertyName}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">
+                    {formatCurrency(selectedPaymentDetail.payment.amountPaid)}
+                  </p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                    Settled on {selectedPaymentDetail.payment.paymentDate}
+                  </p>
+                </div>
+              </div>
+              <div className="pt-2 border-t border-border-color/50 grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-muted font-medium">Payment Method: </span>
+                  <span className="font-bold text-foreground">{selectedPaymentDetail.payment.paymentMethod || "Bank Transfer / EFT"}</span>
+                </div>
+                <div>
+                  <span className="text-muted font-medium">Recorded By: </span>
+                  <span className="font-bold text-foreground">{selectedPaymentDetail.payment.executedByName || "Staff"}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border-color bg-surface p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText size={18} className="text-muted" />
+                  <h5 className="font-bold text-sm text-foreground">Proof of Payment Document</h5>
+                </div>
+                {selectedPaymentDetail.payment.popUrl ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                    <ShieldCheck size={12} /> Verified POP
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                    <AlertCircle size={12} /> No POP Attached
+                  </span>
+                )}
+              </div>
+
+              {selectedPaymentDetail.payment.popUrl ? (
+                <div className="space-y-3 pt-2">
+                  <div className="rounded-lg bg-surface-elevated p-3 border border-border-color flex items-center justify-between">
+                    <div className="min-w-0 pr-2">
+                      <p className="text-xs font-bold text-foreground truncate">Proof of Payment File</p>
+                      <p className="text-[10px] text-muted">
+                        Uploaded by {selectedPaymentDetail.payment.popUploadedByName || "Staff"}
+                        {selectedPaymentDetail.payment.popUploadedAt && ` on ${new Date(selectedPaymentDetail.payment.popUploadedAt).toLocaleString()}`}
+                      </p>
+                    </div>
+                    <a
+                      href={selectedPaymentDetail.payment.popUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-xs font-bold text-surface hover:opacity-90 shadow-2xs"
+                    >
+                      <ExternalLink size={13} />
+                      <span>View POP</span>
+                    </a>
+                  </div>
+
+                  <p className="text-[11px] text-muted">Need to replace or upload an updated proof of payment?</p>
+                </div>
+              ) : null}
+
+              <div className="pt-2 border-t border-border-color/50 space-y-3">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-muted">
+                  {selectedPaymentDetail.payment.popUrl ? "Upload Replacement Proof of Payment" : "Attach Proof of Payment (POP)"}
+                </label>
+                <div className="rounded-xl border border-dashed border-border-color bg-surface-elevated/40 p-3 text-center">
+                  <input
+                    type="file"
+                    id="retro-pop-upload"
+                    accept="image/*,application/pdf"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setRetroPopFile(e.target.files[0]);
+                      }
+                    }}
+                    className="hidden"
+                  />
+                  <label htmlFor="retro-pop-upload" className="cursor-pointer flex flex-col items-center gap-1">
+                    <UploadCloud size={20} className="text-muted" />
+                    <span className="text-xs font-bold text-foreground">
+                      {retroPopFile ? retroPopFile.name : "Select POP Document (PDF / Image)"}
+                    </span>
+                  </label>
+                </div>
+
+                {retroPopFile && (
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRetroPopFile(null)}
+                      className="rounded-lg border border-border-color px-3 py-1.5 text-xs font-bold text-muted hover:text-foreground"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onUploadRetroPop}
+                      disabled={savingRetroPop}
+                      className="rounded-lg bg-foreground px-4 py-1.5 text-xs font-bold text-surface hover:opacity-90 disabled:opacity-50"
+                    >
+                      {savingRetroPop ? "Uploading..." : "Save Proof of Payment"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => { setSelectedPaymentDetail(null); setRetroPopFile(null); }}
+                className="rounded-lg border border-border-color px-4 py-2 text-sm font-bold text-foreground hover:bg-surface-elevated"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <DocumentShareModal

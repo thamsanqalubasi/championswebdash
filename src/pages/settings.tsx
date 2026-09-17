@@ -28,10 +28,12 @@ import {
   KeyRound,
   Globe,
   Coins,
+  Phone,
+  Loader2,
 } from "lucide-react";
 
 export default function SettingsPage() {
-  const { user, currentCompany, currentCompanyUser, setCurrentCompany, changePassword, isAdmin } = useAuth();
+  const { user, currentCompany, currentCompanyUser, setCurrentCompany, setCurrentCompanyUser, changePassword, isAdmin } = useAuth();
   const [data, setData] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -108,6 +110,159 @@ export default function SettingsPage() {
   }, [reloadKey, currentCompany.id]);
 
   const reload = () => setReloadKey((v) => v + 1);
+
+  // Staff Personal Profile & Digital Signature state
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [staffForm, setStaffForm] = useState({
+    fullName: "",
+    email: "",
+    phone: "",
+    jobTitle: "",
+    signatureUrl: "",
+  });
+  const [sigUploading, setSigUploading] = useState(false);
+  const [staffMsg, setStaffMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  useEffect(() => {
+    async function loadStaffProfile() {
+      const email = user?.email || currentCompanyUser?.email || "";
+      const uid = user?.id || currentCompanyUser?.userId || email;
+      let sig = localStorage.getItem(`staff_signature_${uid}`) || localStorage.getItem(`staff_signature_${email}`) || "";
+      let phone = localStorage.getItem(`staff_phone_${uid}`) || localStorage.getItem(`staff_phone_${email}`) || "";
+
+      if (email) {
+        try {
+          const { data: uData } = await supabase
+            .from("users")
+            .select("first_name, last_name, phone, signature_url")
+            .eq("email", email)
+            .limit(1)
+            .maybeSingle();
+
+          if (uData) {
+            if (uData.signature_url) sig = uData.signature_url;
+            if (uData.phone) phone = uData.phone;
+          }
+        } catch {}
+      }
+
+      setStaffForm({
+        fullName: currentCompanyUser?.fullName || (user?.user_metadata?.full_name as string) || email.split("@")[0],
+        email: email,
+        phone: phone || (user?.user_metadata?.phone as string) || "",
+        jobTitle: currentCompanyUser?.jobTitle || "Staff Member",
+        signatureUrl: sig,
+      });
+    }
+    void loadStaffProfile();
+  }, [user, currentCompanyUser, reloadKey]);
+
+  const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSigUploading(true);
+    try {
+      const url = await uploadFileToBucket("signatures", user?.id || "staff", file);
+      setStaffForm((prev) => ({ ...prev, signatureUrl: url }));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to upload signature");
+    } finally {
+      setSigUploading(false);
+    }
+  };
+
+  const handleSaveStaffProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileSaving(true);
+    setStaffMsg(null);
+    try {
+      const email = staffForm.email.trim();
+      const names = staffForm.fullName.trim().split(" ");
+      const firstName = names[0] || "";
+      const lastName = names.slice(1).join(" ") || "";
+      const uid = user?.id || currentCompanyUser?.userId || email;
+
+      // 1. Update Supabase Auth metadata and email (if changed)
+      try {
+        if (user && email && email !== user.email) {
+          await supabase.auth.updateUser({ email });
+        }
+        await supabase.auth.updateUser({
+          data: {
+            full_name: staffForm.fullName,
+            phone: staffForm.phone,
+          },
+        });
+      } catch (authErr) {
+        console.warn("Supabase auth updateUser:", authErr);
+      }
+
+      // 2. Update users table
+      try {
+        await supabase
+          .from("users")
+          .update({
+            first_name: firstName,
+            last_name: lastName,
+            phone: staffForm.phone,
+            signature_url: staffForm.signatureUrl,
+            email: email,
+          })
+          .eq("email", currentCompanyUser?.email || user?.email);
+      } catch (uErr) {
+        console.warn("users table update:", uErr);
+      }
+
+      // 3. Update company_users table
+      try {
+        await supabase
+          .from("company_users")
+          .update({
+            full_name: staffForm.fullName,
+            phone: staffForm.phone,
+            signature_url: staffForm.signatureUrl,
+            email: email,
+          })
+          .eq("email", currentCompanyUser?.email || user?.email);
+      } catch (cuErr) {
+        console.warn("company_users table update:", cuErr);
+      }
+
+      // 4. Save to localStorage for instant client-side availability
+      localStorage.setItem(`staff_signature_${uid}`, staffForm.signatureUrl);
+      localStorage.setItem(`staff_signature_${email}`, staffForm.signatureUrl);
+      localStorage.setItem(`staff_phone_${uid}`, staffForm.phone);
+      localStorage.setItem(`staff_phone_${email}`, staffForm.phone);
+
+      // 5. Update auth context state
+      if (setCurrentCompanyUser && currentCompanyUser) {
+        setCurrentCompanyUser({
+          ...currentCompanyUser,
+          fullName: staffForm.fullName,
+          email: email,
+        });
+      }
+
+      await logAuditEvent({
+        companyId: currentCompany.id,
+        action: "STAFF_PROFILE_UPDATED",
+        entityType: "user_account",
+        entityId: uid,
+        entityName: staffForm.fullName,
+        actorName: staffForm.fullName,
+        details: "Staff member updated personal profile and digital signature credentials.",
+      });
+
+      setStaffMsg({ type: "success", text: "Profile and digital signature updated successfully!" });
+      setProfileModalOpen(false);
+      reload();
+    } catch (err) {
+      setStaffMsg({ type: "error", text: err instanceof Error ? err.message : "Failed to save profile." });
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
   const openEditAdmin = () => {
     if (!data) return;
@@ -360,6 +515,127 @@ export default function SettingsPage() {
       {!loading && error && <ErrorState message={error} onRetry={reload} />}
       {!loading && !error && data && (
         <div className="max-w-4xl space-y-6 pb-16">
+          {/* Staff Personal Profile & Digital Signature */}
+          <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
+            <SectionHeader
+              icon={UserIcon}
+              title="Staff Profile & Digital Signature"
+              description="Your profile credentials and official digital signature stamped on Lease Agreements, invoices, receipts, and folios."
+              onEdit={() => setProfileModalOpen(true)}
+            />
+
+            {staffMsg && (
+              <div
+                className={`mb-4 flex items-center gap-2 rounded-xl p-3 text-xs font-medium ${
+                  staffMsg.type === "success"
+                    ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                    : "bg-red-500/10 text-red-600 border border-red-500/20"
+                }`}
+              >
+                {staffMsg.type === "success" ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                <span>{staffMsg.text}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              {/* Profile Card */}
+              <div className="rounded-xl bg-surface-elevated/60 p-4 text-xs space-y-3 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Staff Member</p>
+                    <span className="rounded-md bg-blue-500/10 px-2.5 py-0.5 text-xs font-bold text-blue-600">
+                      {staffForm.jobTitle}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-base font-black text-foreground">{staffForm.fullName}</p>
+                    <p className="text-muted flex items-center gap-1.5 mt-1 font-medium">
+                      <Mail size={13} className="text-blue-500" />
+                      <span>{staffForm.email}</span>
+                    </p>
+                    <p className="text-muted flex items-center gap-1.5 mt-1 font-medium">
+                      <Phone size={13} className="text-emerald-500" />
+                      <span>{staffForm.phone || "Phone not configured"}</span>
+                    </p>
+                  </div>
+                </div>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setProfileModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-border-color bg-surface px-3.5 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition shadow-xs"
+                  >
+                    <Pencil size={12} />
+                    <span>Edit Profile & Phone</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Digital Signature Card */}
+              <div className="rounded-xl bg-surface-elevated/60 p-4 text-xs space-y-3 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted flex items-center gap-1">
+                      <FileSignature size={13} className="text-blue-500" />
+                      <span>Digital Stamp / Signature</span>
+                    </p>
+                    {staffForm.signatureUrl ? (
+                      <span className="rounded-md bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-bold text-emerald-600">
+                        ● Active on File
+                      </span>
+                    ) : (
+                      <span className="rounded-md bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-bold text-amber-600">
+                        ○ Missing Signature
+                      </span>
+                    )}
+                  </div>
+
+                  {staffForm.signatureUrl ? (
+                    <div className="rounded-xl border border-border-color bg-white dark:bg-slate-900 p-3 flex items-center justify-center min-h-[85px] shadow-inner">
+                      <img
+                        src={staffForm.signatureUrl}
+                        alt="Digital Signature"
+                        className="max-h-16 object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-border-color bg-surface p-4 text-center text-muted">
+                      <p className="font-semibold text-foreground text-xs">No digital signature on file</p>
+                      <p className="text-[11px] mt-0.5 leading-relaxed">
+                        Upload your signature image (PNG/JPEG) to automatically endorse contracts and receipts.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setProfileModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition shadow-xs"
+                  >
+                    <Upload size={12} />
+                    <span>{staffForm.signatureUrl ? "Update Signature" : "Upload Signature"}</span>
+                  </button>
+                  {staffForm.signatureUrl && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStaffForm((prev) => ({ ...prev, signatureUrl: "" }));
+                        const uid = user?.id || currentCompanyUser?.userId || staffForm.email;
+                        localStorage.removeItem(`staff_signature_${uid}`);
+                        localStorage.removeItem(`staff_signature_${staffForm.email}`);
+                      }}
+                      className="rounded-lg px-2.5 py-1.5 text-xs text-red-500 hover:bg-red-500/10 transition font-medium"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* User Account & Password Change */}
           <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
             <SectionHeader
@@ -790,6 +1066,134 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Edit Staff Profile & Digital Signature Modal */}
+      <Modal open={profileModalOpen} onClose={() => setProfileModalOpen(false)} title="Edit Staff Profile & Signature">
+        <form onSubmit={handleSaveStaffProfile} className="space-y-4 text-xs">
+          <div>
+            <label className="mb-1 block font-medium text-foreground">Full Name *</label>
+            <input
+              type="text"
+              required
+              value={staffForm.fullName}
+              onChange={(e) => setStaffForm({ ...staffForm, fullName: e.target.value })}
+              placeholder="First and Last Name"
+              className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600 font-medium"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block font-medium text-foreground">Email Address *</label>
+              <input
+                type="email"
+                required
+                value={staffForm.email}
+                onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })}
+                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600 font-medium"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block font-medium text-foreground">Phone / WhatsApp</label>
+              <input
+                type="text"
+                placeholder="+27 XX XXX XXXX"
+                value={staffForm.phone}
+                onChange={(e) => setStaffForm({ ...staffForm, phone: e.target.value })}
+                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600 font-medium"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block font-medium text-foreground">Job Title / Role</label>
+            <input
+              type="text"
+              disabled
+              value={staffForm.jobTitle}
+              className="w-full rounded-xl border border-border-color bg-surface-elevated/50 px-3 py-2 text-muted font-medium cursor-not-allowed"
+            />
+            <p className="text-[10px] text-muted mt-0.5">Role level managed by organization administrator.</p>
+          </div>
+
+          {/* Digital Signature Upload */}
+          <div className="pt-2 border-t border-border-color">
+            <label className="mb-2 block font-medium text-foreground flex items-center gap-1.5">
+              <FileSignature size={14} className="text-blue-500" />
+              <span>Digital Signature Stamp (Clear PNG or JPG Recommended)</span>
+            </label>
+
+            {staffForm.signatureUrl && (
+              <div className="mb-3 flex items-center gap-4 rounded-xl border border-border-color bg-white dark:bg-slate-900 p-3">
+                <img
+                  src={staffForm.signatureUrl}
+                  alt="Signature Preview"
+                  className="h-14 max-w-[200px] object-contain"
+                />
+                <div className="text-xs">
+                  <p className="font-semibold text-foreground">Active Signature</p>
+                  <p className="text-[11px] text-muted">Ready to stamp on lease agreements and folios.</p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3">
+              <label
+                className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border-color bg-surface-elevated px-4 py-2 text-xs font-semibold text-foreground hover:bg-surface transition ${
+                  sigUploading ? "opacity-60 pointer-events-none" : ""
+                }`}
+              >
+                {sigUploading ? <Loader2 size={14} className="animate-spin text-blue-600" /> : <Upload size={14} className="text-blue-500" />}
+                <span>{sigUploading ? "Uploading Signature..." : staffForm.signatureUrl ? "Change Signature File" : "Upload Signature File"}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleSignatureUpload}
+                  disabled={sigUploading}
+                />
+              </label>
+
+              {staffForm.signatureUrl && (
+                <button
+                  type="button"
+                  onClick={() => setStaffForm({ ...staffForm, signatureUrl: "" })}
+                  className="rounded-lg px-3 py-2 text-xs text-red-500 hover:bg-red-500/10 transition font-medium"
+                >
+                  Clear Signature
+                </button>
+              )}
+            </div>
+
+            <p className="mt-2 text-[11px] text-muted">Or enter a direct signature image URL:</p>
+            <input
+              type="url"
+              placeholder="https://.../signature.png"
+              value={staffForm.signatureUrl}
+              onChange={(e) => setStaffForm({ ...staffForm, signatureUrl: e.target.value })}
+              className="mt-1 w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600 font-mono text-xs"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-border-color">
+            <button
+              type="button"
+              onClick={() => setProfileModalOpen(false)}
+              className="rounded-xl border border-border-color px-4 py-2 text-xs font-semibold text-muted hover:bg-surface-elevated transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={profileSaving || sigUploading}
+              className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+            >
+              {profileSaving ? <Loader2 size={14} className="animate-spin" /> : null}
+              <span>{profileSaving ? "Saving..." : "Save Profile & Signature"}</span>
+            </button>
+          </div>
+        </form>
       </Modal>
     </ModulePage>
   );

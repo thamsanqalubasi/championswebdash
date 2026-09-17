@@ -10,10 +10,11 @@ import { uploadFileToBucket } from "@/lib/storage";
 import { supabase } from "@/lib/supabase";
 import type { PropertyRow } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
-import { Plus, Pencil, Trash, ChevronRight, Building2, BedDouble, X, Layers, Image as ImageIcon, Loader2, Eye, Globe, EyeOff, MapPin, DollarSign, Calendar, TrendingUp } from "lucide-react";
+import { Plus, Pencil, Trash, ChevronRight, Building2, BedDouble, X, Layers, Image as ImageIcon, Loader2, Eye, Globe, EyeOff, MapPin, DollarSign, Calendar, TrendingUp, KeyRound } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 import { useCurrency } from "@/lib/currency";
 import { PropertyStatsModal } from "@/components/property-stats-modal";
+import { CheckinModal } from "@/components/checkin-modal";
 
 const HOSPITALITY_TYPES = ["hotel", "motel", "lodge", "guest_house", "commercial"];
 const RENTAL_TYPES = ["house", "apartment", "storage"];
@@ -87,6 +88,7 @@ export default function PropertiesPage() {
   const [pinDialogForProperty, setPinDialogForProperty] = useState(false);
   const [photoToDeleteIndex, setPhotoToDeleteIndex] = useState<number | null>(null);
   const [pinDialogForPhoto, setPinDialogForPhoto] = useState(false);
+  const [checkinPropertyId, setCheckinPropertyId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -406,6 +408,9 @@ export default function PropertiesPage() {
                           <TableRowActions>
                             <TableActionButton icon={Eye} label="View" onClick={()=>setViewTarget(row)}/>
                             {hosp && (
+                              <TableActionButton icon={KeyRound} label="Check In" onClick={()=>setCheckinPropertyId(row.id)}/>
+                            )}
+                            {hosp && (
                               <TableActionButton icon={TrendingUp} label="Stats" onClick={()=>setStatsProperty(row)}/>
                             )}
                             {!hosp && (
@@ -671,6 +676,13 @@ export default function PropertiesPage() {
         isOpen={statsProperty !== null}
         onClose={() => setStatsProperty(null)}
         property={statsProperty || { id: "", name: "", type: "" }}
+      />
+
+      <CheckinModal
+        isOpen={Boolean(checkinPropertyId)}
+        onClose={() => setCheckinPropertyId(null)}
+        initialPropertyId={checkinPropertyId || undefined}
+        onSuccess={reload}
       />
     </ModulePage>
   );

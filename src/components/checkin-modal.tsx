@@ -24,14 +24,16 @@ import {
 import type { CommercialRoom, MealPlan, PropertyRow } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
+import { supabase } from "@/lib/supabase";
 
 interface CheckinModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  initialPropertyId?: string;
 }
 
-export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) {
+export function CheckinModal({ isOpen, onClose, onSuccess, initialPropertyId }: CheckinModalProps) {
   const { currentCompany, currentCompanyUser } = useAuth();
   const { currency, symbol } = useCurrency();
   const [activeTab, setActiveTab] = useState<"instant" | "code">("instant");
@@ -75,15 +77,51 @@ export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) 
       setInstantCode(generateInstantBookingCode("BK"));
       fetchProperties(currentCompany.id).then((props) => {
         setProperties(props);
-        const firstCommercial = props.find((p) =>
-          ["hotel", "motel", "lodge", "guest_house", "commercial"].includes(p.type)
-        ) || props[0];
-        if (firstCommercial) {
-          setSelectedPropertyId(firstCommercial.id);
+        if (initialPropertyId && props.some((p) => p.id === initialPropertyId)) {
+          setSelectedPropertyId(initialPropertyId);
+        } else {
+          const firstCommercial = props.find((p) =>
+            ["hotel", "motel", "lodge", "guest_house", "commercial"].includes(p.type)
+          ) || props[0];
+          if (firstCommercial) {
+            setSelectedPropertyId(firstCommercial.id);
+          }
         }
       });
     }
-  }, [isOpen, currentCompany.id]);
+  }, [isOpen, currentCompany.id, initialPropertyId]);
+
+  const [creatingQuickRoom, setCreatingQuickRoom] = useState(false);
+  const handleCreateQuickRoom = async () => {
+    if (!selectedPropertyId) return;
+    setCreatingQuickRoom(true);
+    try {
+      const roomNum = String(101 + rooms.length);
+      const { data: newRoom, error: createRoomErr } = await supabase
+        .from("commercial_rooms")
+        .insert({
+          property_id: selectedPropertyId,
+          company_id: currentCompany.id,
+          room_number: roomNum,
+          room_type: "Standard Room",
+          status: "available",
+          price_per_night: 850,
+          price_bed_breakfast: 950,
+          max_guests: 2,
+        })
+        .select("*")
+        .single();
+      if (createRoomErr) throw createRoomErr;
+      if (newRoom) {
+        setRooms((prev) => [...prev, newRoom]);
+        setSelectedRoomId(newRoom.id);
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to quick create room");
+    } finally {
+      setCreatingQuickRoom(false);
+    }
+  };
 
   useEffect(() => {
     if (selectedPropertyId) {
@@ -345,22 +383,36 @@ export function CheckinModal({ isOpen, onClose, onSuccess }: CheckinModalProps) 
                 <label className="mb-1 block text-xs font-medium text-foreground">
                   Select Room / Unit *
                 </label>
-                <select
-                  value={selectedRoomId}
-                  onChange={(e) => setSelectedRoomId(e.target.value)}
-                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none"
-                  required
-                >
-                  {rooms.map((r) => (
-                    <option
-                      key={r.id}
-                      value={r.id}
-                      disabled={r.status === "occupied"}
+                {rooms.length === 0 ? (
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">No rooms yet.</p>
+                    <button
+                      type="button"
+                      onClick={handleCreateQuickRoom}
+                      disabled={creatingQuickRoom}
+                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition"
                     >
-                      {r.roomNumber} - {r.roomType.toUpperCase()} ({r.status.replace("_", " ")}) - R{r.priceBedBreakfast}/night
-                    </option>
-                  ))}
-                </select>
+                      {creatingQuickRoom ? "Creating Room..." : "+ Add Room 101"}
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedRoomId}
+                    onChange={(e) => setSelectedRoomId(e.target.value)}
+                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none"
+                    required
+                  >
+                    {rooms.map((r) => (
+                      <option
+                        key={r.id}
+                        value={r.id}
+                        disabled={r.status === "occupied"}
+                      >
+                        {r.roomNumber} - {r.roomType.toUpperCase()} ({r.status.replace("_", " ")}) - {symbol}{r.priceBedBreakfast || r.pricePerNight}/night
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
 

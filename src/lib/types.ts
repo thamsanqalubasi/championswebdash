@@ -375,6 +375,8 @@ export type TenantRow = {
   email: string;
   tenureStatus: TenantStatus;
   rentStatus: "paid" | "partial" | "overdue" | "unknown";
+  tenureStartDate?: string;
+  createdAt?: string;
 };
 
 export type DashboardStats = {

@@ -334,7 +334,12 @@ export default function MarketingPage() {
       });
 
       const { error } = await supabase.from("marketing_boosted_listings").insert(rows);
-      if (error) throw error;
+      if (error) {
+        if (error.message?.includes("row-level security")) {
+          alert("Database Row-Level Security Notice:\nPlease execute the SQL migration in 'docs/fix-all-rls-and-pop.sql' in your Supabase SQL Editor to enable public & staff permissions on marketing_boosted_listings.");
+        }
+        throw error;
+      }
 
       setBoostModalOpen(false);
       setBoostSelectedIds([]);
@@ -344,7 +349,9 @@ export default function MarketingPage() {
       setBoostForm(prev => ({ ...prev, budget: "", boost_start_date: new Date().toISOString().slice(0, 10), boost_end_date: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10) }));
       reload();
     } catch (err: any) {
-      alert(err?.message || "Failed to boost listing.");
+      if (!err?.message?.includes("row-level security")) {
+        alert(err?.message || "Failed to boost listing.");
+      }
     } finally {
       setSubmittingBoost(false);
     }

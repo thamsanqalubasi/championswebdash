@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { uploadFileToBucket } from '@/lib/storage';
 import { useAuth } from '@/lib/auth';
@@ -6,7 +7,8 @@ import { useCurrency } from '@/lib/currency';
 import { 
   Plus, Edit, Trash, Eye, EyeOff, Upload, X, Save, User, Building2, 
   ChevronLeft, ChevronRight, MapPin, Phone, Mail, Camera, Home, 
-  DollarSign, Image as ImageIcon 
+  DollarSign, Image as ImageIcon, CheckCircle2, Globe, Search, Filter,
+  Sparkles, Loader2, RefreshCw
 } from 'lucide-react';
 
 type AgentListing = {
@@ -37,17 +39,40 @@ type AgentListing = {
   updatedAt: string;
 };
 
+type OrgResidentialProperty = {
+  id: string;
+  name: string;
+  type: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  monthly_rent?: number;
+  photos?: string[];
+  description?: string;
+  is_published?: boolean;
+  company_id?: string;
+};
+
 const AMENITIES_OPTIONS = [
   'wifi', 'parking', 'pool', 'garden', 'security', 
   'ac', 'gym', 'balcony', 'furnished', 'pet_friendly'
 ];
 
+const TABS = ['My Listings', 'Publish from Portfolio', 'Add / Edit Listing', 'My Profile'];
+
 export default function AgentPortalPage() {
-  const { user } = useAuth();
+  const { user, currentCompany } = useAuth();
   const { currency, symbol, formatWhole } = useCurrency();
   const [activeTab, setActiveTab] = useState(0);
   const [listings, setListings] = useState<AgentListing[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Org residential properties state
+  const [orgProperties, setOrgProperties] = useState<OrgResidentialProperty[]>([]);
+  const [loadingOrgProps, setLoadingOrgProps] = useState(false);
+  const [togglingPropId, setTogglingPropId] = useState<string | null>(null);
+  const [orgSearch, setOrgSearch] = useState('');
+  const [orgTypeFilter, setOrgTypeFilter] = useState('all');
 
   const defaultFormData = {
     name: '',
@@ -122,8 +147,109 @@ export default function AgentPortalPage() {
     setLoading(false);
   };
 
+  const fetchOrgProperties = async () => {
+    setLoadingOrgProps(true);
+    try {
+      let query = supabase
+        .from('properties')
+        .select('id, name, type, address, city, country, monthly_rent, photos, description, is_published, company_id')
+        .in('type', ['house', 'apartment', 'storage', 'room']);
+      
+      const compId = currentCompany?.id;
+      if (compId) {
+        query = query.or(`company_id.eq.${compId},company_id.is.null`);
+      }
+
+      const { data, error } = await query.order('name');
+      if (error) {
+        // Fallback without company filter
+        const { data: fallbackData } = await supabase
+          .from('properties')
+          .select('id, name, type, address, city, country, monthly_rent, photos, description, is_published')
+          .in('type', ['house', 'apartment', 'storage', 'room'])
+          .order('name');
+        if (fallbackData) {
+          setOrgProperties(fallbackData.map((p: any) => ({
+            ...p,
+            photos: Array.isArray(p.photos) ? p.photos : typeof p.photos === 'string' ? (() => { try { return JSON.parse(p.photos); } catch { return []; } })() : [],
+          })));
+        }
+      } else if (data) {
+        setOrgProperties(data.map((p: any) => ({
+          ...p,
+          photos: Array.isArray(p.photos) ? p.photos : typeof p.photos === 'string' ? (() => { try { return JSON.parse(p.photos); } catch { return []; } })() : [],
+        })));
+      }
+    } catch (err) {
+      console.error('Error fetching org properties:', err);
+    } finally {
+      setLoadingOrgProps(false);
+    }
+  };
+
+  const handleTogglePublishOrgProperty = async (prop: OrgResidentialProperty) => {
+    setTogglingPropId(prop.id);
+    try {
+      const existing = listings.find(l => l.name.trim().toLowerCase() === prop.name.trim().toLowerCase());
+      const isCurrentlyLive = existing ? existing.isPublished : false;
+
+      if (isCurrentlyLive && existing) {
+        // Hide from Agent Index
+        await supabase.from('agent_listings').update({ is_published: false }).eq('id', existing.id);
+        await supabase.from('properties').update({ is_published: false }).eq('id', prop.id);
+        setListings(prev => prev.map(l => l.id === existing.id ? { ...l, isPublished: false } : l));
+        setOrgProperties(prev => prev.map(p => p.id === prop.id ? { ...p, is_published: false } : p));
+      } else if (existing) {
+        // Reactivate on Agent Index
+        await supabase.from('agent_listings').update({ is_published: true }).eq('id', existing.id);
+        await supabase.from('properties').update({ is_published: true }).eq('id', prop.id);
+        setListings(prev => prev.map(l => l.id === existing.id ? { ...l, isPublished: true } : l));
+        setOrgProperties(prev => prev.map(p => p.id === prop.id ? { ...p, is_published: true } : p));
+      } else {
+        // Publish new to Agent Index
+        const propPhotos = prop.photos || [];
+        const payload = {
+          name: prop.name,
+          type: prop.type || 'house',
+          listing_type: 'rent' as const,
+          price: prop.monthly_rent || 0,
+          address: prop.address || '',
+          city: prop.city || '',
+          country: prop.country || '',
+          description: prop.description || `${prop.name} - managed residential property ready for leasing.`,
+          bedrooms: 1,
+          bathrooms: 1,
+          area_sqm: 0,
+          amenities: ['wifi', 'parking', 'security'],
+          photos: propPhotos,
+          is_published: true,
+          agent_name: `${profile.firstName} ${profile.lastName}`.trim() || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Property Agent',
+          agent_email: profile.email || user?.email || '',
+          agent_phone: profile.phone || '',
+          agent_whatsapp: profile.whatsapp || '',
+          agent_photo_url: profile.photoUrl || '',
+          agent_gender: profile.gender || 'other',
+          agent_user_id: user?.id,
+          company_id: prop.company_id || currentCompany?.id,
+        };
+
+        const { error } = await supabase.from('agent_listings').insert(payload);
+        if (error) throw error;
+        await supabase.from('properties').update({ is_published: true }).eq('id', prop.id);
+        await fetchListings();
+        setOrgProperties(prev => prev.map(p => p.id === prop.id ? { ...p, is_published: true } : p));
+      }
+    } catch (err) {
+      console.error('Error toggling listing on agent index:', err);
+      alert('Error updating agent index status.');
+    } finally {
+      setTogglingPropId(null);
+    }
+  };
+
   useEffect(() => {
     fetchListings();
+    fetchOrgProperties();
     const savedProfile = localStorage.getItem('agent_profile');
     if (savedProfile) {
       try {
@@ -154,7 +280,7 @@ export default function AgentPortalPage() {
       amenities: listing.amenities,
       photos: listing.photos,
     });
-    setActiveTab(1);
+    setActiveTab(2);
   };
 
   const handleDelete = async (id: string) => {
@@ -278,7 +404,7 @@ export default function AgentPortalPage() {
         <h1 className="text-2xl font-bold">Agent Portal — Property Listings</h1>
         {activeTab === 0 && (
           <button 
-            onClick={() => { setEditingId(null); setFormData(defaultFormData); setActiveTab(1); }}
+            onClick={() => { setEditingId(null); setFormData(defaultFormData); setActiveTab(2); }}
             className="bg-blue-600 text-white rounded-xl px-4 py-2 text-sm font-medium hover:bg-blue-700 flex items-center gap-2"
           >
             <Plus size={16} /> Add Listing
@@ -287,7 +413,7 @@ export default function AgentPortalPage() {
       </div>
 
       <div className="flex gap-6 border-b border-border-color">
-        {['My Listings', 'Add / Edit Listing', 'My Profile'].map((tab, idx) => (
+        {TABS.map((tab, idx) => (
           <button
             key={tab}
             onClick={() => setActiveTab(idx)}
@@ -371,7 +497,194 @@ export default function AgentPortalPage() {
           </div>
         )}
 
+        {/* Tab 1: Publish from Portfolio */}
         {activeTab === 1 && (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border-color pb-4">
+              <div>
+                <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <Building2 size={20} className="text-blue-600" />
+                  <span>Publish from Portfolio — Agent Index</span>
+                </h2>
+                <p className="text-xs text-muted mt-1">
+                  Promote residential properties from your organization's portfolio directly onto the public Agent Portal Index.
+                  Properties active on the index receive direct public inquiries and high-intent tenant leads.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={fetchOrgProperties}
+                disabled={loadingOrgProps}
+                className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface transition self-start md:self-auto"
+              >
+                <RefreshCw size={13} className={loadingOrgProps ? "animate-spin" : ""} />
+                <span>Refresh Portfolio</span>
+              </button>
+            </div>
+
+            {/* Filter & Search Toolbar */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative flex-1 min-w-[220px]">
+                <Search size={15} className="absolute left-3 top-2.5 text-muted" />
+                <input
+                  type="text"
+                  placeholder="Search properties by name, city, address..."
+                  value={orgSearch}
+                  onChange={(e) => setOrgSearch(e.target.value)}
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated pl-9 pr-3 py-2 text-xs text-foreground outline-none focus:border-blue-600"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Filter size={14} className="text-muted" />
+                <select
+                  value={orgTypeFilter}
+                  onChange={(e) => setOrgTypeFilter(e.target.value)}
+                  className="rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none focus:border-blue-600"
+                >
+                  <option value="all">All Types</option>
+                  <option value="house">Houses</option>
+                  <option value="apartment">Apartments</option>
+                  <option value="storage">Storage</option>
+                  <option value="room">Rooms</option>
+                </select>
+              </div>
+            </div>
+
+            {loadingOrgProps ? (
+              <div className="text-center py-16 text-muted">
+                <Loader2 size={32} className="mx-auto mb-3 animate-spin text-blue-600" />
+                <p className="text-sm">Loading portfolio properties...</p>
+              </div>
+            ) : orgProperties.length === 0 ? (
+              <div className="text-center py-16 text-muted bg-surface-elevated/40 rounded-2xl border border-dashed border-border-color">
+                <Building2 size={44} className="mx-auto mb-3 opacity-30" />
+                <p className="text-sm font-semibold text-foreground">No residential portfolio properties found</p>
+                <p className="text-xs text-muted mt-1 max-w-sm mx-auto">
+                  Add residential properties (houses, apartments, storage units) in Property Management to toggle them here.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {orgProperties
+                  .filter((prop) => {
+                    const q = orgSearch.toLowerCase();
+                    const matchesSearch = !q ||
+                      prop.name.toLowerCase().includes(q) ||
+                      (prop.address || "").toLowerCase().includes(q) ||
+                      (prop.city || "").toLowerCase().includes(q);
+                    const matchesType = orgTypeFilter === "all" || prop.type === orgTypeFilter;
+                    return matchesSearch && matchesType;
+                  })
+                  .map((prop) => {
+                    const matchedListing = listings.find(
+                      (l) => l.name.trim().toLowerCase() === prop.name.trim().toLowerCase()
+                    );
+                    const isLive = Boolean(matchedListing && matchedListing.isPublished);
+                    const isToggling = togglingPropId === prop.id;
+                    const primaryPhoto = prop.photos?.[0];
+
+                    return (
+                      <div
+                        key={prop.id}
+                        className={`group relative rounded-2xl border bg-surface overflow-hidden shadow-xs transition hover:shadow-md flex flex-col justify-between ${
+                          isLive ? "border-emerald-500/40 ring-1 ring-emerald-500/20" : "border-border-color"
+                        }`}
+                      >
+                        <div>
+                          {/* Image Container */}
+                          <div className="relative h-44 w-full bg-surface-elevated overflow-hidden">
+                            {primaryPhoto ? (
+                              <img
+                                src={primaryPhoto}
+                                alt={prop.name}
+                                className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                              />
+                            ) : (
+                              <div className="h-full w-full flex flex-col items-center justify-center text-muted bg-surface-elevated">
+                                <Building2 size={36} className="opacity-30 mb-1" />
+                                <span className="text-[11px]">No Photo</span>
+                              </div>
+                            )}
+
+                            {/* Top Badges */}
+                            <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 pointer-events-none">
+                              <span className="capitalize px-2.5 py-1 rounded-full text-[11px] font-bold bg-black/70 text-white backdrop-blur-xs">
+                                {prop.type}
+                              </span>
+
+                              {isLive ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-600 text-white shadow-xs">
+                                  <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
+                                  <span>Active on Index</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-black/60 text-white backdrop-blur-xs">
+                                  <span>Not on Index</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Content */}
+                          <div className="p-4 space-y-2">
+                            <h3 className="font-bold text-sm text-foreground line-clamp-1 group-hover:text-blue-600 transition">
+                              {prop.name}
+                            </h3>
+                            <p className="text-xs text-muted flex items-center gap-1 line-clamp-1">
+                              <MapPin size={12} className="shrink-0 text-muted" />
+                              <span>{prop.address ? `${prop.address}, ${prop.city || ""}` : prop.city || "Location not listed"}</span>
+                            </p>
+                            <div className="pt-2 flex items-baseline justify-between border-t border-border-color/60">
+                              <span className="text-xs text-muted">Monthly Rent:</span>
+                              <span className="text-sm font-black text-emerald-600">
+                                {formatWhole(prop.monthly_rent || 0)} / mo
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Actions Footer */}
+                        <div className="p-4 pt-0 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePublishOrgProperty(prop)}
+                            disabled={isToggling}
+                            className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 ${
+                              isLive
+                                ? "border border-amber-500/30 text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
+                                : "bg-blue-600 text-white hover:bg-blue-700"
+                            }`}
+                          >
+                            {isToggling ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : isLive ? (
+                              <EyeOff size={14} />
+                            ) : (
+                              <Eye size={14} />
+                            )}
+                            <span>{isLive ? "Hide from Index" : "Show on Agent Index"}</span>
+                          </button>
+
+                          <Link
+                            to="/marketing"
+                            title="Boost this property on marketing portal"
+                            className="py-2 px-3 text-xs font-bold rounded-xl border border-border-color bg-surface-elevated hover:bg-surface text-foreground flex items-center gap-1 transition"
+                          >
+                            <Sparkles size={13} className="text-amber-500" />
+                            <span>Boost</span>
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 2: Add / Edit Listing */}
+        {activeTab === 2 && (
           <div className="space-y-6">
             <h2 className="text-lg font-bold">{editingId ? 'Edit Listing' : 'Add New Listing'}</h2>
             
@@ -498,7 +811,7 @@ export default function AgentPortalPage() {
           </div>
         )}
 
-        {activeTab === 2 && (
+        {activeTab === 3 && (
           <div className="max-w-2xl mx-auto space-y-6">
             <div className="flex items-center gap-4 mb-6">
               <div className="w-20 h-20 rounded-full bg-gray-100 border border-border-color overflow-hidden flex items-center justify-center relative group">

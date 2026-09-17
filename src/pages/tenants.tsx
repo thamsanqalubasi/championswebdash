@@ -289,7 +289,7 @@ export default function TenantsPage() {
           setTenants(result);
         }
 
-        let propQuery = supabase.from("properties").select("id, name").order("name");
+        let propQuery = supabase.from("properties").select("id, name, type").order("name");
         if (isValidUuid(currentCompany?.id)) {
           propQuery = propQuery.eq("company_id", currentCompany.id);
         }
@@ -298,7 +298,9 @@ export default function TenantsPage() {
         if (propsError) throw propsError;
 
         if (!cancelled && props) {
-          setProperties(props.map((item) => ({ id: String(item.id), name: String(item.name) })));
+          const hospitalityTypes = new Set(["hotel", "motel", "lodge", "guest_house", "commercial"]);
+          const residentialProps = props.filter((item: any) => !item.type || !hospitalityTypes.has(item.type));
+          setProperties(residentialProps.map((item) => ({ id: String(item.id), name: String(item.name) })));
         }
 
         // Detect account status for each tenant
@@ -520,15 +522,15 @@ export default function TenantsPage() {
     setDetailsError(null);
 
     try {
-      const [tenantResult, paymentsResult, invoicesResult, sharesResult, contractsResult, proofsResult] = await Promise.all([
+      const [tenantResult, paymentsResult, invoicesResult, sharesResult, contractsResult, proofsResult] = await Promise.allSettled([
         supabase
           .from("tenants")
           .select("id, property_id, email, full_name, tenure_start_date, created_at, properties(name)")
           .eq("id", tenantId)
-          .single(),
+          .maybeSingle(),
         supabase
           .from("tenant_rent_payments")
-          .select("id, payment_date, amount_paid, paid_month, notes")
+          .select("id, payment_date, amount_paid, paid_months, notes, payment_method, pop_url")
           .eq("tenant_id", tenantId)
           .order("payment_date", { ascending: false }),
         supabase
@@ -555,33 +557,49 @@ export default function TenantsPage() {
           .order("payment_date", { ascending: false }),
       ]);
 
-      if (tenantResult.error) throw tenantResult.error;
-      if (paymentsResult.error) throw paymentsResult.error;
-      if (invoicesResult.error) throw invoicesResult.error;
-      if (sharesResult.error) throw sharesResult.error;
-      if (contractsResult.error) throw contractsResult.error;
+      const tenant = (tenantResult.status === "fulfilled" && tenantResult.value.data)
+        ? tenantResult.value.data
+        : detailsRow
+        ? {
+            id: detailsRow.id,
+            property_id: detailsRow.propertyId,
+            email: detailsRow.email,
+            full_name: detailsRow.fullName,
+            tenure_start_date: detailsRow.tenureStartDate,
+            created_at: detailsRow.createdAt,
+            properties: detailsRow.propertyName ? { name: detailsRow.propertyName } : null,
+          }
+        : null;
 
-      // Load contract sections
-      const contractIds = (contractsResult.data ?? []).map((c) => String(c.id));
+      if (!tenant) {
+        throw new Error("Could not find tenant profile details.");
+      }
+
+      // Safely extract contracts
+      const rawContracts = contractsResult.status === "fulfilled" && contractsResult.value.data ? contractsResult.value.data : [];
+      const contractIds = rawContracts.map((c: any) => String(c.id));
       let contractSectionsMap: Record<string, ContractSection[]> = {};
       if (contractIds.length > 0) {
-        const { data: cs } = await supabase
-          .from("contract_sections")
-          .select("contract_id, order_index, title, content")
-          .in("contract_id", contractIds)
-          .order("order_index");
-        if (cs) {
-          contractSectionsMap = {};
-          cs.forEach((s) => {
-            const cid = String((s as Record<string, unknown>).contract_id ?? "");
-            if (!contractSectionsMap[cid]) contractSectionsMap[cid] = [];
-            contractSectionsMap[cid].push({ title: String(s.title), content: String(s.content) });
-          });
+        try {
+          const { data: cs } = await supabase
+            .from("contract_sections")
+            .select("contract_id, order_index, title, content")
+            .in("contract_id", contractIds)
+            .order("order_index");
+          if (cs) {
+            cs.forEach((s) => {
+              const cid = String((s as Record<string, unknown>).contract_id ?? "");
+              if (!contractSectionsMap[cid]) contractSectionsMap[cid] = [];
+              contractSectionsMap[cid].push({ title: String(s.title), content: String(s.content) });
+            });
+          }
+        } catch {
+          // ignore contract sections fetch error
         }
       }
 
       setTenantContracts(
-        (contractsResult.data ?? []).map((c) => ({
+        rawContracts.map((c: any) => ({
           id: String(c.id),
           title: String(c.title ?? "Lease Agreement"),
           propertyName: String((c.properties as { name?: string } | null)?.name ?? "-"),
@@ -596,33 +614,49 @@ export default function TenantsPage() {
         })),
       );
 
-      const paymentRows = paymentsResult.data ?? [];
+      // Safely extract payments
+      let paymentRows: any[] = [];
+      if (paymentsResult.status === "fulfilled" && paymentsResult.value.data) {
+        paymentRows = paymentsResult.value.data;
+      } else {
+        // Fallback in case columns like paid_months or pop_url don't exist yet
+        try {
+          const { data: fallbackPayments } = await supabase
+            .from("tenant_rent_payments")
+            .select("id, payment_date, amount_paid")
+            .eq("tenant_id", tenantId)
+            .order("payment_date", { ascending: false });
+          if (fallbackPayments) paymentRows = fallbackPayments;
+        } catch {
+          paymentRows = [];
+        }
+      }
+
       const paymentIds = paymentRows.map((item) => String(item.id ?? "")).filter(Boolean);
 
       let recordedByMap = new Map<string, string>();
       if (paymentIds.length) {
-        const { data: paymentAudits, error: paymentAuditsError } = await supabase
-          .from("audit_log")
-          .select("entity_id, user_name, user_email, created_at")
-          .eq("entity_type", "tenant_rent_payment")
-          .eq("action", "rent_payment_recorded")
-          .in("entity_id", paymentIds)
-          .order("created_at", { ascending: false });
+        try {
+          const { data: paymentAudits } = await supabase
+            .from("audit_log")
+            .select("entity_id, user_name, user_email, created_at")
+            .eq("entity_type", "tenant_rent_payment")
+            .eq("action", "rent_payment_recorded")
+            .in("entity_id", paymentIds)
+            .order("created_at", { ascending: false });
 
-        if (paymentAuditsError) throw paymentAuditsError;
-
-        recordedByMap = new Map<string, string>();
-        (paymentAudits ?? []).forEach((row) => {
-          const entityId = String(row.entity_id ?? "");
-          if (!entityId || recordedByMap.has(entityId)) {
-            return;
-          }
-
-          recordedByMap.set(entityId, String(row.user_name ?? row.user_email ?? "Admin"));
-        });
+          (paymentAudits ?? []).forEach((row) => {
+            const entityId = String(row.entity_id ?? "");
+            if (!entityId || recordedByMap.has(entityId)) {
+              return;
+            }
+            recordedByMap.set(entityId, String(row.user_name ?? row.user_email ?? "Admin"));
+          });
+        } catch {
+          // audit log is non-fatal
+        }
       }
 
-      const tenant = tenantResult.data;
       setDetailsPropertyId(String(tenant.property_id ?? ""));
       setDetailsPropertyName(String((tenant.properties as { name?: string } | null)?.name ?? "Unassigned"));
       setAssignmentDate(String(tenant.tenure_start_date ?? tenant.created_at ?? ""));
@@ -637,7 +671,7 @@ export default function TenantsPage() {
       );
 
       // Also gather proofs by email if exists
-      let allProofs = proofsResult.data ?? [];
+      let allProofs: any[] = proofsResult.status === "fulfilled" && proofsResult.value.data ? [...proofsResult.value.data] : [];
       if (tenant.email) {
         try {
           const { data: emailProofs } = await supabase
@@ -659,16 +693,19 @@ export default function TenantsPage() {
 
       paymentRows.forEach((p) => {
         const notesStr = String(p.notes || "");
-        let method = "Cash / Recorded";
-        let receiptUrl: string | undefined = undefined;
+        let method = String(p.payment_method || "Cash / Recorded");
+        let receiptUrl: string | undefined = p.pop_url || undefined;
 
         const mMatch = notesStr.match(/Means:\s*([^|]+)/i) || notesStr.match(/Method:\s*([^|]+)/i);
         if (mMatch) method = mMatch[1].trim();
 
         const rMatch = notesStr.match(/Receipt:\s*(https?:\/\/[^\s|]+)/i);
-        if (rMatch) receiptUrl = rMatch[1].trim();
+        if (!receiptUrl && rMatch) receiptUrl = rMatch[1].trim();
 
         const clerk = recordedByMap.get(String(p.id)) || "Staff";
+        const monthLabel = Array.isArray(p.paid_months)
+          ? p.paid_months.join(", ")
+          : String(p.paid_months || p.paid_month || "");
 
         timelineItems.push({
           id: `staff-${p.id}`,
@@ -679,7 +716,7 @@ export default function TenantsPage() {
           actorName: clerk,
           actorRole: "Staff",
           receiptUrl,
-          monthLabel: String(p.paid_month || ""),
+          monthLabel,
           notes: notesStr,
           paymentId: String(p.id),
         });
@@ -712,8 +749,9 @@ export default function TenantsPage() {
       timelineItems.sort((a, b) => b.date.localeCompare(a.date));
       setPaymentTimeline(timelineItems);
 
+      const rawInvoices = invoicesResult.status === "fulfilled" && invoicesResult.value.data ? invoicesResult.value.data : [];
       setInvoices(
-        (invoicesResult.data ?? []).map((row) => ({
+        rawInvoices.map((row: any) => ({
           id: String(row.id ?? ""),
           month: String(row.month ?? "-"),
           dueDate: String(row.due_date ?? "-"),
@@ -724,13 +762,14 @@ export default function TenantsPage() {
         })),
       );
 
+      const rawShares = sharesResult.status === "fulfilled" && sharesResult.value.data ? sharesResult.value.data : [];
       setShareReports(
-        (sharesResult.data ?? []).map((row) => {
+        rawShares.map((row: any) => {
           const details = (row.details as { channel?: "email" | "whatsapp"; payment_dates?: string[] } | null) ?? {};
           return {
             id: String(row.id ?? ""),
             channel: details.channel === "whatsapp" ? "whatsapp" : "email",
-            paymentDates: Array.isArray(details.payment_dates) ? details.payment_dates.map((value) => String(value)) : [],
+            paymentDates: Array.isArray(details.payment_dates) ? details.payment_dates.map((value: any) => String(value)) : [],
             sharedAt: String(row.created_at ?? ""),
           };
         }),
@@ -738,6 +777,7 @@ export default function TenantsPage() {
 
       setSelectedPaymentIds([]);
     } catch (loadError) {
+      console.error("loadTenantDetails error:", loadError);
       setDetailsError(loadError instanceof Error ? loadError.message : "Could not load tenant detail audit trail.");
     } finally {
       setDetailsLoading(false);

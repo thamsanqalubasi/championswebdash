@@ -3492,6 +3492,8 @@ export async function fetchTenants(companyId?: string): Promise<TenantRow[]> {
         email: t.email || "",
         tenureStatus: t.tenure_status || "active",
         rentStatus: t.rent_status || "unpaid",
+        tenureStartDate: t.tenure_start_date || undefined,
+        createdAt: t.created_at || undefined,
       }));
     }
   } catch (err) {
