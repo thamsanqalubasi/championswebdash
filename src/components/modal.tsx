@@ -33,18 +33,19 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
 
   return (
     <div
-      className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto py-6 px-4"
       role="dialog"
       aria-modal="true"
     >
       {/* Backdrop */}
       <div
-        className="pointer-events-auto absolute inset-0 bg-black/50 backdrop-blur-xs"
+        className="fixed inset-0 bg-black/50 backdrop-blur-xs"
         onMouseDown={onClose}
       />
-      {/* Panel */}
-      <div className="pointer-events-auto relative z-10 mx-4 w-full max-w-lg rounded-xl border border-border-color bg-surface p-6 text-foreground shadow-2xl">
-        <div className="mb-4 flex items-center justify-between gap-3">
+      {/* Panel — grows with content but never taller than ~90vh before scrolling */}
+      <div className="pointer-events-auto relative z-10 w-full max-w-lg rounded-xl border border-border-color bg-surface text-foreground shadow-2xl my-auto">
+        {/* Sticky header */}
+        <div className="sticky top-0 z-10 mb-0 flex items-center justify-between gap-3 rounded-t-xl border-b border-border-color bg-surface px-6 py-4">
           <div className="flex items-center gap-2.5">
             <button
               type="button"
@@ -58,7 +59,10 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
           </div>
           <button type="button" onClick={onClose} className="text-muted hover:text-foreground text-xl leading-none">&times;</button>
         </div>
-        {children}
+        {/* Scrollable body */}
+        <div className="p-6">
+          {children}
+        </div>
       </div>
     </div>
   );

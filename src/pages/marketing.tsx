@@ -1188,8 +1188,8 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-72 overflow-y-auto pr-1">
                 {publishedListingsForBoost.map((p) => {
                   const isSelected = boostSelectedIds.includes(p.id);
-                  const photos = Array.isArray(p.photos) ? p.photos : [];
-                  const thumb = photos[0];
+                  const photos = Array.isArray(p.photos) ? p.photos : (typeof p.photos === "string" ? (() => { try { return JSON.parse(p.photos); } catch { return []; } })() : []);
+                  const thumb = photos[0] || null;
                   const rent = Number(p.monthly_rent || 0);
                   return (
                     <button
@@ -1205,18 +1205,20 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
                       }`}
                     >
                       {/* Property photo as card background */}
-                      <div className="relative h-28 w-full bg-surface-elevated">
-                        {thumb ? (
+                      <div className="relative h-28 w-full bg-gradient-to-br from-amber-500/20 to-orange-600/20">
+                        {/* Fallback always rendered behind */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <Flame size={28} className="text-amber-500 opacity-40" />
+                        </div>
+                        {thumb && (
                           <img
                             src={thumb}
                             alt={p.name}
-                            className="h-full w-full object-cover"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                            className="absolute inset-0 h-full w-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).remove();
+                            }}
                           />
-                        ) : (
-                          <div className="h-full w-full flex items-center justify-center bg-gradient-to-br from-amber-500/20 to-orange-600/20">
-                            <Flame size={28} className="text-amber-500 opacity-60" />
-                          </div>
                         )}
                         {/* Dark overlay */}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />

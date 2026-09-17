@@ -1826,7 +1826,11 @@ export default function CustomerDashboardPage() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {publishedListings.map((listing) => {
-                const photos = Array.isArray(listing.photos) ? listing.photos : [];
+                const photos = Array.isArray(listing.photos)
+                  ? listing.photos
+                  : typeof listing.photos === "string"
+                  ? (() => { try { return JSON.parse(listing.photos); } catch { return []; } })()
+                  : [];
                 const photo = photos[0] || "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop&q=80";
                 const rent = Number(listing.monthly_rent || 0);
 
