@@ -1824,70 +1824,93 @@ export default function CustomerDashboardPage() {
               No public listings are published at this moment. Check back soon!
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {publishedListings.map((listing) => {
-                const photo =
-                  Array.isArray(listing.photos) && listing.photos[0]
-                    ? listing.photos[0]
-                    : "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop&q=80";
+                const photos = Array.isArray(listing.photos) ? listing.photos : [];
+                const photo = photos[0] || "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop&q=80";
+                const rent = Number(listing.monthly_rent || 0);
 
                 return (
                   <div
                     key={listing.id}
-                    className="rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between"
+                    className="group rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 flex flex-col"
                   >
-                    <div>
-                      <div className="relative h-44 w-full bg-gray-100 dark:bg-slate-800 overflow-hidden">
-                        <img
-                          src={photo}
-                          alt={listing.name}
-                          className="h-full w-full object-cover hover:scale-105 transition duration-300"
-                        />
-                        <span className="absolute top-2.5 right-2.5 rounded-lg bg-black/60 backdrop-blur-xs px-2.5 py-1 text-[10px] font-bold text-white uppercase tracking-wider">
-                          {listing.type ? listing.type.replace("_", " ") : "Property"}
+                    {/* Photo */}
+                    <div className="relative h-52 w-full bg-gray-100 dark:bg-slate-800 overflow-hidden shrink-0">
+                      <img
+                        src={photo}
+                        alt={listing.name}
+                        className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop&q=80";
+                        }}
+                      />
+                      {/* Gradient overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                      {/* Type badge */}
+                      <span className="absolute top-3 left-3 rounded-lg bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm px-2.5 py-1 text-[10px] font-bold text-gray-800 dark:text-slate-100 uppercase tracking-wider shadow-sm">
+                        {listing.type ? listing.type.replace(/_/g, " ") : "Property"}
+                      </span>
+                      {/* Photo count */}
+                      {photos.length > 1 && (
+                        <span className="absolute top-3 right-3 rounded-lg bg-black/60 backdrop-blur-sm px-2 py-0.5 text-[10px] font-semibold text-white flex items-center gap-1">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                          {photos.length}
                         </span>
-                      </div>
-
-                      <div className="p-4 space-y-1.5">
-                        <h3 className="font-bold text-sm text-gray-900 dark:text-white line-clamp-1">
-                          {listing.name}
-                        </h3>
-                        <p className="text-xs text-gray-500 dark:text-slate-400 line-clamp-1">
-                          {listing.address ? `${listing.address}, ` : ""}{listing.city || "Namibia"}
-                        </p>
-                        {listing.monthly_rent > 0 && (
-                          <p className="text-sm font-black text-indigo-600 dark:text-indigo-400 pt-1">
-                            NAD {Number(listing.monthly_rent).toLocaleString()}{" "}
-                            <span className="text-[10px] font-normal text-gray-400">/ month or stay</span>
-                          </p>
-                        )}
-                        {listing.description && (
-                          <p className="text-xs text-gray-600 dark:text-slate-400 line-clamp-2 pt-1">
-                            {listing.description}
-                          </p>
-                        )}
-                      </div>
+                      )}
+                      {/* Price on image */}
+                      {rent > 0 && (
+                        <div className="absolute bottom-3 left-3">
+                          <span className="rounded-xl bg-indigo-600 px-3 py-1 text-xs font-black text-white shadow-md">
+                            NAD {rent.toLocaleString()}<span className="font-normal opacity-80 text-[10px]">/mo</span>
+                          </span>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="p-4 pt-0 border-t border-gray-100 dark:border-slate-800 grid grid-cols-2 gap-2 mt-3">
-                      <button
-                        onClick={() => {
-                          setSelectedListingForReview(listing);
-                          setReviewForm({ rating: 5, title: "", body: "" });
-                        }}
-                        className="flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-slate-700 py-2 text-xs font-bold text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800 transition"
-                      >
-                        <Star size={13} className="text-amber-500" /> Review
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedListingForInquiry(listing);
-                          setInquiryForm({ question_id: "", message: "", phone: "" });
-                        }}
-                        className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-2 text-xs font-bold text-white hover:bg-indigo-700 transition shadow-xs"
-                      >
-                        <Send size={12} /> Inquire
-                      </button>
+                    {/* Card Body */}
+                    <div className="flex flex-col flex-1 p-4 gap-2">
+                      {/* Title + Location */}
+                      <div>
+                        <h3 className="font-bold text-sm text-gray-900 dark:text-white line-clamp-1 leading-tight">
+                          {listing.name}
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5 flex items-center gap-1 line-clamp-1">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                          {[listing.address, listing.city, listing.country].filter(Boolean).join(", ") || "Namibia"}
+                        </p>
+                      </div>
+
+                      {/* Description */}
+                      {listing.description ? (
+                        <p className="text-xs text-gray-600 dark:text-slate-400 line-clamp-2 leading-relaxed flex-1">
+                          {listing.description}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-gray-400 dark:text-slate-500 italic flex-1">No description provided.</p>
+                      )}
+
+                      {/* Divider + Actions */}
+                      <div className="grid grid-cols-2 gap-2 pt-3 mt-auto border-t border-gray-100 dark:border-slate-800">
+                        <button
+                          onClick={() => {
+                            setSelectedListingForReview(listing);
+                            setReviewForm({ rating: 5, title: "", body: "" });
+                          }}
+                          className="flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-slate-700 py-2 text-xs font-bold text-gray-700 dark:text-slate-200 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700 dark:hover:bg-amber-950/20 dark:hover:text-amber-400 transition"
+                        >
+                          <Star size={13} className="text-amber-500" /> Leave Review
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedListingForInquiry(listing);
+                            setInquiryForm({ question_id: "", message: "", phone: "" });
+                          }}
+                          className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-2 text-xs font-bold text-white hover:bg-indigo-700 transition shadow-xs"
+                        >
+                          <Send size={12} /> Send Inquiry
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
