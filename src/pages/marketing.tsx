@@ -1185,10 +1185,12 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
                 No published listings found. Publish a property first to boost it.
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-64 overflow-y-auto pr-1">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-72 overflow-y-auto pr-1">
                 {publishedListingsForBoost.map((p) => {
                   const isSelected = boostSelectedIds.includes(p.id);
-                  const thumb = (p.photos || [])[0];
+                  const photos = Array.isArray(p.photos) ? p.photos : [];
+                  const thumb = photos[0];
+                  const rent = Number(p.monthly_rent || 0);
                   return (
                     <button
                       key={p.id}
@@ -1196,27 +1198,50 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
                       onClick={() => setBoostSelectedIds(prev =>
                         prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]
                       )}
-                      className={`flex items-center gap-3 rounded-xl border-2 p-2.5 text-left transition ${
+                      className={`relative rounded-xl overflow-hidden text-left transition-all focus:outline-none ${
                         isSelected
-                          ? "border-amber-500 bg-amber-500/10"
-                          : "border-border-color bg-surface hover:border-amber-400/50 hover:bg-surface-elevated"
+                          ? "ring-2 ring-amber-500 shadow-lg scale-[1.02]"
+                          : "ring-1 ring-border-color hover:ring-amber-400/60 hover:shadow-md"
                       }`}
                     >
-                      {thumb ? (
-                        <img src={thumb} alt={p.name} className="h-10 w-14 rounded-lg object-cover shrink-0" />
-                      ) : (
-                        <div className="h-10 w-14 rounded-lg bg-amber-100 dark:bg-amber-950/30 flex items-center justify-center shrink-0">
-                          <Flame size={16} className="text-amber-500" />
+                      {/* Property photo as card background */}
+                      <div className="relative h-28 w-full bg-surface-elevated">
+                        {thumb ? (
+                          <img
+                            src={thumb}
+                            alt={p.name}
+                            className="h-full w-full object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center bg-gradient-to-br from-amber-500/20 to-orange-600/20">
+                            <Flame size={28} className="text-amber-500 opacity-60" />
+                          </div>
+                        )}
+                        {/* Dark overlay */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                        {/* Type badge top-left */}
+                        <span className="absolute top-1.5 left-1.5 rounded-md bg-black/60 backdrop-blur-sm px-1.5 py-0.5 text-[9px] font-bold text-white uppercase tracking-wide">
+                          {p.type?.replace(/_/g, " ") || "Property"}
+                        </span>
+                        {/* Selection tick top-right */}
+                        <div className={`absolute top-1.5 right-1.5 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                          isSelected ? "border-amber-400 bg-amber-500" : "border-white/60 bg-black/40"
+                        }`}>
+                          {isSelected && <Check size={11} className="text-white" />}
                         </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold text-foreground truncate">{p.name}</p>
-                        <p className="text-[10px] text-muted truncate capitalize">{p.type?.replace(/_/g, " ")} • {p.city || p.country || ""}</p>
-                      </div>
-                      <div className={`h-4 w-4 rounded border-2 shrink-0 flex items-center justify-center ${
-                        isSelected ? "border-amber-500 bg-amber-500" : "border-gray-300 dark:border-slate-600"
-                      }`}>
-                        {isSelected && <Check size={10} className="text-white" />}
+                        {/* Price + name at bottom */}
+                        <div className="absolute bottom-0 left-0 right-0 p-2">
+                          <p className="text-white font-bold text-[11px] truncate leading-tight">{p.name}</p>
+                          {rent > 0 && (
+                            <p className="text-amber-300 font-black text-[10px] mt-0.5">
+                              NAD {rent.toLocaleString()}<span className="text-white/70 font-normal">/mo</span>
+                            </p>
+                          )}
+                          {(p.city || p.country) && (
+                            <p className="text-white/60 text-[9px] truncate">{p.city || p.country}</p>
+                          )}
+                        </div>
                       </div>
                     </button>
                   );
@@ -1225,31 +1250,117 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
             )}
           </div>
 
-          {/* Step 2: Boost tier + dates + budget */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-muted mb-1 block">Boost Tier</label>
-              <select
-                value={boostForm.boost_tier}
-                onChange={(e) => setBoostForm({ ...boostForm, boost_tier: e.target.value as any })}
-                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none"
+          {/* Step 2: Boost Tier */}
+          <div>
+            <label className="text-xs font-semibold text-muted mb-2 block">Boost Tier</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { value: "standard", label: "Standard", rank: "+10", color: "blue" },
+                { value: "featured", label: "Featured", rank: "+20", color: "amber" },
+                { value: "premium_sponsor", label: "Premium", rank: "+30", color: "purple" },
+              ].map((tier) => (
+                <button
+                  key={tier.value}
+                  type="button"
+                  onClick={() => setBoostForm({ ...boostForm, boost_tier: tier.value as any })}
+                  className={`rounded-xl border-2 p-2.5 text-center transition-all ${
+                    boostForm.boost_tier === tier.value
+                      ? tier.color === "amber"
+                        ? "border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                        : tier.color === "purple"
+                        ? "border-purple-500 bg-purple-500/10 text-purple-600 dark:text-purple-400"
+                        : "border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                      : "border-border-color bg-surface text-muted hover:border-amber-400/50"
+                  }`}
+                >
+                  <p className="text-xs font-black">{tier.label}</p>
+                  <p className="text-[10px] font-semibold opacity-70">{tier.rank} Ranking</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Step 3: Facebook-style Budget */}
+          <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3.5 space-y-3">
+            <div className="flex items-center gap-2">
+              <Tag size={14} className="text-emerald-500" />
+              <span className="text-xs font-bold uppercase text-muted tracking-wide">Daily Budget</span>
+            </div>
+            {/* Preset chips */}
+            <div className="flex flex-wrap gap-2">
+              {[50, 100, 200, 500, 1000].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setBoostForm({ ...boostForm, budget: String(preset) })}
+                  className={`rounded-xl px-3 py-1.5 text-xs font-bold transition border ${
+                    boostForm.budget === String(preset)
+                      ? "bg-emerald-600 border-emerald-600 text-white shadow-xs"
+                      : "border-border-color bg-surface text-muted hover:border-emerald-500 hover:text-emerald-600"
+                  }`}
+                >
+                  NAD {preset.toLocaleString()}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setBoostForm({ ...boostForm, budget: "" })}
+                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition border ${
+                  !["50", "100", "200", "500", "1000"].includes(boostForm.budget) && boostForm.budget !== ""
+                    ? "bg-emerald-600 border-emerald-600 text-white shadow-xs"
+                    : "border-border-color bg-surface text-muted hover:border-emerald-500 hover:text-emerald-600"
+                }`}
               >
-                <option value="standard">Standard (+10 Ranking)</option>
-                <option value="featured">Featured (+20 Ranking)</option>
-                <option value="premium_sponsor">Premium Sponsor (+30 Ranking)</option>
-              </select>
+                Custom
+              </button>
             </div>
-            <div>
-              <label className="text-xs font-semibold text-muted mb-1 block">Budget (optional)</label>
+            {/* Slider */}
+            <div className="space-y-1">
               <input
-                type="number"
-                min="0"
-                placeholder="e.g. 500"
-                value={boostForm.budget}
+                type="range"
+                min="10"
+                max="5000"
+                step="10"
+                value={Number(boostForm.budget) || 100}
                 onChange={(e) => setBoostForm({ ...boostForm, budget: e.target.value })}
-                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none"
+                className="w-full h-2 rounded-full accent-emerald-600 cursor-pointer"
               />
+              <div className="flex items-center justify-between text-[10px] text-muted">
+                <span>NAD 10</span>
+                <span>NAD 5,000</span>
+              </div>
             </div>
+            {/* Custom input + total summary */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 flex items-center gap-2 rounded-xl border border-border-color bg-surface px-3 py-2">
+                <span className="text-xs font-semibold text-muted">NAD</span>
+                <input
+                  type="number"
+                  min="10"
+                  max="99999"
+                  placeholder="Custom amount"
+                  value={boostForm.budget}
+                  onChange={(e) => setBoostForm({ ...boostForm, budget: e.target.value })}
+                  className="flex-1 bg-transparent text-xs font-bold text-foreground outline-none"
+                />
+                <span className="text-[10px] text-muted font-semibold">/day</span>
+              </div>
+              {boostForm.budget && boostForm.boost_start_date && boostForm.boost_end_date && (() => {
+                const days = Math.max(1, Math.ceil((new Date(boostForm.boost_end_date).getTime() - new Date(boostForm.boost_start_date).getTime()) / 86400000));
+                const total = Number(boostForm.budget) * days;
+                return (
+                  <div className="text-right shrink-0">
+                    <p className="text-[10px] text-muted">Est. Total</p>
+                    <p className="text-sm font-black text-emerald-600">NAD {total.toLocaleString()}</p>
+                    <p className="text-[9px] text-muted">{days} day{days !== 1 ? "s" : ""}</p>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* Step 4: Duration */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-muted mb-1 block">Start Date</label>
               <input
@@ -1280,7 +1391,7 @@ For direct inquiries, DM us or reply to this message! #RealEstate #PropertyRenta
             />
           </div>
 
-          {/* Step 3: Geo Targeting */}
+          {/* Step 5: Geo Targeting */}
           <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3.5 space-y-3">
             <div className="flex items-center gap-2">
               <MapPin size={14} className="text-blue-500" />
