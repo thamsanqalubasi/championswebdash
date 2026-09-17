@@ -122,23 +122,20 @@ const MAIN_CONTRACT_SECTIONS: ContractSection[] = [
   {
     title: "Property Description",
     content: `<p style="text-align: justify;">The Landlord lets to the Lessee, who hires, the following property ("<strong>The Property</strong>"):</p>
-<p style="text-align: justify;"><strong>One bedroom flat (excluding garage)</strong>, located at <strong>2673 J. James Street, Khomasdal, Windhoek, Namibia</strong>.</p>`,
+<p style="text-align: justify;"><strong>Residential Accommodation Unit</strong>, located at the designated premises address specified in the lease schedule.</p>`,
   },
   {
     title: "Lease Period and Rental",
-    content: `<p style="text-align: justify;"><strong>Lease Term:</strong> 6 months</p>
-<p style="text-align: justify;"><strong>Start Date:</strong> 1 May 2025</p>
-<p style="text-align: justify;"><strong>End Date:</strong> 31 October 2025</p>
-<p style="text-align: justify;"><strong>Pro-rata Rent:</strong> payable 11-30 April 2025 (4500/30 x 19 days = N$2850.00), due 10 April 2025.</p>
-<p style="text-align: justify;"><strong>Monthly Rent:</strong> N$4500 (Four Thousand Five Hundred Namibian Dollars).</p>
-<p style="text-align: justify;">The Lessee agrees to annual escalation aligned with the latest inflation information at the anniversary of this lease (reference: Bank of Namibia).</p>`,
+    content: `<p style="text-align: justify;"><strong>Lease Term:</strong> As agreed in the lease schedule.</p>
+<p style="text-align: justify;"><strong>Monthly Rent:</strong> As specified in the financial terms schedule.</p>
+<p style="text-align: justify;">The Lessee agrees to annual escalation aligned with the latest inflation information at the anniversary of this lease.</p>`,
   },
   {
     title: "Payment Terms and Banking Details",
     content: `<p style="text-align: justify;">Rent is payable by stop order or electronic banking, in advance, on or before the 1st day of each month.</p>
 <p style="text-align: justify;">Where cash deposits are used, the Lessee bears all related banking charges.</p>
 <p style="text-align: justify;"><strong>Bank Details:</strong></p>
-<p style="text-align: justify;">Account Name: Michael Beukes<br/>Account No: 043132049<br/>Bank: Standard Bank Namibia<br/>Branch: Gustav Voigts Centre<br/>Branch Code: 087373</p>
+<p style="text-align: justify;">Account Name: John Doe<br/>Account No: 123456789<br/>Bank: Standard Bank<br/>Branch: Central Branch<br/>Branch Code: 123456</p>
 <p style="text-align: justify;">If rental remains unpaid on due date, the Landlord may cancel this lease in writing, resume possession of the property, and pursue arrear rental, damages, and any legal remedies available.</p>
 <p style="text-align: justify;">The Lessee undertakes to pay <strong>10% interest</strong> on rent paid later than the 5th day of the month, payable in that same month.</p>`,
   },
@@ -1559,7 +1556,7 @@ export default function ContractsPage() {
               <label className="mb-1 block text-[10px] font-bold text-muted/60 uppercase">Landlord Full Name *</label>
               <input
                 className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-emerald-500"
-                placeholder="e.g. Michael Beukes"
+                placeholder="e.g. John Doe"
                 value={landlordInfoForm.name}
                 onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, name: e.target.value })}
               />
@@ -1568,7 +1565,7 @@ export default function ContractsPage() {
               <label className="mb-1 block text-[10px] font-bold text-muted/60 uppercase">ID / Passport Number</label>
               <input
                 className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-emerald-500"
-                placeholder="e.g. 74020700079"
+                placeholder="e.g. 123456789"
                 value={landlordInfoForm.id_number}
                 onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, id_number: e.target.value })}
               />
@@ -1579,7 +1576,7 @@ export default function ContractsPage() {
             <label className="mb-1 block text-[10px] font-bold text-muted/60 uppercase">Landlord Address *</label>
             <input
               className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-emerald-500"
-              placeholder="e.g. 2673 J. James Street, Khomasdal, Windhoek"
+              placeholder="e.g. 123 Main Street, Windhoek, Namibia"
               value={landlordInfoForm.address}
               onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, address: e.target.value })}
             />
@@ -1589,7 +1586,7 @@ export default function ContractsPage() {
             <label className="mb-1 block text-[10px] font-bold text-muted/60 uppercase">Contact (Phone & Email)</label>
             <input
               className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-emerald-500"
-              placeholder="e.g. 081 424 1935, email@example.com"
+              placeholder="e.g. 123456789, johndoe@example.com"
               value={landlordInfoForm.contact}
               onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, contact: e.target.value })}
             />
@@ -1604,15 +1601,15 @@ export default function ContractsPage() {
               </div>
               <div>
                 <label className="mb-1 block text-[10px] text-muted/60">Account Number</label>
-                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. 043132049" value={landlordInfoForm.account_number} onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, account_number: e.target.value })} />
+                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. 123456789" value={landlordInfoForm.account_number} onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, account_number: e.target.value })} />
               </div>
               <div>
                 <label className="mb-1 block text-[10px] text-muted/60">Bank Name</label>
-                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. Standard Bank Namibia" value={landlordInfoForm.bank_name} onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, bank_name: e.target.value })} />
+                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. Standard Bank" value={landlordInfoForm.bank_name} onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, bank_name: e.target.value })} />
               </div>
               <div>
                 <label className="mb-1 block text-[10px] text-muted/60">Branch &amp; Code</label>
-                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. Gustav Voigts, 087373" value={`${landlordInfoForm.branch}${landlordInfoForm.branch_code ? ` · ${landlordInfoForm.branch_code}` : ""}`} onChange={(e) => { const val = e.target.value; const parts = val.split("·"); setLandlordInfoForm({ ...landlordInfoForm, branch: parts[0]?.trim() || "", branch_code: parts[1]?.trim() || "" }); }} />
+                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. Central Branch, 123456" value={`${landlordInfoForm.branch}${landlordInfoForm.branch_code ? ` · ${landlordInfoForm.branch_code}` : ""}`} onChange={(e) => { const val = e.target.value; const parts = val.split("·"); setLandlordInfoForm({ ...landlordInfoForm, branch: parts[0]?.trim() || "", branch_code: parts[1]?.trim() || "" }); }} />
               </div>
             </div>
           </div>
