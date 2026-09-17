@@ -3,6 +3,7 @@ import { useState, useEffect, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { ThemeToggle } from "./theme-toggle";
 import { CheckinModal } from "./checkin-modal";
+import { LeaveRequestModal } from "./leave-request-modal";
 import { NotificationsBell } from "./notifications-modal";
 import { ALL_ROLE_CAPABILITIES, fetchReminderThreshold, saveReminderThreshold, fetchRolePermissions, saveRolePermissions } from "@/lib/data";
 import {
@@ -138,6 +139,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [checkinOpen, setCheckinOpen] = useState(false);
+  const [leaveModalOpen, setLeaveModalOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [seeRolesOpen, setSeeRolesOpen] = useState(false);
   const [selectedRoleDept, setSelectedRoleDept] = useState<string>("admin");
@@ -400,6 +402,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               >
                 <DollarSign size={15}/><span>Record Rent Payment</span>
               </Link>
+              <button
+                type="button"
+                onClick={() => setLeaveModalOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-pink-500/30 bg-pink-500/10 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-pink-600 dark:text-pink-400 shadow-xs hover:bg-pink-600 hover:text-white transition"
+              >
+                <CalendarClock size={15}/><span>Request Leave</span>
+              </button>
               <ThemeToggle variant="compact"/>
               <div className="hidden xl:block max-w-[160px] truncate px-1 py-1 text-xs font-medium text-muted" title={userEmail}>{userEmail}</div>
               <button
@@ -432,6 +441,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
 
       <CheckinModal isOpen={checkinOpen} onClose={() => setCheckinOpen(false)} onSuccess={() => {}}/>
+      <LeaveRequestModal isOpen={leaveModalOpen} onClose={() => setLeaveModalOpen(false)} />
 
       {/* ── Mobile Drawer ── */}
       {mobileMenuOpen && (
@@ -458,21 +468,28 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
 
             {/* Quick Actions in Mobile Drawer */}
-            <div className="p-3 border-b border-border-color/50 grid grid-cols-2 gap-2">
+            <div className="p-3 border-b border-border-color/50 grid grid-cols-3 gap-1.5">
               <button
                 type="button"
                 onClick={() => { setMobileMenuOpen(false); setCheckinOpen(true); }}
-                className="flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2 text-xs font-bold text-white shadow-xs"
+                className="flex items-center justify-center gap-1 rounded-xl bg-blue-600 py-2 text-[11px] font-bold text-white shadow-xs"
               >
-                <KeyRound size={14} /> Check In
+                <KeyRound size={13} /> Check In
               </button>
               <Link
                 to="/rent-collection"
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2 text-xs font-bold text-white shadow-xs"
+                className="flex items-center justify-center gap-1 rounded-xl bg-emerald-600 py-2 text-[11px] font-bold text-white shadow-xs"
               >
-                <DollarSign size={14} /> Record Rent Payment
+                <DollarSign size={13} /> Rent
               </Link>
+              <button
+                type="button"
+                onClick={() => { setMobileMenuOpen(false); setLeaveModalOpen(true); }}
+                className="flex items-center justify-center gap-1 rounded-xl border border-pink-500/30 bg-pink-500/10 py-2 text-[11px] font-bold text-pink-600 dark:text-pink-400 shadow-xs"
+              >
+                <CalendarClock size={13} /> Leave
+              </button>
             </div>
 
             <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5" aria-label="Mobile navigation">

@@ -199,7 +199,7 @@ async function buildInvoiceHtmlProfessional(
 }
 
 export default function TenantsPage() {
-  const { user, currentCompany } = useAuth();
+  const { user, currentCompany, currentCompanyUser } = useAuth();
   const { format: formatCurrency } = useCurrency();
 
   const [tenants, setTenants] = useState<TenantRow[]>([]);
@@ -973,88 +973,91 @@ export default function TenantsPage() {
     setRecordingPayment(true);
     try {
       const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
-      const staffName = (user as any)?.fullName || user?.email || "Staff";
-      const propId = detailsPropertyId && isValidUuid(detailsPropertyId) ? detailsPropertyId : detailsRow.propertyId && isValidUuid(detailsRow.propertyId) ? detailsRow.propertyId : null;
+      const staffName = (currentCompanyUser as any)?.fullName || user?.email || "Staff";
+      const propId = detailsPropertyId && isValidUuid(detailsPropertyId)
+        ? detailsPropertyId
+        : detailsRow.propertyId && isValidUuid(detailsRow.propertyId)
+        ? detailsRow.propertyId
+        : null;
 
-      const notesPayload = `Means: ${rentRecordForm.paymentMethod} | Ref: ${rentRecordForm.referenceNumber || "None"}${rentRecordForm.receiptUrl ? ` | Receipt: ${rentRecordForm.receiptUrl}` : ""} ${rentRecordForm.notes ? `| Notes: ${rentRecordForm.notes}` : ""}`.trim();
+      const notesPayload = [
+        `Means: ${rentRecordForm.paymentMethod}`,
+        `Ref: ${rentRecordForm.referenceNumber || "None"}`,
+        rentRecordForm.receiptUrl ? `Receipt: ${rentRecordForm.receiptUrl}` : null,
+        rentRecordForm.notes ? `Notes: ${rentRecordForm.notes}` : null,
+      ]
+        .filter(Boolean)
+        .join(" | ");
 
-      // Primary insertion: try with paid_months array as per schema
-      let insertedPayment: any = null;
-      let primaryError: any = null;
-
-      const primaryPayload: Record<string, any> = {
+      // ── Strategy 1: full payload with all optional columns ──
+      const fullPayload: Record<string, any> = {
         tenant_id: detailsRow.id,
-        property_id: propId,
         payment_date: rentRecordForm.paymentDate,
         amount_paid: Number(rentRecordForm.amountPaid),
-        paid_months: [rentRecordForm.paidMonth],
         notes: notesPayload,
       };
-      if (compId) primaryPayload.company_id = compId;
-      if (rentRecordForm.receiptUrl) {
-        primaryPayload.pop_url = rentRecordForm.receiptUrl;
-        primaryPayload.pop_uploaded_by_name = staffName;
-        primaryPayload.pop_uploaded_at = new Date().toISOString();
-      }
-      primaryPayload.payment_method = rentRecordForm.paymentMethod;
+      if (propId) fullPayload.property_id = propId;
+      if (compId) fullPayload.company_id = compId;
 
-      const { data: pData, error: pErr } = await supabase
+      // Optional extended columns — add only if they may exist
+      try { fullPayload.paid_months = [rentRecordForm.paidMonth]; } catch { /**/ }
+      try { fullPayload.payment_method = rentRecordForm.paymentMethod; } catch { /**/ }
+      if (rentRecordForm.receiptUrl) {
+        fullPayload.pop_url = rentRecordForm.receiptUrl;
+        fullPayload.pop_uploaded_by_name = staffName;
+        fullPayload.pop_uploaded_at = new Date().toISOString();
+      }
+
+      let insertedPayment: any = null;
+
+      const { data: d1, error: e1 } = await supabase
         .from("tenant_rent_payments")
-        .insert(primaryPayload)
+        .insert(fullPayload)
         .select()
         .single();
 
-      if (pErr) {
-        primaryError = pErr;
-        console.warn("Primary tenant_rent_payments insert failed, attempting minimal fallback:", pErr);
-        
-        // Fallback with minimal standard columns
-        const fallbackPayload: Record<string, any> = {
+      if (!e1) {
+        insertedPayment = d1;
+      } else {
+        console.warn("Full payload failed:", e1.message || JSON.stringify(e1), "– trying minimal payload");
+
+        // ── Strategy 2: minimal payload (guaranteed columns) ──
+        const minimalPayload: Record<string, any> = {
           tenant_id: detailsRow.id,
-          property_id: propId,
           payment_date: rentRecordForm.paymentDate,
           amount_paid: Number(rentRecordForm.amountPaid),
-          paid_months: [rentRecordForm.paidMonth],
           notes: notesPayload,
         };
-        if (compId) fallbackPayload.company_id = compId;
+        if (propId) minimalPayload.property_id = propId;
+        if (compId) minimalPayload.company_id = compId;
 
-        const { data: fbData, error: fbErr } = await supabase
+        const { data: d2, error: e2 } = await supabase
           .from("tenant_rent_payments")
-          .insert(fallbackPayload)
+          .insert(minimalPayload)
           .select()
           .single();
 
-        if (fbErr) {
-          // If paid_months array fails, try without paid_months column
-          console.warn("Fallback 1 failed, trying plain payment record:", fbErr);
-          const fallback2: Record<string, any> = {
-            tenant_id: detailsRow.id,
-            property_id: propId,
-            payment_date: rentRecordForm.paymentDate,
-            amount_paid: Number(rentRecordForm.amountPaid),
-            notes: notesPayload,
-          };
-          if (compId) fallback2.company_id = compId;
+        if (!e2) {
+          insertedPayment = d2;
+        } else {
+          console.warn("Minimal payload failed:", e2.message || JSON.stringify(e2), "– trying bare minimum");
 
-          const { data: fb2Data, error: fb2Err } = await supabase
+          // ── Strategy 3: absolute bare minimum ──
+          const { data: d3, error: e3 } = await supabase
             .from("tenant_rent_payments")
-            .insert(fallback2)
+            .insert({ tenant_id: detailsRow.id, payment_date: rentRecordForm.paymentDate, amount_paid: Number(rentRecordForm.amountPaid) })
             .select()
             .single();
 
-          if (fb2Err) {
-            throw fb2Err || fbErr || primaryError;
+          if (e3) {
+            const realMsg = e3.message || e3.details || e3.hint || JSON.stringify(e3);
+            throw new Error(`DB error: ${realMsg}`);
           }
-          insertedPayment = fb2Data;
-        } else {
-          insertedPayment = fbData;
+          insertedPayment = d3;
         }
-      } else {
-        insertedPayment = pData;
       }
 
-      // Record in tenant_payment_proofs (non-fatal if proofs table has column variance)
+      // Proof of payment record (non-fatal)
       if (rentRecordForm.receiptUrl) {
         try {
           await supabase.from("tenant_payment_proofs").insert({
@@ -1067,18 +1070,18 @@ export default function TenantsPage() {
             payment_date: rentRecordForm.paymentDate,
             reference_number: rentRecordForm.referenceNumber || `${rentRecordForm.paidMonth} Rent`,
             document_url: rentRecordForm.receiptUrl,
-            notes: `Recorded by Staff: ${staffName} | Means: ${rentRecordForm.paymentMethod}${rentRecordForm.notes ? " | " + rentRecordForm.notes : ""}`,
+            notes: `Recorded by: ${staffName} | Means: ${rentRecordForm.paymentMethod}${rentRecordForm.notes ? " | " + rentRecordForm.notes : ""}`,
             status: "verified",
           });
         } catch (proofErr) {
-          console.warn("Could not save tenant_payment_proofs (non-fatal):", proofErr);
+          console.warn("tenant_payment_proofs (non-fatal):", proofErr);
         }
       }
 
       // Audit log (non-fatal)
       try {
         await supabase.from("audit_log").insert({
-          user_email: user?.email || "admin@paimbabook.com",
+          user_email: user?.email || "admin",
           user_name: staffName,
           action: "rent_payment_recorded",
           entity_type: "tenant_rent_payment",
@@ -1095,7 +1098,7 @@ export default function TenantsPage() {
           },
         });
       } catch (auditErr) {
-        console.warn("Audit log insert failed (non-fatal):", auditErr);
+        console.warn("Audit log (non-fatal):", auditErr);
       }
 
       setRecordRentModalOpen(false);
@@ -1111,9 +1114,9 @@ export default function TenantsPage() {
 
       await loadTenantDetails(detailsRow.id);
       reload();
-      alert("Rent payment and POP recorded successfully!");
+      alert("Rent payment recorded successfully!");
     } catch (err: any) {
-      const msg = err?.message || err?.error_description || err?.details || (err instanceof Error ? err.message : JSON.stringify(err));
+      const msg = err?.message || err?.details || err?.hint || (err instanceof Error ? err.message : JSON.stringify(err));
       alert("Could not record payment: " + msg);
     } finally {
       setRecordingPayment(false);

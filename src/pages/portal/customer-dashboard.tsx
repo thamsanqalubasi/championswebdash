@@ -182,6 +182,13 @@ export default function CustomerDashboardPage() {
   const [submittingInquiry, setSubmittingInquiry] = useState(false);
   const [inquirySuccessMsg, setInquirySuccessMsg] = useState("");
 
+  // View / Book listing modals
+  const [selectedListingForView, setSelectedListingForView] = useState<any | null>(null);
+  const [selectedListingForBook, setSelectedListingForBook] = useState<any | null>(null);
+  const [bookingForm, setBookingForm] = useState({ check_in: "", check_out: "", guests: 1, notes: "" });
+  const [submittingBooking, setSubmittingBooking] = useState(false);
+  const [bookingSuccessMsg, setBookingSuccessMsg] = useState("");
+
   // General Enquiries & Support History
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [messagesByEnquiry, setMessagesByEnquiry] = useState<Record<string, EnquiryMessage[]>>({});
@@ -1998,24 +2005,60 @@ export default function CustomerDashboardPage() {
 
                       {/* Divider + Actions */}
                       <div className="grid grid-cols-2 gap-2 pt-3 mt-auto border-t border-gray-100 dark:border-slate-800">
-                        <button
-                          onClick={() => {
-                            setSelectedListingForReview(listing);
-                            setReviewForm({ rating: 5, title: "", body: "" });
-                          }}
-                          className="flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-slate-700 py-2 text-xs font-bold text-gray-700 dark:text-slate-200 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700 dark:hover:bg-amber-950/20 dark:hover:text-amber-400 transition"
-                        >
-                          <Star size={13} className="text-amber-500" /> Leave Review
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedListingForInquiry(listing);
-                            setInquiryForm({ question_id: "", message: "", phone: "" });
-                          }}
-                          className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-2 text-xs font-bold text-white hover:bg-indigo-700 transition shadow-xs"
-                        >
-                          <Send size={12} /> Send Inquiry
-                        </button>
+                        {/* Row 1: View + Book (for bookable listings) */}
+                        <div className="grid grid-cols-2 gap-2 pt-2">
+                          <button
+                            onClick={() => setSelectedListingForView(listing)}
+                            className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-300 dark:border-indigo-700 py-2 text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 transition"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            View Details
+                          </button>
+                          {(listing.listing_type === "room_showcase" || listing.listing_type === "hospitality") ? (
+                            <button
+                              onClick={() => {
+                                setSelectedListingForBook(listing);
+                                setBookingForm({ check_in: "", check_out: "", guests: 1, notes: "" });
+                                setBookingSuccessMsg("");
+                              }}
+                              className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-xs"
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                              Book Now
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setSelectedListingForInquiry(listing);
+                                setInquiryForm({ question_id: "", message: "", phone: "" });
+                              }}
+                              className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-2 text-xs font-bold text-white hover:bg-indigo-700 transition shadow-xs"
+                            >
+                              <Send size={12} /> Inquire
+                            </button>
+                          )}
+                        </div>
+                        {/* Row 2: Review + Inquiry */}
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                          <button
+                            onClick={() => {
+                              setSelectedListingForReview(listing);
+                              setReviewForm({ rating: 5, title: "", body: "" });
+                            }}
+                            className="flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-slate-700 py-2 text-xs font-bold text-gray-700 dark:text-slate-200 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700 dark:hover:bg-amber-950/20 dark:hover:text-amber-400 transition"
+                          >
+                            <Star size={13} className="text-amber-500" /> Leave Review
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedListingForInquiry(listing);
+                              setInquiryForm({ question_id: "", message: "", phone: "" });
+                            }}
+                            className="flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-slate-700 py-2 text-xs font-bold text-gray-700 dark:text-slate-200 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-700 dark:hover:bg-indigo-950/20 dark:hover:text-indigo-400 transition"
+                          >
+                            <Send size={12} /> Send Inquiry
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2536,6 +2579,215 @@ export default function CustomerDashboardPage() {
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: VIEW LISTING DETAILS                                               */}
+      {/* ========================================================================= */}
+      {selectedListingForView && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+            <div className="p-4 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/60">
+              <div>
+                <h3 className="font-bold text-sm text-gray-900 dark:text-white">{selectedListingForView.name}</h3>
+                <p className="text-[11px] text-gray-500">{selectedListingForView.category_label || "Property Listing"}</p>
+              </div>
+              <button onClick={() => setSelectedListingForView(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-5 flex-1 overflow-y-auto space-y-4 text-sm">
+              {/* Price */}
+              <div className="flex items-center justify-between rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30 px-4 py-3">
+                <div>
+                  <p className="text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-400">Rental / Rate</p>
+                  <p className="font-black text-base text-emerald-800 dark:text-emerald-300">
+                    NAD {Number(selectedListingForView.price_per_month || selectedListingForView.price_per_night || 0).toLocaleString()}
+                    <span className="font-normal text-xs">{selectedListingForView.rent_unit || "/mo"}</span>
+                  </p>
+                </div>
+                {selectedListingForView.price_per_night && (
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400">NAD {Number(selectedListingForView.price_per_night).toLocaleString()}/night</p>
+                )}
+              </div>
+
+              {/* Location */}
+              <div>
+                <p className="text-[10px] font-bold uppercase text-gray-400 mb-1">Location</p>
+                <p className="text-gray-700 dark:text-slate-300">
+                  {[selectedListingForView.address, selectedListingForView.city, selectedListingForView.country].filter(Boolean).join(", ") || "Namibia"}
+                </p>
+              </div>
+
+              {/* Description */}
+              {selectedListingForView.description && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase text-gray-400 mb-1">Description</p>
+                  <p className="text-gray-700 dark:text-slate-300 leading-relaxed">{selectedListingForView.description}</p>
+                </div>
+              )}
+
+              {/* Amenities */}
+              {selectedListingForView.amenities && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase text-gray-400 mb-1">Amenities</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {String(selectedListingForView.amenities).split(",").filter(Boolean).map((a: string, i: number) => (
+                      <span key={i} className="rounded-full bg-gray-100 dark:bg-slate-800 px-3 py-1 text-[11px] font-semibold text-gray-600 dark:text-slate-300">{a.trim()}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-100 dark:border-slate-800">
+                {(selectedListingForView.listing_type === "room_showcase" || selectedListingForView.listing_type === "hospitality") && (
+                  <button
+                    onClick={() => {
+                      setSelectedListingForBook(selectedListingForView);
+                      setBookingForm({ check_in: "", check_out: "", guests: 1, notes: "" });
+                      setBookingSuccessMsg("");
+                      setSelectedListingForView(null);
+                    }}
+                    className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 transition"
+                  >
+                    Book Now
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setSelectedListingForInquiry(selectedListingForView);
+                    setInquiryForm({ question_id: "", message: "", phone: "" });
+                    setSelectedListingForView(null);
+                  }}
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-2.5 text-xs font-bold text-white hover:bg-indigo-700 transition col-span-1"
+                >
+                  <Send size={12} /> Send Inquiry
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: BOOK A ROOM                                                        */}
+      {/* ========================================================================= */}
+      {selectedListingForBook && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+            <div className="p-4 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between bg-emerald-50 dark:bg-emerald-950/20">
+              <div>
+                <h3 className="font-bold text-sm text-gray-900 dark:text-white">Book: {selectedListingForBook.name}</h3>
+                <p className="text-[11px] text-gray-500">NAD {Number(selectedListingForBook.price_per_night || selectedListingForBook.price_per_month || 0).toLocaleString()}/night</p>
+              </div>
+              <button onClick={() => { setSelectedListingForBook(null); setBookingSuccessMsg(""); }} className="text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-5 flex-1 overflow-y-auto">
+              {bookingSuccessMsg ? (
+                <div className="text-center py-8 space-y-3">
+                  <div className="flex justify-center">
+                    <div className="h-14 w-14 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-emerald-600"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    </div>
+                  </div>
+                  <p className="font-bold text-gray-900 dark:text-white text-sm">{bookingSuccessMsg}</p>
+                  <button onClick={() => { setSelectedListingForBook(null); setBookingSuccessMsg(""); }} className="rounded-xl bg-emerald-600 px-6 py-2 text-xs font-bold text-white hover:bg-emerald-700">Done</button>
+                </div>
+              ) : (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!bookingForm.check_in || !bookingForm.check_out) { alert("Please select check-in and check-out dates."); return; }
+                    setSubmittingBooking(true);
+                    try {
+                      const { supabase: sb } = await import("@/lib/supabase");
+                      const customerEmail = session?.user?.email || "";
+                      const customerName = session?.user?.user_metadata?.full_name || customerEmail.split("@")[0] || "Customer";
+                      const { error } = await sb.from("enquiries").insert({
+                        tenant_user_id: session?.user?.id ?? null,
+                        customer_email: customerEmail,
+                        customer_name: customerName,
+                        property_id: selectedListingForBook.id,
+                        company_id: selectedListingForBook.company_id ?? null,
+                        type: "room_booking",
+                        status: "open",
+                        message: `Room Booking Request for "${selectedListingForBook.name}"\nCheck-in: ${bookingForm.check_in}\nCheck-out: ${bookingForm.check_out}\nGuests: ${bookingForm.guests}\nNotes: ${bookingForm.notes || "None"}`,
+                        subject: `Booking Request: ${selectedListingForBook.name}`,
+                      });
+                      if (error) throw error;
+                      setBookingSuccessMsg(`Your booking request for "${selectedListingForBook.name}" has been sent! The property team will confirm shortly.`);
+                    } catch (err: any) {
+                      alert("Booking request failed: " + (err?.message || String(err)));
+                    } finally {
+                      setSubmittingBooking(false);
+                    }
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-[10px] font-bold text-gray-400 uppercase">Check-in Date *</label>
+                      <input
+                        type="date"
+                        value={bookingForm.check_in}
+                        onChange={(e) => setBookingForm({ ...bookingForm, check_in: e.target.value })}
+                        min={new Date().toISOString().slice(0, 10)}
+                        className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[10px] font-bold text-gray-400 uppercase">Check-out Date *</label>
+                      <input
+                        type="date"
+                        value={bookingForm.check_out}
+                        onChange={(e) => setBookingForm({ ...bookingForm, check_out: e.target.value })}
+                        min={bookingForm.check_in || new Date().toISOString().slice(0, 10)}
+                        className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold text-gray-400 uppercase">Number of Guests</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={bookingForm.guests}
+                      onChange={(e) => setBookingForm({ ...bookingForm, guests: Number(e.target.value) })}
+                      className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold text-gray-400 uppercase">Special Requests / Notes</label>
+                    <textarea
+                      rows={3}
+                      placeholder="Dietary requirements, accessibility needs, early check-in..."
+                      value={bookingForm.notes}
+                      onChange={(e) => setBookingForm({ ...bookingForm, notes: e.target.value })}
+                      className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-emerald-500 resize-none"
+                    />
+                  </div>
+                  <div className="flex gap-3 pt-2 border-t border-gray-100 dark:border-slate-800">
+                    <button type="button" onClick={() => setSelectedListingForBook(null)} className="flex-1 rounded-xl border border-gray-200 dark:border-slate-700 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+                    <button
+                      type="submit"
+                      disabled={submittingBooking}
+                      className="flex-1 rounded-xl bg-emerald-600 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 shadow-xs"
+                    >
+                      {submittingBooking ? "Sending..." : "Submit Booking Request"}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

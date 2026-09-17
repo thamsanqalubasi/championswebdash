@@ -4980,6 +4980,24 @@ export const ALL_ROLE_CAPABILITIES: RoleCapability[] = [
   { slug: "view_audit_trail", label: "View Audit Trail", description: "View the full system audit log", section: "Administration & Audit", defaultEnabled: ["admin", "audit", "manager"] },
   { slug: "manage_companies", label: "Manage Companies / Organisations", description: "Add and manage multiple company organisations", section: "Administration & Audit", defaultEnabled: ["admin"] },
   { slug: "manage_roles_organogram", label: "Manage Roles, Restrictions & Organogram", description: "Create new roles/job titles, modify duties, and adjust restrictions in the organogram", section: "Administration & Audit", defaultEnabled: ["admin"] },
+  // Finance Accounts — sub-features
+  { slug: "view_finance_journal", label: "View Finance Daily Journal", description: "Access the daily journal & transactions tab in Finance Accounts", section: "Finance & Accounts", defaultEnabled: ["admin", "manager", "accountant", "audit"] },
+  { slug: "record_finance_transaction", label: "Record Finance Transaction", description: "Manually record income, expense, transfer or payment entries with invoice attachments", section: "Finance & Accounts", defaultEnabled: ["admin", "accountant"] },
+  { slug: "request_payment_approval", label: "Request Payment Approval", description: "Submit a manually entered transaction for manager or CFO approval", section: "Finance & Accounts", defaultEnabled: ["admin", "manager", "accountant"] },
+  { slug: "sign_payment_request", label: "Sign / Authorize Payment Request", description: "Approve and digitally sign a payment approval request", section: "Finance & Accounts", defaultEnabled: ["admin", "accountant"] },
+  { slug: "reassign_payment_request", label: "Reassign Payment Request", description: "Push a payment approval request to another person in the accounts hierarchy", section: "Finance & Accounts", defaultEnabled: ["admin", "manager", "accountant"] },
+  { slug: "view_balance_sheet", label: "View Balance Sheet & Statements", description: "Access the daily balance sheet and financial statements tab", section: "Finance & Accounts", defaultEnabled: ["admin", "manager", "accountant", "audit"] },
+  { slug: "generate_financial_report", label: "Generate Financial Reports & Exports", description: "Generate PDF balance sheet reports, financial statements, and email share", section: "Finance & Accounts", defaultEnabled: ["admin", "manager", "accountant"] },
+  { slug: "view_procurement_tab_finance", label: "View Procurement Requests (Finance Tab)", description: "View procurement requests in the Finance Accounts procurement tab", section: "Finance & Accounts", defaultEnabled: ["admin", "accountant", "manager"] },
+  { slug: "view_pending_accounting", label: "View Pending Accounting Matters", description: "Access the pending accounting matters queue with priority sorting", section: "Finance & Accounts", defaultEnabled: ["admin", "accountant", "manager"] },
+  { slug: "upload_proof_of_payment", label: "Upload Proof of Payment", description: "Upload invoice images or PDFs as proof of payment for transactions", section: "Finance & Accounts", defaultEnabled: ["admin", "manager", "accountant", "front_desk"] },
+  // Customer Portal
+  { slug: "view_customer_portal_listings", label: "View Public Portal Listings", description: "Browse the public property and room showcase listings", section: "Customer Portal", defaultEnabled: ["admin", "manager", "front_desk", "accountant"] },
+  { slug: "book_portal_listing", label: "Book via Customer Portal", description: "Make a room booking or inquiry via the customer portal", section: "Customer Portal", defaultEnabled: ["admin", "manager", "front_desk"] },
+  // Contracts
+  { slug: "manage_landlord_info", label: "Manage Landlord Contract Info", description: "Pre-save and update the landlord information used on lease contracts", section: "Administration & Audit", defaultEnabled: ["admin", "manager"] },
+  // Leave Requests (all staff)
+  { slug: "request_own_leave", label: "Request Own Leave", description: "Submit a personal leave application (available to all staff)", section: "Human Resources", defaultEnabled: ["admin", "manager", "front_desk", "accountant", "human_resources", "maintenance", "procurement", "stores", "audit", "it"] },
 ];
 
 export async function fetchRolePermissions(department: string, companyId: string = MOCK_COMPANIES[0].id): Promise<Record<string, boolean>> {

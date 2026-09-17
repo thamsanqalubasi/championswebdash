@@ -117,8 +117,12 @@ export const DEFAULT_DEPARTMENT_ORGANOGRAM_DATA: DepartmentOrganogramSpec[] = [
           "view_inventory", "view_hr", "manage_payroll", "manage_employees", "manage_leave",
           "raise_procurement_request", "approve_procurement_dept", "manage_quotations",
           "approve_procurement_manager", "generate_quote_request", "manage_stores", "manage_enquiries",
-          "manage_showcases", "manage_users", "manage_contracts", "manage_settings",
-          "view_audit_trail", "manage_companies", "manage_roles_organogram"
+          "view_audit_trail", "manage_companies", "manage_roles_organogram",
+          "view_finance_journal", "record_finance_transaction", "request_payment_approval",
+          "sign_payment_request", "reassign_payment_request", "view_balance_sheet",
+          "generate_financial_report", "view_procurement_tab_finance", "view_pending_accounting",
+          "upload_proof_of_payment", "view_customer_portal_listings", "book_portal_listing",
+          "manage_landlord_info", "request_own_leave"
         ],
         reportsTo: "Board of Directors / Stakeholders",
       },
@@ -146,7 +150,12 @@ export const DEFAULT_DEPARTMENT_ORGANOGRAM_DATA: DepartmentOrganogramSpec[] = [
           "raise_procurement_request", "approve_procurement_dept", "manage_quotations",
           "approve_procurement_manager", "generate_quote_request", "manage_stores", "manage_enquiries",
           "manage_showcases", "manage_users", "manage_contracts", "manage_settings",
-          "view_audit_trail", "manage_companies", "manage_roles_organogram"
+          "view_audit_trail", "manage_companies", "manage_roles_organogram",
+          "view_finance_journal", "record_finance_transaction", "request_payment_approval",
+          "sign_payment_request", "reassign_payment_request", "view_balance_sheet",
+          "generate_financial_report", "view_procurement_tab_finance", "view_pending_accounting",
+          "upload_proof_of_payment", "view_customer_portal_listings", "book_portal_listing",
+          "manage_landlord_info", "request_own_leave"
         ],
         reportsTo: "Admin - Super Admin",
       },
@@ -185,7 +194,10 @@ export const DEFAULT_DEPARTMENT_ORGANOGRAM_DATA: DepartmentOrganogramSpec[] = [
           "manage_providers", "manage_inspections", "manage_scheduled_tasks", "view_inventory",
           "view_hr", "manage_employees", "manage_leave", "raise_procurement_request",
           "approve_procurement_dept", "manage_enquiries", "manage_showcases", "manage_contracts",
-          "view_audit_trail"
+          "view_audit_trail", "view_finance_journal", "request_payment_approval", "reassign_payment_request",
+          "view_balance_sheet", "generate_financial_report", "view_procurement_tab_finance",
+          "view_pending_accounting", "upload_proof_of_payment", "view_customer_portal_listings",
+          "book_portal_listing", "manage_landlord_info", "request_own_leave"
         ],
         reportsTo: "Admin - Admin",
       },
@@ -453,7 +465,11 @@ export const DEFAULT_DEPARTMENT_ORGANOGRAM_DATA: DepartmentOrganogramSpec[] = [
         rights: [
           "view_dashboard", "collect_rent", "manage_invoices", "manage_bills",
           "view_financial_reports", "manage_accounts", "approve_procurement_funds",
-          "generate_quote_request", "raise_procurement_request", "approve_procurement_dept"
+          "generate_quote_request", "raise_procurement_request", "approve_procurement_dept",
+          "view_finance_journal", "record_finance_transaction", "request_payment_approval",
+          "sign_payment_request", "reassign_payment_request", "view_balance_sheet",
+          "generate_financial_report", "view_procurement_tab_finance", "view_pending_accounting",
+          "upload_proof_of_payment", "request_own_leave"
         ],
         reportsTo: "Admin - Admin",
       },
@@ -471,7 +487,10 @@ export const DEFAULT_DEPARTMENT_ORGANOGRAM_DATA: DepartmentOrganogramSpec[] = [
         ],
         rights: [
           "view_dashboard", "collect_rent", "manage_invoices", "manage_bills",
-          "view_financial_reports", "raise_procurement_request"
+          "view_financial_reports", "raise_procurement_request",
+          "view_finance_journal", "record_finance_transaction", "request_payment_approval",
+          "view_balance_sheet", "view_procurement_tab_finance", "view_pending_accounting",
+          "upload_proof_of_payment", "request_own_leave"
         ],
         reportsTo: "Accountant - Manager",
       },
@@ -489,7 +508,8 @@ export const DEFAULT_DEPARTMENT_ORGANOGRAM_DATA: DepartmentOrganogramSpec[] = [
         ],
         rights: [
           "view_dashboard", "collect_rent", "manage_invoices",
-          "raise_procurement_request"
+          "raise_procurement_request", "view_finance_journal", "record_finance_transaction",
+          "upload_proof_of_payment", "request_own_leave"
         ],
         reportsTo: "Accountant - Manager",
       },
@@ -507,7 +527,11 @@ export const DEFAULT_DEPARTMENT_ORGANOGRAM_DATA: DepartmentOrganogramSpec[] = [
         rights: [
           "view_dashboard", "collect_rent", "manage_invoices", "manage_bills",
           "view_financial_reports", "manage_accounts", "approve_procurement_funds",
-          "generate_quote_request", "raise_procurement_request", "approve_procurement_dept"
+          "generate_quote_request", "raise_procurement_request", "approve_procurement_dept",
+          "view_finance_journal", "record_finance_transaction", "request_payment_approval",
+          "sign_payment_request", "reassign_payment_request", "view_balance_sheet",
+          "generate_financial_report", "view_procurement_tab_finance", "view_pending_accounting",
+          "upload_proof_of_payment", "request_own_leave"
         ],
         reportsTo: "Accountant - Manager",
       },

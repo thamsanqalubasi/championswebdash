@@ -162,8 +162,14 @@ export default function CommercialBookingsPage() {
         `Confirm front desk check-in for ${booking.guestName} into Room ${booking.roomNumber}?`
       )
     ) {
-      await checkinCommercialBooking(booking.id, currentCompanyUser.fullName);
-      loadData();
+      try {
+        const actorName = currentCompanyUser?.fullName || currentCompanyUser?.jobTitle || "Staff";
+        await checkinCommercialBooking(booking.id, actorName);
+        loadData();
+      } catch (err: any) {
+        const msg = err?.message || err?.details || JSON.stringify(err);
+        alert("Check-in failed: " + msg);
+      }
     }
   };
 

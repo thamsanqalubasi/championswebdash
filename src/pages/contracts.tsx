@@ -111,12 +111,12 @@ const MAIN_CONTRACT_SECTIONS: ContractSection[] = [
   },
   {
     title: "Parties and Contact Details",
-    content: `<p style="text-align: justify;"><strong>Landlord:</strong> Michael Beukes, ID 74020700079</p>
-<p style="text-align: justify;"><strong>Landlord Address:</strong> 2673 J. James Street, Khomasdal, Windhoek</p>
-<p style="text-align: justify;"><strong>Landlord Contact:</strong> 081 424 1935, michaelfbeukes@gmail.com</p>
-<p style="text-align: justify;"><strong>Lessee:</strong> Mr Tamsanqa Lubasi, Passport EN903112</p>
-<p style="text-align: justify;"><strong>Lessee Contact:</strong> thamulubasi@gmail.com, 081 844 5625</p>
-<p style="text-align: justify;"><strong>Next of Kin:</strong> Nolwazi Dube, 081 811 5624</p>
+    content: `<p style="text-align: justify;"><strong>Landlord:</strong> [Landlord Name &amp; ID — set via "Contract Landlord Information"]</p>
+<p style="text-align: justify;"><strong>Landlord Address:</strong> [Landlord Address]</p>
+<p style="text-align: justify;"><strong>Landlord Contact:</strong> [Landlord Contact]</p>
+<p style="text-align: justify;"><strong>Lessee:</strong> [Tenant Name — auto-filled from selected tenant]</p>
+<p style="text-align: justify;"><strong>Lessee Contact:</strong> [Tenant Email &amp; Phone — from database]</p>
+<p style="text-align: justify;"><strong>Next of Kin:</strong> ____________________</p>
 <p style="text-align: justify;"><strong>Declaration:</strong> The Lessee confirms that all personal information supplied is correct.</p>`,
   },
   {
@@ -432,6 +432,29 @@ export default function ContractsPage() {
   const [deleteTemplateTarget, setDeleteTemplateTarget] = useState<TemplateRow | null>(null);
   const [deletingTemplate, setDeletingTemplate] = useState(false);
 
+  /* ── landlord info (pre-saved) ── */
+  const LANDLORD_INFO_KEY = `landlord_info_${currentCompany?.id || "default"}`;
+  const [landlordInfoModalOpen, setLandlordInfoModalOpen] = useState(false);
+  const [landlordInfo, setLandlordInfo] = useState(() => {
+    try {
+      const stored = localStorage.getItem(LANDLORD_INFO_KEY);
+      return stored ? JSON.parse(stored) : { name: "", id_number: "", address: "", contact: "", bank_name: "", account_name: "", account_number: "", branch: "", branch_code: "" };
+    } catch { return { name: "", id_number: "", address: "", contact: "", bank_name: "", account_name: "", account_number: "", branch: "", branch_code: "" }; }
+  });
+  const [landlordInfoForm, setLandlordInfoForm] = useState(landlordInfo);
+
+  const landlordInfoSaved = Boolean(landlordInfo.name && landlordInfo.address);
+
+  const saveLandlordInfo = () => {
+    setLandlordInfo(landlordInfoForm);
+    localStorage.setItem(LANDLORD_INFO_KEY, JSON.stringify(landlordInfoForm));
+    setLandlordInfoModalOpen(false);
+    alert("Landlord information saved successfully!");
+  };
+
+  /* ── tenant -> property map ── */
+  const [tenantPropertyMap, setTenantPropertyMap] = useState<Record<string, { property_id: string; property_name: string }>>({});
+
   /* ── load contracts + lookups ── */
   useEffect(() => {
     let cancelled = false;
@@ -443,7 +466,7 @@ export default function ContractsPage() {
         if (!cancelled) setContracts(result);
         
         let propsQuery = supabase.from("properties").select("id, name").order("name");
-        let tensQuery = supabase.from("tenants").select("id, full_name, email, phone, whatsapp_number").order("full_name");
+        let tensQuery = supabase.from("tenants").select("id, full_name, email, phone, whatsapp_number, property_id, properties(name)").order("full_name");
         let contractsQuery = supabase.from("contracts").select("id, document_url, title");
 
         if (isValidUuid(compId)) {
@@ -469,6 +492,17 @@ export default function ContractsPage() {
               phone: String((t as Record<string, unknown>).phone ?? ""),
               whatsapp_number: String((t as Record<string, unknown>).whatsapp_number ?? ""),
             })));
+            // Build tenant -> property map for auto-fill
+            const tpMap: Record<string, { property_id: string; property_name: string }> = {};
+            tens.forEach((t: any) => {
+              if (t.property_id) {
+                tpMap[String(t.id)] = {
+                  property_id: String(t.property_id),
+                  property_name: String(t.properties?.name || "Assigned Property"),
+                };
+              }
+            });
+            setTenantPropertyMap(tpMap);
           }
           if (contractDocs) {
             const map: Record<string, string> = {};
@@ -562,6 +596,12 @@ export default function ContractsPage() {
 
   /* ── contract form actions ── */
   const openAdd = () => {
+    if (!landlordInfoSaved) {
+      alert("Please pre-save Contract Landlord Information before creating a contract. Use the 'Contract Landlord Information' button at the top of the page.");
+      setLandlordInfoForm(landlordInfo);
+      setLandlordInfoModalOpen(true);
+      return;
+    }
     setEditingId(null);
     const defaultTpl = templates.find((t) => t.isDefault) ?? templates[0];
     if (defaultTpl) {
@@ -661,7 +701,10 @@ export default function ContractsPage() {
       }
 
       setModalOpen(false); reload();
-    } catch (e) { alert(e instanceof Error ? e.message : "Save failed"); }
+    } catch (e: any) {
+      const msg = e?.message || e?.details || e?.hint || (e instanceof Error ? e.message : JSON.stringify(e));
+      alert("Save failed: " + msg);
+    }
     finally { setSaving(false); }
   };
 
@@ -688,7 +731,7 @@ export default function ContractsPage() {
 
   const generateContractHtml = async (row: ContractRow) => {
     const sections = contractSectionsById[row.id] ?? [];
-    const [company, admin] = await Promise.all([fetchCompanyInfo(), fetchAdminInfo(user?.email ?? undefined)]);
+    const [company, admin] = await Promise.all([fetchCompanyInfo(currentCompany?.id), fetchAdminInfo(user?.email ?? undefined)]);
     return buildProfessionalContractHtml(
       { contractTitle: "Lease Agreement", tenantName: row.tenantName, propertyName: row.propertyName, startDate: row.startDate, endDate: row.endDate, monthlyRent: row.monthlyRent, depositAmount: row.depositAmount, status: row.status, notes: row.notes, sections },
       company, admin,
@@ -955,6 +998,35 @@ export default function ContractsPage() {
             Contract Templates
           </span>
           {activeTab === "templates" && <span className="absolute bottom-0 left-0 h-0.5 w-full bg-foreground rounded-full" />}
+        </button>
+      </div>
+
+      {/* ── Landlord Information Banner ── */}
+      <div className={`mb-4 flex items-center justify-between rounded-xl border px-4 py-3 ${landlordInfoSaved ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/40 bg-amber-500/5"}`}>
+        <div className="flex items-center gap-3">
+          {landlordInfoSaved ? (
+            <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+          ) : (
+            <AlertCircle size={16} className="text-amber-500 shrink-0" />
+          )}
+          <div>
+            <p className="text-sm font-bold text-foreground">
+              {landlordInfoSaved ? `Landlord: ${landlordInfo.name}` : "Landlord Information Not Set"}
+            </p>
+            <p className="text-[10px] text-muted">
+              {landlordInfoSaved
+                ? `${landlordInfo.address} · ${landlordInfo.contact}`
+                : "Contracts cannot be created until landlord information is pre-saved. Click 'Contract Landlord Information' to set it up."}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => { setLandlordInfoForm(landlordInfo); setLandlordInfoModalOpen(true); }}
+          className="flex items-center gap-2 rounded-lg border border-border-color bg-surface px-3 py-2 text-xs font-bold text-foreground hover:bg-surface-elevated transition-all whitespace-nowrap"
+        >
+          <ShieldCheck size={14} />
+          Contract Landlord Information
         </button>
       </div>
 
@@ -1228,9 +1300,29 @@ export default function ContractsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30">
                       <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Tenant</label>
-                      <select value={form.tenant_id} onChange={(e) => setForm({ ...form, tenant_id: e.target.value })} className={inputClass}>
-                        <option value="">Select tenant...</option>{tenants.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                      <select
+                        value={form.tenant_id}
+                        onChange={(e) => {
+                          const tid = e.target.value;
+                          const propInfo = tenantPropertyMap[tid];
+                          setForm((prev) => ({
+                            ...prev,
+                            tenant_id: tid,
+                            // Auto-fill property if tenant has an assigned property
+                            property_id: propInfo ? propInfo.property_id : prev.property_id,
+                          }));
+                        }}
+                        className={inputClass}
+                      >
+                        <option value="">Select tenant...</option>
+                        {tenants.map((t) => {
+                          const hasProp = Boolean(tenantPropertyMap[t.id]);
+                          return <option key={t.id} value={t.id}>{hasProp ? t.full_name : `${t.full_name} (New Tenant)`}</option>;
+                        })}
                       </select>
+                      {form.tenant_id && !tenantPropertyMap[form.tenant_id] && (
+                        <p className="mt-1.5 text-[10px] text-amber-500 font-semibold">⚠ This tenant has no assigned property. Please assign them a residential property first, then return to create the contract.</p>
+                      )}
                     </div>
                     <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30">
                       <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Property Unit</label>
@@ -1456,6 +1548,89 @@ export default function ContractsPage() {
         defaultSubject={shareModalDoc.defaultSubject}
         defaultMessage={shareModalDoc.defaultMessage}
       />
+
+      {/* ═══════════ LANDLORD INFORMATION MODAL ═══════════ */}
+      <Modal open={landlordInfoModalOpen} onClose={() => setLandlordInfoModalOpen(false)} title="Contract Landlord Information">
+        <div className="space-y-5 pb-4">
+          <p className="text-xs text-muted">Pre-save the landlord's details. This information will be used on all lease contracts. Contracts cannot be created until this is set.</p>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-[10px] font-bold text-muted/60 uppercase">Landlord Full Name *</label>
+              <input
+                className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                placeholder="e.g. Michael Beukes"
+                value={landlordInfoForm.name}
+                onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-bold text-muted/60 uppercase">ID / Passport Number</label>
+              <input
+                className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                placeholder="e.g. 74020700079"
+                value={landlordInfoForm.id_number}
+                onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, id_number: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[10px] font-bold text-muted/60 uppercase">Landlord Address *</label>
+            <input
+              className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-emerald-500"
+              placeholder="e.g. 2673 J. James Street, Khomasdal, Windhoek"
+              value={landlordInfoForm.address}
+              onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, address: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[10px] font-bold text-muted/60 uppercase">Contact (Phone & Email)</label>
+            <input
+              className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-emerald-500"
+              placeholder="e.g. 081 424 1935, email@example.com"
+              value={landlordInfoForm.contact}
+              onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, contact: e.target.value })}
+            />
+          </div>
+
+          <div className="rounded-xl border border-border-color bg-surface-elevated/30 p-4 space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60">Bank Details (for payment terms clause)</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-[10px] text-muted/60">Account Name</label>
+                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="Account holder name" value={landlordInfoForm.account_name} onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, account_name: e.target.value })} />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] text-muted/60">Account Number</label>
+                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. 043132049" value={landlordInfoForm.account_number} onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, account_number: e.target.value })} />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] text-muted/60">Bank Name</label>
+                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. Standard Bank Namibia" value={landlordInfoForm.bank_name} onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, bank_name: e.target.value })} />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] text-muted/60">Branch &amp; Code</label>
+                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. Gustav Voigts, 087373" value={`${landlordInfoForm.branch}${landlordInfoForm.branch_code ? ` · ${landlordInfoForm.branch_code}` : ""}`} onChange={(e) => { const val = e.target.value; const parts = val.split("·"); setLandlordInfoForm({ ...landlordInfoForm, branch: parts[0]?.trim() || "", branch_code: parts[1]?.trim() || "" }); }} />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2 border-t border-border-color/50">
+            <button type="button" onClick={() => setLandlordInfoModalOpen(false)} className="rounded-xl border border-border-color px-5 py-2 text-sm font-bold text-muted hover:text-foreground">Cancel</button>
+            <button
+              type="button"
+              onClick={saveLandlordInfo}
+              disabled={!landlordInfoForm.name || !landlordInfoForm.address}
+              className="rounded-xl bg-foreground px-8 py-2 text-sm font-black text-surface hover:opacity-90 disabled:opacity-50 shadow-md transition-all"
+            >
+              Save Landlord Information
+            </button>
+          </div>
+        </div>
+      </Modal>
+
     </ModulePage>
   );
 }
