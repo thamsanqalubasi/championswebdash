@@ -96,7 +96,7 @@ export default function StatisticsPage() {
           rentPaymentsRes,
           financeTxsRes,
         ] = await Promise.all([
-          supabase.from("invoices").select("total_amount, status, created_at").eq("company_id", compId),
+          supabase.from("invoices").select("id, tenant_id, month, total_amount, status, created_at").eq("company_id", compId),
           supabase.from("commercial_bookings").select("total_amount, amount_paid, booking_status, created_at").eq("company_id", compId),
           supabase.from("properties").select("id, name, status, monthly_rent").eq("company_id", compId),
           supabase.from("commercial_rooms").select("id, status").eq("company_id", compId),
@@ -106,7 +106,7 @@ export default function StatisticsPage() {
           supabase.from("stores_inventory").select("quantity, unit_cost").eq("company_id", compId),
           supabase.from("company_users").select("id, department, is_active").eq("company_id", compId),
           supabase.from("property_expenses").select("amount, category, created_at").eq("company_id", compId),
-          supabase.from("tenant_rent_payments").select("amount_paid, payment_date, created_at").eq("company_id", compId),
+          supabase.from("tenant_rent_payments").select("id, tenant_id, amount_paid, payment_date, paid_months, created_at").eq("company_id", compId),
           supabase.from("finance_transactions").select("amount, type, category, transaction_date, created_at").eq("company_id", compId).eq("status", "approved"),
         ]);
 
@@ -125,14 +125,40 @@ export default function StatisticsPage() {
         const rentPayments = rentPaymentsRes.data || [];
         const financeTxs = financeTxsRes.data || [];
 
+        // Deduplicate rent payments to avoid double-counting accidental re-entries
+        const seenRentKeys = new Set<string>();
+        const deduplicatedRentPayments = (rentPayments || []).filter((r: any) => {
+          const monthKey = Array.isArray(r.paid_months) && r.paid_months[0]
+            ? String(r.paid_months[0]).slice(0, 7)
+            : String(r.payment_date || "").slice(0, 7);
+          const key = `${r.tenant_id || r.id}_${monthKey}_${Number(r.amount_paid || 0)}`;
+          if (seenRentKeys.has(key)) return false;
+          seenRentKeys.add(key);
+          return true;
+        });
+
         // 1. Revenue
         const paidInvoiceTotal = invoices
           .filter((i) => i.status === "paid")
           .reduce((sum, i) => sum + Number(i.total_amount || 0), 0);
         const paidBookingTotal = bookings
           .reduce((sum, b) => sum + Number(b.amount_paid || 0), 0);
-        const paidRentTotal = rentPayments
-          .reduce((sum, r) => sum + Number(r.amount_paid || 0), 0);
+
+        // Paid invoice tenant+month keys to prevent double-counting with rent payments table
+        const paidInvoiceKeys = new Set(
+          invoices
+            .filter((i) => i.status === "paid" && i.tenant_id)
+            .map((i) => `${i.tenant_id}_${String(i.month || "").slice(0, 7)}`)
+        );
+
+        const unInvoicedRentTotal = deduplicatedRentPayments
+          .filter((r: any) => {
+            const monthKey = Array.isArray(r.paid_months) && r.paid_months[0]
+              ? String(r.paid_months[0]).slice(0, 7)
+              : String(r.payment_date || "").slice(0, 7);
+            return !paidInvoiceKeys.has(`${r.tenant_id || ""}_${monthKey}`);
+          })
+          .reduce((sum, r: any) => sum + Number(r.amount_paid || 0), 0);
 
         // Other non-rent finance income
         const otherFinanceIncome = financeTxs
@@ -140,7 +166,7 @@ export default function StatisticsPage() {
           .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
 
         // Calculate combined revenue avoiding double counting between paid invoices and direct rent collections
-        const effectiveLeaseRevenue = Math.max(paidRentTotal, paidInvoiceTotal);
+        const effectiveLeaseRevenue = paidInvoiceTotal + unInvoicedRentTotal;
         const totalRev = effectiveLeaseRevenue + paidBookingTotal + otherFinanceIncome;
 
         // 2. Expenses

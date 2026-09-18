@@ -43,6 +43,7 @@ import {
   Copy,
   Check,
   UploadCloud,
+  Upload,
   FileText,
   ArrowLeft,
   ShieldAlert,
@@ -992,6 +993,53 @@ export default function TenantsPage() {
 
   /* ---- Staff Rent Payment & POP Receipt Upload Handlers ---- */
 
+  const [attachingPopPaymentId, setAttachingPopPaymentId] = useState<string | null>(null);
+
+  const handleAttachPopToPayment = async (paymentId: string, file: File) => {
+    if (!file || !detailsRow) return;
+    setAttachingPopPaymentId(paymentId);
+    try {
+      const staffName = (currentCompanyUser as any)?.fullName || user?.email || "Staff";
+      const actorEmail = user?.email || "staff";
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      const url = await uploadFileToBucket("payment-proofs", actorEmail, file);
+
+      const { error } = await supabase
+        .from("tenant_rent_payments")
+        .update({
+          pop_url: url,
+          pop_uploaded_by_name: staffName,
+          pop_uploaded_at: new Date().toISOString(),
+        })
+        .eq("id", paymentId);
+
+      if (error) throw error;
+
+      // Also record into tenant_payment_proofs (non-fatal)
+      try {
+        await supabase.from("tenant_payment_proofs").insert({
+          company_id: compId,
+          tenant_id: detailsRow.id,
+          property_id: detailsPropertyId || detailsRow.propertyId || null,
+          customer_email: detailsRow.email,
+          customer_name: detailsRow.fullName,
+          payment_date: new Date().toISOString().slice(0, 10),
+          document_url: url,
+          notes: `Attached by staff ${staffName} to Payment ID: ${paymentId}`,
+          status: "verified",
+        });
+      } catch {}
+
+      await loadTenantDetails(detailsRow.id);
+      reload();
+      alert("Proof of payment successfully attached to this payment record!");
+    } catch (err: any) {
+      alert("Failed to attach proof of payment: " + (err?.message || String(err)));
+    } finally {
+      setAttachingPopPaymentId(null);
+    }
+  };
+
   const handleReceiptFileUpload = async (file: File | null) => {
     if (!file) return;
     setUploadingReceipt(true);
@@ -1024,6 +1072,21 @@ export default function TenantsPage() {
         : detailsRow.propertyId && isValidUuid(detailsRow.propertyId)
         ? detailsRow.propertyId
         : null;
+      const targetMonth = rentRecordForm.paidMonth || new Date().toISOString().slice(0, 7);
+
+      // Check for existing payments for this tenant and billing month to prevent duplicate accounting
+      const { data: existingRentPayments } = await supabase
+        .from("tenant_rent_payments")
+        .select("id, amount_paid, payment_date, paid_months, pop_url, notes")
+        .eq("tenant_id", detailsRow.id)
+        .order("created_at", { ascending: false });
+
+      const matchingPayment = (existingRentPayments || []).find((p: any) => {
+        const matchesMonth = (Array.isArray(p.paid_months) && p.paid_months.includes(targetMonth)) ||
+          String(p.payment_date || "").startsWith(targetMonth) ||
+          (p.notes && p.notes.includes(targetMonth));
+        return matchesMonth;
+      });
 
       const notesPayload = [
         `Means: ${rentRecordForm.paymentMethod}`,
@@ -1034,6 +1097,68 @@ export default function TenantsPage() {
         .filter(Boolean)
         .join(" | ");
 
+      // If a matching payment already exists for this billing month:
+      if (matchingPayment) {
+        // Case A: User is attaching a POP receipt to a payment that didn't have one yet
+        if (rentRecordForm.receiptUrl && !matchingPayment.pop_url) {
+          const { error: updateErr } = await supabase
+            .from("tenant_rent_payments")
+            .update({
+              pop_url: rentRecordForm.receiptUrl,
+              pop_uploaded_by_name: staffName,
+              pop_uploaded_at: new Date().toISOString(),
+              notes: notesPayload,
+            })
+            .eq("id", matchingPayment.id);
+
+          if (!updateErr) {
+            try {
+              await supabase.from("tenant_payment_proofs").insert({
+                company_id: compId,
+                tenant_id: detailsRow.id,
+                property_id: propId,
+                customer_email: detailsRow.email,
+                customer_name: detailsRow.fullName,
+                amount: Number(matchingPayment.amount_paid || numAmount),
+                payment_date: rentRecordForm.paymentDate,
+                reference_number: rentRecordForm.referenceNumber || `${targetMonth} Rent`,
+                document_url: rentRecordForm.receiptUrl,
+                notes: `POP attached by: ${staffName} to Payment ID: ${matchingPayment.id}`,
+                status: "verified",
+              });
+            } catch {}
+
+            setRecordRentModalOpen(false);
+            setRentRecordForm({
+              paymentDate: new Date().toISOString().slice(0, 10),
+              amountPaid: "",
+              paidMonth: new Date().toISOString().slice(0, 7),
+              paymentMethod: "EFT / Bank Transfer",
+              receiptUrl: "",
+              referenceNumber: "",
+              notes: "",
+            });
+            await loadTenantDetails(detailsRow.id);
+            reload();
+            alert(`Proof of payment successfully attached to existing payment of ${formatCurrency(matchingPayment.amount_paid)} for ${targetMonth}. Duplicate payment prevented!`);
+            return;
+          }
+        }
+
+        // Case B: Exactly same amount already recorded for this month
+        if (Number(matchingPayment.amount_paid) === numAmount) {
+          const proceed = window.confirm(
+            `A payment of ${formatCurrency(numAmount)} for ${detailsRow.fullName} for billing period ${targetMonth} is already on record (recorded on ${matchingPayment.payment_date}).\n\n` +
+            `Are you sure you want to record an additional separate payment for this month?\n` +
+            `Click Cancel to prevent duplicate accounting, or OK if this is a genuine separate installment.`
+          );
+          if (!proceed) {
+            setRecordingPayment(false);
+            return;
+          }
+        }
+      }
+
       // Valid columns in tenant_rent_payments table:
       // id, tenant_id, payment_date, amount_paid, paid_months, notes, payment_method, company_id, executed_by_name, pop_url, pop_uploaded_by_name, pop_uploaded_at
       // Note: property_id DOES NOT exist on tenant_rent_payments!
@@ -1041,7 +1166,7 @@ export default function TenantsPage() {
         tenant_id: detailsRow.id,
         payment_date: rentRecordForm.paymentDate,
         amount_paid: numAmount,
-        paid_months: [rentRecordForm.paidMonth || new Date().toISOString().slice(0, 7)],
+        paid_months: [targetMonth],
         payment_method: rentRecordForm.paymentMethod || "EFT / Bank Transfer",
         notes: notesPayload,
       };
@@ -2192,16 +2317,48 @@ export default function TenantsPage() {
 
                             <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                               {item.receiptUrl ? (
-                                <a
-                                  href={item.receiptUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated/80 transition"
-                                >
-                                  <FileText size={13} className="text-blue-600 dark:text-blue-400" />
-                                  <span>View Attached POP / Receipt</span>
-                                  <ExternalLink size={11} className="text-muted" />
-                                </a>
+                                <div className="flex items-center gap-1.5">
+                                  <a
+                                    href={item.receiptUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated/80 transition"
+                                  >
+                                    <FileText size={13} className="text-blue-600 dark:text-blue-400" />
+                                    <span>View Attached POP</span>
+                                    <ExternalLink size={11} className="text-muted" />
+                                  </a>
+                                  {item.paymentId && (
+                                    <label className="cursor-pointer p-1.5 rounded-lg border border-border-color bg-surface hover:bg-surface-elevated text-muted hover:text-foreground transition text-xs" title="Update / Replace POP">
+                                      <Upload size={12} />
+                                      <input
+                                        type="file"
+                                        accept="image/*,application/pdf"
+                                        className="hidden"
+                                        disabled={attachingPopPaymentId === item.paymentId}
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file && item.paymentId) void handleAttachPopToPayment(item.paymentId, file);
+                                        }}
+                                      />
+                                    </label>
+                                  )}
+                                </div>
+                              ) : item.paymentId ? (
+                                <label className="flex items-center gap-1.5 rounded-lg border border-dashed border-blue-500/50 bg-blue-500/5 px-2.5 py-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 cursor-pointer transition">
+                                  <Upload size={12} />
+                                  <span>{attachingPopPaymentId === item.paymentId ? "Attaching..." : "Attach POP / Receipt"}</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*,application/pdf"
+                                    className="hidden"
+                                    disabled={attachingPopPaymentId === item.paymentId}
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file && item.paymentId) void handleAttachPopToPayment(item.paymentId, file);
+                                    }}
+                                  />
+                                </label>
                               ) : (
                                 <span className="text-[11px] text-muted/40 italic">No receipt attached</span>
                               )}

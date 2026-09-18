@@ -444,10 +444,46 @@ export default function RentCollectionPage() {
     }
 
     // Check if previous payment(s) already exist for this billing month
-    const existingPayments = (paymentsByTenant[selectedTenant.id] || []).filter((p) => {
-      const pm = paymentForm.paidMonth;
+    const pm = paymentForm.paidMonth;
+    let existingPayments = (paymentsByTenant[selectedTenant.id] || []).filter((p) => {
       return p.paymentDate.startsWith(pm) || (p.notes && p.notes.includes(pm));
     });
+
+    // Direct DB verification check to ensure fresh state across tabs/pages
+    if (existingPayments.length === 0) {
+      try {
+        const { data: dbMatches } = await supabase
+          .from("tenant_rent_payments")
+          .select("id, amount_paid, payment_date, paid_months, payment_method, pop_url, notes, executed_by_name")
+          .eq("tenant_id", selectedTenant.id)
+          .order("created_at", { ascending: false });
+
+        if (dbMatches && dbMatches.length > 0) {
+          const matched = dbMatches.filter((p: any) => {
+            return String(p.payment_date || "").startsWith(pm) ||
+              (Array.isArray(p.paid_months) && p.paid_months.includes(pm)) ||
+              (p.notes && p.notes.includes(pm));
+          });
+          if (matched.length > 0) {
+            existingPayments = matched.map((p: any) => ({
+              id: p.id,
+              tenantId: selectedTenant.id,
+              paymentDate: p.payment_date,
+              amountPaid: Number(p.amount_paid || 0),
+              paymentMethod: p.payment_method || "Bank Transfer / EFT",
+              popUrl: p.pop_url || null,
+              notes: p.notes || null,
+              executedByName: p.executed_by_name || null,
+              popUploadedByName: null,
+              popUploadedAt: null,
+              createdAt: null,
+              invoiceId: null,
+              invoicePdfUrl: null,
+            }));
+          }
+        }
+      } catch {}
+    }
 
     if (existingPayments.length > 0) {
       const totalPaid = existingPayments.reduce((sum, p) => sum + p.amountPaid, 0);
@@ -463,7 +499,7 @@ export default function RentCollectionPage() {
         pin: "",
         pinError: null,
         selectedPaymentToUpdate: existingPayments[0]?.id || null,
-        mode: "new",
+        mode: "update",
       });
       return;
     }

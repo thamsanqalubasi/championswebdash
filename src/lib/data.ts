@@ -3708,11 +3708,11 @@ export async function fetchReportsData(companyId?: string): Promise<ReportsData>
 
     const [invoicesRes, rentRes, bookRes, finRes] = await Promise.allSettled([
       validCompId
-        ? supabase.from("invoices").select("id, total_amount, status, created_at, due_date, month").eq("company_id", validCompId).neq("status", "suppressed")
-        : supabase.from("invoices").select("id, total_amount, status, created_at, due_date, month").neq("status", "suppressed"),
+        ? supabase.from("invoices").select("id, tenant_id, total_amount, status, created_at, due_date, month").eq("company_id", validCompId).neq("status", "suppressed")
+        : supabase.from("invoices").select("id, tenant_id, total_amount, status, created_at, due_date, month").neq("status", "suppressed"),
       validCompId
-        ? supabase.from("tenant_rent_payments").select("id, amount_paid, payment_date, company_id").eq("company_id", validCompId)
-        : supabase.from("tenant_rent_payments").select("id, amount_paid, payment_date, company_id"),
+        ? supabase.from("tenant_rent_payments").select("id, tenant_id, amount_paid, payment_date, paid_months, company_id, created_at").eq("company_id", validCompId)
+        : supabase.from("tenant_rent_payments").select("id, tenant_id, amount_paid, payment_date, paid_months, company_id, created_at"),
       validCompId
         ? supabase.from("commercial_bookings").select("id, total_amount, paid_amount, payment_status, check_in_date, created_at").eq("company_id", validCompId)
         : supabase.from("commercial_bookings").select("id, total_amount, paid_amount, payment_status, check_in_date, created_at"),
@@ -3722,15 +3722,43 @@ export async function fetchReportsData(companyId?: string): Promise<ReportsData>
     ]);
 
     const invList = invoicesRes.status === "fulfilled" && invoicesRes.value.data ? invoicesRes.value.data : [];
-    const rentList = rentRes.status === "fulfilled" && rentRes.value.data ? rentRes.value.data : [];
+    const rawRentList = rentRes.status === "fulfilled" && rentRes.value.data ? rentRes.value.data : [];
     const bookList = bookRes.status === "fulfilled" && bookRes.value.data ? bookRes.value.data : [];
     const finList = finRes.status === "fulfilled" && finRes.value.data ? finRes.value.data : [];
+
+    // Deduplicate rent payments: skip duplicate records sharing same tenant, amount, and billing month/date
+    const seenRentKeys = new Set<string>();
+    const rentList = rawRentList.filter((r) => {
+      const monthKey = Array.isArray(r.paid_months) && r.paid_months[0]
+        ? String(r.paid_months[0]).slice(0, 7)
+        : String(r.payment_date || "").slice(0, 7);
+      const key = `${r.tenant_id || r.id}_${monthKey}_${Number(r.amount_paid || 0)}`;
+      if (seenRentKeys.has(key)) return false;
+      seenRentKeys.add(key);
+      return true;
+    });
 
     const totalInvoicesAmount = invList.reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
     const invoicesPaidAmount = invList.filter((i) => i.status === "paid").reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
     const invoicesOverdueAmount = invList.filter((i) => i.status === "overdue").reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
 
-    const totalRentPaid = rentList.reduce((acc, r) => acc + Number(r.amount_paid || 0), 0);
+    // Track paid invoice tenant+month keys to avoid double-counting with rent collections table
+    const paidInvoiceKeys = new Set(
+      invList
+        .filter((i) => i.status === "paid" && i.tenant_id)
+        .map((i) => `${i.tenant_id}_${String(i.month || "").slice(0, 7)}`)
+    );
+
+    // Direct rent collections not already represented by a paid invoice
+    const unInvoicedRentPaid = rentList
+      .filter((r) => {
+        const monthKey = Array.isArray(r.paid_months) && r.paid_months[0]
+          ? String(r.paid_months[0]).slice(0, 7)
+          : String(r.payment_date || "").slice(0, 7);
+        return !paidInvoiceKeys.has(`${r.tenant_id || ""}_${monthKey}`);
+      })
+      .reduce((acc, r) => acc + Number(r.amount_paid || 0), 0);
+
     const totalBookingsPaid = bookList.reduce((acc, b) => {
       const amt = Number(b.paid_amount || (b.payment_status === "paid" ? b.total_amount : 0) || 0);
       return acc + amt;
@@ -3739,7 +3767,7 @@ export async function fetchReportsData(companyId?: string): Promise<ReportsData>
       .filter((f) => f.type === "income" && !String(f.category || "").toLowerCase().includes("rent"))
       .reduce((acc, f) => acc + Number(f.amount || 0), 0);
 
-    const totalPaid = Math.max(invoicesPaidAmount, totalRentPaid + totalBookingsPaid + totalFinIncome);
+    const totalPaid = invoicesPaidAmount + unInvoicedRentPaid + totalBookingsPaid + totalFinIncome;
     const totalInvoiced = Math.max(totalInvoicesAmount, totalPaid);
     const totalOverdue = invoicesOverdueAmount;
     const collectionRate = totalInvoiced > 0 ? Math.min(100, Math.round((totalPaid / totalInvoiced) * 100)) : (totalPaid > 0 ? 100 : 0);
@@ -3763,9 +3791,25 @@ export async function fetchReportsData(companyId?: string): Promise<ReportsData>
       const monthKey = `${year}-${monthNum}`;
       const label = `${monthNames[d.getMonth()]} ${year}`;
 
-      // Sum rent income in monthKey
+      // Invoices paid in monthKey
+      const invoicePaidInMonth = invList
+        .filter((inv) => inv.status === "paid" && (String(inv.created_at || "").startsWith(monthKey) || String(inv.month || "") === monthKey))
+        .reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0);
+
+      // Rent collections in monthKey (excluding those already accounted for in invoicePaidInMonth)
       const rentInMonth = rentList
-        .filter((r) => String(r.payment_date || "").startsWith(monthKey))
+        .filter((r) => {
+          const m = Array.isArray(r.paid_months) && r.paid_months[0]
+            ? String(r.paid_months[0]).slice(0, 7)
+            : String(r.payment_date || "").slice(0, 7);
+          return m === monthKey;
+        })
+        .filter((r) => {
+          const m = Array.isArray(r.paid_months) && r.paid_months[0]
+            ? String(r.paid_months[0]).slice(0, 7)
+            : String(r.payment_date || "").slice(0, 7);
+          return !paidInvoiceKeys.has(`${r.tenant_id || ""}_${m}`);
+        })
         .reduce((sum, r) => sum + Number(r.amount_paid || 0), 0);
 
       // Sum booking income in monthKey
@@ -3782,12 +3826,7 @@ export async function fetchReportsData(companyId?: string): Promise<ReportsData>
         .filter((f) => f.type === "expense" && String(f.transaction_date || f.date || f.created_at || "").startsWith(monthKey))
         .reduce((sum, f) => sum + Number(f.amount || 0), 0);
 
-      // Fallback to paid invoices in that month if rent collections table had no rows
-      const invoicePaidInMonth = invList
-        .filter((inv) => inv.status === "paid" && (String(inv.created_at || "").startsWith(monthKey) || String(inv.month || "") === monthKey))
-        .reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0);
-
-      const monthIncome = Math.max(rentInMonth + bookInMonth + finIncomeInMonth, invoicePaidInMonth);
+      const monthIncome = invoicePaidInMonth + rentInMonth + bookInMonth + finIncomeInMonth;
       const monthExpenses = finExpensesInMonth;
 
       monthly.push({
