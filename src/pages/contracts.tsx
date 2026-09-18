@@ -476,7 +476,7 @@ export default function ContractsPage() {
           propsQuery,
           tensQuery,
           contractsQuery,
-          supabase.from("contract_sections").select("contract_id, order_index, title, content").order("order_index"),
+          supabase.from("contract_sections").select("contract_id, sort_order, title, content").order("sort_order"),
         ]);
         if (!cancelled) {
           if (props) setProperties(props.map((p) => ({ id: String(p.id), name: String(p.name) })));
@@ -687,8 +687,7 @@ export default function ContractsPage() {
           const { error: secErr } = await supabase.from("contract_sections").insert(
             validSections.map((s, i) => ({
               contract_id: contractId,
-              section_key: `sec_${i + 1}`,
-              order_index: i,
+              sort_order: i,
               title: s.title,
               content: s.content,
             })),

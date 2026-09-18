@@ -584,9 +584,9 @@ export default function TenantsPage() {
         try {
           const { data: cs } = await supabase
             .from("contract_sections")
-            .select("contract_id, order_index, title, content")
+            .select("contract_id, sort_order, title, content")
             .in("contract_id", contractIds)
-            .order("order_index");
+            .order("sort_order");
           if (cs) {
             cs.forEach((s) => {
               const cid = String((s as Record<string, unknown>).contract_id ?? "");
