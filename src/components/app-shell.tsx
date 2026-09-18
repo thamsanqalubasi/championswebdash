@@ -1,11 +1,12 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { ThemeToggle } from "./theme-toggle";
 import { CheckinModal } from "./checkin-modal";
 import { LeaveRequestModal } from "./leave-request-modal";
 import { NotificationsBell } from "./notifications-modal";
 import { ALL_ROLE_CAPABILITIES, fetchReminderThreshold, saveReminderThreshold, fetchRolePermissions, saveRolePermissions } from "@/lib/data";
+import { useLanguage, LANGUAGE_NAMES, LANGUAGE_FLAGS, type Language } from "@/lib/i18n";
 import {
   LayoutDashboard, Building2, Users, DollarSign, Wrench, ClipboardList,
   Truck, SearchCheck, CalendarClock, Package, FileSignature, Settings,
@@ -109,14 +110,60 @@ function isActive(pathname: string, href: string) {
   return pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
 }
 
-function NavItemLink({ item, active, collapsed, onClick }: { item: NavItem; active: boolean; collapsed: boolean; onClick?: () => void }) {
+const sectionTitleKeyMap: Record<string, string> = {
+  "Hospitality & Core": "section_hospitality",
+  "Operations & Maintenance": "section_operations",
+  "Finance & Accounts": "section_finance",
+  "Human Resources": "section_hr",
+  "Procurement & Stores": "section_procurement",
+  "Customer Portal": "section_portal",
+  "Marketing & Growth": "section_marketing",
+  "IT, Administration & Audit": "section_it",
+};
+
+const navItemKeyMap: Record<string, string> = {
+  "/dashboard": "nav_dashboard",
+  "/statistics": "nav_statistics",
+  "/commercial-bookings": "nav_front_desk",
+  "/room-management": "nav_rooms_pricing",
+  "/properties": "nav_properties",
+  "/tenants": "nav_tenants",
+  "/maintenance": "nav_maintenance",
+  "/maintenance/work-orders": "nav_work_orders",
+  "/maintenance/providers": "nav_providers",
+  "/maintenance/inspections": "nav_inspections",
+  "/maintenance/scheduled-tasks": "nav_scheduled_tasks",
+  "/maintenance/inventory": "nav_inventory",
+  "/rent-collection": "nav_rent",
+  "/finance/invoices": "nav_invoices",
+  "/finance/bills": "nav_bills",
+  "/finance/accounts": "nav_accounts",
+  "/finance/reports": "nav_reports",
+  "/hr": "nav_hr",
+  "/procurement": "nav_procurement",
+  "/stores": "nav_stores",
+  "/room-showcases": "nav_showcase",
+  "/enquiries": "nav_enquiries",
+  "/portal": "nav_portal",
+  "/agent-mode": "nav_agent_mode",
+  "/marketing": "nav_marketing",
+  "/it": "nav_it",
+  "/users-management": "nav_users",
+  "/organogram": "nav_organogram",
+  "/contracts": "nav_contracts",
+  "/settings": "nav_settings",
+  "/audit-trail": "nav_audit",
+};
+
+function NavItemLink({ item, active, collapsed, label, onClick }: { item: NavItem; active: boolean; collapsed: boolean; label?: string; onClick?: () => void }) {
   const Icon = item.icon;
+  const displayLabel = label || item.label;
   return (
     <Link
       to={item.href}
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      title={collapsed ? item.label : undefined}
+      title={collapsed ? displayLabel : undefined}
       className={`group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-all duration-200 ${
         active ? "bg-surface-elevated font-medium text-foreground" : "text-muted hover:bg-surface-elevated/50 hover:text-foreground"
       } ${collapsed ? "justify-center px-2" : ""}`}
@@ -126,7 +173,7 @@ function NavItemLink({ item, active, collapsed, onClick }: { item: NavItem; acti
       } ${collapsed ? "hidden" : ""}`}/>
       <div className={`flex items-center gap-3 transition-transform duration-200 ${active ? "translate-x-1" : "group-hover:translate-x-1"} ${collapsed ? "translate-x-0 group-hover:translate-x-0" : ""}`}>
         <Icon size={18} strokeWidth={active ? 2.5 : 2} className={`shrink-0 transition-all duration-200 ${active ? "text-foreground" : "text-muted group-hover:text-foreground"}`}/>
-        {!collapsed && <span>{item.label}</span>}
+        {!collapsed && <span>{displayLabel}</span>}
       </div>
     </Link>
   );
@@ -146,6 +193,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [rolePermissions, setRolePermissions] = useState<Record<string, boolean>>({});
   const [reminderThreshold, setReminderThreshold] = useState(24);
   const [savingPermissions, setSavingPermissions] = useState(false);
+  const [langDropdownOpen, setLangDropdownOpen] = useState(false);
+  const langDropdownRef = useRef<HTMLDivElement>(null);
+  const { language, setLanguage, t } = useLanguage();
+
+  // Close language dropdown when clicking outside
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (langDropdownRef.current && !langDropdownRef.current.contains(e.target as Node)) {
+        setLangDropdownOpen(false);
+      }
+    }
+    if (langDropdownOpen) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [langDropdownOpen]);
 
   useEffect(() => {
     if (isSuperAdmin && seeRolesOpen) {
@@ -257,19 +318,25 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         {/* Scrollable Nav */}
         <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-5" aria-label="Primary navigation">
-          {filteredNavSections.map((section) => (
-            <div key={section.title}>
-              {!sidebarCollapsed && (
-                <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.15em] text-muted/40">{section.title}</p>
-              )}
-              {sidebarCollapsed && <div className="mb-1 border-t border-border-color/30"/>}
-              <div className={`space-y-0.5 ${!sidebarCollapsed ? "ml-2 border-l border-border-color/20 pl-2" : ""}`}>
-                {section.items.map((item) => (
-                  <NavItemLink key={item.href} item={item} active={isActive(pathname, item.href)} collapsed={sidebarCollapsed}/>
-                ))}
+          {filteredNavSections.map((section) => {
+            const secTitle = sectionTitleKeyMap[section.title] ? t(sectionTitleKeyMap[section.title] as any) : section.title;
+            return (
+              <div key={section.title}>
+                {!sidebarCollapsed && (
+                  <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.15em] text-muted/40">{secTitle}</p>
+                )}
+                {sidebarCollapsed && <div className="mb-1 border-t border-border-color/30"/>}
+                <div className={`space-y-0.5 ${!sidebarCollapsed ? "ml-2 border-l border-border-color/20 pl-2" : ""}`}>
+                  {section.items.map((item) => {
+                    const itemLabel = navItemKeyMap[item.href] ? t(navItemKeyMap[item.href] as any) : item.label;
+                    return (
+                      <NavItemLink key={item.href} item={item} active={isActive(pathname, item.href)} collapsed={sidebarCollapsed} label={itemLabel}/>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
 
         {/* ── See Roles Panel (Super Admin Only) ── */}
@@ -389,25 +456,70 @@ export function AppShell({ children }: { children: ReactNode }) {
             {/* Action buttons on mobile/tablet/desktop */}
             <div className="flex items-center gap-1.5 sm:gap-2 ml-auto lg:order-last">
               <NotificationsBell />
+
+              {/* Language Selector Dropdown */}
+              <div className="relative" ref={langDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setLangDropdownOpen(!langDropdownOpen)}
+                  title={`Language: ${LANGUAGE_NAMES[language]}`}
+                  className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface-elevated px-2 sm:px-2.5 py-1.5 sm:py-2 text-xs font-semibold text-foreground hover:bg-surface hover:border-foreground/30 transition shadow-xs"
+                >
+                  <Globe size={15} className="text-blue-500" />
+                  <span className="text-xs">{LANGUAGE_FLAGS[language]}</span>
+                  <span className="hidden md:inline text-xs font-bold">{LANGUAGE_NAMES[language]}</span>
+                  <ChevronDown size={11} className={`text-muted transition-transform ${langDropdownOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {langDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 z-50 min-w-[170px] rounded-xl border border-border-color bg-surface p-1.5 shadow-xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-100">
+                    <p className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted/60">
+                      {t("label_language")}
+                    </p>
+                    {(["en", "pt", "fr", "af"] as Language[]).map((lang) => (
+                      <button
+                        key={lang}
+                        type="button"
+                        onClick={() => {
+                          setLanguage(lang);
+                          setLangDropdownOpen(false);
+                        }}
+                        className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold transition ${
+                          language === lang
+                            ? "bg-blue-600 text-white shadow-xs"
+                            : "text-foreground hover:bg-surface-elevated"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>{LANGUAGE_FLAGS[lang]}</span>
+                          <span>{LANGUAGE_NAMES[lang]}</span>
+                        </div>
+                        {language === lang && <Check size={13} className="text-white" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <button
                 type="button"
                 onClick={() => setCheckinOpen(true)}
                 className="flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-blue-700 transition"
               >
-                <KeyRound size={15}/><span>Check In</span>
+                <KeyRound size={15}/><span>{t("header_check_in")}</span>
               </button>
               <Link
                 to="/rent-collection"
                 className="hidden sm:flex items-center gap-1.5 rounded-lg border border-emerald-600 bg-emerald-600 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-emerald-700 transition"
               >
-                <DollarSign size={15}/><span>Record Rent Payment</span>
+                <DollarSign size={15}/><span>{t("header_record_rent")}</span>
               </Link>
               <button
                 type="button"
                 onClick={() => setLeaveModalOpen(true)}
                 className="flex items-center gap-1.5 rounded-lg border border-pink-500/30 bg-pink-500/10 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-pink-600 dark:text-pink-400 shadow-xs hover:bg-pink-600 hover:text-white transition"
               >
-                <CalendarClock size={15}/><span>Request Leave</span>
+                <CalendarClock size={15}/><span>{t("header_request_leave")}</span>
               </button>
               <ThemeToggle variant="compact"/>
               <div className="hidden xl:block max-w-[160px] truncate px-1 py-1 text-xs font-medium text-muted" title={userEmail}>{userEmail}</div>
@@ -416,7 +528,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 onClick={onSignOut}
                 className="rounded-lg border border-border-color bg-surface-elevated px-2.5 py-1.5 sm:py-2 text-xs font-medium text-muted hover:text-foreground transition"
               >
-                Sign out
+                {t("header_sign_out")}
               </button>
             </div>
 
@@ -425,7 +537,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <input
                 id="global-search"
                 type="search"
-                placeholder="Search rooms, bookings, guests, invoices, staff..."
+                placeholder={t("header_search_placeholder")}
                 className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-1.5 sm:py-2 text-xs sm:text-sm outline-none focus:border-foreground transition"
               />
             </div>
@@ -474,35 +586,66 @@ export function AppShell({ children }: { children: ReactNode }) {
                 onClick={() => { setMobileMenuOpen(false); setCheckinOpen(true); }}
                 className="flex items-center justify-center gap-1 rounded-xl bg-blue-600 py-2 text-[11px] font-bold text-white shadow-xs"
               >
-                <KeyRound size={13} /> Check In
+                <KeyRound size={13} /> {t("header_check_in")}
               </button>
               <Link
                 to="/rent-collection"
                 onClick={() => setMobileMenuOpen(false)}
                 className="flex items-center justify-center gap-1 rounded-xl bg-emerald-600 py-2 text-[11px] font-bold text-white shadow-xs"
               >
-                <DollarSign size={13} /> Rent
+                <DollarSign size={13} /> {t("nav_rent")}
               </Link>
               <button
                 type="button"
                 onClick={() => { setMobileMenuOpen(false); setLeaveModalOpen(true); }}
                 className="flex items-center justify-center gap-1 rounded-xl border border-pink-500/30 bg-pink-500/10 py-2 text-[11px] font-bold text-pink-600 dark:text-pink-400 shadow-xs"
               >
-                <CalendarClock size={13} /> Leave
+                <CalendarClock size={13} /> {t("header_request_leave")}
               </button>
             </div>
 
+            {/* Language Selector in Mobile Drawer */}
+            <div className="px-3 py-2.5 border-b border-border-color/50">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-1.5 flex items-center gap-1.5">
+                <Globe size={12} className="text-blue-500" />
+                <span>{t("label_language")}</span>
+              </p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {(["en", "pt", "fr", "af"] as Language[]).map((lang) => (
+                  <button
+                    key={lang}
+                    type="button"
+                    onClick={() => setLanguage(lang)}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition ${
+                      language === lang
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "bg-surface-elevated border border-border-color text-muted hover:text-foreground"
+                    }`}
+                  >
+                    <span>{LANGUAGE_FLAGS[lang]}</span>
+                    <span className="truncate">{LANGUAGE_NAMES[lang]}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5" aria-label="Mobile navigation">
-              {filteredNavSections.map((section) => (
-                <div key={section.title}>
-                  <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.15em] text-muted/40">{section.title}</p>
-                  <div className="ml-2 space-y-0.5 border-l border-border-color/20 pl-2">
-                    {section.items.map((item) => (
-                      <NavItemLink key={item.href} item={item} active={isActive(pathname, item.href)} collapsed={false} onClick={() => setMobileMenuOpen(false)}/>
-                    ))}
+              {filteredNavSections.map((section) => {
+                const secTitle = sectionTitleKeyMap[section.title] ? t(sectionTitleKeyMap[section.title] as any) : section.title;
+                return (
+                  <div key={section.title}>
+                    <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.15em] text-muted/40">{secTitle}</p>
+                    <div className="ml-2 space-y-0.5 border-l border-border-color/20 pl-2">
+                      {section.items.map((item) => {
+                        const itemLabel = navItemKeyMap[item.href] ? t(navItemKeyMap[item.href] as any) : item.label;
+                        return (
+                          <NavItemLink key={item.href} item={item} active={isActive(pathname, item.href)} collapsed={false} label={itemLabel} onClick={() => setMobileMenuOpen(false)}/>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </nav>
 
             <div className="p-3 border-t border-border-color space-y-2">
@@ -510,7 +653,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted">
                 <span className="truncate max-w-[180px]" title={userEmail}>{userEmail}</span>
                 <button type="button" onClick={onSignOut} className="text-red-500 font-semibold hover:underline">
-                  Sign Out
+                  {t("header_sign_out")}
                 </button>
               </div>
             </div>

@@ -741,7 +741,7 @@ export default function CustomerDashboardPage() {
       const { data } = await supabase
         .from("commercial_bookings")
         .select("*, properties(name), commercial_rooms(room_number)")
-        .eq("customer_email", email)
+        .eq("guest_email", email)
         .order("check_in_date", { ascending: false });
 
       if (data) {
@@ -751,9 +751,9 @@ export default function CustomerDashboardPage() {
           propertyName: b.properties?.name || "Lodge/Hotel",
           roomId: String(b.room_id || ""),
           roomNumber: b.commercial_rooms?.room_number || "Reserved Room",
-          customerName: String(b.customer_name || ""),
-          customerEmail: String(b.customer_email || ""),
-          customerPhone: b.customer_phone || undefined,
+          customerName: String(b.guest_name || ""),
+          customerEmail: String(b.guest_email || ""),
+          customerPhone: b.guest_phone || undefined,
           checkInDate: String(b.check_in_date || ""),
           checkOutDate: String(b.check_out_date || ""),
           bookingStatus: (b.booking_status || "confirmed") as any,

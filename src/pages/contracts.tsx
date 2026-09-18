@@ -9,7 +9,7 @@ import { useCurrency } from "@/lib/currency";
 import { fetchCompanyInfo, fetchAdminInfo, uploadPdfFromHtml, createPdfAttachmentFromUrl, downloadHtmlDocument, downloadPdfDocument, downloadPdfFromUrl } from "@/lib/storage";
 import { DocumentShareModal } from "@/components/document-share-modal";
 import { buildProfessionalContractHtml } from "@/lib/document-templates";
-import type { ContractSection } from "@/lib/document-templates";
+import type { ContractSection, AdminInfo, CompanyInfo } from "@/lib/document-templates";
 import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
 import type { ContractRow } from "@/lib/types";
 import { 
@@ -110,16 +110,6 @@ const MAIN_CONTRACT_SECTIONS: ContractSection[] = [
 <p style="text-align: justify;">This Memorandum of Agreement is made and entered into by and between the <strong>Landlord</strong> and the <strong>Lessee</strong> under the terms and conditions set out in this contract.</p>`,
   },
   {
-    title: "Parties and Contact Details",
-    content: `<p style="text-align: justify;"><strong>Landlord:</strong> [Landlord Name &amp; ID — set via "Contract Landlord Information"]</p>
-<p style="text-align: justify;"><strong>Landlord Address:</strong> [Landlord Address]</p>
-<p style="text-align: justify;"><strong>Landlord Contact:</strong> [Landlord Contact]</p>
-<p style="text-align: justify;"><strong>Lessee:</strong> [Tenant Name — auto-filled from selected tenant]</p>
-<p style="text-align: justify;"><strong>Lessee Contact:</strong> [Tenant Email &amp; Phone — from database]</p>
-<p style="text-align: justify;"><strong>Next of Kin:</strong> ____________________</p>
-<p style="text-align: justify;"><strong>Declaration:</strong> The Lessee confirms that all personal information supplied is correct.</p>`,
-  },
-  {
     title: "Property Description",
     content: `<p style="text-align: justify;">The Landlord lets to the Lessee, who hires, the following property ("<strong>The Property</strong>"):</p>
 <p style="text-align: justify;"><strong>Residential Accommodation Unit</strong>, located at the designated premises address specified in the lease schedule.</p>`,
@@ -135,15 +125,15 @@ const MAIN_CONTRACT_SECTIONS: ContractSection[] = [
     content: `<p style="text-align: justify;">Rent is payable by stop order or electronic banking, in advance, on or before the 1st day of each month.</p>
 <p style="text-align: justify;">Where cash deposits are used, the Lessee bears all related banking charges.</p>
 <p style="text-align: justify;"><strong>Bank Details:</strong></p>
-<p style="text-align: justify;">Account Name: John Doe<br/>Account No: 123456789<br/>Bank: Standard Bank<br/>Branch: Central Branch<br/>Branch Code: 123456</p>
+<p style="text-align: justify;">[Landlord banking details as registered under Contract Landlord Information]</p>
 <p style="text-align: justify;">If rental remains unpaid on due date, the Landlord may cancel this lease in writing, resume possession of the property, and pursue arrear rental, damages, and any legal remedies available.</p>
 <p style="text-align: justify;">The Lessee undertakes to pay <strong>10% interest</strong> on rent paid later than the 5th day of the month, payable in that same month.</p>`,
   },
   {
     title: "Deposit and Deductions",
-    content: `<p style="text-align: justify;"><strong>Deposit:</strong> N$4500 (Four Thousand Five Hundred Namibian Dollars), payable on or before 11 April 2025.</p>
+    content: `<p style="text-align: justify;"><strong>Deposit:</strong> As specified in the lease schedule, payable prior to occupation.</p>
 <p style="text-align: justify;">The Landlord will refund the appropriate portion of the deposit after lease termination, subject to the property being returned in good condition and all outstanding rental and interest being settled.</p>
-<p style="text-align: justify;">The Landlord may withhold <strong>N$700.00</strong> for repainting if required and <strong>N$300.00</strong> for pest control/cleaning if required.</p>
+<p style="text-align: justify;">The Landlord may withhold appropriate amounts for repainting, cleaning, or repairs if required beyond normal fair wear and tear.</p>
 <p style="text-align: justify;">The Lessee may not use the deposit in place of monthly rental payments.</p>
 <p style="text-align: justify;">If the Lessee fails to take occupation on the agreed date, the deposit is forfeited.</p>`,
   },
@@ -509,9 +499,11 @@ export default function ContractsPage() {
           if (allSections) {
             const sMap: Record<string, ContractSection[]> = {};
             allSections.forEach((s) => {
+              const title = String(s.title);
+              if (title.toLowerCase().includes("parties and contact")) return;
               const cid = String((s as Record<string, unknown>).contract_id ?? "");
               if (!sMap[cid]) sMap[cid] = [];
-              sMap[cid].push({ title: String(s.title), content: String(s.content) });
+              sMap[cid].push({ title, content: String(s.content) });
             });
             setContractSectionsById(sMap);
           }
@@ -535,6 +527,10 @@ export default function ContractsPage() {
           templateSeedWarningShownRef.current = true;
           console.warn(`Contract template status: ${seedResult.message}`);
         }
+        // Purge any legacy 'Parties and Contact Details' sections from the database
+        void supabase.from("contract_template_sections").delete().ilike("title", "%parties and contact%");
+        void supabase.from("contract_sections").delete().ilike("title", "%parties and contact%");
+
         let tplsQuery = supabase.from("contract_templates").select("id, title, description, is_default, company_id").order("created_at", { ascending: false });
         if (isValidUuid(compId)) {
           tplsQuery = tplsQuery.or(`company_id.eq.${compId},company_id.is.null,is_default.eq.true`);
@@ -546,9 +542,11 @@ export default function ContractsPage() {
         if (!cancelled && tpls) {
           const sectionMap: Record<string, ContractSection[]> = {};
           (tplSections ?? []).forEach((s) => {
+            const title = String(s.title);
+            if (title.toLowerCase().includes("parties and contact")) return;
             const tid = String((s as Record<string, unknown>).template_id ?? "");
             if (!sectionMap[tid]) sectionMap[tid] = [];
-            sectionMap[tid].push({ title: String(s.title), content: String(s.content) });
+            sectionMap[tid].push({ title, content: String(s.content) });
           });
           setTemplates(tpls.map((t) => ({
             id: String(t.id),
@@ -602,13 +600,16 @@ export default function ContractsPage() {
     setEditingId(null);
     const defaultTpl = templates.find((t) => t.isDefault) ?? templates[0];
     if (defaultTpl) {
+      const filteredSections = defaultTpl.sections
+        .filter((s) => !s.title.toLowerCase().includes("parties and contact"))
+        .map((s) => ({ ...s }));
       setForm({
         ...emptyContractForm,
         template_id: defaultTpl.id,
         title: defaultTpl.title,
         monthly_rent: defaultTpl.monthlyRent,
         deposit_amount: defaultTpl.depositAmount,
-        sections: defaultTpl.sections.length > 0 ? defaultTpl.sections.map((s) => ({ ...s })) : [{ ...emptySection }],
+        sections: filteredSections.length > 0 ? filteredSections : [{ ...emptySection }],
       });
     } else {
       setForm({ ...emptyContractForm, sections: [{ ...emptySection }] });
@@ -618,7 +619,9 @@ export default function ContractsPage() {
 
   const openEdit = (row: ContractRow) => {
     setEditingId(row.id);
-    const sections = contractSectionsById[row.id] ?? [];
+    const sections = (contractSectionsById[row.id] ?? []).filter(
+      (s) => !s.title.toLowerCase().includes("parties and contact")
+    );
     setForm({
       tenant_id: "", property_id: "", template_id: "",
       title: "Lease Agreement",
@@ -633,13 +636,16 @@ export default function ContractsPage() {
   const onTemplateSelect = (templateId: string) => {
     const tpl = templates.find((t) => t.id === templateId);
     if (!tpl) return;
+    const filteredSections = tpl.sections
+      .filter((s) => !s.title.toLowerCase().includes("parties and contact"))
+      .map((s) => ({ ...s }));
     setForm((prev) => ({
       ...prev,
       template_id: templateId,
       title: tpl.title,
       monthly_rent: tpl.monthlyRent || prev.monthly_rent,
       deposit_amount: tpl.depositAmount || prev.deposit_amount,
-      sections: tpl.sections.length > 0 ? tpl.sections.map((s) => ({ ...s })) : prev.sections,
+      sections: filteredSections.length > 0 ? filteredSections : prev.sections,
     }));
   };
 
@@ -726,11 +732,29 @@ export default function ContractsPage() {
   const getTenantContact = (row: ContractRow) => tenantContacts.find((t) => t.full_name === row.tenantName);
 
   const generateContractHtml = async (row: ContractRow) => {
-    const sections = contractSectionsById[row.id] ?? [];
+    const sections = (contractSectionsById[row.id] ?? []).filter(
+      (s) => !s.title.toLowerCase().includes("parties and contact")
+    );
     const [company, admin] = await Promise.all([fetchCompanyInfo(currentCompany?.id), fetchAdminInfo(user?.email ?? undefined)]);
+    
+    // Use pre-saved Landlord details from database/settings if available
+    const effectiveAdmin: AdminInfo = {
+      fullName: landlordInfo.name || admin.fullName || "Landlord",
+      signatureUrl: admin.signatureUrl,
+    };
+    const effectiveCompany: CompanyInfo = {
+      ...company,
+      companyName: landlordInfo.name ? landlordInfo.name : company.companyName,
+      address: landlordInfo.address || company.address,
+      phone: landlordInfo.contact || company.phone,
+      paymentInstructions: landlordInfo.bank_name
+        ? `Bank: ${landlordInfo.bank_name} | Account Name: ${landlordInfo.account_name || landlordInfo.name} | Account No: ${landlordInfo.account_number} | Branch: ${landlordInfo.branch}${landlordInfo.branch_code ? ` (${landlordInfo.branch_code})` : ""}`
+        : company.paymentInstructions,
+    };
+
     return buildProfessionalContractHtml(
       { contractTitle: "Lease Agreement", tenantName: row.tenantName, propertyName: row.propertyName, startDate: row.startDate, endDate: row.endDate, monthlyRent: row.monthlyRent, depositAmount: row.depositAmount, status: row.status, notes: row.notes, sections },
-      company, admin,
+      effectiveCompany, effectiveAdmin,
     );
   };
 
@@ -839,12 +863,15 @@ export default function ContractsPage() {
 
   const openEditTemplate = (tpl: TemplateRow) => {
     setEditingTemplateId(tpl.id);
+    const filteredSections = tpl.sections
+      .filter((s) => !s.title.toLowerCase().includes("parties and contact"))
+      .map((s) => ({ ...s }));
     setTemplateForm({
       title: tpl.title,
       description: tpl.description,
       monthly_rent: tpl.monthlyRent,
       deposit_amount: tpl.depositAmount,
-      sections: tpl.sections.length > 0 ? tpl.sections.map((s) => ({ ...s })) : [{ ...emptySection }],
+      sections: filteredSections.length > 0 ? filteredSections : [{ ...emptySection }],
     });
     setTemplateModalOpen(true);
   };
@@ -1555,7 +1582,7 @@ export default function ContractsPage() {
               <label className="mb-1 block text-[10px] font-bold text-muted/60 uppercase">Landlord Full Name *</label>
               <input
                 className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-emerald-500"
-                placeholder="e.g. John Doe"
+                placeholder="e.g. Landlord / Company Full Legal Name"
                 value={landlordInfoForm.name}
                 onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, name: e.target.value })}
               />
@@ -1564,7 +1591,7 @@ export default function ContractsPage() {
               <label className="mb-1 block text-[10px] font-bold text-muted/60 uppercase">ID / Passport Number</label>
               <input
                 className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-emerald-500"
-                placeholder="e.g. 123456789"
+                placeholder="e.g. ID or Passport Number"
                 value={landlordInfoForm.id_number}
                 onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, id_number: e.target.value })}
               />
@@ -1575,7 +1602,7 @@ export default function ContractsPage() {
             <label className="mb-1 block text-[10px] font-bold text-muted/60 uppercase">Landlord Address *</label>
             <input
               className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-emerald-500"
-              placeholder="e.g. 123 Main Street, Windhoek, Namibia"
+              placeholder="e.g. Premises / Physical Address, City, Country"
               value={landlordInfoForm.address}
               onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, address: e.target.value })}
             />
@@ -1585,7 +1612,7 @@ export default function ContractsPage() {
             <label className="mb-1 block text-[10px] font-bold text-muted/60 uppercase">Contact (Phone & Email)</label>
             <input
               className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:border-emerald-500"
-              placeholder="e.g. 123456789, johndoe@example.com"
+              placeholder="e.g. Phone number, email address"
               value={landlordInfoForm.contact}
               onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, contact: e.target.value })}
             />
@@ -1600,15 +1627,15 @@ export default function ContractsPage() {
               </div>
               <div>
                 <label className="mb-1 block text-[10px] text-muted/60">Account Number</label>
-                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. 123456789" value={landlordInfoForm.account_number} onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, account_number: e.target.value })} />
+                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. Bank Account Number" value={landlordInfoForm.account_number} onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, account_number: e.target.value })} />
               </div>
               <div>
                 <label className="mb-1 block text-[10px] text-muted/60">Bank Name</label>
-                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. Standard Bank" value={landlordInfoForm.bank_name} onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, bank_name: e.target.value })} />
+                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. Commercial Bank Name" value={landlordInfoForm.bank_name} onChange={(e) => setLandlordInfoForm({ ...landlordInfoForm, bank_name: e.target.value })} />
               </div>
               <div>
                 <label className="mb-1 block text-[10px] text-muted/60">Branch &amp; Code</label>
-                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. Central Branch, 123456" value={`${landlordInfoForm.branch}${landlordInfoForm.branch_code ? ` · ${landlordInfoForm.branch_code}` : ""}`} onChange={(e) => { const val = e.target.value; const parts = val.split("·"); setLandlordInfoForm({ ...landlordInfoForm, branch: parts[0]?.trim() || "", branch_code: parts[1]?.trim() || "" }); }} />
+                <input className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="e.g. Branch Name, Branch Code" value={`${landlordInfoForm.branch}${landlordInfoForm.branch_code ? ` · ${landlordInfoForm.branch_code}` : ""}`} onChange={(e) => { const val = e.target.value; const parts = val.split("·"); setLandlordInfoForm({ ...landlordInfoForm, branch: parts[0]?.trim() || "", branch_code: parts[1]?.trim() || "" }); }} />
               </div>
             </div>
           </div>

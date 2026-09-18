@@ -2078,18 +2078,23 @@ export async function checkoutCommercialBooking(
             .update({ status: "cleaning_needed", updated_at: new Date().toISOString() })
             .eq("id", dbBooking.room_id);
 
-          await supabase
-            .from("housekeeping_schedules")
-            .insert({
-              company_id: dbBooking.company_id,
-              property_id: dbBooking.property_id,
-              room_id: dbBooking.room_id,
-              task_type: "turnover",
-              status: "pending",
-              priority: "high",
-              scheduled_date: new Date().toISOString().slice(0, 10),
-              notes: `Turnover cleaning after checkout of ${dbBooking.guest_name}.`,
-            });
+          // Housekeeping schedule (non-fatal: table/column may vary)
+          try {
+            await supabase
+              .from("housekeeping_schedules")
+              .insert({
+                company_id: dbBooking.company_id,
+                property_id: dbBooking.property_id,
+                room_id: dbBooking.room_id,
+                task_type: "turnover",
+                status: "pending",
+                priority: "high",
+                scheduled_date: new Date().toISOString().slice(0, 10),
+                notes: `Turnover cleaning after checkout of ${dbBooking.guest_name}.`,
+              });
+          } catch (hkErr) {
+            console.warn("Could not create housekeeping schedule (non-fatal):", hkErr);
+          }
         }
       }
     }

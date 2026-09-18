@@ -48,6 +48,7 @@ type RentTenantRow = {
   email: string;
   propertyId: string | null;
   propertyName: string;
+  monthlyRent: number;
   tenureStatus: string;
   tenureStartDate?: string | null;
   createdAt?: string | null;
@@ -175,7 +176,7 @@ export default function RentCollectionPage() {
         const compId = currentCompany?.id;
         let tenantsQuery = supabase
           .from("tenants")
-          .select("id, full_name, phone, email, property_id, tenure_status, tenure_start_date, created_at, tenure_end_date, notice_end_date, properties(name)")
+          .select("id, full_name, phone, email, property_id, tenure_status, tenure_start_date, created_at, tenure_end_date, notice_end_date, properties(name, monthly_rent)")
           .order("full_name", { ascending: true });
 
         let invoicesQuery = supabase
@@ -333,6 +334,7 @@ export default function RentCollectionPage() {
               email: String(row.email ?? "-"),
               propertyId: row.property_id ? String(row.property_id) : null,
               propertyName: String((row.properties as { name?: string } | null)?.name ?? "Unassigned"),
+              monthlyRent: Number((row.properties as { monthly_rent?: number } | null)?.monthly_rent ?? 0),
               tenureStatus: String(row.tenure_status ?? "active"),
               tenureStartDate: row.tenure_start_date ? String(row.tenure_start_date) : null,
               createdAt: row.created_at ? String(row.created_at) : null,
@@ -394,7 +396,7 @@ export default function RentCollectionPage() {
     setSelectedTenant(tenant);
     setPaymentForm({
       paymentDate: new Date().toISOString().slice(0, 10),
-      amountPaid: "" as unknown as number,
+      amountPaid: tenant.monthlyRent > 0 ? tenant.monthlyRent : ("" as unknown as number),
       paidMonth: new Date().toISOString().slice(0, 7),
       paymentMethod: "Bank Transfer / EFT",
       notes: "",
@@ -948,6 +950,11 @@ export default function RentCollectionPage() {
             <div>
               <p className="text-[10px] font-bold uppercase text-muted/60">Assigned Property</p>
               <p className="font-bold text-foreground">{selectedTenant?.propertyName ?? "-"}</p>
+              {selectedTenant && selectedTenant.monthlyRent > 0 && (
+                <p className="text-xs font-bold text-emerald-600 mt-1">
+                  Required Rent: NAD {selectedTenant.monthlyRent.toLocaleString()}
+                </p>
+              )}
             </div>
             <Building size={24} className="text-muted/20" />
           </div>
