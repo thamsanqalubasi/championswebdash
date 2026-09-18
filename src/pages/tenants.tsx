@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
-import { fetchTenantsData, isValidUuid } from "@/lib/data";
+import { fetchTenantsData, isValidUuid, fetchCompanyUsers } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
@@ -18,7 +18,7 @@ import {
   wrapStaffDeregistrationNoticeEmailHtml,
 } from "@/lib/notifications";
 import { uploadFileToBucket } from "@/lib/storage";
-import type { TenantRow } from "@/lib/types";
+import type { TenantRow, CompanyUser } from "@/lib/types";
 import {
   Plus,
   User,
@@ -48,6 +48,10 @@ import {
   ShieldAlert,
   Sparkles,
   ExternalLink,
+  Users,
+  ChevronDown,
+  History,
+  Clock,
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 
@@ -276,6 +280,13 @@ export default function TenantsPage() {
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [recordingPayment, setRecordingPayment] = useState(false);
   const [detailsRequiredRent, setDetailsRequiredRent] = useState<number>(0);
+  const [generateInvoiceModalOpen, setGenerateInvoiceModalOpen] = useState(false);
+  const [companyStaffList, setCompanyStaffList] = useState<CompanyUser[]>([]);
+  const [openStaffDropdownInvoiceId, setOpenStaffDropdownInvoiceId] = useState<string | null>(null);
+  const [sharingWithStaff, setSharingWithStaff] = useState(false);
+  const [selectedInvoiceForAudit, setSelectedInvoiceForAudit] = useState<TenantInvoiceRow | null>(null);
+  const [invoiceAuditLogs, setInvoiceAuditLogs] = useState<any[]>([]);
+  const [loadingInvoiceAudit, setLoadingInvoiceAudit] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -383,6 +394,39 @@ export default function TenantsPage() {
       cancelled = true;
     };
   }, [reloadKey, currentCompany?.id]);
+
+  useEffect(() => {
+    if (currentCompany?.id) {
+      fetchCompanyUsers(currentCompany.id).then(setCompanyStaffList).catch(() => {});
+    }
+  }, [currentCompany?.id]);
+
+  useEffect(() => {
+    if (!selectedInvoiceForAudit) {
+      setInvoiceAuditLogs([]);
+      return;
+    }
+    let cancelled = false;
+    async function loadAudit() {
+      setLoadingInvoiceAudit(true);
+      try {
+        const { data, error } = await supabase
+          .from("audit_log")
+          .select("*")
+          .eq("entity_id", selectedInvoiceForAudit?.id)
+          .order("created_at", { ascending: false });
+        if (!cancelled && !error && data) {
+          setInvoiceAuditLogs(data);
+        }
+      } catch {
+        // non fatal
+      } finally {
+        if (!cancelled) setLoadingInvoiceAudit(false);
+      }
+    }
+    void loadAudit();
+    return () => { cancelled = true; };
+  }, [selectedInvoiceForAudit]);
 
   const reload = () => setReloadKey((value) => value + 1);
 
@@ -1358,6 +1402,67 @@ export default function TenantsPage() {
     }
   };
 
+  const shareInvoiceWithStaff = async (invoice: TenantInvoiceRow, staff: CompanyUser) => {
+    if (!detailsRow) return;
+    setSharingWithStaff(true);
+    setOpenStaffDropdownInvoiceId(null);
+    try {
+      const paymentDates = await getInvoicePaymentDates(invoice.id);
+      const invoiceHtml = await buildInvoiceHtmlProfessional(
+        invoice,
+        detailsRow.fullName,
+        detailsPropertyName,
+        paymentDates,
+        user?.email ?? undefined,
+      );
+
+      const pdfUrl = await ensureShareableDocumentUrl(invoice.pdfUrl, invoiceHtml, `invoice-${invoice.id}.pdf`);
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+
+      // Log share to audit_log
+      await supabase.from("audit_log").insert({
+        user_email: user?.email || "admin@paimbabook.com",
+        user_name: user?.user_metadata?.full_name || user?.email || "Admin",
+        action: "invoice_shared_staff",
+        entity_type: "invoice",
+        entity_id: invoice.id,
+        company_id: compId,
+        details: {
+          invoice_id: invoice.id,
+          invoice_month: invoice.month,
+          amount: invoice.amount,
+          tenant_name: detailsRow.fullName,
+          recipient_name: staff.fullName || staff.email,
+          recipient_email: staff.email,
+          recipient_role: staff.jobTitle || staff.roleLevel || "Staff",
+          shared_by: user?.email || "Admin",
+          channel: "Internal Staff Share",
+          pdf_url: pdfUrl,
+        },
+      });
+
+      // Open share modal pre-addressed to staff member
+      setShareModalDoc({
+        isOpen: true,
+        documentTitle: `Share Invoice #${invoice.id.slice(0, 8)} with ${staff.fullName || staff.email}`,
+        documentType: "Invoice",
+        documentHtml: invoiceHtml,
+        documentUrl: pdfUrl,
+        fileNameBase: `invoice-${detailsRow.fullName.replace(/\s+/g, "_")}-${invoice.month}`,
+        ownerName: staff.fullName || staff.email,
+        ownerEmail: staff.email,
+        defaultSubject: `Staff Share: Invoice ${invoice.month} for ${detailsRow.fullName}`,
+        defaultMessage: `Hi ${staff.fullName || "Colleague"},\n\nPlease find the rental invoice for tenant ${detailsRow.fullName} (${invoice.month}) in the amount of ${formatCurrency(invoice.amount)} for your reference.`,
+      });
+
+      await loadTenantDetails(detailsRow.id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not share invoice with staff.");
+    } finally {
+      setSharingWithStaff(false);
+    }
+  };
+
   /* ---- Contract preview / download / share helpers ---- */
 
   const buildContractHtmlForTenant = async (contract: TenantContractRow) => {
@@ -2067,9 +2172,19 @@ export default function TenantsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Invoices Sub-section */}
               <section className="space-y-4">
-                <div className="flex items-center gap-2 px-1">
-                  <Receipt size={16} className="text-muted/40" />
-                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40">Invoices</h5>
+                <div className="flex items-center justify-between px-1">
+                  <div className="flex items-center gap-2">
+                    <Receipt size={16} className="text-muted/40" />
+                    <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40">Invoices</h5>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setGenerateInvoiceModalOpen(true)}
+                    className="flex items-center gap-1.5 rounded-lg bg-foreground px-2.5 py-1 text-xs font-bold text-surface hover:opacity-90 shadow-2xs transition"
+                  >
+                    <Plus size={13} />
+                    <span>Generate Invoice</span>
+                  </button>
                 </div>
 
                 {invoices.length === 0 ? (
@@ -2083,11 +2198,75 @@ export default function TenantsPage() {
                           <StatusBadge status={invoice.status} />
                         </div>
                         <p className="text-lg font-bold text-foreground">{formatCurrency(invoice.amount)}</p>
-                        <div className="flex items-center gap-1.5 mt-4 pt-4 border-t border-border-color/40 opacity-60 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => void openInvoicePreview(invoice)} className="p-1.5 rounded-lg border border-border-color hover:bg-foreground hover:text-surface transition-all" title="View"><Eye size={14} /></button>
-                          <button onClick={() => void downloadInvoice(invoice)} className="p-1.5 rounded-lg border border-border-color hover:bg-foreground hover:text-surface transition-all" title="Download"><Download size={14} /></button>
-                          <button onClick={() => void shareInvoice(invoice, "whatsapp")} disabled={sharingInvoiceId === invoice.id} className="p-1.5 rounded-lg border border-border-color hover:bg-green-600 hover:text-white transition-all" title="WhatsApp"><Send size={14} /></button>
-                          <button onClick={() => void shareInvoice(invoice, "email")} disabled={sharingInvoiceId === invoice.id} className="p-1.5 rounded-lg border border-border-color hover:bg-sky-600 hover:text-white transition-all" title="Email"><Mail size={14} /></button>
+                        <div className="flex items-center justify-between gap-1 mt-4 pt-3 border-t border-border-color/40">
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => void openInvoicePreview(invoice)} className="p-1.5 rounded-lg border border-border-color hover:bg-foreground hover:text-surface transition-all text-xs" title="View Invoice"><Eye size={13} /></button>
+                            <button onClick={() => void downloadInvoice(invoice)} className="p-1.5 rounded-lg border border-border-color hover:bg-foreground hover:text-surface transition-all text-xs" title="Download"><Download size={13} /></button>
+                            <button onClick={() => void shareInvoice(invoice, "whatsapp")} disabled={sharingInvoiceId === invoice.id} className="p-1.5 rounded-lg border border-border-color hover:bg-green-600 hover:text-white transition-all text-xs" title="WhatsApp"><Send size={13} /></button>
+                          </div>
+                          <div className="flex items-center gap-1.5 relative">
+                            {/* Send to Tenant */}
+                            <button
+                              type="button"
+                              onClick={() => void shareInvoice(invoice, "email")}
+                              disabled={sharingInvoiceId === invoice.id}
+                              className="flex items-center gap-1 rounded-lg border border-border-color bg-surface px-2 py-1 text-xs font-bold text-foreground hover:bg-sky-600 hover:text-white transition-all shadow-2xs"
+                              title="Send to tenant via email"
+                            >
+                              <Mail size={12} />
+                              <span>Send</span>
+                            </button>
+
+                            {/* Share with Staff dropdown */}
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={() => setOpenStaffDropdownInvoiceId(current => current === invoice.id ? null : invoice.id)}
+                                className="flex items-center gap-1 rounded-lg border border-border-color bg-surface px-2 py-1 text-xs font-bold text-muted hover:text-foreground transition-all shadow-2xs"
+                                title="Share with internal company staff"
+                              >
+                                <Users size={12} />
+                                <span>Share</span>
+                                <ChevronDown size={10} />
+                              </button>
+
+                              {openStaffDropdownInvoiceId === invoice.id && (
+                                <div className="absolute right-0 bottom-full mb-1 z-50 w-56 rounded-xl border border-border-color bg-surface p-1.5 shadow-xl space-y-1 max-h-48 overflow-y-auto">
+                                  <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted border-b border-border-color/50">
+                                    Share with Staff
+                                  </div>
+                                  {companyStaffList.length === 0 ? (
+                                    <div className="p-2 text-[11px] text-muted text-center">No other staff found</div>
+                                  ) : (
+                                    companyStaffList.map((staff) => (
+                                      <button
+                                        key={staff.id || staff.userId}
+                                        type="button"
+                                        onClick={() => void shareInvoiceWithStaff(invoice, staff)}
+                                        className="w-full text-left rounded-lg px-2 py-1.5 text-xs hover:bg-surface-elevated flex items-center justify-between transition"
+                                      >
+                                        <div className="min-w-0 pr-2">
+                                          <p className="font-bold text-foreground truncate">{staff.fullName || staff.email}</p>
+                                          <p className="text-[10px] text-muted truncate">{staff.jobTitle || staff.roleLevel || staff.email}</p>
+                                        </div>
+                                        <Send size={11} className="text-muted shrink-0" />
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Audit Trail button */}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedInvoiceForAudit(invoice)}
+                              className="p-1.5 rounded-lg border border-border-color text-muted hover:text-foreground hover:bg-surface-elevated transition-all"
+                              title="View Invoice Share & Audit Trail"
+                            >
+                              <History size={13} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -2457,6 +2636,231 @@ export default function TenantsPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Generate Invoice from Payments Modal */}
+      <Modal
+        open={generateInvoiceModalOpen}
+        onClose={() => setGenerateInvoiceModalOpen(false)}
+        title={detailsRow ? `Generate Invoice: ${detailsRow.fullName}` : "Generate Invoice"}
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-muted">
+            Select the payment transactions you wish to include on this invoice. Each chosen transaction will appear as an itemized line item.
+          </p>
+
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            {paymentTimeline.length === 0 && payments.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border-color p-6 text-center text-xs text-muted">
+                No recorded payments found for this tenant. Record a payment first to generate an invoice.
+              </div>
+            ) : (
+              (paymentTimeline.length > 0 ? paymentTimeline : payments.map(p => ({
+                id: p.id,
+                date: p.paymentDate,
+                amount: p.amountPaid,
+                method: "Bank / EFT",
+                actorName: p.recordedBy || "Staff",
+                receiptUrl: undefined,
+              }))).map((item) => {
+                const isSelected = selectedPaymentIds.includes(item.id);
+                return (
+                  <label
+                    key={item.id}
+                    className={`flex items-start justify-between gap-3 rounded-xl border p-3 cursor-pointer transition select-none ${
+                      isSelected
+                        ? "border-foreground bg-surface-elevated shadow-xs"
+                        : "border-border-color bg-surface hover:bg-surface-elevated/40"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedPaymentIds((prev) => [...prev, item.id]);
+                          } else {
+                            setSelectedPaymentIds((prev) => prev.filter((id) => id !== item.id));
+                          }
+                        }}
+                        className="mt-0.5 rounded border-border-color text-foreground h-4 w-4"
+                      />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-foreground">{formatCurrency(item.amount)}</span>
+                          <span className="text-[10px] font-bold text-muted rounded-full bg-surface-elevated border border-border-color px-2 py-0.5">
+                            {item.method || "Payment"}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted mt-0.5">
+                          Paid on {formatDate(item.date)} • Recorded by {item.actorName || "Staff"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {item.receiptUrl ? (
+                        <a
+                          href={item.receiptUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+                        >
+                          <FileText size={10} /> View POP <ExternalLink size={9} />
+                        </a>
+                      ) : (
+                        <span className="text-[10px] text-muted/60">No POP</span>
+                      )}
+                    </div>
+                  </label>
+                );
+              })
+            )}
+          </div>
+
+          <div className="pt-2 border-t border-border-color flex items-center justify-between">
+            <div>
+              <span className="text-xs text-muted">
+                {selectedPaymentIds.length} payment{selectedPaymentIds.length !== 1 ? "s" : ""} selected
+              </span>
+              {selectedPaymentIds.length > 0 && (
+                <p className="text-sm font-black text-foreground">
+                  Total: {formatCurrency(
+                    (paymentTimeline.length > 0
+                      ? paymentTimeline.filter(p => selectedPaymentIds.includes(p.id))
+                      : payments.filter(p => selectedPaymentIds.includes(p.id))
+                    ).reduce((sum: number, p: any) => sum + Number(p.amount ?? p.amountPaid ?? 0), 0)
+                  )}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setGenerateInvoiceModalOpen(false)}
+                className="rounded-lg border border-border-color px-4 py-2 text-xs font-bold text-muted hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await generateInvoiceFromSelectedPayments();
+                  setGenerateInvoiceModalOpen(false);
+                }}
+                disabled={generatingInvoice || selectedPaymentIds.length === 0}
+                className="rounded-lg bg-foreground px-5 py-2 text-xs font-bold text-surface hover:opacity-90 disabled:opacity-50 transition shadow-xs flex items-center gap-1.5"
+              >
+                <Receipt size={14} />
+                <span>{generatingInvoice ? "Generating..." : "Generate Invoice"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Invoice Share & Distribution Audit Trail Modal */}
+      <Modal
+        open={Boolean(selectedInvoiceForAudit)}
+        onClose={() => setSelectedInvoiceForAudit(null)}
+        title={selectedInvoiceForAudit ? `Invoice Audit Trail: #${selectedInvoiceForAudit.id.slice(0, 8)} (${selectedInvoiceForAudit.month})` : "Invoice Audit Trail"}
+      >
+        {selectedInvoiceForAudit && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3.5 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted">Invoice Amount</span>
+                <p className="text-lg font-black text-foreground">{formatCurrency(selectedInvoiceForAudit.amount)}</p>
+                <p className="text-xs text-muted">Due date: {formatDate(selectedInvoiceForAudit.dueDate)}</p>
+              </div>
+              <div className="text-right">
+                <StatusBadge status={selectedInvoiceForAudit.status} />
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => void openInvoicePreview(selectedInvoiceForAudit)}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:underline"
+                  >
+                    <Eye size={12} /> View Shared Snapshot
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <History size={14} className="text-muted" />
+                <h5 className="text-xs font-bold uppercase tracking-wider text-muted">Distribution History &amp; Shares</h5>
+              </div>
+
+              {loadingInvoiceAudit ? (
+                <div className="p-6 text-center text-xs text-muted">Loading audit records...</div>
+              ) : invoiceAuditLogs.length === 0 && shareReports.length === 0 ? (
+                <div className="p-6 rounded-xl border border-dashed border-border-color text-center text-xs text-muted">
+                  No distribution or sharing events recorded for this invoice yet.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {invoiceAuditLogs.map((log) => {
+                    const details = log.details || {};
+                    return (
+                      <div key={log.id} className="rounded-xl border border-border-color bg-surface p-3 text-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-foreground capitalize">
+                            {log.action?.replace(/_/g, " ") || "Invoice Event"}
+                          </span>
+                          <span className="text-[10px] text-muted">
+                            {log.created_at ? new Date(log.created_at).toLocaleString() : "-"}
+                          </span>
+                        </div>
+                        <div className="text-muted flex items-center gap-1 flex-wrap">
+                          <span>Recipient: <strong className="text-foreground">{details.recipient_name || details.recipient_email || "Recipient"}</strong></span>
+                          {details.recipient_role && <span className="text-[10px] text-muted/80">({details.recipient_role})</span>}
+                          {details.channel && <span>via <strong>{details.channel}</strong></span>}
+                        </div>
+                        <div className="text-[11px] text-muted/80 pt-1 border-t border-border-color/40 flex items-center justify-between">
+                          <span>Shared by: {log.user_name || log.user_email || "Staff"}</span>
+                          {details.pdf_url && (
+                            <a href={details.pdf_url} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1">
+                              <ExternalLink size={10} /> Open Attached Doc
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {shareReports.map((report) => (
+                    <div key={report.id} className="rounded-xl border border-border-color bg-surface p-3 text-xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-foreground capitalize">
+                          Distribution via {report.channel}
+                        </span>
+                        <span className="text-[10px] text-muted">
+                          {report.sharedAt ? new Date(report.sharedAt).toLocaleString() : "-"}
+                        </span>
+                      </div>
+                      <p className="text-muted">
+                        Linked Payment Dates: {report.paymentDates.length ? report.paymentDates.join(", ") : "Manual share"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-border-color">
+              <button
+                type="button"
+                onClick={() => setSelectedInvoiceForAudit(null)}
+                className="rounded-lg border border-border-color px-4 py-2 text-xs font-bold text-foreground hover:bg-surface-elevated"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </ModulePage>
   );

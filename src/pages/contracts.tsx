@@ -49,6 +49,7 @@ type TenantContact = {
   email: string;
   phone: string;
   whatsapp_number: string;
+  id_number?: string;
 };
 
 type TemplateRow = {
@@ -442,9 +443,23 @@ export default function ContractsPage() {
   /* ── tenant -> property map (with address) ── */
   const [tenantPropertyMap, setTenantPropertyMap] = useState<Record<string, { property_id: string; property_name: string; property_address: string }>>({});
 
+  const fmtDateContract = (val?: string) => {
+    if (!val || val === "-") return "As agreed";
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return val;
+    return d.toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric" });
+  };
+
   const buildPropertyDescriptionClause = (propName: string, propAddress?: string) => {
     const addressPart = propAddress ? `, located at <strong>${propAddress}</strong>.` : ".";
     return `<p style="text-align: justify;">The Landlord lets to the Lessee, who hires, the following property ("<strong>The Property</strong>"):</p><p style="text-align: justify;"><strong>${propName}</strong>${addressPart}</p>`;
+  };
+
+  const buildLeasePeriodClause = (startDate?: string, endDate?: string, monthlyRent?: number, currency: string = "NAD") => {
+    const startStr = startDate ? fmtDateContract(startDate) : "As agreed in lease schedule";
+    const endStr = endDate ? fmtDateContract(endDate) : "As agreed in lease schedule";
+    const rentStr = monthlyRent ? `${currency} ${Number(monthlyRent).toLocaleString()}` : "As specified in financial terms schedule";
+    return `<p style="text-align: justify;"><strong>Lease Period:</strong> From <strong>${startStr}</strong> to <strong>${endStr}</strong>.</p><p style="text-align: justify;"><strong>Monthly Rent:</strong> <strong>${rentStr}</strong> per month, payable in advance on or before the 1st day of each month.</p><p style="text-align: justify;">The Lessee agrees to annual escalation aligned with the latest inflation information at the anniversary of this lease.</p>`;
   };
 
   /* ── load contracts + lookups ── */
@@ -458,7 +473,7 @@ export default function ContractsPage() {
         if (!cancelled) setContracts(result);
         
         let propsQuery = supabase.from("properties").select("id, name, address, city").order("name");
-        let tensQuery = supabase.from("tenants").select("id, full_name, email, phone, whatsapp_number, property_id, properties(id, name, address, city)").order("full_name");
+        let tensQuery = supabase.from("tenants").select("id, full_name, email, phone, whatsapp_number, id_number, property_id, properties(id, name, address, city)").order("full_name");
         let contractsQuery = supabase.from("contracts").select("id, document_url, title");
 
         if (isValidUuid(compId)) {
@@ -477,12 +492,13 @@ export default function ContractsPage() {
           if (props) setProperties(props.map((p: any) => ({ id: String(p.id), name: String(p.name), address: p.address ? String(p.address) : undefined, city: p.city ? String(p.city) : undefined })));
           if (tens) {
             setTenants(tens.map((t) => ({ id: String(t.id), full_name: String(t.full_name) })));
-            setTenantContacts(tens.map((t) => ({
+            setTenantContacts(tens.map((t: any) => ({
               id: String(t.id),
               full_name: String(t.full_name),
-              email: String((t as Record<string, unknown>).email ?? ""),
-              phone: String((t as Record<string, unknown>).phone ?? ""),
-              whatsapp_number: String((t as Record<string, unknown>).whatsapp_number ?? ""),
+              email: String(t.email ?? ""),
+              phone: String(t.phone ?? ""),
+              whatsapp_number: String(t.whatsapp_number ?? ""),
+              id_number: t.id_number ? String(t.id_number) : undefined,
             })));
             // Build tenant -> property map for auto-fill
             const tpMap: Record<string, { property_id: string; property_name: string; property_address: string }> = {};
@@ -544,8 +560,11 @@ export default function ContractsPage() {
         void supabase.from("contract_sections").delete().ilike("title", "%parties and contact%");
         // Purge hardcoded J. James / Khomasdal addresses from template sections in DB
         const cleanPropertyClause = `<p style="text-align: justify;">The Landlord lets to the Lessee, who hires, the following property ("<strong>The Property</strong>"):</p><p style="text-align: justify;"><strong>Residential Accommodation Unit</strong>, located at the designated premises address specified in the lease schedule.</p>`;
+        const cleanLeaseClause = `<p style="text-align: justify;"><strong>Lease Term:</strong> As agreed in the lease schedule.</p><p style="text-align: justify;"><strong>Monthly Rent:</strong> As specified in the financial terms schedule.</p><p style="text-align: justify;">The Lessee agrees to annual escalation aligned with the latest inflation information at the anniversary of this lease.</p>`;
         void supabase.from("contract_template_sections").update({ content: cleanPropertyClause }).ilike("content", "%J. James%");
         void supabase.from("contract_sections").update({ content: cleanPropertyClause }).ilike("content", "%J. James%");
+        void supabase.from("contract_template_sections").update({ content: cleanLeaseClause }).ilike("content", "%1 May 2025%");
+        void supabase.from("contract_sections").update({ content: cleanLeaseClause }).ilike("content", "%1 May 2025%");
 
         let tplsQuery = supabase.from("contract_templates").select("id, title, description, is_default, company_id").order("created_at", { ascending: false });
         if (isValidUuid(compId)) {
@@ -563,6 +582,9 @@ export default function ContractsPage() {
             let content = String(s.content);
             if (content.includes("J. James") || content.includes("Khomasdal")) {
               content = cleanPropertyClause;
+            }
+            if (content.includes("1 May 2025") || content.includes("31 October 2025")) {
+              content = cleanLeaseClause;
             }
             const tid = String((s as Record<string, unknown>).template_id ?? "");
             if (!sectionMap[tid]) sectionMap[tid] = [];
@@ -623,11 +645,19 @@ export default function ContractsPage() {
       const filteredSections = defaultTpl.sections
         .filter((s) => !s.title.toLowerCase().includes("parties and contact"))
         .map((s) => {
-          if (s.title.toLowerCase().includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal")) {
+          const lower = s.title.toLowerCase();
+          if (lower.includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal")) {
             return {
               ...s,
               title: "Property Description",
               content: `<p style="text-align: justify;">The Landlord lets to the Lessee, who hires, the following property ("<strong>The Property</strong>"):</p><p style="text-align: justify;"><strong>Residential Accommodation Unit</strong>, located at the designated premises address specified in the lease schedule.</p>`,
+            };
+          }
+          if (lower.includes("lease period") || s.content.includes("1 May 2025") || s.content.includes("31 October 2025")) {
+            return {
+              ...s,
+              title: "Lease Period and Rental",
+              content: buildLeasePeriodClause("", "", defaultTpl.monthlyRent, currentCompany?.currency || "NAD"),
             };
           }
           return { ...s };
@@ -654,11 +684,19 @@ export default function ContractsPage() {
     const sections = (contractSectionsById[row.id] ?? []).filter(
       (s) => !s.title.toLowerCase().includes("parties and contact")
     ).map((s) => {
-      if (s.title.toLowerCase().includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal")) {
+      const lower = s.title.toLowerCase();
+      if (lower.includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal")) {
         return {
           ...s,
           title: "Property Description",
           content: buildPropertyDescriptionClause(row.propertyName || matchedProp?.name || "The Property", matchedPropAddr),
+        };
+      }
+      if (lower.includes("lease period") || s.content.includes("1 May 2025") || s.content.includes("31 October 2025")) {
+        return {
+          ...s,
+          title: "Lease Period and Rental",
+          content: buildLeasePeriodClause(row.startDate, row.endDate, row.monthlyRent, currentCompany?.currency || "NAD"),
         };
       }
       return { ...s };
@@ -694,13 +732,21 @@ export default function ContractsPage() {
     const filteredSections = tpl.sections
       .filter((s) => !s.title.toLowerCase().includes("parties and contact"))
       .map((s) => {
-        if (s.title.toLowerCase().includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal")) {
+        const lower = s.title.toLowerCase();
+        if (lower.includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal")) {
           return {
             ...s,
             title: "Property Description",
             content: activePropName
               ? buildPropertyDescriptionClause(activePropName, activePropAddr)
               : `<p style="text-align: justify;">The Landlord lets to the Lessee, who hires, the following property ("<strong>The Property</strong>"):</p><p style="text-align: justify;"><strong>Residential Accommodation Unit</strong>, located at the designated premises address specified in the lease schedule.</p>`,
+          };
+        }
+        if (lower.includes("lease period") || s.content.includes("1 May 2025") || s.content.includes("31 October 2025")) {
+          return {
+            ...s,
+            title: "Lease Period and Rental",
+            content: buildLeasePeriodClause(form.start_date, form.end_date, tpl.monthlyRent || form.monthly_rent, currentCompany?.currency || "NAD"),
           };
         }
         return { ...s };
@@ -713,6 +759,22 @@ export default function ContractsPage() {
       deposit_amount: tpl.depositAmount || prev.deposit_amount,
       sections: filteredSections.length > 0 ? filteredSections : prev.sections,
     }));
+  };
+
+  const updateTimelineField = (field: "start_date" | "end_date" | "monthly_rent", val: any) => {
+    setForm((prev) => {
+      const next = { ...prev, [field]: val };
+      let sections = next.sections;
+      const hasSec = sections.some((s) => s.title.toLowerCase().includes("lease period") || s.content.includes("1 May 2025"));
+      if (hasSec) {
+        sections = sections.map((s) =>
+          s.title.toLowerCase().includes("lease period") || s.content.includes("1 May 2025")
+            ? { ...s, title: "Lease Period and Rental", content: buildLeasePeriodClause(next.start_date, next.end_date, next.monthly_rent, currentCompany?.currency || "NAD") }
+            : s
+        );
+      }
+      return { ...next, sections };
+    });
   };
 
   const addSection = () => setForm((prev) => ({ ...prev, sections: [...prev.sections, { ...emptySection }] }));
@@ -805,11 +867,19 @@ export default function ContractsPage() {
     const matchedPropAddr = matchedProp ? [matchedProp.address, matchedProp.city].filter(Boolean).join(", ") : "";
 
     const sections = rawSections.map((s) => {
-      if (s.title.toLowerCase().includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal")) {
+      const lower = s.title.toLowerCase();
+      if (lower.includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal")) {
         return {
           ...s,
           title: "Property Description",
           content: buildPropertyDescriptionClause(row.propertyName || matchedProp?.name || "The Property", matchedPropAddr),
+        };
+      }
+      if (lower.includes("lease period") || s.content.includes("1 May 2025") || s.content.includes("31 October 2025")) {
+        return {
+          ...s,
+          title: "Lease Period and Rental",
+          content: buildLeasePeriodClause(row.startDate, row.endDate, row.monthlyRent, currentCompany?.currency || "NAD"),
         };
       }
       return s;
@@ -823,17 +893,41 @@ export default function ContractsPage() {
     };
     const effectiveCompany: CompanyInfo = {
       ...company,
-      companyName: landlordInfo.name ? landlordInfo.name : company.companyName,
-      address: landlordInfo.address || company.address,
+      companyName: currentCompany?.name || landlordInfo.name || company.companyName,
+      logoUrl: currentCompany?.logoUrl || (currentCompany as any)?.logo_url || company.logoUrl || "",
+      address: landlordInfo.address || currentCompany?.address || company.address,
       phone: landlordInfo.contact || company.phone,
       paymentInstructions: landlordInfo.bank_name
         ? `Bank: ${landlordInfo.bank_name} | Account Name: ${landlordInfo.account_name || landlordInfo.name} | Account No: ${landlordInfo.account_number} | Branch: ${landlordInfo.branch}${landlordInfo.branch_code ? ` (${landlordInfo.branch_code})` : ""}`
         : company.paymentInstructions,
     };
 
+    const tenantContact = getTenantContact(row);
+
     return buildProfessionalContractHtml(
-      { contractTitle: "Lease Agreement", tenantName: row.tenantName, propertyName: row.propertyName, startDate: row.startDate, endDate: row.endDate, monthlyRent: row.monthlyRent, depositAmount: row.depositAmount, status: row.status, notes: row.notes, sections },
-      effectiveCompany, effectiveAdmin,
+      {
+        contractTitle: "LEASE AGREEMENT",
+        tenantName: row.tenantName,
+        tenantIdNumber: tenantContact?.id_number,
+        tenantPhone: tenantContact?.phone || tenantContact?.whatsapp_number,
+        tenantEmail: tenantContact?.email,
+        landlordName: landlordInfo.name || currentCompany?.name || admin.fullName || "Landlord",
+        landlordIdNumber: landlordInfo.id_number,
+        landlordAddress: landlordInfo.address || currentCompany?.address || company.address,
+        landlordContact: landlordInfo.contact || company.phone,
+        landlordEmail: currentCompany?.email,
+        propertyName: row.propertyName,
+        propertyAddress: matchedPropAddr,
+        startDate: row.startDate,
+        endDate: row.endDate,
+        monthlyRent: row.monthlyRent,
+        depositAmount: row.depositAmount,
+        status: row.status,
+        notes: row.notes,
+        sections,
+      },
+      effectiveCompany,
+      effectiveAdmin,
     );
   };
 
@@ -1500,11 +1594,11 @@ export default function ContractsPage() {
                 <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 grid grid-cols-2 gap-4">
                   <div>
                     <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Start Date</label>
-                    <input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} className={inputClass} />
+                    <input type="date" value={form.start_date} onChange={(e) => updateTimelineField("start_date", e.target.value)} className={inputClass} />
                   </div>
                   <div>
                     <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">End Date</label>
-                    <input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} className={inputClass} />
+                    <input type="date" value={form.end_date} onChange={(e) => updateTimelineField("end_date", e.target.value)} className={inputClass} />
                   </div>
                 </div>
               </section>
@@ -1516,7 +1610,7 @@ export default function ContractsPage() {
                 <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 grid grid-cols-2 gap-4">
                   <div>
                     <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Monthly Rent (NAD)</label>
-                    <input type="number" value={form.monthly_rent} onChange={(e) => setForm({ ...form, monthly_rent: Number(e.target.value) })} className={inputClass} />
+                    <input type="number" value={form.monthly_rent} onChange={(e) => updateTimelineField("monthly_rent", Number(e.target.value))} className={inputClass} />
                   </div>
                   <div>
                     <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Security Deposit</label>

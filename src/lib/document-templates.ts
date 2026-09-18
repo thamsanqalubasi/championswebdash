@@ -48,21 +48,13 @@ function fmtDate(value: string) {
   return d.toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric" });
 }
 
-export const DEFAULT_PAIMBABOOK_LOGO = "https://paimbabook.com/paimbabook-logo.svg";
-
 export function resolveDocCompanyName(companyName?: string | null): string {
   const trimmed = String(companyName ?? "").trim();
-  if (!trimmed || trimmed.toLowerCase().includes("champions")) {
-    return "Paimbabook Hospitality & Properties";
-  }
-  return trimmed;
+  return trimmed || "Company Name";
 }
 
 export function resolveDocLogoUrl(logoUrl?: string | null): string {
   const trimmed = String(logoUrl ?? "").trim();
-  if (!trimmed || trimmed.toLowerCase().includes("champions")) {
-    return DEFAULT_PAIMBABOOK_LOGO;
-  }
   return trimmed;
 }
 
@@ -102,7 +94,17 @@ export type ContractSection = {
 export type ContractDocData = {
   contractTitle: string;
   tenantName: string;
+  tenantIdNumber?: string;
+  tenantPhone?: string;
+  tenantEmail?: string;
+  tenantAddress?: string;
+  landlordName?: string;
+  landlordIdNumber?: string;
+  landlordContact?: string;
+  landlordEmail?: string;
+  landlordAddress?: string;
   propertyName: string;
+  propertyAddress?: string;
   startDate: string;
   endDate: string;
   monthlyRent: number;
@@ -118,17 +120,28 @@ const sharedCss = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #1a1a1a; line-height: 1.5; background: #fff; }
   .page { max-width: 800px; margin: 0 auto; padding: 40px 48px; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; border-bottom: 3px solid #2563eb; padding-bottom: 20px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; border-bottom: 3px solid #2563eb; padding-bottom: 18px; }
   .header-left { display: flex; align-items: center; gap: 16px; }
   .company-logo { height: 56px; width: auto; object-fit: contain; }
   .company-name { font-size: 24px; font-weight: 700; color: #2563eb; }
   .company-address { font-size: 12px; color: #666; margin-top: 4px; white-space: pre-line; }
-  .doc-badge { display: inline-block; font-size: 28px; font-weight: 700; color: #2563eb; letter-spacing: 1px; }
-  .doc-meta { text-align: right; margin-top: 8px; }
+  .doc-badge { display: inline-block; font-size: 26px; font-weight: 800; color: #1e3a8a; letter-spacing: 1px; text-transform: uppercase; }
+  .doc-meta { text-align: right; margin-top: 6px; }
   .doc-meta p { font-size: 12px; color: #666; }
   .doc-meta strong { color: #333; }
-  .section { margin-top: 28px; }
-  .section-title { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #2563eb; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; margin-bottom: 12px; }
+  .section { margin-top: 24px; }
+  .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #1d4ed8; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 12px; }
+  .parties-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .party-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; }
+  .party-role { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; color: #2563eb; margin-bottom: 6px; }
+  .party-name { font-size: 14px; color: #0f172a; margin-bottom: 4px; font-weight: 700; }
+  .party-meta { font-size: 12px; color: #475569; margin-top: 4px; line-height: 1.4; }
+  .meta-label { font-weight: 600; color: #334155; }
+  .terms-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
+  .term-box { background: #f1f5f9; border-radius: 6px; padding: 10px 12px; text-align: center; }
+  .term-box.highlight { background: #eff6ff; border: 1px solid #bfdbfe; }
+  .term-label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.3px; margin-bottom: 3px; }
+  .term-val { display: block; font-size: 13px; font-weight: 700; color: #0f172a; }
   .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
   .info-item label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.3px; }
   .info-item p { font-size: 14px; font-weight: 500; }
@@ -330,7 +343,9 @@ export function buildProfessionalContractHtml(
 
   const effectiveCompanyName = resolveDocCompanyName(company?.companyName);
   const effectiveLogoUrl = resolveDocLogoUrl(company?.logoUrl);
-  const logoHtml = `<img src="${esc(effectiveLogoUrl)}" alt="${esc(effectiveCompanyName)} logo" class="company-logo" />`;
+  const logoHtml = effectiveLogoUrl
+    ? `<img src="${esc(effectiveLogoUrl)}" alt="${esc(effectiveCompanyName)} logo" class="company-logo" />`
+    : "";
 
   const signatureHtml = admin.signatureUrl
     ? `<img src="${esc(admin.signatureUrl)}" alt="Admin signature" />`
@@ -352,7 +367,7 @@ export function buildProfessionalContractHtml(
       <div class="section-title">1. Parties</div>
       <div class="parties-section">
         <p>This Residential Lease Agreement (&ldquo;Agreement&rdquo;) is made and entered into as of <strong>${fmtDate(doc.startDate)}</strong>, by and between:</p>
-        <p style="margin-top:8px;"><strong>Landlord / Property Administrator:</strong> ${esc(admin.fullName)}, on behalf of <strong>${esc(company.companyName)}</strong>, located at ${esc(company.address || "address on file")}.</p>
+        <p style="margin-top:8px;"><strong>Landlord / Property Administrator:</strong> ${esc(doc.landlordName || admin.fullName || effectiveCompanyName)}, located at ${esc(doc.landlordAddress || company?.address || "address on file")}.</p>
         <p style="margin-top:8px;"><strong>Tenant:</strong> ${esc(doc.tenantName)}, for occupation of the property known as <strong>${esc(doc.propertyName)}</strong>.</p>
       </div>
     </div>
@@ -412,50 +427,56 @@ export function buildProfessionalContractHtml(
 <body>
   <div class="page">
     <div class="header">
-      <div>
-        <div class="header-left">
-          ${logoHtml}
-          <div>
-            <div class="company-name">${esc(effectiveCompanyName)}</div>
-            <div class="company-address">${esc(company?.address || "")}</div>
-          </div>
+      <div class="header-left">
+        ${logoHtml}
+        <div>
+          <div class="company-name">${esc(effectiveCompanyName)}</div>
+          ${company?.address ? `<div class="company-address">${esc(company.address)}</div>` : ""}
         </div>
       </div>
       <div>
         <div class="doc-badge">${esc(docTitle.toUpperCase())}</div>
-        <div class="doc-meta">
-          <p><strong>Date:</strong> ${fmtDate(new Date().toISOString().slice(0, 10))}</p>
-          <p><strong>Status:</strong> <span class="status-badge ${statusClass}">${esc(doc.status)}</span></p>
-        </div>
       </div>
     </div>
 
     <div class="section">
-      <div class="section-title">Contract Details</div>
-      <div class="info-grid">
-        <div class="info-item">
-          <label>Tenant</label>
-          <p>${esc(doc.tenantName)}</p>
+      <div class="section-title">Parties &amp; Lease Schedule</div>
+      <div class="parties-grid">
+        <div class="party-card">
+          <div class="party-role">Landlord (Lessor)</div>
+          <p class="party-name">${esc(doc.landlordName || admin.fullName || effectiveCompanyName)}</p>
+          ${doc.landlordIdNumber ? `<p class="party-meta"><span class="meta-label">ID / Reg No:</span> ${esc(doc.landlordIdNumber)}</p>` : ""}
+          ${doc.landlordAddress || company?.address ? `<p class="party-meta"><span class="meta-label">Address:</span> ${esc(doc.landlordAddress || company?.address || "")}</p>` : ""}
+          ${doc.landlordContact || company?.phone ? `<p class="party-meta"><span class="meta-label">Contact:</span> ${esc(doc.landlordContact || company?.phone || "")}</p>` : ""}
+          ${doc.landlordEmail || company?.email ? `<p class="party-meta"><span class="meta-label">Email:</span> ${esc(doc.landlordEmail || company?.email || "")}</p>` : ""}
         </div>
-        <div class="info-item">
-          <label>Property</label>
-          <p>${esc(doc.propertyName)}</p>
+
+        <div class="party-card">
+          <div class="party-role">Tenant (Lessee)</div>
+          <p class="party-name">${esc(doc.tenantName)}</p>
+          ${doc.tenantIdNumber ? `<p class="party-meta"><span class="meta-label">ID / Passport:</span> ${esc(doc.tenantIdNumber)}</p>` : ""}
+          ${doc.tenantPhone ? `<p class="party-meta"><span class="meta-label">Phone:</span> ${esc(doc.tenantPhone)}</p>` : ""}
+          ${doc.tenantEmail ? `<p class="party-meta"><span class="meta-label">Email:</span> ${esc(doc.tenantEmail)}</p>` : ""}
+          <p class="party-meta"><span class="meta-label">Premises:</span> <strong>${esc(doc.propertyName)}</strong>${doc.propertyAddress ? `, ${esc(doc.propertyAddress)}` : ""}</p>
         </div>
-        <div class="info-item">
-          <label>Lease Start</label>
-          <p>${fmtDate(doc.startDate)}</p>
+      </div>
+
+      <div class="terms-grid">
+        <div class="term-box">
+          <span class="term-label">Lease Start</span>
+          <span class="term-val">${fmtDate(doc.startDate)}</span>
         </div>
-        <div class="info-item">
-          <label>Lease End</label>
-          <p>${fmtDate(doc.endDate)}</p>
+        <div class="term-box">
+          <span class="term-label">Lease End</span>
+          <span class="term-val">${fmtDate(doc.endDate)}</span>
         </div>
-        <div class="info-item">
-          <label>Monthly Rent</label>
-          <p>${formatDocCurrency(doc.monthlyRent, docCurrency)}</p>
+        <div class="term-box highlight">
+          <span class="term-label">Monthly Rent</span>
+          <span class="term-val">${formatDocCurrency(doc.monthlyRent, docCurrency)}</span>
         </div>
-        <div class="info-item">
-          <label>Security Deposit</label>
-          <p>${formatDocCurrency(doc.depositAmount, docCurrency)}</p>
+        <div class="term-box">
+          <span class="term-label">Security Deposit</span>
+          <span class="term-val">${formatDocCurrency(doc.depositAmount, docCurrency)}</span>
         </div>
       </div>
     </div>

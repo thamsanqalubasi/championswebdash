@@ -37,7 +37,11 @@ import {
   UploadCloud,
   FileText,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  Lock,
+  Key,
+  AlertTriangle,
+  Plus
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 
@@ -147,6 +151,29 @@ export default function RentCollectionPage() {
   const [retroPopFile, setRetroPopFile] = useState<File | null>(null);
   const [savingRetroPop, setSavingRetroPop] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [auditTimelineTenant, setAuditTimelineTenant] = useState<RentTenantRow | null>(null);
+  const [generateInvoiceImmediately, setGenerateInvoiceImmediately] = useState(false);
+  const [duplicatePrompt, setDuplicatePrompt] = useState<{
+    isOpen: boolean;
+    matchingPayments: TenantPaymentHistoryRow[];
+    totalAlreadyPaid: number;
+    requiredRent: number;
+    isPaidInFull: boolean;
+    pin: string;
+    pinError: string | null;
+    selectedPaymentToUpdate: string | null;
+    mode: "new" | "update";
+  }>({
+    isOpen: false,
+    matchingPayments: [],
+    totalAlreadyPaid: 0,
+    requiredRent: 0,
+    isPaidInFull: false,
+    pin: "",
+    pinError: null,
+    selectedPaymentToUpdate: null,
+    mode: "new",
+  });
   const [invoiceActionPaymentId, setInvoiceActionPaymentId] = useState<string | null>(null);
   const [sendingPaymentId, setSendingPaymentId] = useState<string | null>(null);
   const [shareModalDoc, setShareModalDoc] = useState<{
@@ -402,6 +429,7 @@ export default function RentCollectionPage() {
       notes: "",
     });
     setPopFile(null);
+    setGenerateInvoiceImmediately(false);
   };
 
   const onSavePayment = async () => {
@@ -414,6 +442,44 @@ export default function RentCollectionPage() {
       alert("Enter a valid payment amount greater than 0. Rent collection cannot be 0.");
       return;
     }
+
+    // Check if previous payment(s) already exist for this billing month
+    const existingPayments = (paymentsByTenant[selectedTenant.id] || []).filter((p) => {
+      const pm = paymentForm.paidMonth;
+      return p.paymentDate.startsWith(pm) || (p.notes && p.notes.includes(pm));
+    });
+
+    if (existingPayments.length > 0) {
+      const totalPaid = existingPayments.reduce((sum, p) => sum + p.amountPaid, 0);
+      const reqRent = selectedTenant.monthlyRent || 0;
+      const isPaidInFull = reqRent > 0 && totalPaid >= reqRent;
+
+      setDuplicatePrompt({
+        isOpen: true,
+        matchingPayments: existingPayments,
+        totalAlreadyPaid: totalPaid,
+        requiredRent: reqRent,
+        isPaidInFull,
+        pin: "",
+        pinError: null,
+        selectedPaymentToUpdate: existingPayments[0]?.id || null,
+        mode: "new",
+      });
+      return;
+    }
+
+    // No existing payments for this month, record directly
+    await executeSavePayment();
+  };
+
+  const executeSavePayment = async (options?: { isUpdate?: boolean; updatePaymentId?: string | null }) => {
+    if (!selectedTenant?.propertyId) return;
+    const numAmount = Number(paymentForm.amountPaid);
+    if (!numAmount || numAmount <= 0 || isNaN(numAmount)) {
+      alert("Enter a valid payment amount greater than 0. Rent collection cannot be 0.");
+      return;
+    }
+
     setSaving(true);
     try {
       const admin = await fetchAdminInfo(user?.email ?? undefined);
@@ -433,104 +499,214 @@ export default function RentCollectionPage() {
         }
       }
 
-      // tenant_rent_payments columns: id, tenant_id, payment_date, amount_paid, paid_months, notes, payment_method, company_id, executed_by_name, pop_url
-      // Note: property_id DOES NOT exist on tenant_rent_payments table!
-      const paymentPayload: Record<string, unknown> = {
-        tenant_id: selectedTenant.id,
-        payment_date: paymentForm.paymentDate,
-        amount_paid: numAmount,
-        payment_method: paymentForm.paymentMethod,
-        paid_months: [paymentForm.paidMonth],
-        notes: paymentForm.notes ? `${paymentForm.notes} | Recorded by: ${executorName}` : `Recorded by: ${executorName}`,
-        company_id: compId,
-        executed_by_name: executorName,
-      };
+      let finalPaymentId: string | null = null;
 
-      if (popUrl) {
-        paymentPayload.pop_url = popUrl;
-        paymentPayload.pop_uploaded_by_name = executorName;
-        paymentPayload.pop_uploaded_at = new Date().toISOString();
-      }
+      if (options?.isUpdate && options.updatePaymentId) {
+        // UPDATE EXISTING PAYMENT
+        const existingPayment = (paymentsByTenant[selectedTenant.id] || []).find(p => p.id === options.updatePaymentId);
+        const prevAmount = existingPayment ? existingPayment.amountPaid : 0;
+        const prevNotes = existingPayment?.notes || "";
+        const auditNote = `[Updated on ${new Date().toISOString().slice(0, 10)} by ${executorName}: amount changed from NAD ${prevAmount} to NAD ${numAmount}]`;
+        const updatedNotes = `${prevNotes ? prevNotes + " | " : ""}${paymentForm.notes ? paymentForm.notes + " | " : ""}${auditNote}`;
 
-      let insertedId: string | null = null;
-      try {
-        const { data: inserted, error: pErr } = await supabase
+        const updatePayload: Record<string, unknown> = {
+          amount_paid: numAmount,
+          payment_method: paymentForm.paymentMethod,
+          notes: updatedNotes,
+        };
+        if (popUrl) {
+          updatePayload.pop_url = popUrl;
+          updatePayload.pop_uploaded_by_name = executorName;
+          updatePayload.pop_uploaded_at = new Date().toISOString();
+        }
+
+        const { error: updateErr } = await supabase
           .from("tenant_rent_payments")
-          .insert(paymentPayload)
-          .select("id")
-          .single();
-        if (pErr) throw pErr;
-        insertedId = inserted?.id || null;
-      } catch (insertErr) {
-        console.warn("Primary insert failed, attempting fallback:", insertErr);
-        const fallbackPayload: Record<string, unknown> = {
+          .update(updatePayload)
+          .eq("id", options.updatePaymentId);
+
+        if (updateErr) throw updateErr;
+        finalPaymentId = options.updatePaymentId;
+
+        // Never delete old POPs: append new POP into tenant_payment_proofs
+        if (popUrl) {
+          try {
+            await supabase.from("tenant_payment_proofs").insert({
+              tenant_id: selectedTenant.id,
+              property_id: selectedTenant.propertyId,
+              customer_name: selectedTenant.fullName,
+              customer_email: selectedTenant.email,
+              customer_phone: selectedTenant.phone,
+              amount: numAmount,
+              payment_date: paymentForm.paymentDate,
+              document_url: popUrl,
+              status: "verified",
+              notes: `Updated by Staff: ${executorName} | Prev amount: NAD ${prevAmount}`,
+              company_id: compId,
+            });
+          } catch (proofErr) {
+            console.warn("Could not insert tenant_payment_proofs:", proofErr);
+          }
+        }
+
+        try {
+          await supabase.from("audit_log").insert({
+            user_email: user?.email || "admin@paimbabook.com",
+            user_name: executorName,
+            action: "rent_payment_updated",
+            entity_type: "tenant_rent_payment",
+            entity_id: finalPaymentId,
+            company_id: compId,
+            details: {
+              tenant_name: selectedTenant.fullName,
+              tenant_id: selectedTenant.id,
+              previous_amount: prevAmount,
+              new_amount: numAmount,
+              paid_month: paymentForm.paidMonth,
+              updated_by: executorName,
+              pop_url: popUrl || existingPayment?.popUrl || null,
+            },
+          });
+        } catch {}
+      } else {
+        // RECORD NEW PAYMENT / INSTALLMENT
+        const paymentPayload: Record<string, unknown> = {
           tenant_id: selectedTenant.id,
           payment_date: paymentForm.paymentDate,
           amount_paid: numAmount,
+          payment_method: paymentForm.paymentMethod,
           paid_months: [paymentForm.paidMonth],
-          notes: `${paymentForm.notes ? paymentForm.notes + " | " : ""}Recorded by: ${executorName}${popUrl ? ` | POP: ${popUrl}` : ""}`,
+          notes: paymentForm.notes ? `${paymentForm.notes} | Recorded by: ${executorName}` : `Recorded by: ${executorName}`,
           company_id: compId,
+          executed_by_name: executorName,
         };
-        const { data: fbInserted, error: fbErr } = await supabase
-          .from("tenant_rent_payments")
-          .insert(fallbackPayload)
-          .select("id")
-          .single();
-        if (fbErr) throw fbErr;
-        insertedId = fbInserted?.id || null;
+
+        if (popUrl) {
+          paymentPayload.pop_url = popUrl;
+          paymentPayload.pop_uploaded_by_name = executorName;
+          paymentPayload.pop_uploaded_at = new Date().toISOString();
+        }
+
+        try {
+          const { data: inserted, error: pErr } = await supabase
+            .from("tenant_rent_payments")
+            .insert(paymentPayload)
+            .select("id")
+            .single();
+          if (pErr) throw pErr;
+          finalPaymentId = inserted?.id || null;
+        } catch (insertErr) {
+          console.warn("Primary insert failed, attempting fallback:", insertErr);
+          const fallbackPayload: Record<string, unknown> = {
+            tenant_id: selectedTenant.id,
+            payment_date: paymentForm.paymentDate,
+            amount_paid: numAmount,
+            paid_months: [paymentForm.paidMonth],
+            notes: `${paymentForm.notes ? paymentForm.notes + " | " : ""}Recorded by: ${executorName}${popUrl ? ` | POP: ${popUrl}` : ""}`,
+            company_id: compId,
+          };
+          const { data: fbInserted, error: fbErr } = await supabase
+            .from("tenant_rent_payments")
+            .insert(fallbackPayload)
+            .select("id")
+            .single();
+          if (fbErr) throw fbErr;
+          finalPaymentId = fbInserted?.id || null;
+        }
+
+        if (popUrl) {
+          try {
+            await supabase.from("tenant_payment_proofs").insert({
+              tenant_id: selectedTenant.id,
+              property_id: selectedTenant.propertyId,
+              customer_name: selectedTenant.fullName,
+              customer_email: selectedTenant.email,
+              customer_phone: selectedTenant.phone,
+              amount: numAmount,
+              payment_date: paymentForm.paymentDate,
+              document_url: popUrl,
+              status: "verified",
+              notes: `Recorded by Staff: ${executorName} | Method: ${paymentForm.paymentMethod}`,
+              company_id: compId,
+            });
+          } catch (proofErr) {
+            console.warn("Could not insert tenant_payment_proofs:", proofErr);
+          }
+        }
+
+        try {
+          await supabase.from("audit_log").insert({
+            user_email: user?.email || "admin@paimbabook.com",
+            user_name: executorName,
+            action: "rent_payment_recorded",
+            entity_type: "tenant_rent_payment",
+            entity_id: finalPaymentId && isValidUuid(finalPaymentId) ? finalPaymentId : null,
+            company_id: compId,
+            details: {
+              tenant_name: selectedTenant.fullName,
+              tenant_id: selectedTenant.id,
+              property_id: selectedTenant.propertyId,
+              amount_paid: numAmount,
+              payment_date: paymentForm.paymentDate,
+              paid_month: paymentForm.paidMonth,
+              payment_method: paymentForm.paymentMethod,
+              pop_url: popUrl,
+              recorded_by: executorName,
+            },
+          });
+        } catch {}
       }
 
-      if (popUrl) {
+      // Auto-generate invoice if requested
+      if (generateInvoiceImmediately && finalPaymentId) {
         try {
-          await supabase.from("tenant_payment_proofs").insert({
-            tenant_id: selectedTenant.id,
-            property_id: selectedTenant.propertyId,
-            customer_name: selectedTenant.fullName,
-            customer_email: selectedTenant.email,
-            customer_phone: selectedTenant.phone,
-            amount: numAmount,
-            payment_date: paymentForm.paymentDate,
-            document_url: popUrl,
-            status: "verified",
-            notes: `Recorded by Staff: ${executorName} | Method: ${paymentForm.paymentMethod}`,
-            company_id: compId,
-          });
-        } catch (proofErr) {
-          console.warn("Could not insert tenant_payment_proofs:", proofErr);
+          const pseudoPayment: TenantPaymentHistoryRow = {
+            id: finalPaymentId,
+            tenantId: selectedTenant.id,
+            paymentDate: paymentForm.paymentDate,
+            amountPaid: numAmount,
+            paymentMethod: paymentForm.paymentMethod,
+            popUrl: popUrl || null,
+            invoiceId: null,
+            invoicePdfUrl: null,
+          };
+          await generateInvoiceForPayment(selectedTenant, pseudoPayment);
+        } catch (invErr) {
+          console.warn("Could not auto-generate invoice:", invErr);
         }
       }
 
-      try {
-        await supabase.from("audit_log").insert({
-          user_email: user?.email || "admin@paimbabook.com",
-          user_name: executorName,
-          action: "rent_payment_recorded",
-          entity_type: "tenant_rent_payment",
-          entity_id: insertedId && isValidUuid(insertedId) ? insertedId : null,
-          company_id: compId,
-          details: {
-            tenant_name: selectedTenant.fullName,
-            tenant_id: selectedTenant.id,
-            property_id: selectedTenant.propertyId,
-            amount_paid: numAmount,
-            payment_date: paymentForm.paymentDate,
-            paid_month: paymentForm.paidMonth,
-            payment_method: paymentForm.paymentMethod,
-            pop_url: popUrl,
-            recorded_by: executorName,
-          },
-        });
-      } catch {
-        // audit log is non-fatal
-      }
-
+      setDuplicatePrompt(prev => ({ ...prev, isOpen: false }));
       setSelectedTenant(null);
       setPopFile(null);
+      setGenerateInvoiceImmediately(false);
       reload();
     } catch (saveError) {
       alert(saveError instanceof Error ? saveError.message : "Could not record rent payment.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleConfirmDuplicatePrompt = async () => {
+    if (duplicatePrompt.isPaidInFull) {
+      if (duplicatePrompt.pin.trim() !== "1234") {
+        setDuplicatePrompt(prev => ({ ...prev, pinError: "Invalid Staff/Admin PIN. Default PIN is 1234." }));
+        return;
+      }
+    }
+
+    if (duplicatePrompt.mode === "update") {
+      if (!duplicatePrompt.selectedPaymentToUpdate) {
+        alert("Please select an existing payment to update.");
+        return;
+      }
+      await executeSavePayment({
+        isUpdate: true,
+        updatePaymentId: duplicatePrompt.selectedPaymentToUpdate,
+      });
+    } else {
+      await executeSavePayment({ isUpdate: false });
     }
   };
 
@@ -766,7 +942,14 @@ export default function RentCollectionPage() {
                                 <Users size={20} className="text-muted/60 group-hover:text-current" />
                               </div>
                               <div className="min-w-0">
-                                <p className="font-bold tracking-tight text-foreground truncate">{tenant.fullName}</p>
+                                <button
+                                  type="button"
+                                  onClick={() => setAuditTimelineTenant(tenant)}
+                                  className="font-bold tracking-tight text-foreground truncate hover:text-blue-600 dark:hover:text-blue-400 hover:underline text-left block"
+                                  title="Click to view payment records & audit timeline"
+                                >
+                                  {tenant.fullName}
+                                </button>
                                 <div className="flex items-center gap-1.5 text-xs text-muted">
                                   <Phone size={12} />
                                   <span>{tenant.phone}</span>
@@ -1056,10 +1239,22 @@ export default function RentCollectionPage() {
             </div>
           </div>
 
+          <div className="pt-1">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={generateInvoiceImmediately}
+                onChange={(e) => setGenerateInvoiceImmediately(e.target.checked)}
+                className="rounded border-border-color text-foreground h-4 w-4"
+              />
+              <span className="text-xs font-bold text-foreground">Generate Invoice immediately upon recording</span>
+            </label>
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
-              onClick={() => { setSelectedTenant(null); setPopFile(null); }}
+              onClick={() => { setSelectedTenant(null); setPopFile(null); setGenerateInvoiceImmediately(false); }}
               className="rounded-lg border border-border-color px-4 py-2 text-sm font-bold text-muted hover:text-foreground"
             >
               Cancel
@@ -1074,6 +1269,322 @@ export default function RentCollectionPage() {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Duplicate / Existing Payment Confirmation Modal */}
+      <Modal
+        open={duplicatePrompt.isOpen}
+        onClose={() => setDuplicatePrompt(prev => ({ ...prev, isOpen: false }))}
+        title="Existing Payment Detected for this Billing Month"
+      >
+        <div className="space-y-4">
+          {duplicatePrompt.isPaidInFull ? (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-xs space-y-2">
+              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold">
+                <AlertTriangle size={16} />
+                <span>Month Already Paid in Full</span>
+              </div>
+              <p className="text-muted">
+                <strong>{selectedTenant?.fullName}</strong> has already paid <strong>NAD {duplicatePrompt.totalAlreadyPaid.toLocaleString()}</strong> for month <strong>{paymentForm.paidMonth}</strong> (Required: NAD {duplicatePrompt.requiredRent.toLocaleString()}).
+              </p>
+              <p className="text-muted">
+                To authorize recording an additional installment or overriding this record, enter the Staff/Admin confirmation PIN.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-blue-500/40 bg-blue-500/10 p-4 text-xs space-y-1">
+              <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-bold">
+                <AlertCircle size={16} />
+                <span>Partial Payment Already Recorded</span>
+              </div>
+              <p className="text-muted">
+                A partial payment of <strong>NAD {duplicatePrompt.totalAlreadyPaid.toLocaleString()}</strong> of <strong>NAD {duplicatePrompt.requiredRent.toLocaleString()}</strong> is already recorded for <strong>{paymentForm.paidMonth}</strong>.
+              </p>
+            </div>
+          )}
+
+          {/* Previous payments list */}
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-muted mb-1.5">
+              Existing Payment(s) on Record for {paymentForm.paidMonth}
+            </label>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {duplicatePrompt.matchingPayments.map((p) => (
+                <div key={p.id} className="rounded-lg border border-border-color bg-surface-elevated/40 p-3 text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-foreground">NAD {p.amountPaid.toLocaleString()}</span>
+                    <span className="text-[10px] text-muted">{p.paymentDate}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-muted">
+                    <span>Method: {p.paymentMethod || "EFT / Bank"}</span>
+                    <span>By: {p.executedByName || "Staff"}</span>
+                  </div>
+                  {p.popUrl && (
+                    <div className="pt-1">
+                      <a
+                        href={p.popUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 hover:underline"
+                      >
+                        <FileText size={10} /> Attached POP file <ExternalLink size={9} />
+                      </a>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Action selection: New Installment vs Update */}
+          <div className="space-y-2 pt-2 border-t border-border-color">
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-muted">
+              Choose Action
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setDuplicatePrompt(prev => ({ ...prev, mode: "new" }))}
+                className={`rounded-xl border p-3 text-left transition ${
+                  duplicatePrompt.mode === "new"
+                    ? "border-foreground bg-foreground text-surface font-bold shadow-xs"
+                    : "border-border-color bg-surface hover:bg-surface-elevated text-foreground"
+                }`}
+              >
+                <div className="text-xs font-bold">New Payment / Installment</div>
+                <div className="text-[10px] opacity-70 mt-0.5">Record as additional entry</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDuplicatePrompt(prev => ({ ...prev, mode: "update" }))}
+                className={`rounded-xl border p-3 text-left transition ${
+                  duplicatePrompt.mode === "update"
+                    ? "border-foreground bg-foreground text-surface font-bold shadow-xs"
+                    : "border-border-color bg-surface hover:bg-surface-elevated text-foreground"
+                }`}
+              >
+                <div className="text-xs font-bold">Update Previous Record</div>
+                <div className="text-[10px] opacity-70 mt-0.5">Amend amount / POP</div>
+              </button>
+            </div>
+          </div>
+
+          {duplicatePrompt.mode === "update" && duplicatePrompt.matchingPayments.length > 1 && (
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-muted mb-1">
+                Select Which Record to Update
+              </label>
+              <select
+                value={duplicatePrompt.selectedPaymentToUpdate || ""}
+                onChange={(e) => setDuplicatePrompt(prev => ({ ...prev, selectedPaymentToUpdate: e.target.value }))}
+                className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-xs font-bold outline-none"
+              >
+                {duplicatePrompt.matchingPayments.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.paymentDate} — NAD {p.amountPaid.toLocaleString()} ({p.paymentMethod || "EFT"})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {duplicatePrompt.isPaidInFull && (
+            <div className="pt-2">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-muted mb-1">
+                Staff / Admin Override PIN *
+              </label>
+              <div className="relative">
+                <input
+                  type="password"
+                  placeholder="Enter 4-digit PIN (Default: 1234)"
+                  value={duplicatePrompt.pin}
+                  onChange={(e) => setDuplicatePrompt(prev => ({ ...prev, pin: e.target.value, pinError: null }))}
+                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm font-bold tracking-widest outline-none"
+                />
+              </div>
+              {duplicatePrompt.pinError && (
+                <p className="text-[11px] font-bold text-red-500 mt-1">{duplicatePrompt.pinError}</p>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-border-color">
+            <button
+              type="button"
+              onClick={() => setDuplicatePrompt(prev => ({ ...prev, isOpen: false }))}
+              className="rounded-lg border border-border-color px-4 py-2 text-xs font-bold text-muted hover:text-foreground"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmDuplicatePrompt}
+              disabled={saving}
+              className="rounded-lg bg-foreground px-5 py-2 text-xs font-bold text-surface hover:opacity-90 disabled:opacity-50 transition shadow-xs"
+            >
+              {saving ? "Processing..." : duplicatePrompt.mode === "update" ? "Confirm & Update Payment" : "Confirm & Save Additional"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Mini Audit Timeline Modal */}
+      <Modal
+        open={Boolean(auditTimelineTenant)}
+        onClose={() => setAuditTimelineTenant(null)}
+        title={auditTimelineTenant ? `Rent Record & Audit Timeline: ${auditTimelineTenant.fullName}` : "Rent Audit Timeline"}
+      >
+        {auditTimelineTenant && (
+          <div className="space-y-5">
+            {/* Summary info */}
+            <div className="rounded-xl border border-border-color bg-surface-elevated/50 p-4 space-y-3">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h4 className="font-bold text-base text-foreground">{auditTimelineTenant.fullName}</h4>
+                  <p className="text-xs text-muted flex items-center gap-1.5 mt-0.5">
+                    <Building size={13} className="text-muted/60" />
+                    <span>{auditTimelineTenant.propertyName}</span>
+                  </p>
+                  <p className="text-xs text-muted flex items-center gap-1.5 mt-0.5">
+                    <Phone size={13} className="text-muted/60" />
+                    <span>{auditTimelineTenant.phone}</span>
+                    <span className="mx-1">•</span>
+                    <Mail size={13} className="text-muted/60" />
+                    <span>{auditTimelineTenant.email}</span>
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Monthly Rent</p>
+                  <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">
+                    {formatCurrency(auditTimelineTenant.monthlyRent)}
+                  </p>
+                  <div className="mt-1">
+                    <StatusBadge status={auditTimelineTenant.paymentStatus} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Timeline header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <History size={16} className="text-muted" />
+                <h5 className="text-xs font-bold uppercase tracking-wider text-muted">
+                  Payment History &amp; Audit Trail ({paymentsByTenant[auditTimelineTenant.id]?.length || 0})
+                </h5>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const t = auditTimelineTenant;
+                  setAuditTimelineTenant(null);
+                  openRecordModal(t);
+                }}
+                className="flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-xs font-bold text-surface hover:opacity-90 transition shadow-xs"
+              >
+                <Plus size={13} />
+                <span>Record Payment</span>
+              </button>
+            </div>
+
+            {/* Timeline items list */}
+            {!(paymentsByTenant[auditTimelineTenant.id]?.length > 0) ? (
+              <div className="p-8 rounded-xl border border-dashed border-border-color text-center">
+                <p className="text-xs text-muted">No rent payments recorded yet for this tenant.</p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+                {paymentsByTenant[auditTimelineTenant.id].map((pay) => (
+                  <div
+                    key={pay.id}
+                    className="rounded-xl border border-border-color bg-surface p-3.5 space-y-2 hover:border-foreground/30 transition-all"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-black text-foreground">{formatCurrency(pay.amountPaid)}</span>
+                        <span className="rounded-full bg-surface-elevated border border-border-color px-2 py-0.5 text-[10px] font-bold text-muted">
+                          {pay.paymentMethod || "EFT / Bank"}
+                        </span>
+                        {pay.popUrl ? (
+                          <a
+                            href={pay.popUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full hover:underline"
+                          >
+                            <FileText size={11} /> View POP <ExternalLink size={9} />
+                          </a>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                            <AlertCircle size={11} /> No POP
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] font-bold text-muted">{pay.paymentDate}</span>
+                    </div>
+
+                    <p className="text-xs text-muted">
+                      Recorded by: <span className="font-semibold text-foreground">{pay.executedByName || "Staff"}</span>
+                      {pay.notes && <span className="block text-[11px] text-muted/80 mt-0.5 italic">{pay.notes}</span>}
+                    </p>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-border-color/50 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const t = auditTimelineTenant;
+                          setSelectedPaymentDetail({ payment: pay, tenant: t });
+                        }}
+                        className="text-[11px] font-bold text-foreground hover:underline flex items-center gap-1"
+                      >
+                        <Eye size={12} /> Inspection Details
+                      </button>
+
+                      {pay.invoiceId ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => void viewInvoiceForPayment(pay, auditTimelineTenant.fullName, auditTimelineTenant.propertyName)}
+                            className="text-[10px] font-bold uppercase text-blue-600 hover:underline flex items-center gap-1"
+                          >
+                            <Eye size={11} /> View Invoice
+                          </button>
+                          <span className="text-muted/40">•</span>
+                          <button
+                            type="button"
+                            onClick={() => void downloadInvoiceForPayment(pay, auditTimelineTenant.fullName, auditTimelineTenant.propertyName)}
+                            className="text-[10px] font-bold uppercase text-muted hover:text-foreground flex items-center gap-1"
+                          >
+                            <Download size={11} /> Download
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void generateInvoiceForPayment(auditTimelineTenant, pay)}
+                          disabled={invoiceActionPaymentId === pay.id}
+                          className="rounded-lg bg-surface-elevated border border-border-color px-2.5 py-1 text-[10px] font-black uppercase text-foreground hover:bg-surface transition"
+                        >
+                          {invoiceActionPaymentId === pay.id ? "Generating..." : "Generate Invoice"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2 border-t border-border-color">
+              <button
+                type="button"
+                onClick={() => setAuditTimelineTenant(null)}
+                className="rounded-lg border border-border-color px-4 py-2 text-sm font-bold text-foreground hover:bg-surface-elevated"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Payment Details & Proof of Payment (POP) Inspection Modal */}
