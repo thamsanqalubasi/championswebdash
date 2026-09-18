@@ -3677,15 +3677,16 @@ export async function fetchTenants(companyId?: string): Promise<TenantRow[]> {
 }
 
 export async function fetchInvoices(companyId?: string): Promise<InvoiceRow[]> {
-  if (!companyId) return [];
   try {
     let query = supabase.from("invoices").select("*, tenants(full_name), properties(name)");
-    query = query.eq("company_id", companyId);
+    if (companyId && isValidUuid(companyId)) {
+      query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+    }
     const { data, error } = await query.order("created_at", { ascending: false });
     if (!error && data) {
       return data.map((inv) => ({
         id: inv.id,
-        companyId: inv.company_id || companyId,
+        companyId: inv.company_id || companyId || "",
         tenantName: inv.tenants?.full_name || "Unknown Tenant",
         propertyName: inv.properties?.name || "Unknown Property",
         month: inv.month,

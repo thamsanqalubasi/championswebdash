@@ -93,6 +93,8 @@ export default function StatisticsPage() {
           storesRes,
           usersRes,
           expensesRes,
+          rentPaymentsRes,
+          financeTxsRes,
         ] = await Promise.all([
           supabase.from("invoices").select("total_amount, status, created_at").eq("company_id", compId),
           supabase.from("commercial_bookings").select("total_amount, amount_paid, booking_status, created_at").eq("company_id", compId),
@@ -104,6 +106,8 @@ export default function StatisticsPage() {
           supabase.from("stores_inventory").select("quantity, unit_cost").eq("company_id", compId),
           supabase.from("company_users").select("id, department, is_active").eq("company_id", compId),
           supabase.from("property_expenses").select("amount, category, created_at").eq("company_id", compId),
+          supabase.from("tenant_rent_payments").select("amount_paid, payment_date, created_at").eq("company_id", compId),
+          supabase.from("finance_transactions").select("amount, type, category, transaction_date, created_at").eq("company_id", compId).eq("status", "approved"),
         ]);
 
         if (cancelled) return;
@@ -118,6 +122,8 @@ export default function StatisticsPage() {
         const storesItems = storesRes.data || [];
         const compUsers = usersRes.data || [];
         const propExpenses = expensesRes.data || [];
+        const rentPayments = rentPaymentsRes.data || [];
+        const financeTxs = financeTxsRes.data || [];
 
         // 1. Revenue
         const paidInvoiceTotal = invoices
@@ -125,12 +131,25 @@ export default function StatisticsPage() {
           .reduce((sum, i) => sum + Number(i.total_amount || 0), 0);
         const paidBookingTotal = bookings
           .reduce((sum, b) => sum + Number(b.amount_paid || 0), 0);
-        const totalRev = paidInvoiceTotal + paidBookingTotal;
+        const paidRentTotal = rentPayments
+          .reduce((sum, r) => sum + Number(r.amount_paid || 0), 0);
+
+        // Other non-rent finance income
+        const otherFinanceIncome = financeTxs
+          .filter((tx) => tx.type === "income" && tx.category !== "Rent Collection")
+          .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+
+        // Calculate combined revenue avoiding double counting between paid invoices and direct rent collections
+        const effectiveLeaseRevenue = Math.max(paidRentTotal, paidInvoiceTotal);
+        const totalRev = effectiveLeaseRevenue + paidBookingTotal + otherFinanceIncome;
 
         // 2. Expenses
         const maintExpense = maintenance.reduce((sum, m) => sum + Number(m.cost || 0), 0);
         const otherExpense = propExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
-        const totalExp = maintExpense + otherExpense;
+        const financeExpense = financeTxs
+          .filter((tx) => tx.type === "expense" || tx.type === "payment")
+          .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+        const totalExp = maintExpense + otherExpense + financeExpense;
 
         const netMarginPct = totalRev > 0 ? Number(((totalRev - totalExp) / totalRev * 100).toFixed(1)) : 0;
 
@@ -179,14 +198,27 @@ export default function StatisticsPage() {
           const label = monthNames[d.getMonth()];
 
           const mInvoices = invoices.filter((inv) => (inv.created_at || "").startsWith(monthKey));
-          const mLeases = mInvoices.filter((inv) => inv.status === "paid").reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0);
+          const mInvLeases = mInvoices.filter((inv) => inv.status === "paid").reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0);
+          const mRentCollections = rentPayments
+            .filter((rp) => (rp.payment_date || rp.created_at || "").startsWith(monthKey))
+            .reduce((sum, rp) => sum + Number(rp.amount_paid || 0), 0);
+          const mLeases = Math.max(mRentCollections, mInvLeases);
 
           const mBookings = bookings.filter((b) => (b.created_at || "").startsWith(monthKey));
           const mBookingRev = mBookings.reduce((sum, b) => sum + Number(b.amount_paid || 0), 0);
 
           const mMaint = maintenance.filter((m) => (m.created_at || "").startsWith(monthKey));
-          const mExp = mMaint.reduce((sum, m) => sum + Number(m.cost || 0), 0);
-          const mRev = mLeases + mBookingRev;
+          const mMaintExp = mMaint.reduce((sum, m) => sum + Number(m.cost || 0), 0);
+          const mPropExp = propExpenses.filter((e) => (e.created_at || "").startsWith(monthKey)).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+          const mFinanceExp = financeTxs
+            .filter((tx) => (tx.type === "expense" || tx.type === "payment") && (tx.transaction_date || tx.created_at || "").startsWith(monthKey))
+            .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+          const mExp = mMaintExp + mPropExp + mFinanceExp;
+
+          const mFinanceIncome = financeTxs
+            .filter((tx) => tx.type === "income" && tx.category !== "Rent Collection" && (tx.transaction_date || tx.created_at || "").startsWith(monthKey))
+            .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+          const mRev = mLeases + mBookingRev + mFinanceIncome;
 
           finHistory.push({
             name: label,
@@ -199,7 +231,7 @@ export default function StatisticsPage() {
             name: label,
             bookings: mBookingRev,
             leases: mLeases,
-            services: 0,
+            services: mFinanceIncome,
           });
         }
 

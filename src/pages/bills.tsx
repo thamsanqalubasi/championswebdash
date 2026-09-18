@@ -113,29 +113,30 @@ export default function BillsPage() {
       const compId = currentCompany?.id;
       let q = supabase
         .from("property_bill_schedules")
-        .select("id, name, property_id, amount, due_day, created_at, is_active, properties(name)")
+        .select("id, title, property_id, category, amount, due_day, created_at, is_active, frequency, company_id, properties(name)")
         .eq("is_active", true)
-        .order("name");
-      if (isValidUuid(compId)) {
-        q = q.eq("company_id", compId);
+        .order("title");
+      if (compId && isValidUuid(compId)) {
+        q = q.or(`company_id.eq.${compId},company_id.is.null`);
       }
       const res = await q;
 
       if (!res.error && res.data) {
-        return res.data.map((row) => ({
+        return res.data.map((row: any) => ({
           ...row,
-          title: row.name,
-          frequency: "monthly" as const,
+          title: row.title || "Bill",
+          frequency: (row.frequency ?? "monthly") as BillFrequency,
         }));
       }
 
+      // Fallback
       let fb = supabase
         .from("property_bill_schedules")
         .select("id, title, property_id, amount, due_day, created_at, is_active, properties(name)")
         .eq("is_active", true)
         .order("title");
-      if (isValidUuid(compId)) {
-        fb = fb.eq("company_id", compId);
+      if (compId && isValidUuid(compId)) {
+        fb = fb.or(`company_id.eq.${compId},company_id.is.null`);
       }
       const fallback = await fb;
 
@@ -152,12 +153,12 @@ export default function BillsPage() {
         const compId = currentCompany?.id;
         let monthlyQ = supabase
           .from("property_monthly_bills")
-          .select("schedule_id, month, amount, status, paid_date")
+          .select("schedule_id, month, due_date, amount, status, paid_at")
           .order("month", { ascending: false });
-        let propsQ = supabase.from("properties").select("id, name").order("name");
-        if (isValidUuid(compId)) {
-          monthlyQ = monthlyQ.eq("company_id", compId);
-          propsQ = propsQ.eq("company_id", compId);
+        let propsQ = supabase.from("properties").select("id, name, type").order("name");
+        if (compId && isValidUuid(compId)) {
+          monthlyQ = monthlyQ.or(`company_id.eq.${compId},company_id.is.null`);
+          propsQ = propsQ.or(`company_id.eq.${compId},company_id.is.null`);
         }
 
         const [scheduleRows, monthlyResult, propsResult] = await Promise.all([
@@ -173,10 +174,10 @@ export default function BillsPage() {
           const monthlyRows = (monthlyResult.data ?? []).map((row) => ({
             schedule_id: String(row.schedule_id ?? ""),
             month: String(row.month ?? ""),
-            due_date: "",
+            due_date: String(row.due_date ?? ""),
             amount: Number(row.amount ?? 0),
             status: String(row.status ?? "pending"),
-            paid_at: row.paid_date ? String(row.paid_date) : null,
+            paid_at: row.paid_at ? String(row.paid_at) : null,
           })) as MonthlyBillRow[];
 
           const monthlyBySchedule = new Map<string, MonthlyBillRow[]>();
@@ -314,10 +315,13 @@ export default function BillsPage() {
     const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
     const monthlyPayload: Record<string, unknown> = {
       schedule_id: scheduleId,
+      property_id: form.propertyId,
       month: monthKey,
+      due_date: buildDueDate(monthKey, form.dueDay),
       amount: form.status === "paid" ? form.paidAmount : form.amount,
       status: form.status,
-      paid_date: form.status === "paid" ? form.paidDate : null,
+      paid_at: form.status === "paid" ? (form.paidDate ? new Date(form.paidDate).toISOString() : new Date().toISOString()) : null,
+      executed_by_name: executorName,
       company_id: compId,
     };
 
@@ -373,13 +377,13 @@ export default function BillsPage() {
       }
 
       const scheduleBase: Record<string, unknown> = {
-        name: form.name,
+        title: form.name,
         property_id: form.propertyId,
         category: "other",
         amount: form.amount,
         due_day: form.dueDay,
         is_active: true,
-        company_id: currentCompany.id,
+        company_id: currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null,
       };
 
       const saveSchedule = async (withFrequency: boolean) => {

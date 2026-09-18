@@ -192,9 +192,11 @@ export function buildProfessionalInvoiceHtml(
   admin: AdminInfo,
 ): string {
   const docCurrency = company.currency || "ZAR";
-  const subtotal = doc.lineItems.reduce((sum, item) => sum + item.amount, 0);
-  const taxAmount = subtotal * (company.taxRate / 100);
-  const total = subtotal + taxAmount;
+  const total = doc.lineItems.reduce((sum, item) => sum + item.amount, 0);
+  const taxRate = Number(company?.taxRate || 0);
+  // VAT is inclusive in the total amount: Total Due remains unchanged
+  const subtotal = taxRate > 0 ? total / (1 + (taxRate / 100)) : total;
+  const taxAmount = total - subtotal;
 
   const statusClass =
     doc.status === "paid" ? "status-paid"
@@ -285,11 +287,11 @@ export function buildProfessionalInvoiceHtml(
       <div class="totals">
         <div class="totals-table">
           <div class="totals-row subtotal">
-            <span>Subtotal</span>
+            <span>Subtotal (Excl. VAT)</span>
             <span>${formatDocCurrency(subtotal, docCurrency)}</span>
           </div>
-          ${company.taxRate > 0 ? `<div class="totals-row">
-            <span>VAT (${company.taxRate}%)</span>
+          ${taxRate > 0 ? `<div class="totals-row">
+            <span>VAT (${taxRate}%) (Incl.)</span>
             <span>${formatDocCurrency(taxAmount, docCurrency)}</span>
           </div>` : ""}
           <div class="totals-row total">

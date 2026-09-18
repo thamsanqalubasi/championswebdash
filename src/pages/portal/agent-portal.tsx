@@ -153,7 +153,7 @@ export default function AgentPortalPage() {
       let query = supabase
         .from('properties')
         .select('id, name, type, address, city, country, monthly_rent, photos, description, is_published, company_id')
-        .in('type', ['house', 'apartment', 'storage', 'room']);
+        .in('type', ['house', 'apartment', 'storage', 'room', 'flat', 'residential', 'commercial', 'townhouse', 'lodge']);
       
       const compId = currentCompany?.id;
       if (compId) {
@@ -166,7 +166,7 @@ export default function AgentPortalPage() {
         const { data: fallbackData } = await supabase
           .from('properties')
           .select('id, name, type, address, city, country, monthly_rent, photos, description, is_published')
-          .in('type', ['house', 'apartment', 'storage', 'room'])
+          .in('type', ['house', 'apartment', 'storage', 'room', 'flat', 'residential', 'commercial', 'townhouse', 'lodge'])
           .order('name');
         if (fallbackData) {
           setOrgProperties(fallbackData.map((p: any) => ({
@@ -687,6 +687,49 @@ export default function AgentPortalPage() {
         {activeTab === 2 && (
           <div className="space-y-6">
             <h2 className="text-lg font-bold">{editingId ? 'Edit Listing' : 'Add New Listing'}</h2>
+
+            {!editingId && (
+              <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shrink-0 shadow-xs">
+                    <Building2 size={18} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-foreground">Select from Existing Residential Properties</p>
+                    <p className="text-[11px] text-muted">Autofill details, photos, and rent price directly from your company portfolio</p>
+                  </div>
+                </div>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const selectedProp = orgProperties.find(p => p.id === e.target.value);
+                    if (selectedProp) {
+                      setFormData({
+                        ...defaultFormData,
+                        name: selectedProp.name || "",
+                        type: selectedProp.type || "house",
+                        listingType: "rent",
+                        price: Number(selectedProp.monthly_rent || 0),
+                        address: selectedProp.address || "",
+                        city: selectedProp.city || "",
+                        country: selectedProp.country || "",
+                        description: selectedProp.description || `${selectedProp.name} - managed residential property ready for leasing.`,
+                        photos: Array.isArray(selectedProp.photos) ? selectedProp.photos : [],
+                        amenities: ["wifi", "parking", "security"],
+                      });
+                    }
+                  }}
+                  className="rounded-xl border border-border-color bg-surface px-3 py-2 text-xs font-bold text-foreground outline-none focus:border-blue-500 min-w-[220px]"
+                >
+                  <option value="">-- Autofill from Portfolio --</option>
+                  {orgProperties.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.type}) — {formatWhole(p.monthly_rent || 0)}/mo
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-4">

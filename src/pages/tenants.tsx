@@ -1107,6 +1107,28 @@ export default function TenantsPage() {
         }
       }
 
+      // Sync to finance_transactions (non-fatal)
+      try {
+        await supabase.from("finance_transactions").insert({
+          company_id: compId,
+          property_id: propId && isValidUuid(propId) ? propId : null,
+          transaction_date: rentRecordForm.paymentDate,
+          type: "income",
+          category: "Rent Collection",
+          amount: Number(rentRecordForm.amountPaid),
+          payment_method: rentRecordForm.paymentMethod || "EFT / Bank Transfer",
+          reference_number: rentRecordForm.referenceNumber || `${rentRecordForm.paidMonth} Rent`,
+          description: `Rent payment for ${detailsRow.fullName} (${rentRecordForm.paidMonth})`,
+          status: "approved",
+          priority: "normal",
+          recorded_by_name: staffName,
+          recorded_by_role: "Rent Collection / Front Desk",
+          attachments: rentRecordForm.receiptUrl ? [{ id: `pop-${Date.now()}`, name: "Proof of Payment", url: rentRecordForm.receiptUrl, type: "image", uploadedAt: new Date().toISOString(), uploadedByName: staffName }] : [],
+        });
+      } catch (fErr) {
+        console.warn("Could not insert finance_transactions (non-fatal):", fErr);
+      }
+
       // Audit log (non-fatal)
       try {
         await supabase.from("audit_log").insert({

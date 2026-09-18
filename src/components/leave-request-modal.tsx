@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { X, Calendar, Send, CheckCircle2, AlertCircle } from "lucide-react";
+import { useState, useRef } from "react";
+import { X, Calendar, Send, CheckCircle2, AlertCircle, Paperclip, Upload, FileText, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { requestLeave } from "@/lib/data";
+import { uploadFileToBucket } from "@/lib/storage";
 import type { LeaveRecord } from "@/lib/types";
 
 interface LeaveRequestModalProps {
@@ -20,6 +21,9 @@ export function LeaveRequestModal({ isOpen, onClose, onSuccess }: LeaveRequestMo
     return d.toISOString().slice(0, 10);
   });
   const [reason, setReason] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -46,6 +50,23 @@ export function LeaveRequestModal({ isOpen, onClose, onSuccess }: LeaveRequestMo
 
     setSubmitting(true);
     try {
+      let attachmentUrl = "";
+      if (attachmentFile) {
+        setUploadingAttachment(true);
+        try {
+          attachmentUrl = await uploadFileToBucket("payment-proofs", "leave-proofs", attachmentFile);
+        } catch (uErr) {
+          console.warn("Attachment upload fallback:", uErr);
+        } finally {
+          setUploadingAttachment(false);
+        }
+      }
+
+      const combinedReason = [
+        reason.trim() || undefined,
+        attachmentUrl ? `Supporting Document: ${attachmentUrl}` : undefined,
+      ].filter(Boolean).join(" | ");
+
       await requestLeave({
         companyId: currentCompany?.id,
         userId: currentCompanyUser?.userId || currentCompanyUser?.id || "unknown",
@@ -55,7 +76,7 @@ export function LeaveRequestModal({ isOpen, onClose, onSuccess }: LeaveRequestMo
         startDate,
         endDate,
         daysCount: days,
-        reason: reason.trim() || undefined,
+        reason: combinedReason || undefined,
       });
 
       setSuccess(true);
@@ -153,12 +174,54 @@ export function LeaveRequestModal({ isOpen, onClose, onSuccess }: LeaveRequestMo
             <div>
               <label className="mb-1 block font-semibold text-foreground text-[11px]">Reason / Details (Optional)</label>
               <textarea
-                rows={3}
+                rows={2}
                 placeholder="State your reason, handover coverage, or emergency contact..."
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-pink-500 focus:outline-none resize-none"
               />
+            </div>
+
+            <div>
+              <label className="mb-1 block font-semibold text-foreground text-[11px]">Supporting Document / Proof (Optional)</label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) setAttachmentFile(f);
+                }}
+              />
+              {attachmentFile ? (
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-pink-500/30 bg-pink-500/10 px-3 py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText size={14} className="text-pink-600 dark:text-pink-400 shrink-0" />
+                    <span className="text-[11px] font-semibold text-foreground truncate">{attachmentFile.name}</span>
+                    <span className="text-[10px] text-muted shrink-0">({(attachmentFile.size / 1024).toFixed(0)} KB)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAttachmentFile(null);
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                    }}
+                    className="text-muted hover:text-red-500 transition"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border-color bg-surface-elevated/40 px-3 py-2.5 text-muted hover:border-pink-500 hover:text-foreground transition"
+                >
+                  <Paperclip size={14} className="text-pink-500" />
+                  <span className="text-[11px] font-medium">Attach Medical Certificate or Proof (PDF / Image)</span>
+                </button>
+              )}
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-border-color">

@@ -123,7 +123,7 @@ export default function InvoicesPage() {
       setError(null);
 
       try {
-        const result = await fetchInvoicesData();
+        const result = await fetchInvoicesData(currentCompany?.id);
         if (!cancelled) {
           setInvoices(result);
         }
@@ -143,7 +143,7 @@ export default function InvoicesPage() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, currentCompany?.id]);
 
   useEffect(() => {
     if (!modalOpen) {
@@ -156,16 +156,23 @@ export default function InvoicesPage() {
       setTransactionsLoading(true);
 
       try {
+        const compId = currentCompany?.id;
         const offset = periodFilter === "this_month" ? 0 : periodFilter === "last_2_months" ? 1 : 2;
         const fromDate = monthStartOffset(offset).toISOString().slice(0, 10);
         const toDate = new Date().toISOString().slice(0, 10);
 
-        const { data: payments, error: paymentsError } = await supabase
+        let pQuery = supabase
           .from("tenant_rent_payments")
           .select("id, tenant_id, payment_date, amount_paid, tenants(full_name, property_id, properties(name))")
           .gte("payment_date", fromDate)
           .lte("payment_date", toDate)
           .order("payment_date", { ascending: false });
+
+        if (compId && isValidUuid(compId)) {
+          pQuery = pQuery.or(`company_id.eq.${compId},company_id.is.null`);
+        }
+
+        const { data: payments, error: paymentsError } = await pQuery;
 
         if (paymentsError) throw paymentsError;
 

@@ -73,7 +73,7 @@ const allNavSections: NavSection[] = [
   {
     title: "Procurement & Stores",
     items: [
-      { label: "Procurement Hub", href: "/procurement", icon: Truck, departments: ["admin","procurement","manager"], permissions: ["manage_procurement", "manage_maintenance"] },
+      { label: "Procurement Hub", href: "/procurement", icon: Truck },
       { label: "Stores & Inventory", href: "/stores", icon: Package, departments: ["admin","stores","procurement","manager","maintenance"], permissions: ["manage_procurement", "manage_maintenance"] },
       { label: "Inventory & Stock", href: "/maintenance/inventory", icon: ClipboardList, departments: ["admin","stores","procurement","manager","maintenance"], permissions: ["manage_procurement", "manage_maintenance"] },
     ],
@@ -504,29 +504,36 @@ export function AppShell({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={() => setCheckinOpen(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-blue-700 transition"
+                className="flex items-center gap-1.5 rounded-xl border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition"
               >
-                <KeyRound size={15}/><span>{t("header_check_in")}</span>
+                <KeyRound size={14} /><span>{t("header_check_in")}</span>
               </button>
               <Link
                 to="/rent-collection"
-                className="hidden sm:flex items-center gap-1.5 rounded-lg border border-emerald-600 bg-emerald-600 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-emerald-700 transition"
+                className="hidden sm:flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-foreground shadow-xs hover:bg-surface hover:border-foreground/30 transition"
               >
-                <DollarSign size={15}/><span>{t("header_record_rent")}</span>
+                <DollarSign size={14} className="text-emerald-500" /><span>{t("header_record_rent")}</span>
               </Link>
               <button
                 type="button"
                 onClick={() => setLeaveModalOpen(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-pink-500/30 bg-pink-500/10 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-pink-600 dark:text-pink-400 shadow-xs hover:bg-pink-600 hover:text-white transition"
+                className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-foreground shadow-xs hover:bg-surface hover:border-foreground/30 transition"
               >
-                <CalendarClock size={15}/><span>{t("header_request_leave")}</span>
+                <CalendarClock size={14} className="text-blue-500" /><span>{t("header_request_leave")}</span>
               </button>
-              <ThemeToggle variant="compact"/>
+              <Link
+                to="/procurement?create=1"
+                className="hidden md:flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-foreground shadow-xs hover:bg-surface hover:border-foreground/30 transition"
+                title="Create Procurement Request"
+              >
+                <Truck size={14} className="text-amber-500" /><span>Procure</span>
+              </Link>
+              <ThemeToggle variant="compact" />
               <div className="hidden xl:block max-w-[160px] truncate px-1 py-1 text-xs font-medium text-muted" title={userEmail}>{userEmail}</div>
               <button
                 type="button"
                 onClick={onSignOut}
-                className="rounded-lg border border-border-color bg-surface-elevated px-2.5 py-1.5 sm:py-2 text-xs font-medium text-muted hover:text-foreground transition"
+                className="rounded-xl border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground transition"
               >
                 {t("header_sign_out")}
               </button>

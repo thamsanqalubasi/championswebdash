@@ -549,6 +549,28 @@ export default function RentCollectionPage() {
           }
         }
 
+        // Sync to finance_transactions
+        try {
+          await supabase.from("finance_transactions").insert({
+            company_id: compId,
+            property_id: selectedTenant.propertyId && isValidUuid(selectedTenant.propertyId) ? selectedTenant.propertyId : null,
+            transaction_date: paymentForm.paymentDate,
+            type: "income",
+            category: "Rent Collection",
+            amount: numAmount > prevAmount ? (numAmount - prevAmount) : numAmount,
+            payment_method: paymentForm.paymentMethod || "EFT / Bank Transfer",
+            reference_number: `${paymentForm.paidMonth} Rent Adj`,
+            description: `Rent payment update for ${selectedTenant.fullName} (${paymentForm.paidMonth})`,
+            status: "approved",
+            priority: "normal",
+            recorded_by_name: executorName,
+            recorded_by_role: "Rent Collection / Front Desk",
+            attachments: popUrl ? [{ id: `pop-${Date.now()}`, name: "Proof of Payment", url: popUrl, type: "image", uploadedAt: new Date().toISOString(), uploadedByName: executorName }] : [],
+          });
+        } catch (fErr) {
+          console.warn("Could not insert finance_transactions (non-fatal):", fErr);
+        }
+
         try {
           await supabase.from("audit_log").insert({
             user_email: user?.email || "admin@paimbabook.com",
@@ -632,6 +654,28 @@ export default function RentCollectionPage() {
           } catch (proofErr) {
             console.warn("Could not insert tenant_payment_proofs:", proofErr);
           }
+        }
+
+        // Record into finance_transactions so company finances and statistics update automatically
+        try {
+          await supabase.from("finance_transactions").insert({
+            company_id: compId,
+            property_id: selectedTenant.propertyId && isValidUuid(selectedTenant.propertyId) ? selectedTenant.propertyId : null,
+            transaction_date: paymentForm.paymentDate,
+            type: "income",
+            category: "Rent Collection",
+            amount: numAmount,
+            payment_method: paymentForm.paymentMethod || "EFT / Bank Transfer",
+            reference_number: `${paymentForm.paidMonth} Rent`,
+            description: `Rent payment for ${selectedTenant.fullName} (${paymentForm.paidMonth})`,
+            status: "approved",
+            priority: "normal",
+            recorded_by_name: executorName,
+            recorded_by_role: "Rent Collection / Front Desk",
+            attachments: popUrl ? [{ id: `pop-${Date.now()}`, name: "Proof of Payment", url: popUrl, type: "image", uploadedAt: new Date().toISOString(), uploadedByName: executorName }] : [],
+          });
+        } catch (fErr) {
+          console.warn("Could not insert finance_transactions (non-fatal):", fErr);
         }
 
         try {

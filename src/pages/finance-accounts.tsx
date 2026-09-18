@@ -284,93 +284,6 @@ async function fetchPaymentsWithProperty(startDate: string, endDate: string): Pr
     .gte("payment_date", startDate)
     .lte("payment_date", endDate)
     .order("payment_date");
-// Initial mock transactions to seed rich daily operations immediately
-const SEED_FINANCE_TRANSACTIONS: FinanceTransaction[] = [
-  {
-    id: "tx-seed-001",
-    transactionDate: new Date().toISOString().slice(0, 10),
-    type: "expense",
-    category: "Office & Administrative Supplies",
-    amount: 1850,
-    paymentMethod: "EFT / Bank Transfer",
-    referenceNumber: "INV-TZ-8841",
-    description: "Purchase of high-grade printing paper, toner cartridges and filing folders for reception desk.",
-    status: "approved",
-    priority: "normal",
-    attachments: [
-      {
-        id: "att-1",
-        name: "TechZone_Invoice_8841.pdf",
-        url: "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=1200&auto=format&fit=crop&q=80",
-        type: "pdf",
-        uploadedAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-        uploadedByName: "Nomsa Dlamini",
-      },
-    ],
-    recordedByName: "Nomsa Dlamini",
-    recordedByRole: "Front Desk / Operations Accountant",
-    approvedByName: "Grace Ndlovu",
-    approvedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-  },
-  {
-    id: "tx-seed-002",
-    transactionDate: new Date().toISOString().slice(0, 10),
-    type: "payment",
-    category: "Utility - Electricity",
-    amount: 6420,
-    paymentMethod: "EFT / Bank Transfer",
-    referenceNumber: "ELEC-2026-SEP",
-    description: "Municipal prepaid electricity bulk reload for commercial lodging blocks and central heating.",
-    status: "approved",
-    priority: "urgent",
-    attachments: [
-      {
-        id: "att-2",
-        name: "City_Power_Receipt_441.jpg",
-        url: "https://images.unsplash.com/photo-1586281380349-632531db7ed4?w=1200&auto=format&fit=crop&q=80",
-        type: "image",
-        uploadedAt: new Date(Date.now() - 3600000 * 8).toISOString(),
-        uploadedByName: "Thamsanqa Lubasi",
-      },
-    ],
-    recordedByName: "Thamsanqa Lubasi",
-    recordedByRole: "CFO / Financial Director",
-    approvedByName: "Thamsanqa Lubasi",
-    approvedAt: new Date(Date.now() - 3600000 * 7).toISOString(),
-    createdAt: new Date(Date.now() - 3600000 * 8).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 7).toISOString(),
-  },
-  {
-    id: "tx-seed-003",
-    transactionDate: new Date().toISOString().slice(0, 10),
-    type: "expense",
-    category: "Property Maintenance & Repairs",
-    amount: 3200,
-    paymentMethod: "EFT / Bank Transfer",
-    referenceNumber: "PLUMB-902",
-    description: "Emergency main waterline valve replacement and pressure inspection by AquaFix Plumbing.",
-    status: "pending_approval",
-    priority: "urgent",
-    approvalRequestedTo: "fin-mgr",
-    approvalRequestedToName: "Grace Ndlovu",
-    attachments: [
-      {
-        id: "att-3",
-        name: "AquaFix_Quote_Invoice_902.pdf",
-        url: "https://images.unsplash.com/photo-1450133064473-71024230f91b?w=1200&auto=format&fit=crop&q=80",
-        type: "pdf",
-        uploadedAt: new Date(Date.now() - 3600000 * 3).toISOString(),
-        uploadedByName: "Sipho Khumalo",
-      },
-    ],
-    recordedByName: "Sipho Khumalo",
-    recordedByRole: "Accounts Payable Specialist",
-    createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 3).toISOString(),
-  },
-];
 
   if (!richJoin.error) {
     return ((richJoin.data ?? []) as PaymentProjection[]).map((row) => ({
@@ -671,43 +584,88 @@ export default function FinanceAccountsPage() {
           setProcurementRequests(pReqs);
         }
 
-        // Fetch database finance transactions if table exists
+        // Fetch database finance transactions and tenant rent payments
         if (compId && isValidUuid(compId)) {
-          const { data: dbTxs } = await supabase
-            .from("finance_transactions")
-            .select("*")
-            .eq("company_id", compId)
-            .order("transaction_date", { ascending: false });
-          if (!cancelled && dbTxs && dbTxs.length > 0) {
-            setFinanceTransactions(
-              dbTxs.map((row: any) => ({
-                id: row.id,
-                companyId: row.company_id,
-                propertyId: row.property_id,
-                transactionDate: row.transaction_date,
-                type: row.type,
-                category: row.category,
-                amount: Number(row.amount || 0),
-                paymentMethod: row.payment_method || "EFT / Bank Transfer",
-                referenceNumber: row.reference_number || "",
-                description: row.description,
-                status: row.status,
-                priority: row.priority || "normal",
-                attachments: Array.isArray(row.attachments) ? row.attachments : [],
-                recordedByUserId: row.recorded_by_user_id,
-                recordedByName: row.recorded_by_name || "Staff",
-                recordedByRole: row.recorded_by_role || "Finance",
-                approvalRequestedTo: row.approval_requested_to,
-                approvalRequestedToName: row.approval_requested_to_name,
-                approvedByUserId: row.approved_by_user_id,
-                approvedByName: row.approved_by_name,
-                approvedAt: row.approved_at,
-                signatureUrl: row.signature_url,
-                rejectionReason: row.rejection_reason,
-                createdAt: row.created_at,
-                updatedAt: row.updated_at,
-              }))
+          const [dbTxsRes, rentPaymentsRes] = await Promise.all([
+            supabase
+              .from("finance_transactions")
+              .select("*")
+              .eq("company_id", compId)
+              .order("transaction_date", { ascending: false }),
+            supabase
+              .from("tenant_rent_payments")
+              .select("id, tenant_id, payment_date, amount_paid, payment_method, notes, executed_by_name, pop_url, created_at, tenants(full_name, property_id)")
+              .eq("company_id", compId)
+              .order("payment_date", { ascending: false }),
+          ]);
+
+          const rawDbTxs = dbTxsRes.data || [];
+          const rawRent = rentPaymentsRes.data || [];
+
+          const txList: FinanceTransaction[] = rawDbTxs.map((row: any) => ({
+            id: row.id,
+            companyId: row.company_id,
+            propertyId: row.property_id,
+            transactionDate: row.transaction_date,
+            type: row.type,
+            category: row.category,
+            amount: Number(row.amount || 0),
+            paymentMethod: row.payment_method || "EFT / Bank Transfer",
+            referenceNumber: row.reference_number || "",
+            description: row.description,
+            status: row.status,
+            priority: row.priority || "normal",
+            attachments: Array.isArray(row.attachments) ? row.attachments : [],
+            recordedByUserId: row.recorded_by_user_id,
+            recordedByName: row.recorded_by_name || "Staff",
+            recordedByRole: row.recorded_by_role || "Finance",
+            approvalRequestedTo: row.approval_requested_to,
+            approvalRequestedToName: row.approval_requested_to_name,
+            approvedByUserId: row.approved_by_user_id,
+            approvedByName: row.approved_by_name,
+            approvedAt: row.approved_at,
+            signatureUrl: row.signature_url,
+            rejectionReason: row.rejection_reason,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+          }));
+
+          // Merge any tenant rent payments not already recorded in finance_transactions
+          for (const rp of rawRent) {
+            const tenantInfo = rp.tenants as { full_name?: string; property_id?: string } | null;
+            const tName = tenantInfo?.full_name || "Tenant";
+            const exists = txList.some(
+              (tx) => tx.category === "Rent Collection" &&
+                      (tx.description?.includes(tName) || false) &&
+                      tx.amount === Number(rp.amount_paid || 0) &&
+                      tx.transactionDate === String(rp.payment_date || "").slice(0, 10)
             );
+            if (!exists) {
+              txList.push({
+                id: `rent-${rp.id}`,
+                companyId: compId,
+                propertyId: tenantInfo?.property_id,
+                transactionDate: String(rp.payment_date || "").slice(0, 10),
+                type: "income",
+                category: "Rent Collection",
+                amount: Number(rp.amount_paid || 0),
+                paymentMethod: rp.payment_method || "EFT / Bank Transfer",
+                referenceNumber: `Rent-${String(rp.id || "").slice(0, 8)}`,
+                description: `Rent collection from ${tName}`,
+                status: "approved",
+                priority: "normal",
+                attachments: rp.pop_url ? [{ id: `att-${rp.id}`, name: "Proof of Payment", url: rp.pop_url, type: "image", uploadedAt: rp.created_at || new Date().toISOString(), uploadedByName: rp.executed_by_name || "Staff" }] : [],
+                recordedByName: rp.executed_by_name || "Front Desk / Finance",
+                recordedByRole: "Rent Collector",
+                createdAt: rp.created_at || new Date().toISOString(),
+                updatedAt: rp.created_at || new Date().toISOString(),
+              });
+            }
+          }
+
+          txList.sort((a, b) => b.transactionDate.localeCompare(a.transactionDate));
+          if (!cancelled && txList.length > 0) {
+            setFinanceTransactions(txList);
           }
         }
       } catch (err) {
