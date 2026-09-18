@@ -90,7 +90,7 @@ export function StatusBadge({ status, className = "" }: { status: string; classN
     if (["vacant", "open", "draft", "pending"].includes(val)) {
       return "bg-sky-50 text-sky-700 border-sky-200/50 dark:bg-sky-900/20 dark:text-sky-400 dark:border-sky-800/30";
     }
-    if (["maintenance", "in_progress", "notice", "partial"].includes(val)) {
+    if (["maintenance", "in_progress", "notice", "partial", "suppressed"].includes(val)) {
       return "bg-amber-50 text-amber-700 border-amber-200/50 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/30";
     }
     if (["cancelled", "overdue", "ended", "expired"].includes(val)) {

@@ -3,12 +3,12 @@ import { ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { fetchReportsData } from "@/lib/data";
 import type { ReportsData } from "@/lib/types";
-
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "NAD", maximumFractionDigits: 0 }).format(amount);
-}
+import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
 
 export default function ReportsPage() {
+  const { currentCompany } = useAuth();
+  const { format: formatCurrency } = useCurrency();
   const [data, setData] = useState<ReportsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -19,14 +19,14 @@ export default function ReportsPage() {
     async function load() {
       setLoading(true); setError(null);
       try {
-        const result = await fetchReportsData();
+        const result = await fetchReportsData(currentCompany?.id);
         if (!cancelled) setData(result);
       } catch (e) { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load reports."); }
       finally { if (!cancelled) setLoading(false); }
     }
     void load();
     return () => { cancelled = true; };
-  }, [reloadKey]);
+  }, [reloadKey, currentCompany?.id]);
 
   const reload = () => setReloadKey((v) => v + 1);
 
@@ -120,7 +120,7 @@ export default function ReportsPage() {
                   </tr></thead>
                   <tbody>{data.monthly.map((row) => (
                     <tr key={row.month} className="border-b border-border-color/60">
-                      <td className="px-3 py-3 font-medium">{row.month}</td>
+                      <td className="px-3 py-3 font-medium">{row.label || row.month}</td>
                       <td className="px-3 py-3 text-right text-green-600">{formatCurrency(row.income)}</td>
                       <td className="px-3 py-3 text-right text-red-500">{formatCurrency(row.expenses)}</td>
                       <td className={`px-3 py-3 text-right font-medium ${row.income - row.expenses >= 0 ? "text-green-600" : "text-red-500"}`}>{formatCurrency(row.income - row.expenses)}</td>

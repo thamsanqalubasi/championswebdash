@@ -1207,6 +1207,7 @@ export default function TenantsPage() {
         .eq("tenant_id", detailsRow.id)
         .eq("property_id", detailsPropertyId)
         .eq("month", invoiceMonthLabel)
+        .neq("status", "suppressed")
         .limit(1)
         .maybeSingle();
 
@@ -1482,6 +1483,47 @@ export default function TenantsPage() {
       alert(err instanceof Error ? err.message : "Could not share invoice with staff.");
     } finally {
       setSharingWithStaff(false);
+    }
+  };
+
+  const suppressTenantInvoice = async (invoice: { id: string; month: string; amount: number }) => {
+    const confirmSuppress = window.confirm(
+      `Suppress this invoice for ${detailsRow?.fullName || "this tenant"} (${invoice.month})?\n\n` +
+      `• Suppressed invoices remain in system audit records.\n` +
+      `• It will no longer be shareable or active.\n` +
+      `• This allows generating a new, corrected invoice for ${invoice.month}.`
+    );
+    if (!confirmSuppress) return;
+
+    try {
+      const { error: updateError } = await supabase
+        .from("invoices")
+        .update({ status: "suppressed" })
+        .eq("id", invoice.id);
+
+      if (updateError) throw updateError;
+
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      await supabase.from("audit_log").insert({
+        user_email: user?.email || "admin@paimbabook.com",
+        user_name: user?.email ?? "Admin",
+        action: "invoice_suppressed",
+        entity_type: "invoice",
+        company_id: compId,
+        details: {
+          invoice_id: invoice.id,
+          tenant_name: detailsRow?.fullName,
+          month: invoice.month,
+          amount: invoice.amount,
+          reason: "Suppressed by staff for correction/regeneration",
+        },
+      });
+
+      if (detailsRow) {
+        await loadTenantDetails(detailsRow.id);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to suppress invoice.");
     }
   };
 
@@ -2213,85 +2255,120 @@ export default function TenantsPage() {
                   <div className="py-10 border border-dashed border-border-color rounded-xl"><EmptyState title="No invoices" description="" /></div>
                 ) : (
                   <div className="space-y-3">
-                    {invoices.map((invoice) => (
-                      <div key={invoice.id} className="p-4 rounded-xl border border-border-color bg-surface-elevated/40 hover:bg-surface-elevated transition-colors group">
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-sm font-bold text-foreground">{invoice.month}</p>
-                          <StatusBadge status={invoice.status} />
-                        </div>
-                        <p className="text-lg font-bold text-foreground">{formatCurrency(invoice.amount)}</p>
-                        <div className="flex items-center justify-between gap-1 mt-4 pt-3 border-t border-border-color/40">
-                          <div className="flex items-center gap-1">
-                            <button onClick={() => void openInvoicePreview(invoice)} className="p-1.5 rounded-lg border border-border-color hover:bg-foreground hover:text-surface transition-all text-xs" title="View Invoice"><Eye size={13} /></button>
-                            <button onClick={() => void downloadInvoice(invoice)} className="p-1.5 rounded-lg border border-border-color hover:bg-foreground hover:text-surface transition-all text-xs" title="Download"><Download size={13} /></button>
-                            <button onClick={() => void shareInvoice(invoice, "whatsapp")} disabled={sharingInvoiceId === invoice.id} className="p-1.5 rounded-lg border border-border-color hover:bg-green-600 hover:text-white transition-all text-xs" title="WhatsApp"><Send size={13} /></button>
-                          </div>
-                          <div className="flex items-center gap-1.5 relative">
-                            {/* Send to Tenant */}
-                            <button
-                              type="button"
-                              onClick={() => void shareInvoice(invoice, "email")}
-                              disabled={sharingInvoiceId === invoice.id}
-                              className="flex items-center gap-1 rounded-lg border border-border-color bg-surface px-2 py-1 text-xs font-bold text-foreground hover:bg-sky-600 hover:text-white transition-all shadow-2xs"
-                              title="Send to tenant via email"
+                    {invoices.map((invoice) => {
+                      const isSuppressed = invoice.status === "suppressed";
+                      return (
+                        <div key={invoice.id} className={`p-4 rounded-xl border transition-colors group ${
+                          isSuppressed
+                            ? "border-amber-500/30 bg-amber-500/[0.04] opacity-80"
+                            : "border-border-color bg-surface-elevated/40 hover:bg-surface-elevated"
+                        }`}>
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-sm font-bold text-foreground">{invoice.month}</p>
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider ${
+                                isSuppressed
+                                  ? "border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                                  : ""
+                              }`}
                             >
-                              <Mail size={12} />
-                              <span>Send</span>
-                            </button>
-
-                            {/* Share with Staff dropdown */}
-                            <div className="relative">
-                              <button
-                                type="button"
-                                onClick={() => setOpenStaffDropdownInvoiceId(current => current === invoice.id ? null : invoice.id)}
-                                className="flex items-center gap-1 rounded-lg border border-border-color bg-surface px-2 py-1 text-xs font-bold text-muted hover:text-foreground transition-all shadow-2xs"
-                                title="Share with internal company staff"
-                              >
-                                <Users size={12} />
-                                <span>Share</span>
-                                <ChevronDown size={10} />
-                              </button>
-
-                              {openStaffDropdownInvoiceId === invoice.id && (
-                                <div className="absolute right-0 bottom-full mb-1 z-50 w-56 rounded-xl border border-border-color bg-surface p-1.5 shadow-xl space-y-1 max-h-48 overflow-y-auto">
-                                  <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted border-b border-border-color/50">
-                                    Share with Staff
-                                  </div>
-                                  {companyStaffList.length === 0 ? (
-                                    <div className="p-2 text-[11px] text-muted text-center">No other staff found</div>
-                                  ) : (
-                                    companyStaffList.map((staff) => (
-                                      <button
-                                        key={staff.id || staff.userId}
-                                        type="button"
-                                        onClick={() => void shareInvoiceWithStaff(invoice, staff)}
-                                        className="w-full text-left rounded-lg px-2 py-1.5 text-xs hover:bg-surface-elevated flex items-center justify-between transition"
-                                      >
-                                        <div className="min-w-0 pr-2">
-                                          <p className="font-bold text-foreground truncate">{staff.fullName || staff.email}</p>
-                                          <p className="text-[10px] text-muted truncate">{staff.jobTitle || staff.roleLevel || staff.email}</p>
-                                        </div>
-                                        <Send size={11} className="text-muted shrink-0" />
-                                      </button>
-                                    ))
-                                  )}
-                                </div>
+                              {isSuppressed ? "Suppressed (Superseded)" : <StatusBadge status={invoice.status} />}
+                            </span>
+                          </div>
+                          <p className="text-lg font-bold text-foreground">{formatCurrency(invoice.amount)}</p>
+                          <div className="flex items-center justify-between gap-1 mt-4 pt-3 border-t border-border-color/40">
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => void openInvoicePreview(invoice)} className="p-1.5 rounded-lg border border-border-color hover:bg-foreground hover:text-surface transition-all text-xs" title="View Invoice"><Eye size={13} /></button>
+                              <button onClick={() => void downloadInvoice(invoice)} className="p-1.5 rounded-lg border border-border-color hover:bg-foreground hover:text-surface transition-all text-xs" title="Download"><Download size={13} /></button>
+                              {!isSuppressed && (
+                                <button onClick={() => void shareInvoice(invoice, "whatsapp")} disabled={sharingInvoiceId === invoice.id} className="p-1.5 rounded-lg border border-border-color hover:bg-green-600 hover:text-white transition-all text-xs" title="WhatsApp"><Send size={13} /></button>
+                              )}
+                              {!isSuppressed ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void suppressTenantInvoice(invoice)}
+                                  className="p-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-all text-xs font-semibold"
+                                  title="Suppress invoice to allow generating a new corrected one for this month"
+                                >
+                                  Suppress
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold italic px-1">
+                                  Archived
+                                </span>
                               )}
                             </div>
+                            <div className="flex items-center gap-1.5 relative">
+                              {!isSuppressed && (
+                                <>
+                                  {/* Send to Tenant */}
+                                  <button
+                                    type="button"
+                                    onClick={() => void shareInvoice(invoice, "email")}
+                                    disabled={sharingInvoiceId === invoice.id}
+                                    className="flex items-center gap-1 rounded-lg border border-border-color bg-surface px-2 py-1 text-xs font-bold text-foreground hover:bg-sky-600 hover:text-white transition-all shadow-2xs"
+                                    title="Send to tenant via email"
+                                  >
+                                    <Mail size={12} />
+                                    <span>Send</span>
+                                  </button>
 
-                            {/* Audit Trail button */}
-                            <button
-                              type="button"
-                              onClick={() => setSelectedInvoiceForAudit(invoice)}
-                              className="p-1.5 rounded-lg border border-border-color text-muted hover:text-foreground hover:bg-surface-elevated transition-all"
-                              title="View Invoice Share & Audit Trail"
-                            >
-                              <History size={13} />
-                            </button>
+                                  {/* Share with Staff dropdown */}
+                                  <div className="relative">
+                                    <button
+                                      type="button"
+                                      onClick={() => setOpenStaffDropdownInvoiceId(current => current === invoice.id ? null : invoice.id)}
+                                      className="flex items-center gap-1 rounded-lg border border-border-color bg-surface px-2 py-1 text-xs font-bold text-muted hover:text-foreground transition-all shadow-2xs"
+                                      title="Share with internal company staff"
+                                    >
+                                      <Users size={12} />
+                                      <span>Share</span>
+                                      <ChevronDown size={10} />
+                                    </button>
+
+                                    {openStaffDropdownInvoiceId === invoice.id && (
+                                      <div className="absolute right-0 bottom-full mb-1 z-50 w-56 rounded-xl border border-border-color bg-surface p-1.5 shadow-xl space-y-1 max-h-48 overflow-y-auto">
+                                        <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted border-b border-border-color/50">
+                                          Share with Staff
+                                        </div>
+                                        {companyStaffList.length === 0 ? (
+                                          <div className="p-2 text-[11px] text-muted text-center">No other staff found</div>
+                                        ) : (
+                                          companyStaffList.map((staff) => (
+                                            <button
+                                              key={staff.id || staff.userId}
+                                              type="button"
+                                              onClick={() => void shareInvoiceWithStaff(invoice, staff)}
+                                              className="w-full text-left rounded-lg px-2 py-1.5 text-xs hover:bg-surface-elevated flex items-center justify-between transition"
+                                            >
+                                              <div className="min-w-0 pr-2">
+                                                <p className="font-bold text-foreground truncate">{staff.fullName || staff.email}</p>
+                                                <p className="text-[10px] text-muted truncate">{staff.jobTitle || staff.roleLevel || staff.email}</p>
+                                              </div>
+                                              <Send size={11} className="text-muted shrink-0" />
+                                            </button>
+                                          ))
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+
+                              {/* Audit Trail button */}
+                              <button
+                                type="button"
+                                onClick={() => setSelectedInvoiceForAudit(invoice)}
+                                className="p-1.5 rounded-lg border border-border-color text-muted hover:text-foreground hover:bg-surface-elevated transition-all"
+                                title="View Invoice Share & Audit Trail"
+                              >
+                                <History size={13} />
+                              </button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </section>

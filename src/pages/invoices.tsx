@@ -259,14 +259,16 @@ export default function InvoicesPage() {
       sent: invoices.filter((item) => item.status === "sent").length,
       overdue: invoices.filter((item) => item.status === "overdue").length,
       draft: invoices.filter((item) => item.status === "draft").length,
+      suppressed: invoices.filter((item) => item.status === "suppressed").length,
     }),
     [invoices],
   );
 
-  const totalAmount = useMemo(() => invoices.reduce((sum, item) => sum + item.totalAmount, 0), [invoices]);
+  const activeInvoices = useMemo(() => invoices.filter((item) => item.status !== "suppressed"), [invoices]);
+  const totalAmount = useMemo(() => activeInvoices.reduce((sum, item) => sum + item.totalAmount, 0), [activeInvoices]);
   const totalPaid = useMemo(
-    () => invoices.filter((item) => item.status === "paid").reduce((sum, item) => sum + item.totalAmount, 0),
-    [invoices],
+    () => activeInvoices.filter((item) => item.status === "paid").reduce((sum, item) => sum + item.totalAmount, 0),
+    [activeInvoices],
   );
   const totalOutstanding = totalAmount - totalPaid;
 
@@ -320,6 +322,7 @@ export default function InvoicesPage() {
           .eq("tenant_id", transaction.tenantId)
           .eq("property_id", transaction.propertyId)
           .eq("month", month)
+          .neq("status", "suppressed")
           .limit(1)
           .maybeSingle();
 
@@ -382,6 +385,59 @@ export default function InvoicesPage() {
       return;
     }
     reload();
+  };
+
+  const handleSuppressInvoice = async (row: InvoiceRow) => {
+    const confirmSuppress = window.confirm(
+      `Suppress this invoice for ${row.tenantName} (${row.month})?\n\n` +
+      `• Suppressed invoices remain in system audit logs and records.\n` +
+      `• The invoice will no longer be shareable or active.\n` +
+      `• This allows generating a new, corrected invoice for ${row.month}.`
+    );
+    if (!confirmSuppress) return;
+
+    try {
+      const { error: updateError } = await supabase
+        .from("invoices")
+        .update({ status: "suppressed" })
+        .eq("id", row.id);
+
+      if (updateError) throw updateError;
+
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      await supabase.from("audit_log").insert({
+        user_email: user?.email || "admin@paimbabook.com",
+        user_name: user?.email ?? "Admin",
+        action: "invoice_suppressed",
+        entity_type: "invoice",
+        company_id: compId,
+        details: {
+          invoice_id: row.id,
+          tenant_name: row.tenantName,
+          month: row.month,
+          amount: row.totalAmount,
+          reason: "Suppressed by staff for correction/regeneration",
+        },
+      });
+
+      reload();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to suppress invoice.");
+    }
+  };
+
+  const handleUnsuppressInvoice = async (row: InvoiceRow) => {
+    try {
+      const { error: updateError } = await supabase
+        .from("invoices")
+        .update({ status: "sent" })
+        .eq("id", row.id);
+
+      if (updateError) throw updateError;
+      reload();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to restore invoice.");
+    }
   };
 
   const onDelete = async () => {
@@ -627,7 +683,7 @@ export default function InvoicesPage() {
           <div className="space-y-4 rounded-lg border border-border-color bg-surface p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap gap-2">
-                {(["all", "paid", "sent", "overdue", "draft"] as const).map((key) => (
+                {(["all", "paid", "sent", "overdue", "draft", "suppressed"] as const).map((key) => (
                   <button
                     key={key}
                     type="button"
@@ -635,7 +691,11 @@ export default function InvoicesPage() {
                     className={`rounded-md border border-border-color px-3 py-2 text-sm ${activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"
                       }`}
                   >
-                    {key === "all" ? `All (${counts.all})` : `${key.charAt(0).toUpperCase() + key.slice(1)} (${counts[key]})`}
+                    {key === "all"
+                      ? `All (${counts.all})`
+                      : key === "suppressed"
+                        ? `Suppressed (${counts.suppressed})`
+                        : `${key.charAt(0).toUpperCase() + key.slice(1)} (${counts[key]})`}
                   </button>
                 ))}
               </div>
@@ -675,99 +735,136 @@ export default function InvoicesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.slice(0, invoicesLimit).map((row) => (
-                      <tr key={row.id} className="border-b border-border-color/60">
-                        <td className="px-3 py-3 font-medium">{row.tenantName}</td>
-                        <td className="px-3 py-3 text-muted">{row.propertyName}</td>
-                        <td className="px-3 py-3 text-muted">{row.month}</td>
-                        <td className="px-3 py-3 text-muted">{row.dueDate}</td>
-                        <td className="px-3 py-3 text-muted">{formatCurrency(row.totalAmount)}</td>
-                        <td className="px-3 py-3">
-                          <span
-                            className={`rounded-full border px-2 py-1 text-xs capitalize ${row.status === "paid"
-                                ? "border-green-500/30 bg-green-500/10 text-green-600"
-                                : row.status === "overdue"
-                                  ? "border-red-500/30 bg-red-500/10 text-red-600"
-                                  : "border-border-color bg-surface-elevated text-muted"
-                              }`}
-                          >
-                            {row.status}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void viewInvoice(row)}
-                              className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                    {filtered.slice(0, invoicesLimit).map((row) => {
+                      const isSuppressed = row.status === "suppressed";
+                      return (
+                        <tr key={row.id} className={`border-b border-border-color/60 ${isSuppressed ? "opacity-75 bg-amber-500/[0.02]" : ""}`}>
+                          <td className="px-3 py-3 font-medium">{row.tenantName}</td>
+                          <td className="px-3 py-3 text-muted">{row.propertyName}</td>
+                          <td className="px-3 py-3 text-muted">{row.month}</td>
+                          <td className="px-3 py-3 text-muted">{row.dueDate}</td>
+                          <td className="px-3 py-3 text-muted">{formatCurrency(row.totalAmount)}</td>
+                          <td className="px-3 py-3">
+                            <span
+                              className={`rounded-full border px-2 py-1 text-xs capitalize font-medium ${
+                                row.status === "paid"
+                                  ? "border-green-500/30 bg-green-500/10 text-green-600 font-semibold"
+                                  : row.status === "overdue"
+                                    ? "border-red-500/30 bg-red-500/10 text-red-600 font-semibold"
+                                    : isSuppressed
+                                      ? "border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold"
+                                      : "border-border-color bg-surface-elevated text-muted"
+                                }`}
                             >
-                              View
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleOpenShare(row)}
-                              className="flex items-center gap-1 rounded-md border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-500/20 transition"
-                              title="Email to Owner, Staff, or Custom Email"
-                            >
-                              <Mail size={12} />
-                              <span>Email</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleDownloadRowPdf(row)}
-                              className="flex items-center gap-1 rounded-md border border-border-color px-2 py-1 text-xs text-foreground hover:bg-surface-elevated transition"
-                              title="Download as PDF"
-                            >
-                              <Download size={12} />
-                              <span>PDF</span>
-                            </button>
-                            {row.status !== "paid" && (
+                              {isSuppressed ? "Suppressed (Superseded)" : row.status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="flex flex-wrap gap-2">
                               <button
                                 type="button"
-                                onClick={() => onStatusChange(row.id, "paid")}
+                                onClick={() => void viewInvoice(row)}
                                 className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
                               >
-                                Mark Paid
+                                View
                               </button>
-                            )}
-                            {row.status === "sent" && (
+                              {isSuppressed ? (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="flex items-center gap-1 rounded-md border border-border-color bg-surface px-2 py-1 text-xs font-semibold text-muted opacity-50 cursor-not-allowed"
+                                  title="Suppressed invoices are archived for audit records and cannot be shared"
+                                >
+                                  <Mail size={12} />
+                                  <span>Email (Archived)</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleOpenShare(row)}
+                                  className="flex items-center gap-1 rounded-md border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-500/20 transition"
+                                  title="Email to Owner, Staff, or Custom Email"
+                                >
+                                  <Mail size={12} />
+                                  <span>Email</span>
+                                </button>
+                              )}
                               <button
                                 type="button"
-                                onClick={() => onStatusChange(row.id, "overdue")}
-                                className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                                onClick={() => void handleDownloadRowPdf(row)}
+                                className="flex items-center gap-1 rounded-md border border-border-color px-2 py-1 text-xs text-foreground hover:bg-surface-elevated transition"
+                                title="Download as PDF"
                               >
-                                Mark Overdue
+                                <Download size={12} />
+                                <span>PDF</span>
                               </button>
-                            )}
-                            {row.status === "draft" && (
+                              {!isSuppressed && row.status !== "paid" && (
+                                <button
+                                  type="button"
+                                  onClick={() => onStatusChange(row.id, "paid")}
+                                  className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                                >
+                                  Mark Paid
+                                </button>
+                              )}
+                              {!isSuppressed && row.status === "sent" && (
+                                <button
+                                  type="button"
+                                  onClick={() => onStatusChange(row.id, "overdue")}
+                                  className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                                >
+                                  Mark Overdue
+                                </button>
+                              )}
+                              {!isSuppressed && row.status === "draft" && (
+                                <button
+                                  type="button"
+                                  onClick={() => onStatusChange(row.id, "sent")}
+                                  className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                                >
+                                  Send
+                                </button>
+                              )}
+                              {!isSuppressed && row.status === "paid" && (
+                                <button
+                                  type="button"
+                                  onClick={() => onStatusChange(row.id, "sent")}
+                                  className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                                >
+                                  Revert
+                                </button>
+                              )}
+                              {isSuppressed ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleUnsuppressInvoice(row)}
+                                  className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated transition"
+                                  title="Restore this invoice to active status"
+                                >
+                                  Restore
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleSuppressInvoice(row)}
+                                  className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-600 hover:bg-amber-500/20 transition"
+                                  title="Suppress this invoice so a corrected one can be generated for this month"
+                                >
+                                  Suppress
+                                </button>
+                              )}
                               <button
                                 type="button"
-                                onClick={() => onStatusChange(row.id, "sent")}
+                                onClick={() => setDeleteTarget(row)}
                                 className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
                               >
-                                Send
+                                Delete
                               </button>
-                            )}
-                            {row.status === "paid" && (
-                              <button
-                                type="button"
-                                onClick={() => onStatusChange(row.id, "sent")}
-                                className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
-                              >
-                                Revert
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => setDeleteTarget(row)}
-                              className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
                 {filtered.length > invoicesLimit && (

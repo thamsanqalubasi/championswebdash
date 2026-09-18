@@ -4,6 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { ThemeToggle } from "./theme-toggle";
 import { CheckinModal } from "./checkin-modal";
 import { LeaveRequestModal } from "./leave-request-modal";
+import { ProcurementRequestModal } from "./procurement-request-modal";
 import { NotificationsBell } from "./notifications-modal";
 import { ALL_ROLE_CAPABILITIES, fetchReminderThreshold, saveReminderThreshold, fetchRolePermissions, saveRolePermissions } from "@/lib/data";
 import { useLanguage, LANGUAGE_NAMES, LANGUAGE_FLAGS, type Language } from "@/lib/i18n";
@@ -73,7 +74,7 @@ const allNavSections: NavSection[] = [
   {
     title: "Procurement & Stores",
     items: [
-      { label: "Procurement Hub", href: "/procurement", icon: Truck },
+      { label: "Procurement Hub", href: "/procurement", icon: Truck, departments: ["admin", "procurement", "manager"], permissions: ["manage_procurement"] },
       { label: "Stores & Inventory", href: "/stores", icon: Package, departments: ["admin","stores","procurement","manager","maintenance"], permissions: ["manage_procurement", "manage_maintenance"] },
       { label: "Inventory & Stock", href: "/maintenance/inventory", icon: ClipboardList, departments: ["admin","stores","procurement","manager","maintenance"], permissions: ["manage_procurement", "manage_maintenance"] },
     ],
@@ -187,6 +188,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [checkinOpen, setCheckinOpen] = useState(false);
   const [leaveModalOpen, setLeaveModalOpen] = useState(false);
+  const [procurementModalOpen, setProcurementModalOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [seeRolesOpen, setSeeRolesOpen] = useState(false);
   const [selectedRoleDept, setSelectedRoleDept] = useState<string>("admin");
@@ -521,13 +523,14 @@ export function AppShell({ children }: { children: ReactNode }) {
               >
                 <CalendarClock size={14} className="text-blue-500" /><span>{t("header_request_leave")}</span>
               </button>
-              <Link
-                to="/procurement?create=1"
+              <button
+                type="button"
+                onClick={() => setProcurementModalOpen(true)}
                 className="hidden md:flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-foreground shadow-xs hover:bg-surface hover:border-foreground/30 transition"
-                title="Create Procurement Request"
+                title="Procurement Requisitions & Requests"
               >
                 <Truck size={14} className="text-amber-500" /><span>Procure</span>
-              </Link>
+              </button>
               <ThemeToggle variant="compact" />
               <div className="hidden xl:block max-w-[160px] truncate px-1 py-1 text-xs font-medium text-muted" title={userEmail}>{userEmail}</div>
               <button
@@ -561,6 +564,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <CheckinModal isOpen={checkinOpen} onClose={() => setCheckinOpen(false)} onSuccess={() => {}}/>
       <LeaveRequestModal isOpen={leaveModalOpen} onClose={() => setLeaveModalOpen(false)} />
+      <ProcurementRequestModal open={procurementModalOpen} onClose={() => setProcurementModalOpen(false)} />
 
       {/* ── Mobile Drawer ── */}
       {mobileMenuOpen && (

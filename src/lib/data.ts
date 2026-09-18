@@ -1,5 +1,6 @@
 import type {
   AuditEventRow,
+  CashflowPoint,
   CommercialBooking,
   CommercialRoom,
   Company,
@@ -3702,30 +3703,109 @@ export async function fetchInvoices(companyId?: string): Promise<InvoiceRow[]> {
 }
 
 export async function fetchReportsData(companyId?: string): Promise<ReportsData> {
-  if (!companyId) return { summary: { totalInvoiced: 0, totalPaid: 0, totalOverdue: 0, collectionRate: 0 }, byStatus: [], monthly: [] };
   try {
-    let query = supabase.from("invoices").select("total_amount, status, created_at");
-    query = query.eq("company_id", companyId);
-    const { data: invoices } = await query;
-    const invList = invoices || [];
-    const totalInvoiced = invList.reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
-    const totalPaid = invList.filter((i) => i.status === "paid").reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
-    const totalOverdue = invList.filter((i) => i.status === "overdue").reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
-    const collectionRate = totalInvoiced > 0 ? Math.round((totalPaid / totalInvoiced) * 100) : 0;
+    const validCompId = companyId && isValidUuid(companyId) ? companyId : null;
 
-    const statusCounts = {
-      Paid: invList.filter((i) => i.status === "paid").length,
+    const [invoicesRes, rentRes, bookRes, finRes] = await Promise.allSettled([
+      validCompId
+        ? supabase.from("invoices").select("id, total_amount, status, created_at, due_date, month").eq("company_id", validCompId).neq("status", "suppressed")
+        : supabase.from("invoices").select("id, total_amount, status, created_at, due_date, month").neq("status", "suppressed"),
+      validCompId
+        ? supabase.from("tenant_rent_payments").select("id, amount_paid, payment_date, company_id").eq("company_id", validCompId)
+        : supabase.from("tenant_rent_payments").select("id, amount_paid, payment_date, company_id"),
+      validCompId
+        ? supabase.from("commercial_bookings").select("id, total_amount, paid_amount, payment_status, check_in_date, created_at").eq("company_id", validCompId)
+        : supabase.from("commercial_bookings").select("id, total_amount, paid_amount, payment_status, check_in_date, created_at"),
+      validCompId
+        ? supabase.from("finance_transactions").select("id, amount, type, category, transaction_date, date, created_at").eq("company_id", validCompId)
+        : supabase.from("finance_transactions").select("id, amount, type, category, transaction_date, date, created_at"),
+    ]);
+
+    const invList = invoicesRes.status === "fulfilled" && invoicesRes.value.data ? invoicesRes.value.data : [];
+    const rentList = rentRes.status === "fulfilled" && rentRes.value.data ? rentRes.value.data : [];
+    const bookList = bookRes.status === "fulfilled" && bookRes.value.data ? bookRes.value.data : [];
+    const finList = finRes.status === "fulfilled" && finRes.value.data ? finRes.value.data : [];
+
+    const totalInvoicesAmount = invList.reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
+    const invoicesPaidAmount = invList.filter((i) => i.status === "paid").reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
+    const invoicesOverdueAmount = invList.filter((i) => i.status === "overdue").reduce((acc, i) => acc + Number(i.total_amount || 0), 0);
+
+    const totalRentPaid = rentList.reduce((acc, r) => acc + Number(r.amount_paid || 0), 0);
+    const totalBookingsPaid = bookList.reduce((acc, b) => {
+      const amt = Number(b.paid_amount || (b.payment_status === "paid" ? b.total_amount : 0) || 0);
+      return acc + amt;
+    }, 0);
+    const totalFinIncome = finList
+      .filter((f) => f.type === "income" && !String(f.category || "").toLowerCase().includes("rent"))
+      .reduce((acc, f) => acc + Number(f.amount || 0), 0);
+
+    const totalPaid = Math.max(invoicesPaidAmount, totalRentPaid + totalBookingsPaid + totalFinIncome);
+    const totalInvoiced = Math.max(totalInvoicesAmount, totalPaid);
+    const totalOverdue = invoicesOverdueAmount;
+    const collectionRate = totalInvoiced > 0 ? Math.min(100, Math.round((totalPaid / totalInvoiced) * 100)) : (totalPaid > 0 ? 100 : 0);
+
+    const statusCounts: Record<string, number> = {
+      Paid: invList.filter((i) => i.status === "paid").length || (totalPaid > 0 ? rentList.length || 1 : 0),
       Sent: invList.filter((i) => i.status === "sent").length,
       Draft: invList.filter((i) => i.status === "draft").length,
       Overdue: invList.filter((i) => i.status === "overdue").length,
     };
 
+    // Generate 6-month cashflow timeline
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthly: CashflowPoint[] = [];
+    const now = new Date();
+
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const year = d.getFullYear();
+      const monthNum = String(d.getMonth() + 1).padStart(2, "0");
+      const monthKey = `${year}-${monthNum}`;
+      const label = `${monthNames[d.getMonth()]} ${year}`;
+
+      // Sum rent income in monthKey
+      const rentInMonth = rentList
+        .filter((r) => String(r.payment_date || "").startsWith(monthKey))
+        .reduce((sum, r) => sum + Number(r.amount_paid || 0), 0);
+
+      // Sum booking income in monthKey
+      const bookInMonth = bookList
+        .filter((b) => String(b.check_in_date || b.created_at || "").startsWith(monthKey))
+        .reduce((sum, b) => sum + Number(b.paid_amount || (b.payment_status === "paid" ? b.total_amount : 0) || 0), 0);
+
+      // Sum finance transactions in monthKey
+      const finIncomeInMonth = finList
+        .filter((f) => f.type === "income" && !String(f.category || "").toLowerCase().includes("rent") && String(f.transaction_date || f.date || f.created_at || "").startsWith(monthKey))
+        .reduce((sum, f) => sum + Number(f.amount || 0), 0);
+
+      const finExpensesInMonth = finList
+        .filter((f) => f.type === "expense" && String(f.transaction_date || f.date || f.created_at || "").startsWith(monthKey))
+        .reduce((sum, f) => sum + Number(f.amount || 0), 0);
+
+      // Fallback to paid invoices in that month if rent collections table had no rows
+      const invoicePaidInMonth = invList
+        .filter((inv) => inv.status === "paid" && (String(inv.created_at || "").startsWith(monthKey) || String(inv.month || "") === monthKey))
+        .reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0);
+
+      const monthIncome = Math.max(rentInMonth + bookInMonth + finIncomeInMonth, invoicePaidInMonth);
+      const monthExpenses = finExpensesInMonth;
+
+      monthly.push({
+        month: monthKey,
+        label,
+        income: monthIncome,
+        expenses: monthExpenses,
+        profit: monthIncome - monthExpenses,
+      });
+    }
+
     return {
       summary: { totalInvoiced, totalPaid, totalOverdue, collectionRate },
       byStatus: Object.entries(statusCounts).map(([label, count]) => ({ label, count })),
-      monthly: [],
+      monthly,
     };
-  } catch {
+  } catch (err) {
+    console.warn("fetchReportsData error:", err);
     return {
       summary: { totalInvoiced: 0, totalPaid: 0, totalOverdue: 0, collectionRate: 0 },
       byStatus: [],

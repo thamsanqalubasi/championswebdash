@@ -420,6 +420,7 @@ export type InvoiceStatus =
   | "sent"
   | "paid"
   | "overdue"
+  | "suppressed"
   | string;
 
 export type InvoiceRow = {
