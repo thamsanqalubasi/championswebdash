@@ -388,7 +388,7 @@ export default function ContractsPage() {
   const [printingId, setPrintingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ContractRow | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
+  const [properties, setProperties] = useState<Array<{ id: string; name: string; address?: string; city?: string }>>([]);
   const [tenants, setTenants] = useState<Array<{ id: string; full_name: string }>>([]);
   const [tenantContacts, setTenantContacts] = useState<TenantContact[]>([]);
   const [contractDocumentUrlById, setContractDocumentUrlById] = useState<Record<string, string>>({});
@@ -439,8 +439,13 @@ export default function ContractsPage() {
     alert("Landlord information saved successfully!");
   };
 
-  /* ── tenant -> property map ── */
-  const [tenantPropertyMap, setTenantPropertyMap] = useState<Record<string, { property_id: string; property_name: string }>>({});
+  /* ── tenant -> property map (with address) ── */
+  const [tenantPropertyMap, setTenantPropertyMap] = useState<Record<string, { property_id: string; property_name: string; property_address: string }>>({});
+
+  const buildPropertyDescriptionClause = (propName: string, propAddress?: string) => {
+    const addressPart = propAddress ? `, located at <strong>${propAddress}</strong>.` : ".";
+    return `<p style="text-align: justify;">The Landlord lets to the Lessee, who hires, the following property ("<strong>The Property</strong>"):</p><p style="text-align: justify;"><strong>${propName}</strong>${addressPart}</p>`;
+  };
 
   /* ── load contracts + lookups ── */
   useEffect(() => {
@@ -452,8 +457,8 @@ export default function ContractsPage() {
         const result = await fetchContractsData(compId);
         if (!cancelled) setContracts(result);
         
-        let propsQuery = supabase.from("properties").select("id, name").order("name");
-        let tensQuery = supabase.from("tenants").select("id, full_name, email, phone, whatsapp_number, property_id, properties(name)").order("full_name");
+        let propsQuery = supabase.from("properties").select("id, name, address, city").order("name");
+        let tensQuery = supabase.from("tenants").select("id, full_name, email, phone, whatsapp_number, property_id, properties(id, name, address, city)").order("full_name");
         let contractsQuery = supabase.from("contracts").select("id, document_url, title");
 
         if (isValidUuid(compId)) {
@@ -469,7 +474,7 @@ export default function ContractsPage() {
           supabase.from("contract_sections").select("contract_id, sort_order, title, content").order("sort_order"),
         ]);
         if (!cancelled) {
-          if (props) setProperties(props.map((p) => ({ id: String(p.id), name: String(p.name) })));
+          if (props) setProperties(props.map((p: any) => ({ id: String(p.id), name: String(p.name), address: p.address ? String(p.address) : undefined, city: p.city ? String(p.city) : undefined })));
           if (tens) {
             setTenants(tens.map((t) => ({ id: String(t.id), full_name: String(t.full_name) })));
             setTenantContacts(tens.map((t) => ({
@@ -480,12 +485,15 @@ export default function ContractsPage() {
               whatsapp_number: String((t as Record<string, unknown>).whatsapp_number ?? ""),
             })));
             // Build tenant -> property map for auto-fill
-            const tpMap: Record<string, { property_id: string; property_name: string }> = {};
+            const tpMap: Record<string, { property_id: string; property_name: string; property_address: string }> = {};
             tens.forEach((t: any) => {
               if (t.property_id) {
+                const prop = t.properties as { name?: string; address?: string; city?: string } | null;
+                const addrParts = [prop?.address, prop?.city].filter(Boolean).join(", ");
                 tpMap[String(t.id)] = {
                   property_id: String(t.property_id),
-                  property_name: String(t.properties?.name || "Assigned Property"),
+                  property_name: String(prop?.name || "Assigned Property"),
+                  property_address: addrParts || (prop?.address ? String(prop.address) : ""),
                 };
               }
             });
@@ -501,9 +509,13 @@ export default function ContractsPage() {
             allSections.forEach((s) => {
               const title = String(s.title);
               if (title.toLowerCase().includes("parties and contact")) return;
+              let content = String(s.content);
+              if (content.includes("J. James") || content.includes("Khomasdal")) {
+                content = `<p style="text-align: justify;">The Landlord lets to the Lessee, who hires, the following property ("<strong>The Property</strong>"):</p><p style="text-align: justify;"><strong>Residential Accommodation Unit</strong>, located at the designated premises address specified in the lease schedule.</p>`;
+              }
               const cid = String((s as Record<string, unknown>).contract_id ?? "");
               if (!sMap[cid]) sMap[cid] = [];
-              sMap[cid].push({ title, content: String(s.content) });
+              sMap[cid].push({ title, content });
             });
             setContractSectionsById(sMap);
           }
@@ -530,6 +542,10 @@ export default function ContractsPage() {
         // Purge any legacy 'Parties and Contact Details' sections from the database
         void supabase.from("contract_template_sections").delete().ilike("title", "%parties and contact%");
         void supabase.from("contract_sections").delete().ilike("title", "%parties and contact%");
+        // Purge hardcoded J. James / Khomasdal addresses from template sections in DB
+        const cleanPropertyClause = `<p style="text-align: justify;">The Landlord lets to the Lessee, who hires, the following property ("<strong>The Property</strong>"):</p><p style="text-align: justify;"><strong>Residential Accommodation Unit</strong>, located at the designated premises address specified in the lease schedule.</p>`;
+        void supabase.from("contract_template_sections").update({ content: cleanPropertyClause }).ilike("content", "%J. James%");
+        void supabase.from("contract_sections").update({ content: cleanPropertyClause }).ilike("content", "%J. James%");
 
         let tplsQuery = supabase.from("contract_templates").select("id, title, description, is_default, company_id").order("created_at", { ascending: false });
         if (isValidUuid(compId)) {
@@ -544,9 +560,13 @@ export default function ContractsPage() {
           (tplSections ?? []).forEach((s) => {
             const title = String(s.title);
             if (title.toLowerCase().includes("parties and contact")) return;
+            let content = String(s.content);
+            if (content.includes("J. James") || content.includes("Khomasdal")) {
+              content = cleanPropertyClause;
+            }
             const tid = String((s as Record<string, unknown>).template_id ?? "");
             if (!sectionMap[tid]) sectionMap[tid] = [];
-            sectionMap[tid].push({ title, content: String(s.content) });
+            sectionMap[tid].push({ title, content });
           });
           setTemplates(tpls.map((t) => ({
             id: String(t.id),
@@ -602,7 +622,16 @@ export default function ContractsPage() {
     if (defaultTpl) {
       const filteredSections = defaultTpl.sections
         .filter((s) => !s.title.toLowerCase().includes("parties and contact"))
-        .map((s) => ({ ...s }));
+        .map((s) => {
+          if (s.title.toLowerCase().includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal")) {
+            return {
+              ...s,
+              title: "Property Description",
+              content: `<p style="text-align: justify;">The Landlord lets to the Lessee, who hires, the following property ("<strong>The Property</strong>"):</p><p style="text-align: justify;"><strong>Residential Accommodation Unit</strong>, located at the designated premises address specified in the lease schedule.</p>`,
+            };
+          }
+          return { ...s };
+        });
       setForm({
         ...emptyContractForm,
         template_id: defaultTpl.id,
@@ -619,9 +648,21 @@ export default function ContractsPage() {
 
   const openEdit = (row: ContractRow) => {
     setEditingId(row.id);
+    const matchedProp = properties.find((p) => p.name === row.propertyName);
+    const matchedPropAddr = matchedProp ? [matchedProp.address, matchedProp.city].filter(Boolean).join(", ") : "";
+
     const sections = (contractSectionsById[row.id] ?? []).filter(
       (s) => !s.title.toLowerCase().includes("parties and contact")
-    );
+    ).map((s) => {
+      if (s.title.toLowerCase().includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal")) {
+        return {
+          ...s,
+          title: "Property Description",
+          content: buildPropertyDescriptionClause(row.propertyName || matchedProp?.name || "The Property", matchedPropAddr),
+        };
+      }
+      return { ...s };
+    });
     setForm({
       tenant_id: "", property_id: "", template_id: "",
       title: "Lease Agreement",
@@ -636,9 +677,34 @@ export default function ContractsPage() {
   const onTemplateSelect = (templateId: string) => {
     const tpl = templates.find((t) => t.id === templateId);
     if (!tpl) return;
+
+    let activePropName = "";
+    let activePropAddr = "";
+    if (form.tenant_id && tenantPropertyMap[form.tenant_id]) {
+      activePropName = tenantPropertyMap[form.tenant_id].property_name;
+      activePropAddr = tenantPropertyMap[form.tenant_id].property_address;
+    } else if (form.property_id) {
+      const found = properties.find((p) => p.id === form.property_id);
+      if (found) {
+        activePropName = found.name;
+        activePropAddr = [found.address, found.city].filter(Boolean).join(", ");
+      }
+    }
+
     const filteredSections = tpl.sections
       .filter((s) => !s.title.toLowerCase().includes("parties and contact"))
-      .map((s) => ({ ...s }));
+      .map((s) => {
+        if (s.title.toLowerCase().includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal")) {
+          return {
+            ...s,
+            title: "Property Description",
+            content: activePropName
+              ? buildPropertyDescriptionClause(activePropName, activePropAddr)
+              : `<p style="text-align: justify;">The Landlord lets to the Lessee, who hires, the following property ("<strong>The Property</strong>"):</p><p style="text-align: justify;"><strong>Residential Accommodation Unit</strong>, located at the designated premises address specified in the lease schedule.</p>`,
+          };
+        }
+        return { ...s };
+      });
     setForm((prev) => ({
       ...prev,
       template_id: templateId,
@@ -732,9 +798,22 @@ export default function ContractsPage() {
   const getTenantContact = (row: ContractRow) => tenantContacts.find((t) => t.full_name === row.tenantName);
 
   const generateContractHtml = async (row: ContractRow) => {
-    const sections = (contractSectionsById[row.id] ?? []).filter(
+    const rawSections = (contractSectionsById[row.id] ?? []).filter(
       (s) => !s.title.toLowerCase().includes("parties and contact")
     );
+    const matchedProp = properties.find((p) => p.name === row.propertyName);
+    const matchedPropAddr = matchedProp ? [matchedProp.address, matchedProp.city].filter(Boolean).join(", ") : "";
+
+    const sections = rawSections.map((s) => {
+      if (s.title.toLowerCase().includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal")) {
+        return {
+          ...s,
+          title: "Property Description",
+          content: buildPropertyDescriptionClause(row.propertyName || matchedProp?.name || "The Property", matchedPropAddr),
+        };
+      }
+      return s;
+    });
     const [company, admin] = await Promise.all([fetchCompanyInfo(currentCompany?.id), fetchAdminInfo(user?.email ?? undefined)]);
     
     // Use pre-saved Landlord details from database/settings if available
@@ -865,7 +944,13 @@ export default function ContractsPage() {
     setEditingTemplateId(tpl.id);
     const filteredSections = tpl.sections
       .filter((s) => !s.title.toLowerCase().includes("parties and contact"))
-      .map((s) => ({ ...s }));
+      .map((s) => {
+        let content = s.content;
+        if (content.includes("J. James") || content.includes("Khomasdal")) {
+          content = `<p style="text-align: justify;">The Landlord lets to the Lessee, who hires, the following property ("<strong>The Property</strong>"):</p><p style="text-align: justify;"><strong>Residential Accommodation Unit</strong>, located at the designated premises address specified in the lease schedule.</p>`;
+        }
+        return { ...s, content };
+      });
     setTemplateForm({
       title: tpl.title,
       description: tpl.description,
@@ -886,7 +971,7 @@ export default function ContractsPage() {
     setSavingTemplate(true);
     try {
       const templateContent = templateForm.sections
-        .filter((section) => section.title.trim() || section.content.trim())
+        .filter((section) => section.title.trim() && !section.title.toLowerCase().includes("parties and contact"))
         .map((section) => `${section.title}\n${section.content}`)
         .join("\n\n");
 
@@ -913,7 +998,15 @@ export default function ContractsPage() {
       // Save sections
       if (templateId) {
         await supabase.from("contract_template_sections").delete().eq("template_id", templateId);
-        const validSections = templateForm.sections.filter((s) => s.title.trim());
+        const validSections = templateForm.sections
+          .filter((s) => s.title.trim() && !s.title.toLowerCase().includes("parties and contact"))
+          .map((s) => {
+            let content = s.content;
+            if (content.includes("J. James") || content.includes("Khomasdal")) {
+              content = `<p style="text-align: justify;">The Landlord lets to the Lessee, who hires, the following property ("<strong>The Property</strong>"):</p><p style="text-align: justify;"><strong>Residential Accommodation Unit</strong>, located at the designated premises address specified in the lease schedule.</p>`;
+            }
+            return { ...s, content };
+          });
         if (validSections.length > 0) {
           const { error: secErr } = await supabase.from("contract_template_sections").insert(
             validSections.map((s, i) => ({
@@ -1328,12 +1421,29 @@ export default function ContractsPage() {
                         onChange={(e) => {
                           const tid = e.target.value;
                           const propInfo = tenantPropertyMap[tid];
-                          setForm((prev) => ({
-                            ...prev,
-                            tenant_id: tid,
-                            // Auto-fill property if tenant has an assigned property
-                            property_id: propInfo ? propInfo.property_id : prev.property_id,
-                          }));
+                          const selectedPropId = propInfo ? propInfo.property_id : form.property_id;
+                          const selectedPropName = propInfo ? propInfo.property_name : (properties.find((p) => p.id === selectedPropId)?.name || "");
+                          const selectedPropAddr = propInfo ? propInfo.property_address : ([properties.find((p) => p.id === selectedPropId)?.address, properties.find((p) => p.id === selectedPropId)?.city].filter(Boolean).join(", "));
+
+                          setForm((prev) => {
+                            let updatedSections = prev.sections;
+                            if (selectedPropName) {
+                              const hasPropSec = updatedSections.some((s) => s.title.toLowerCase().includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal"));
+                              if (hasPropSec) {
+                                updatedSections = updatedSections.map((s) =>
+                                  s.title.toLowerCase().includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal")
+                                    ? { ...s, title: "Property Description", content: buildPropertyDescriptionClause(selectedPropName, selectedPropAddr) }
+                                    : s
+                                );
+                              }
+                            }
+                            return {
+                              ...prev,
+                              tenant_id: tid,
+                              property_id: selectedPropId,
+                              sections: updatedSections,
+                            };
+                          });
                         }}
                         className={inputClass}
                       >
@@ -1349,7 +1459,35 @@ export default function ContractsPage() {
                     </div>
                     <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30">
                       <label className="mb-2 block text-[10px] font-bold text-muted/60 uppercase">Property Unit</label>
-                      <select value={form.property_id} onChange={(e) => setForm({ ...form, property_id: e.target.value })} className={inputClass}>
+                      <select
+                        value={form.property_id}
+                        onChange={(e) => {
+                          const pid = e.target.value;
+                          const prop = properties.find((p) => p.id === pid);
+                          const propName = prop ? prop.name : "";
+                          const propAddr = prop ? [prop.address, prop.city].filter(Boolean).join(", ") : "";
+
+                          setForm((prev) => {
+                            let updatedSections = prev.sections;
+                            if (propName) {
+                              const hasPropSec = updatedSections.some((s) => s.title.toLowerCase().includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal"));
+                              if (hasPropSec) {
+                                updatedSections = updatedSections.map((s) =>
+                                  s.title.toLowerCase().includes("property description") || s.content.includes("J. James") || s.content.includes("Khomasdal")
+                                    ? { ...s, title: "Property Description", content: buildPropertyDescriptionClause(propName, propAddr) }
+                                    : s
+                                );
+                              }
+                            }
+                            return {
+                              ...prev,
+                              property_id: pid,
+                              sections: updatedSections,
+                            };
+                          });
+                        }}
+                        className={inputClass}
+                      >
                         <option value="">Select unit...</option>{properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>

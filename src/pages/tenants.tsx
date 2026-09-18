@@ -965,8 +965,9 @@ export default function TenantsPage() {
   const handleSaveRentPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!detailsRow) return;
-    if (!rentRecordForm.amountPaid || Number(rentRecordForm.amountPaid) <= 0) {
-      alert("Please enter a valid payment amount.");
+    const numAmount = Number(rentRecordForm.amountPaid);
+    if (!numAmount || numAmount <= 0 || isNaN(numAmount)) {
+      alert("Please enter a valid payment amount greater than 0. Rent collection cannot be 0.");
       return;
     }
 
@@ -989,72 +990,56 @@ export default function TenantsPage() {
         .filter(Boolean)
         .join(" | ");
 
-      // ── Strategy 1: full payload with all optional columns ──
-      const fullPayload: Record<string, any> = {
+      // Valid columns in tenant_rent_payments table:
+      // id, tenant_id, payment_date, amount_paid, paid_months, notes, payment_method, company_id, executed_by_name, pop_url, pop_uploaded_by_name, pop_uploaded_at
+      // Note: property_id DOES NOT exist on tenant_rent_payments!
+      const paymentPayload: Record<string, any> = {
         tenant_id: detailsRow.id,
         payment_date: rentRecordForm.paymentDate,
-        amount_paid: Number(rentRecordForm.amountPaid),
+        amount_paid: numAmount,
+        paid_months: [rentRecordForm.paidMonth || new Date().toISOString().slice(0, 7)],
+        payment_method: rentRecordForm.paymentMethod || "EFT / Bank Transfer",
         notes: notesPayload,
       };
-      if (propId) fullPayload.property_id = propId;
-      if (compId) fullPayload.company_id = compId;
-
-      // Optional extended columns — add only if they may exist
-      try { fullPayload.paid_months = [rentRecordForm.paidMonth]; } catch { /**/ }
-      try { fullPayload.payment_method = rentRecordForm.paymentMethod; } catch { /**/ }
+      if (compId) paymentPayload.company_id = compId;
+      if (staffName) paymentPayload.executed_by_name = staffName;
       if (rentRecordForm.receiptUrl) {
-        fullPayload.pop_url = rentRecordForm.receiptUrl;
-        fullPayload.pop_uploaded_by_name = staffName;
-        fullPayload.pop_uploaded_at = new Date().toISOString();
+        paymentPayload.pop_url = rentRecordForm.receiptUrl;
+        paymentPayload.pop_uploaded_by_name = staffName;
+        paymentPayload.pop_uploaded_at = new Date().toISOString();
       }
 
       let insertedPayment: any = null;
 
       const { data: d1, error: e1 } = await supabase
         .from("tenant_rent_payments")
-        .insert(fullPayload)
+        .insert(paymentPayload)
         .select()
         .single();
 
       if (!e1) {
         insertedPayment = d1;
       } else {
-        console.warn("Full payload failed:", e1.message || JSON.stringify(e1), "– trying minimal payload");
-
-        // ── Strategy 2: minimal payload (guaranteed columns) ──
-        const minimalPayload: Record<string, any> = {
+        console.warn("Standard insert failed:", e1.message || JSON.stringify(e1), "– trying fallback");
+        const fallbackPayload: Record<string, any> = {
           tenant_id: detailsRow.id,
           payment_date: rentRecordForm.paymentDate,
-          amount_paid: Number(rentRecordForm.amountPaid),
+          amount_paid: numAmount,
+          paid_months: [rentRecordForm.paidMonth || new Date().toISOString().slice(0, 7)],
           notes: notesPayload,
         };
-        if (propId) minimalPayload.property_id = propId;
-        if (compId) minimalPayload.company_id = compId;
-
+        if (compId) fallbackPayload.company_id = compId;
         const { data: d2, error: e2 } = await supabase
           .from("tenant_rent_payments")
-          .insert(minimalPayload)
+          .insert(fallbackPayload)
           .select()
           .single();
 
-        if (!e2) {
-          insertedPayment = d2;
-        } else {
-          console.warn("Minimal payload failed:", e2.message || JSON.stringify(e2), "– trying bare minimum");
-
-          // ── Strategy 3: absolute bare minimum ──
-          const { data: d3, error: e3 } = await supabase
-            .from("tenant_rent_payments")
-            .insert({ tenant_id: detailsRow.id, payment_date: rentRecordForm.paymentDate, amount_paid: Number(rentRecordForm.amountPaid) })
-            .select()
-            .single();
-
-          if (e3) {
-            const realMsg = e3.message || e3.details || e3.hint || JSON.stringify(e3);
-            throw new Error(`DB error: ${realMsg}`);
-          }
-          insertedPayment = d3;
+        if (e2) {
+          const realMsg = e2.message || e2.details || e2.hint || JSON.stringify(e2);
+          throw new Error(`DB error: ${realMsg}`);
         }
+        insertedPayment = d2;
       }
 
       // Proof of payment record (non-fatal)
@@ -2464,7 +2449,7 @@ export default function TenantsPage() {
             </button>
             <button
               type="submit"
-              disabled={recordingPayment || uploadingReceipt}
+              disabled={recordingPayment || uploadingReceipt || !rentRecordForm.amountPaid || Number(rentRecordForm.amountPaid) <= 0}
               className="flex items-center gap-2 rounded-lg bg-foreground px-5 py-2 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50"
             >
               <CreditCard size={15} />

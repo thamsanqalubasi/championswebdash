@@ -410,8 +410,8 @@ export default function RentCollectionPage() {
       return;
     }
     const numAmount = Number(paymentForm.amountPaid);
-    if (!numAmount || numAmount <= 0) {
-      alert("Enter a valid payment amount.");
+    if (!numAmount || numAmount <= 0 || isNaN(numAmount)) {
+      alert("Enter a valid payment amount greater than 0. Rent collection cannot be 0.");
       return;
     }
     setSaving(true);
@@ -424,7 +424,7 @@ export default function RentCollectionPage() {
       if (popFile) {
         try {
           popUrl = await uploadFileToBucket(
-            "tenants",
+            "payment-proofs",
             `pop/${selectedTenant.id}`,
             popFile
           );
@@ -433,9 +433,10 @@ export default function RentCollectionPage() {
         }
       }
 
+      // tenant_rent_payments columns: id, tenant_id, payment_date, amount_paid, paid_months, notes, payment_method, company_id, executed_by_name, pop_url
+      // Note: property_id DOES NOT exist on tenant_rent_payments table!
       const paymentPayload: Record<string, unknown> = {
         tenant_id: selectedTenant.id,
-        property_id: selectedTenant.propertyId,
         payment_date: paymentForm.paymentDate,
         amount_paid: numAmount,
         payment_method: paymentForm.paymentMethod,
@@ -464,7 +465,6 @@ export default function RentCollectionPage() {
         console.warn("Primary insert failed, attempting fallback:", insertErr);
         const fallbackPayload: Record<string, unknown> = {
           tenant_id: selectedTenant.id,
-          property_id: selectedTenant.propertyId,
           payment_date: paymentForm.paymentDate,
           amount_paid: numAmount,
           paid_months: [paymentForm.paidMonth],
@@ -543,8 +543,8 @@ export default function RentCollectionPage() {
       const { payment, tenant } = selectedPaymentDetail;
 
       const popUrl = await uploadFileToBucket(
-        "tenants",
-        `pop/${payment.tenantId}`,
+        "payment-proofs",
+        `retro-pop/${payment.id}`,
         retroPopFile
       );
 
@@ -1067,7 +1067,7 @@ export default function RentCollectionPage() {
             <button
               type="button"
               onClick={onSavePayment}
-              disabled={saving}
+              disabled={saving || !paymentForm.amountPaid || Number(paymentForm.amountPaid) <= 0}
               className="rounded-lg bg-foreground px-6 py-2 text-sm font-black text-surface hover:opacity-90 disabled:opacity-50 shadow-md transition"
             >
               {saving ? "Recording..." : "Record Rent Payment"}
