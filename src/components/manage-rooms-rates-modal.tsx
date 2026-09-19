@@ -701,7 +701,6 @@ export function ManageRoomsRatesModal({
                               /* ====== GRID VIEW ====== */
                               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                 {floorRooms.map((room) => {
-                                  const isEditing = editingRoomId === room.id;
                                   const isOverdue = overdueRoomsMap[room.id];
 
                                   return (
@@ -710,354 +709,73 @@ export function ManageRoomsRatesModal({
                                       className={`rounded-xl border p-4 transition ${
                                         isOverdue
                                           ? "border-red-500/40 bg-red-500/5 ring-2 ring-red-500/20"
-                                          : isEditing
-                                          ? "border-purple-500 bg-purple-500/5 shadow-md"
                                           : "border-border-color bg-surface-elevated/30 hover:border-purple-500/30"
                                       }`}
                                     >
-                                      {isEditing ? (
-                                        /* Inline Room Editor */
-                                        <div className="space-y-3">
-                                          <div className="flex items-center justify-between">
-                                            <span className="text-xs font-black text-purple-600 uppercase">
-                                              Edit Room {roomEditForm.roomNumber}
-                                            </span>
-                                            <button
-                                              type="button"
-                                              onClick={cancelEditRoom}
-                                              className="text-muted hover:text-foreground"
-                                            >
-                                              <X size={14} />
-                                            </button>
-                                          </div>
-
-                                          <div>
-                                            <label className="text-[10px] font-bold text-muted uppercase">Room #</label>
-                                            <input
-                                              type="text"
-                                              value={roomEditForm.roomNumber || ""}
-                                              onChange={(e) => setRoomEditForm({ ...roomEditForm, roomNumber: e.target.value })}
-                                              className="w-full rounded-lg border border-border-color bg-surface px-2.5 py-1.5 text-xs text-foreground outline-none"
-                                            />
-                                          </div>
-
-                                          <div className="grid grid-cols-2 gap-2">
-                                            <div>
-                                              <label className="text-[10px] font-bold text-muted uppercase">Type</label>
-                                              <select
-                                                value={roomEditForm.roomType || "standard"}
-                                                onChange={(e) => setRoomEditForm({ ...roomEditForm, roomType: e.target.value as RoomType })}
-                                                className="w-full rounded-lg border border-border-color bg-surface px-2 py-1.5 text-xs text-foreground outline-none capitalize"
-                                              >
-                                                <option value="standard">Standard</option>
-                                                <option value="deluxe">Deluxe</option>
-                                                <option value="executive_suite">Executive Suite</option>
-                                                <option value="family_room">Family Room</option>
-                                                <option value="penthouse">Penthouse</option>
-                                              </select>
-                                            </div>
-
-                                            <div>
-                                              <label className="text-[10px] font-bold text-muted uppercase">Status</label>
-                                              <select
-                                                value={roomEditForm.status || "available"}
-                                                onChange={(e) => setRoomEditForm({ ...roomEditForm, status: e.target.value as RoomStatus })}
-                                                className="w-full rounded-lg border border-border-color bg-surface px-2 py-1.5 text-xs text-foreground outline-none capitalize"
-                                              >
-                                                <option value="available">Available</option>
-                                                <option value="occupied">Occupied</option>
-                                                <option value="cleaning_needed">Cleaning Needed</option>
-                                                <option value="maintenance">Maintenance</option>
-                                                <option value="reserved">Reserved</option>
-                                              </select>
-                                            </div>
-                                          </div>
-
-                                          <div>
-                                            <label className="text-[10px] font-bold text-muted uppercase">Nightly Rate (NAD)</label>
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              value={roomEditForm.pricePerNight ?? 0}
-                                              onChange={(e) => setRoomEditForm({ ...roomEditForm, pricePerNight: Number(e.target.value) })}
-                                              className="w-full rounded-lg border border-border-color bg-surface px-2.5 py-1.5 text-xs text-foreground outline-none"
-                                            />
-                                          </div>
-
-                                           {/* Booking Channel for this Room */}
-                                           <div className="rounded-lg border border-border-color bg-surface/50 p-2.5 space-y-2">
-                                             <label className="text-[10px] font-bold text-muted uppercase block">
-                                               Booking Channel
-                                             </label>
-                                             <div className="grid grid-cols-2 gap-1.5">
-                                               <button
-                                                 type="button"
-                                                 onClick={() => setRoomEditForm({ ...roomEditForm, bookingMode: "platform" })}
-                                                 className={`flex flex-col items-start p-2 rounded-lg border text-left text-[11px] transition ${
-                                                   (roomEditForm.bookingMode || "platform") === "platform"
-                                                     ? "border-blue-600 bg-blue-600/10 text-blue-700 dark:text-blue-400 font-semibold"
-                                                     : "border-border-color bg-surface text-muted hover:border-blue-400/50"
-                                                 }`}
-                                               >
-                                                 <span className="font-bold">🏨 Paimbabook</span>
-                                                 <span className="text-[9px] text-muted">Native booking</span>
-                                               </button>
-                                               <button
-                                                 type="button"
-                                                 onClick={() => setRoomEditForm({ ...roomEditForm, bookingMode: "external" })}
-                                                 className={`flex flex-col items-start p-2 rounded-lg border text-left text-[11px] transition ${
-                                                   roomEditForm.bookingMode === "external"
-                                                     ? "border-indigo-600 bg-indigo-600/10 text-indigo-700 dark:text-indigo-400 font-semibold"
-                                                     : "border-border-color bg-surface text-muted hover:border-indigo-400/50"
-                                                 }`}
-                                               >
-                                                 <span className="font-bold flex items-center gap-1">
-                                                   <ExternalLink size={10} /> Custom Link
-                                                 </span>
-                                                 <span className="text-[9px] text-muted">Direct / Affiliate</span>
-                                               </button>
-                                             </div>
-                                             {roomEditForm.bookingMode === "external" && (
-                                               <div className="pt-1">
-                                                 <label className="text-[9px] text-muted block mb-0.5">External Booking URL *</label>
-                                                 <input
-                                                   type="url"
-                                                   placeholder="https://example.com/book or affiliate link"
-                                                   value={roomEditForm.externalBookingUrl || ""}
-                                                   onChange={(e) => setRoomEditForm({ ...roomEditForm, externalBookingUrl: e.target.value })}
-                                                   className="w-full rounded border border-border-color bg-surface px-2 py-1 text-xs text-foreground outline-none focus:border-indigo-600"
-                                                   required
-                                                 />
-                                               </div>
-                                             )}
-                                           </div>
-
-                                           {/* Promotional Discount */}
-                                           <div className="rounded-lg border border-border-color bg-surface/50 p-2.5 space-y-2">
-                                             <div className="flex items-center justify-between">
-                                               <label className="text-[10px] font-bold text-muted uppercase flex items-center gap-1">
-                                                 <Sparkles size={11} className="text-amber-500" /> Promotional Discount
-                                               </label>
-                                               {Number(roomEditForm.discountPercentage) > 0 ? (
-                                                 <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-black text-amber-600">
-                                                   {roomEditForm.discountPercentage}% OFF
-                                                 </span>
-                                               ) : (
-                                                 <span className="text-[9px] text-muted font-semibold">Inactive</span>
-                                               )}
-                                             </div>
-
-                                             {/* Movable Bar (Slider) from 5% to 100% */}
-                                             <div className="space-y-1">
-                                               <input
-                                                 type="range"
-                                                 min="0"
-                                                 max="100"
-                                                 step="5"
-                                                 value={roomEditForm.discountPercentage || 0}
-                                                 onChange={(e) => {
-                                                   setRoomEditForm({ ...roomEditForm, discountPercentage: Number(e.target.value) });
-                                                   setRoomDiscountPinError(null);
-                                                 }}
-                                                 className="w-full accent-amber-600 cursor-pointer h-1.5 bg-border-color rounded-lg appearance-none"
-                                               />
-                                               <div className="flex justify-between text-[8px] text-muted font-semibold">
-                                                 <span>0%</span>
-                                                 <span>25%</span>
-                                                 <span>50%</span>
-                                                 <span>75%</span>
-                                                 <span>100%</span>
-                                               </div>
-                                             </div>
-
-                                             {/* Presets */}
-                                             <div className="flex flex-wrap gap-1">
-                                               {[0, 5, 10, 15, 20, 25, 50, 75].map((pct) => (
-                                                 <button
-                                                   key={pct}
-                                                   type="button"
-                                                   onClick={() => {
-                                                     setRoomEditForm({ ...roomEditForm, discountPercentage: pct });
-                                                     setRoomDiscountPinError(null);
-                                                   }}
-                                                   className={`rounded px-1.5 py-0.5 text-[10px] font-bold transition ${
-                                                     roomEditForm.discountPercentage === pct
-                                                       ? "bg-amber-600 text-white"
-                                                       : "border border-border-color bg-surface text-muted hover:border-amber-500"
-                                                   }`}
-                                                 >
-                                                   {pct === 0 ? "Off" : `${pct}%`}
-                                                 </button>
-                                               ))}
-                                             </div>
-
-                                             <div className="grid grid-cols-2 gap-1.5 pt-1">
-                                               <div>
-                                                 <label className="text-[9px] text-muted block mb-0.5">Start Date</label>
-                                                 <input
-                                                   type="date"
-                                                   value={roomEditForm.discountStartDate ?? ""}
-                                                   onChange={(e) => setRoomEditForm({ ...roomEditForm, discountStartDate: e.target.value })}
-                                                   className="w-full rounded border border-border-color bg-surface px-1 py-1 text-[11px] text-foreground outline-none"
-                                                 />
-                                               </div>
-                                               <div>
-                                                 <label className="text-[9px] text-muted block mb-0.5">End Date</label>
-                                                 <input
-                                                   type="date"
-                                                   value={roomEditForm.discountEndDate ?? ""}
-                                                   onChange={(e) => setRoomEditForm({ ...roomEditForm, discountEndDate: e.target.value })}
-                                                   className="w-full rounded border border-border-color bg-surface px-1 py-1 text-[11px] text-foreground outline-none"
-                                                 />
-                                               </div>
-                                             </div>
-
-                                             {/* PIN Confirmation prompt if discount > 0 */}
-                                             {Number(roomEditForm.discountPercentage) > 0 && (
-                                               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 space-y-1.5 mt-2">
-                                                 <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 text-[11px] font-bold">
-                                                   <KeyRound size={12} />
-                                                   <span>PIN Required to Set Discount</span>
-                                                 </div>
-                                                 <p className="text-[10px] text-muted leading-tight">
-                                                   Confirm setting <strong>{roomEditForm.discountPercentage}% discount</strong> on Room <strong>{roomEditForm.roomNumber}</strong>:
-                                                 </p>
-                                                 <input
-                                                   type="password"
-                                                   maxLength={8}
-                                                   value={roomDiscountPin}
-                                                   onChange={(e) => {
-                                                     setRoomDiscountPin(e.target.value);
-                                                     setRoomDiscountPinError(null);
-                                                   }}
-                                                   placeholder="PIN (default 1234)"
-                                                   className="w-full rounded border border-border-color bg-surface px-2 py-1 text-xs text-foreground tracking-widest outline-none focus:border-amber-500"
-                                                 />
-                                                 {roomDiscountPinError && (
-                                                   <p className="text-[10px] text-red-600 font-semibold flex items-center gap-1">
-                                                     <AlertCircle size={10} /> {roomDiscountPinError}
-                                                   </p>
-                                                 )}
-                                               </div>
-                                             )}
-                                           </div>
-
-                                          {/* Photo upload */}
-                                          <div>
-                                            <label className="text-[10px] font-bold text-muted uppercase block mb-1">Room Photos</label>
-                                            <div className="flex items-center gap-1.5 flex-wrap mb-2">
-                                              {(roomEditForm.photos || []).map((url, i) => (
-                                                <div key={i} className="relative h-10 w-10 rounded-lg overflow-hidden border border-border-color">
-                                                  <img src={url} alt="" className="h-full w-full object-cover" />
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => removeRoomPhoto(i)}
-                                                    className="absolute top-0 right-0 bg-black/70 text-white p-0.5 rounded-bl-sm"
-                                                  >
-                                                    <X size={10} />
-                                                  </button>
-                                                </div>
-                                              ))}
-                                            </div>
-                                            <label className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-600 hover:underline cursor-pointer">
-                                              <Upload size={12} />
-                                              <span>{roomPhotoUploading ? "Uploading..." : "+ Upload Photo"}</span>
-                                              <input
-                                                type="file"
-                                                accept="image/*"
-                                                className="hidden"
-                                                onChange={(e) => handleUploadRoomPhoto(e.target.files?.[0] || null)}
-                                              />
-                                            </label>
-                                          </div>
-
-                                          <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-color/40">
-                                            <button
-                                              type="button"
-                                              onClick={cancelEditRoom}
-                                              className="rounded-lg border border-border-color px-2.5 py-1 text-xs text-muted hover:bg-surface-elevated"
-                                            >
-                                              Cancel
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={handleSaveRoomEdit}
-                                              disabled={savingRoom}
-                                              className="rounded-lg bg-purple-600 px-3 py-1 text-xs font-bold text-white hover:bg-purple-700 disabled:opacity-50"
-                                            >
-                                              {savingRoom ? "Saving..." : "Save"}
-                                            </button>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        /* Normal Room Card View */
+                                      <div className="flex items-start justify-between gap-2 mb-2">
                                         <div>
-                                          <div className="flex items-start justify-between gap-2 mb-2">
-                                            <div>
-                                              <span className="font-black text-base text-foreground block">
-                                                {room.roomNumber}
-                                              </span>
-                                              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted capitalize">
-                                                {room.roomType.replace(/_/g, " ")}
-                                              </span>
-                                            </div>
-                                            <div className="flex items-center gap-1 flex-wrap justify-end">
-                                              {room.bookingMode === "external" && (
-                                                <span className="rounded-full bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5">
-                                                  <ExternalLink size={9} /> Direct Link
-                                                </span>
-                                              )}
-                                              <span
-                                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                                                  room.status === "available"
-                                                    ? "bg-green-500/10 text-green-700 dark:text-green-300"
-                                                    : room.status === "occupied"
-                                                    ? "bg-purple-500/10 text-purple-700 dark:text-purple-300"
-                                                    : room.status === "cleaning_needed"
-                                                    ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                                                    : "bg-red-500/10 text-red-700 dark:text-red-300"
-                                                }`}
-                                              >
-                                                {room.status.replace(/_/g, " ")}
-                                              </span>
-                                            </div>
-                                          </div>
-
-                                          <div className="flex items-center justify-between text-xs text-muted mt-3 pt-3 border-t border-border-color/40">
-                                            {room.discountPercentage && room.discountPercentage > 0 ? (
-                                              <div className="flex items-center gap-1.5 flex-wrap">
-                                                <span className="font-black text-amber-600 dark:text-amber-400">
-                                                  NAD {Math.round(room.pricePerNight * (1 - room.discountPercentage / 100))}
-                                                  <span className="text-[10px] font-normal text-muted">/nt</span>
-                                                </span>
-                                                <span className="text-[10px] line-through text-muted">NAD {room.pricePerNight}</span>
-                                                <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-black text-amber-600">
-                                                  -{room.discountPercentage}%
-                                                </span>
-                                              </div>
-                                            ) : (
-                                              <span className="font-black text-foreground">
-                                                NAD {room.pricePerNight}
-                                                <span className="text-[10px] font-normal text-muted">/nt</span>
-                                              </span>
-                                            )}
-                                            <button
-                                              type="button"
-                                              onClick={() => startEditRoom(room)}
-                                              className="inline-flex items-center gap-1 rounded-lg border border-border-color bg-surface px-2 py-1 text-[11px] font-bold text-muted hover:text-foreground transition"
-                                            >
-                                              <Edit2 size={11} />
-                                              <span>Edit</span>
-                                            </button>
-                                          </div>
-
-                                          {/* Overstay checkout warning */}
-                                          {isOverdue && (
-                                            <div className="mt-2.5 flex items-center gap-1.5 rounded-lg bg-red-500/10 border border-red-500/20 p-2 text-[10px] font-bold text-red-600 animate-pulse">
-                                              <AlertTriangle size={13} className="shrink-0" />
-                                              <span>Checkout time passed but no checkout done, must check room</span>
-                                            </div>
+                                          <span className="font-black text-base text-foreground block">
+                                            {room.roomNumber}
+                                          </span>
+                                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted capitalize">
+                                            {room.roomType.replace(/_/g, " ")}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-1 flex-wrap justify-end">
+                                          {room.bookingMode === "external" && (
+                                            <span className="rounded-full bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5">
+                                              <ExternalLink size={9} /> Direct Link
+                                            </span>
                                           )}
+                                          <span
+                                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                              room.status === "available"
+                                                ? "bg-green-500/10 text-green-700 dark:text-green-300"
+                                                : room.status === "occupied"
+                                                ? "bg-purple-500/10 text-purple-700 dark:text-purple-300"
+                                                : room.status === "cleaning_needed"
+                                                ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                                                : "bg-red-500/10 text-red-700 dark:text-red-300"
+                                            }`}
+                                          >
+                                            {room.status.replace(/_/g, " ")}
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center justify-between text-xs text-muted mt-3 pt-3 border-t border-border-color/40">
+                                        {room.discountPercentage && room.discountPercentage > 0 ? (
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="font-black text-amber-600 dark:text-amber-400">
+                                              NAD {Math.round(room.pricePerNight * (1 - room.discountPercentage / 100))}
+                                              <span className="text-[10px] font-normal text-muted">/nt</span>
+                                            </span>
+                                            <span className="text-[10px] line-through text-muted">NAD {room.pricePerNight}</span>
+                                            <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-black text-amber-600">
+                                              -{room.discountPercentage}%
+                                            </span>
+                                          </div>
+                                        ) : (
+                                          <span className="font-black text-foreground">
+                                            NAD {room.pricePerNight}
+                                            <span className="text-[10px] font-normal text-muted">/nt</span>
+                                          </span>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => startEditRoom(room)}
+                                          className="inline-flex items-center gap-1 rounded-lg border border-border-color bg-surface px-2.5 py-1 text-[11px] font-bold text-muted hover:text-foreground hover:border-purple-500/50 transition shadow-xs"
+                                        >
+                                          <Edit2 size={11} />
+                                          <span>Edit</span>
+                                        </button>
+                                      </div>
+
+                                      {/* Overstay checkout warning */}
+                                      {isOverdue && (
+                                        <div className="mt-2.5 flex items-center gap-1.5 rounded-lg bg-red-500/10 border border-red-500/20 p-2 text-[10px] font-bold text-red-600 animate-pulse">
+                                          <AlertTriangle size={13} className="shrink-0" />
+                                          <span>Checkout time passed but no checkout done, must check room</span>
                                         </div>
                                       )}
                                     </div>
@@ -1073,13 +791,13 @@ export function ManageRoomsRatesModal({
                                       <th className="p-3">Room #</th>
                                       <th className="p-3">Type</th>
                                       <th className="p-3">Status</th>
+                                      <th className="p-3">Channel</th>
                                       <th className="p-3">Nightly Rate</th>
                                       <th className="p-3 text-right">Actions</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-border-color/30">
                                     {floorRooms.map((room) => {
-                                      const isEditing = editingRoomId === room.id;
                                       const isOverdue = overdueRoomsMap[room.id];
 
                                       return (
@@ -1090,116 +808,75 @@ export function ManageRoomsRatesModal({
                                           }`}
                                         >
                                           <td className="p-3 font-bold text-foreground">
-                                            {isEditing ? (
-                                              <input
-                                                type="text"
-                                                value={roomEditForm.roomNumber || ""}
-                                                onChange={(e) => setRoomEditForm({ ...roomEditForm, roomNumber: e.target.value })}
-                                                className="w-24 rounded-lg border border-border-color bg-surface px-2 py-1 text-xs outline-none"
-                                              />
-                                            ) : (
-                                              <div>
-                                                <span>{room.roomNumber}</span>
-                                                {isOverdue && (
-                                                  <span className="block text-[10px] font-bold text-red-600">
-                                                    ⚠️ Checkout time passed but no checkout done, must check room
-                                                  </span>
-                                                )}
-                                              </div>
-                                            )}
+                                            <div>
+                                              <span>{room.roomNumber}</span>
+                                              {isOverdue && (
+                                                <span className="block text-[10px] font-bold text-red-600">
+                                                  ⚠️ Checkout time passed but no checkout done, must check room
+                                                </span>
+                                              )}
+                                            </div>
                                           </td>
 
                                           <td className="p-3 capitalize text-muted">
-                                            {isEditing ? (
-                                              <select
-                                                value={roomEditForm.roomType || "standard"}
-                                                onChange={(e) => setRoomEditForm({ ...roomEditForm, roomType: e.target.value as RoomType })}
-                                                className="rounded-lg border border-border-color bg-surface px-2 py-1 text-xs outline-none"
-                                              >
-                                                <option value="standard">Standard</option>
-                                                <option value="deluxe">Deluxe</option>
-                                                <option value="executive_suite">Executive Suite</option>
-                                                <option value="family_room">Family Room</option>
-                                                <option value="penthouse">Penthouse</option>
-                                              </select>
-                                            ) : (
-                                              room.roomType.replace(/_/g, " ")
-                                            )}
+                                            {room.roomType.replace(/_/g, " ")}
                                           </td>
 
                                           <td className="p-3">
-                                            {isEditing ? (
-                                              <select
-                                                value={roomEditForm.status || "available"}
-                                                onChange={(e) => setRoomEditForm({ ...roomEditForm, status: e.target.value as RoomStatus })}
-                                                className="rounded-lg border border-border-color bg-surface px-2 py-1 text-xs outline-none capitalize"
-                                              >
-                                                <option value="available">Available</option>
-                                                <option value="occupied">Occupied</option>
-                                                <option value="cleaning_needed">Cleaning Needed</option>
-                                                <option value="maintenance">Maintenance</option>
-                                                <option value="reserved">Reserved</option>
-                                              </select>
+                                            <span
+                                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                                room.status === "available"
+                                                  ? "bg-green-500/10 text-green-700 dark:text-green-300"
+                                                  : room.status === "occupied"
+                                                  ? "bg-purple-500/10 text-purple-700 dark:text-purple-300"
+                                                  : room.status === "cleaning_needed"
+                                                  ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                                                  : "bg-red-500/10 text-red-700 dark:text-red-300"
+                                              }`}
+                                            >
+                                              {room.status.replace(/_/g, " ")}
+                                            </span>
+                                          </td>
+
+                                          <td className="p-3">
+                                            {room.bookingMode === "external" ? (
+                                              <span className="inline-flex items-center gap-1 rounded-full bg-indigo-500/15 px-2 py-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                                                <ExternalLink size={10} /> Custom Link
+                                              </span>
                                             ) : (
-                                              <span
-                                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                                                  room.status === "available"
-                                                    ? "bg-green-500/10 text-green-700 dark:text-green-300"
-                                                    : room.status === "occupied"
-                                                    ? "bg-purple-500/10 text-purple-700 dark:text-purple-300"
-                                                    : room.status === "cleaning_needed"
-                                                    ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                                                    : "bg-red-500/10 text-red-700 dark:text-red-300"
-                                                }`}
-                                              >
-                                                {room.status.replace(/_/g, " ")}
+                                              <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                                                🏨 Platform
                                               </span>
                                             )}
                                           </td>
 
                                           <td className="p-3 font-bold text-foreground">
-                                            {isEditing ? (
-                                              <input
-                                                type="number"
-                                                min="0"
-                                                value={roomEditForm.pricePerNight ?? 0}
-                                                onChange={(e) => setRoomEditForm({ ...roomEditForm, pricePerNight: Number(e.target.value) })}
-                                                className="w-24 rounded-lg border border-border-color bg-surface px-2 py-1 text-xs outline-none"
-                                              />
+                                            {room.discountPercentage && room.discountPercentage > 0 ? (
+                                              <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="text-amber-600 dark:text-amber-400">
+                                                  NAD {Math.round(room.pricePerNight * (1 - room.discountPercentage / 100))}
+                                                </span>
+                                                <span className="text-[10px] line-through text-muted font-normal">
+                                                  NAD {room.pricePerNight}
+                                                </span>
+                                                <span className="rounded-full bg-amber-500/15 px-1.5 py-0.2 text-[9px] font-black text-amber-600">
+                                                  -{room.discountPercentage}%
+                                                </span>
+                                              </div>
                                             ) : (
                                               `NAD ${room.pricePerNight}`
                                             )}
                                           </td>
 
                                           <td className="p-3 text-right">
-                                            {isEditing ? (
-                                              <div className="flex items-center justify-end gap-1.5">
-                                                <button
-                                                  type="button"
-                                                  onClick={handleSaveRoomEdit}
-                                                  disabled={savingRoom}
-                                                  className="rounded-lg bg-purple-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-purple-700"
-                                                >
-                                                  {savingRoom ? "..." : "Save"}
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={cancelEditRoom}
-                                                  className="rounded-lg border border-border-color px-2 py-1 text-[11px] text-muted hover:bg-surface-elevated"
-                                                >
-                                                  Cancel
-                                                </button>
-                                              </div>
-                                            ) : (
-                                              <button
-                                                type="button"
-                                                onClick={() => startEditRoom(room)}
-                                                className="inline-flex items-center gap-1 rounded-lg border border-border-color bg-surface-elevated px-2.5 py-1 text-[11px] font-bold text-muted hover:text-foreground transition"
-                                              >
-                                                <Edit2 size={11} />
-                                                <span>Edit</span>
-                                              </button>
-                                            )}
+                                            <button
+                                              type="button"
+                                              onClick={() => startEditRoom(room)}
+                                              className="inline-flex items-center gap-1 rounded-lg border border-border-color bg-surface-elevated px-2.5 py-1 text-[11px] font-bold text-muted hover:text-foreground hover:border-purple-500/50 transition"
+                                            >
+                                              <Edit2 size={11} />
+                                              <span>Edit</span>
+                                            </button>
                                           </td>
                                         </tr>
                                       );
@@ -1218,6 +895,466 @@ export function ManageRoomsRatesModal({
             </div>
           )}
         </div>
+
+        {/* ========================================================================= */}
+        {/* DEDICATED ROOM EDITING POP-UP MODAL                                      */}
+        {/* ========================================================================= */}
+        {Boolean(editingRoomId) && (
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-xs overflow-y-auto"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div
+              className="fixed inset-0 bg-transparent"
+              onClick={cancelEditRoom}
+            />
+            <div className="relative z-10 w-full max-w-2xl rounded-3xl border border-border-color bg-surface text-foreground shadow-2xl overflow-hidden my-auto flex flex-col max-h-[92vh]">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-border-color/60 bg-surface-elevated/70 px-6 py-4 shrink-0">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={cancelEditRoom}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-border-color bg-surface text-muted hover:bg-surface-elevated hover:text-foreground transition shadow-xs"
+                    title="Back"
+                  >
+                    <ArrowLeft size={16} />
+                  </button>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black text-foreground">
+                        Edit Room {roomEditForm.roomNumber || ""}
+                      </h3>
+                      <span className="rounded-full bg-purple-600/15 px-2 py-0.5 text-[11px] font-bold text-purple-600">
+                        {property.name}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted">
+                      Configure room rates, booking channel link, promotional discounts, and photos
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelEditRoom}
+                  className="text-muted hover:text-foreground text-2xl leading-none px-1"
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* Modal Scrollable Body */}
+              <div className="overflow-y-auto p-6 space-y-6 flex-1 text-xs">
+                {/* Section 1: Room Identification & Status */}
+                <div>
+                  <h4 className="text-[11px] font-bold uppercase text-muted tracking-wider mb-3">
+                    Room Information &amp; Status
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-muted uppercase block mb-1">Room # *</label>
+                      <input
+                        type="text"
+                        value={roomEditForm.roomNumber || ""}
+                        onChange={(e) => setRoomEditForm({ ...roomEditForm, roomNumber: e.target.value })}
+                        placeholder="e.g. 101, Suite A"
+                        className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none font-semibold"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-muted uppercase block mb-1">Floor</label>
+                      <input
+                        type="text"
+                        value={roomEditForm.floor || ""}
+                        onChange={(e) => setRoomEditForm({ ...roomEditForm, floor: e.target.value })}
+                        placeholder="e.g. Ground Floor"
+                        className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-muted uppercase block mb-1">Room Type</label>
+                      <select
+                        value={roomEditForm.roomType || "standard"}
+                        onChange={(e) => setRoomEditForm({ ...roomEditForm, roomType: e.target.value as RoomType })}
+                        className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none capitalize font-medium"
+                      >
+                        <option value="standard">Standard</option>
+                        <option value="deluxe">Deluxe</option>
+                        <option value="executive_suite">Executive Suite</option>
+                        <option value="family_room">Family Room</option>
+                        <option value="penthouse">Penthouse</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-muted uppercase block mb-1">Status</label>
+                      <select
+                        value={roomEditForm.status || "available"}
+                        onChange={(e) => setRoomEditForm({ ...roomEditForm, status: e.target.value as RoomStatus })}
+                        className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none capitalize font-medium"
+                      >
+                        <option value="available">🟢 Available</option>
+                        <option value="occupied">🟣 Occupied</option>
+                        <option value="cleaning_needed">🟡 Cleaning Needed</option>
+                        <option value="maintenance">🔴 Maintenance</option>
+                        <option value="reserved">🔵 Reserved</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-muted uppercase block mb-1">Adult Capacity</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={roomEditForm.capacityAdults ?? 2}
+                        onChange={(e) => setRoomEditForm({ ...roomEditForm, capacityAdults: Number(e.target.value) })}
+                        className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-muted uppercase block mb-1">Child Capacity</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={roomEditForm.capacityChildren ?? 0}
+                        onChange={(e) => setRoomEditForm({ ...roomEditForm, capacityChildren: Number(e.target.value) })}
+                        className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 2: Pricing & Rates */}
+                <div className="pt-4 border-t border-border-color/50">
+                  <h4 className="text-[11px] font-bold uppercase text-muted tracking-wider mb-3">
+                    Nightly Rates &amp; Meal Plans (NAD)
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-muted uppercase block mb-1">Room Only (Base) *</label>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2 text-xs text-muted font-bold">R</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={roomEditForm.pricePerNight ?? 1000}
+                          onChange={(e) => setRoomEditForm({ ...roomEditForm, pricePerNight: Number(e.target.value) })}
+                          className="w-full rounded-xl border border-border-color bg-surface-elevated pl-7 pr-3 py-2 text-xs font-bold text-foreground outline-none"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-muted uppercase block mb-1">Bed &amp; Breakfast</label>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2 text-xs text-muted font-bold">R</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={roomEditForm.priceBedBreakfast ?? 1300}
+                          onChange={(e) => setRoomEditForm({ ...roomEditForm, priceBedBreakfast: Number(e.target.value) })}
+                          className="w-full rounded-xl border border-border-color bg-surface-elevated pl-7 pr-3 py-2 text-xs text-foreground outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-muted uppercase block mb-1">Bed &amp; Lunch</label>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2 text-xs text-muted font-bold">R</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={roomEditForm.priceBedLunch ?? 1600}
+                          onChange={(e) => setRoomEditForm({ ...roomEditForm, priceBedLunch: Number(e.target.value) })}
+                          className="w-full rounded-xl border border-border-color bg-surface-elevated pl-7 pr-3 py-2 text-xs text-foreground outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-muted uppercase block mb-1">Full Board</label>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2 text-xs text-muted font-bold">R</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={roomEditForm.priceFullBoard ?? 2000}
+                          onChange={(e) => setRoomEditForm({ ...roomEditForm, priceFullBoard: Number(e.target.value) })}
+                          className="w-full rounded-xl border border-border-color bg-surface-elevated pl-7 pr-3 py-2 text-xs text-foreground outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 3: Booking Channel Configuration */}
+                <div className="pt-4 border-t border-border-color/50">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-[11px] font-bold uppercase text-muted tracking-wider">
+                      Booking &amp; Reservation Channel
+                    </h4>
+                    <span className="text-[10px] text-muted">Configured per room</span>
+                  </div>
+                  <p className="text-[11px] text-muted mb-3">
+                    Choose whether guests booking this room on Paimbabook use our native reservation flow, or are redirected to your external direct booking link or affiliate engine.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setRoomEditForm({ ...roomEditForm, bookingMode: "platform" })}
+                      className={`flex flex-col items-start p-3.5 rounded-2xl border text-left transition ${
+                        (roomEditForm.bookingMode || "platform") === "platform"
+                          ? "border-blue-600 bg-blue-600/10 text-blue-700 dark:text-blue-300 ring-2 ring-blue-600/30"
+                          : "border-border-color bg-surface hover:border-blue-400/50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-base">🏨</span>
+                        <span className="font-black text-xs text-foreground">Paimbabook Platform</span>
+                      </div>
+                      <p className="text-[10px] text-muted leading-relaxed">
+                        Process reservations, live inquiries &amp; check-ins directly through the Paimbabook booking engine.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setRoomEditForm({ ...roomEditForm, bookingMode: "external" })}
+                      className={`flex flex-col items-start p-3.5 rounded-2xl border text-left transition ${
+                        roomEditForm.bookingMode === "external"
+                          ? "border-indigo-600 bg-indigo-600/10 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-600/30"
+                          : "border-border-color bg-surface hover:border-indigo-400/50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <ExternalLink size={15} className="text-indigo-600" />
+                        <span className="font-black text-xs text-foreground">Custom Booking Link</span>
+                      </div>
+                      <p className="text-[10px] text-muted leading-relaxed">
+                        Redirect guests to your external website, direct reservation engine, or affiliate link.
+                      </p>
+                    </button>
+                  </div>
+
+                  {roomEditForm.bookingMode === "external" && (
+                    <div className="mt-3.5 rounded-2xl border border-indigo-500/30 bg-indigo-500/5 p-4 space-y-2">
+                      <label className="text-[11px] font-bold text-indigo-800 dark:text-indigo-300 block">
+                        External Booking URL for Room {roomEditForm.roomNumber} *
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="url"
+                          placeholder="https://example.com/book/room-101 or affiliate URL"
+                          value={roomEditForm.externalBookingUrl || ""}
+                          onChange={(e) => setRoomEditForm({ ...roomEditForm, externalBookingUrl: e.target.value })}
+                          className="w-full rounded-xl border border-indigo-400/50 bg-surface px-3 py-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-indigo-500"
+                          required
+                        />
+                      </div>
+                      <p className="text-[10px] text-muted">
+                        Guests clicking &quot;Book&quot; on this room in the public portal will be redirected directly to this link.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Section 4: Promotional Discounts */}
+                <div className="pt-4 border-t border-border-color/50">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-amber-500" />
+                      <h4 className="text-[11px] font-bold uppercase text-muted tracking-wider">
+                        Promotional Discounts
+                      </h4>
+                    </div>
+                    {Number(roomEditForm.discountPercentage) > 0 ? (
+                      <span className="rounded-full bg-amber-500/20 px-2.5 py-0.5 text-xs font-black text-amber-600">
+                        {roomEditForm.discountPercentage}% OFF Active
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-muted/10 px-2.5 py-0.5 text-[10px] font-bold text-muted">
+                        No discount active
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="rounded-2xl border border-border-color bg-surface-elevated/40 p-4 space-y-4">
+                    {/* Movable Bar (Slider) from 0% to 100% */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-[11px] font-bold text-foreground">
+                          Discount Percentage: <span className="text-amber-600 font-black">{roomEditForm.discountPercentage || 0}%</span>
+                        </label>
+                        {Number(roomEditForm.discountPercentage) > 0 && (
+                          <span className="text-[10px] text-muted">
+                            Rate becomes: <strong className="text-foreground">NAD {Math.round((roomEditForm.pricePerNight ?? 1000) * (1 - (roomEditForm.discountPercentage || 0) / 100))}</strong>/nt
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="5"
+                        value={roomEditForm.discountPercentage || 0}
+                        onChange={(e) => {
+                          setRoomEditForm({ ...roomEditForm, discountPercentage: Number(e.target.value) });
+                          setRoomDiscountPinError(null);
+                        }}
+                        className="w-full accent-amber-600 cursor-pointer h-2 bg-border-color rounded-lg appearance-none"
+                      />
+                      <div className="flex justify-between text-[9px] text-muted font-bold mt-1 px-1">
+                        <span>0%</span>
+                        <span>25%</span>
+                        <span>50%</span>
+                        <span>75%</span>
+                        <span>100%</span>
+                      </div>
+                    </div>
+
+                    {/* Preset Buttons */}
+                    <div>
+                      <label className="text-[10px] font-bold text-muted uppercase block mb-1.5">Quick Presets</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[0, 5, 10, 15, 20, 25, 30, 40, 50, 75].map((pct) => (
+                          <button
+                            key={pct}
+                            type="button"
+                            onClick={() => {
+                              setRoomEditForm({ ...roomEditForm, discountPercentage: pct });
+                              setRoomDiscountPinError(null);
+                            }}
+                            className={`rounded-xl px-2.5 py-1 text-xs font-bold transition ${
+                              roomEditForm.discountPercentage === pct
+                                ? "bg-amber-600 text-white shadow-xs"
+                                : "border border-border-color bg-surface text-muted hover:border-amber-500 hover:text-foreground"
+                            }`}
+                          >
+                            {pct === 0 ? "Off" : `${pct}%`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Dates */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-muted uppercase block mb-1">Discount Start Date</label>
+                        <input
+                          type="date"
+                          value={roomEditForm.discountStartDate ?? ""}
+                          onChange={(e) => setRoomEditForm({ ...roomEditForm, discountStartDate: e.target.value })}
+                          className="w-full rounded-xl border border-border-color bg-surface px-3 py-2 text-xs text-foreground outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-muted uppercase block mb-1">Discount End Date</label>
+                        <input
+                          type="date"
+                          value={roomEditForm.discountEndDate ?? ""}
+                          onChange={(e) => setRoomEditForm({ ...roomEditForm, discountEndDate: e.target.value })}
+                          className="w-full rounded-xl border border-border-color bg-surface px-3 py-2 text-xs text-foreground outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Security PIN Requirement */}
+                    {Number(roomEditForm.discountPercentage) > 0 && (
+                      <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3.5 space-y-2">
+                        <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-xs">
+                          <KeyRound size={14} />
+                          <span>Security PIN Required to Activate Discount</span>
+                        </div>
+                        <p className="text-[11px] text-muted">
+                          Confirm setting <strong>{roomEditForm.discountPercentage}% discount</strong> on Room <strong>{roomEditForm.roomNumber}</strong>:
+                        </p>
+                        <div className="max-w-xs">
+                          <input
+                            type="password"
+                            maxLength={8}
+                            value={roomDiscountPin}
+                            onChange={(e) => {
+                              setRoomDiscountPin(e.target.value);
+                              setRoomDiscountPinError(null);
+                            }}
+                            placeholder="Security PIN (default 1234)"
+                            className="w-full rounded-xl border border-border-color bg-surface px-3 py-2 text-xs text-foreground tracking-widest outline-none focus:border-amber-500"
+                          />
+                        </div>
+                        {roomDiscountPinError && (
+                          <p className="text-xs text-red-600 font-semibold flex items-center gap-1">
+                            <AlertCircle size={12} /> {roomDiscountPinError}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Section 5: Room Photos */}
+                <div className="pt-4 border-t border-border-color/50">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-[11px] font-bold uppercase text-muted tracking-wider">
+                      Room Photos
+                    </h4>
+                    <span className="text-[10px] text-muted">
+                      {(roomEditForm.photos || []).length} photo{(roomEditForm.photos || []).length !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 flex-wrap mb-3">
+                    {(roomEditForm.photos || []).map((url, i) => (
+                      <div key={i} className="relative h-16 w-16 rounded-xl overflow-hidden border border-border-color group">
+                        <img src={url} alt="" className="h-full w-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removeRoomPhoto(i)}
+                          className="absolute top-1 right-1 bg-black/70 hover:bg-red-600 text-white p-1 rounded-md transition"
+                          title="Remove photo"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                    <label className="flex h-16 w-16 flex-col items-center justify-center rounded-xl border-2 border-dashed border-border-color bg-surface-elevated/40 text-muted hover:border-purple-500 hover:text-purple-600 cursor-pointer transition">
+                      <Upload size={16} />
+                      <span className="text-[9px] font-bold mt-1">{roomPhotoUploading ? "..." : "+ Photo"}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => handleUploadRoomPhoto(e.target.files?.[0] || null)}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Actions Footer */}
+              <div className="flex items-center justify-between border-t border-border-color/60 bg-surface-elevated/70 px-6 py-4 shrink-0">
+                <button
+                  type="button"
+                  onClick={cancelEditRoom}
+                  className="rounded-xl border border-border-color px-4 py-2 text-xs font-semibold text-muted hover:bg-surface-elevated"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveRoomEdit}
+                  disabled={savingRoom}
+                  className="rounded-xl bg-purple-600 px-5 py-2 text-xs font-bold text-white hover:bg-purple-700 disabled:opacity-50 transition shadow-xs flex items-center gap-1.5"
+                >
+                  <Save size={14} />
+                  {savingRoom ? "Saving Changes..." : "Save Room Changes"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

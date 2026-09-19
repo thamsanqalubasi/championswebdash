@@ -260,13 +260,7 @@ export default function PropertyDetailsPage() {
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [manageRoomsModalOpen, setManageRoomsModalOpen] = useState(false);
 
-  // Booking channel & discount modals
-  const [bookingChannelModalOpen, setBookingChannelModalOpen] = useState(false);
-  const [bookingModeForm, setBookingModeForm] = useState<"platform" | "external">("platform");
-  const [externalBookingUrlForm, setExternalBookingUrlForm] = useState("");
-  const [savingBookingChannel, setSavingBookingChannel] = useState(false);
-  const [bookingChannelApplyToRooms, setBookingChannelApplyToRooms] = useState(true);
-
+  // Promotional discount modal
   const [discountModalOpen, setDiscountModalOpen] = useState(false);
   const [discountForm, setDiscountForm] = useState({
     percentage: 0,
@@ -738,63 +732,7 @@ export default function PropertyDetailsPage() {
     }
   };
 
-  const openBookingChannelModal = () => {
-    if (!property) return;
-    setBookingModeForm(property.bookingMode || "platform");
-    setExternalBookingUrlForm(property.externalBookingUrl || "");
-    setBookingChannelApplyToRooms(true);
-    setBookingChannelModalOpen(true);
-  };
 
-  const handleSaveBookingChannel = async () => {
-    if (!propertyId) return;
-    if (bookingModeForm === "external" && !externalBookingUrlForm.trim()) {
-      alert("Please enter a valid external booking URL.");
-      return;
-    }
-    setSavingBookingChannel(true);
-    try {
-      const payload: Record<string, unknown> = {
-        booking_mode: bookingModeForm,
-        external_booking_url: bookingModeForm === "external" ? externalBookingUrlForm.trim() : null,
-      };
-      const { error: err } = await supabase.from("properties").update(payload).eq("id", propertyId);
-      if (err) throw err;
-
-      // Sync across all individual rooms & listings if requested
-      if (bookingChannelApplyToRooms) {
-        try {
-          await supabase.from("commercial_rooms").update({
-            booking_mode: bookingModeForm,
-            external_booking_url: bookingModeForm === "external" ? externalBookingUrlForm.trim() : null,
-          }).eq("property_id", propertyId);
-        } catch (syncErr) {
-          console.warn("Could not sync booking channel to commercial_rooms:", syncErr);
-        }
-
-        try {
-          await supabase.from("room_type_listings").update({
-            booking_mode: bookingModeForm,
-            external_booking_url: bookingModeForm === "external" ? externalBookingUrlForm.trim() : null,
-          }).eq("property_id", propertyId);
-        } catch (syncErr) {
-          console.warn("Could not sync booking channel to room_type_listings:", syncErr);
-        }
-      }
-
-      setProperty((prev) => prev ? {
-        ...prev,
-        bookingMode: bookingModeForm,
-        externalBookingUrl: bookingModeForm === "external" ? externalBookingUrlForm.trim() : "",
-      } : null);
-      setBookingChannelModalOpen(false);
-      reload();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to update booking channel");
-    } finally {
-      setSavingBookingChannel(false);
-    }
-  };
 
   const openDiscountModal = () => {
     if (!property) return;
@@ -1542,48 +1480,7 @@ export default function PropertyDetailsPage() {
 
             {/* Side Column: Media & Finance Actions */}
             <aside className="space-y-6">
-              {/* Booking Channel Panel */}
-              <section className="rounded-2xl border border-border-color bg-surface overflow-hidden">
-                <header className="px-6 py-4 border-b border-border-color/50 bg-surface-elevated/30 flex items-center justify-between">
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-muted/60">Booking Channel</h3>
-                  <ExternalLink size={16} className="text-muted/40" />
-                </header>
-                <div className="p-5 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted font-medium">Channel Mode:</span>
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                      property.bookingMode === "external"
-                        ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-500/20"
-                        : "bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20"
-                    }`}>
-                      {property.bookingMode === "external" ? "Custom Booking Link" : "Paimbabook Platform"}
-                    </span>
-                  </div>
 
-                  {property.bookingMode === "external" && property.externalBookingUrl && (
-                    <div className="rounded-xl bg-surface-elevated/60 border border-border-color/50 p-3">
-                      <p className="text-[10px] font-bold uppercase text-muted mb-1">Direct Booking URL</p>
-                      <a
-                        href={property.externalBookingUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline break-all font-mono block"
-                      >
-                        {property.externalBookingUrl}
-                      </a>
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={openBookingChannelModal}
-                    className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated/50 py-2 text-xs font-bold text-foreground hover:bg-surface-elevated transition"
-                  >
-                    <Edit3 size={13} />
-                    <span>Change Booking Channel</span>
-                  </button>
-                </div>
-              </section>
 
               {/* Promotional Discounts Panel */}
               <section className="rounded-2xl border border-border-color bg-surface overflow-hidden">
@@ -1848,103 +1745,7 @@ export default function PropertyDetailsPage() {
         </div>
       </Modal>
 
-      {/* Edit Booking Channel Modal */}
-      <Modal
-        open={bookingChannelModalOpen}
-        onClose={() => setBookingChannelModalOpen(false)}
-        title="Configure Booking & Reservation Channel"
-      >
-        <div className="space-y-4 text-xs">
-          <p className="text-muted leading-relaxed">
-            Choose whether guests booking this property on Paimbabook use our native reservation flow, or are redirected to your external direct booking link or affiliate site.
-          </p>
 
-          <div className="grid grid-cols-2 gap-2.5">
-            <button
-              type="button"
-              onClick={() => setBookingModeForm("platform")}
-              className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition ${
-                bookingModeForm === "platform"
-                  ? "border-blue-600 bg-blue-600/10 text-blue-700 dark:text-blue-400 font-semibold"
-                  : "border-border-color bg-surface text-muted hover:border-blue-400/50"
-              }`}
-            >
-              <span className="text-xs font-bold text-foreground">🏨 Paimbabook Platform</span>
-              <span className="text-[10px] text-muted">Process reservations, enquiries &amp; check-ins here</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setBookingModeForm("external")}
-              className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition ${
-                bookingModeForm === "external"
-                  ? "border-indigo-600 bg-indigo-600/10 text-indigo-700 dark:text-indigo-400 font-semibold"
-                  : "border-border-color bg-surface text-muted hover:border-indigo-400/50"
-              }`}
-            >
-              <span className="text-xs font-bold text-foreground flex items-center gap-1">
-                <ExternalLink size={12} /> Custom Booking Link
-              </span>
-              <span className="text-[10px] text-muted">Redirect to own website, affiliate or external engine</span>
-            </button>
-          </div>
-
-          {bookingModeForm === "external" && (
-            <div className="space-y-1.5 pt-1">
-              <label className="font-semibold text-foreground">External Booking URL *</label>
-              <input
-                type="url"
-                value={externalBookingUrlForm}
-                onChange={(e) => setExternalBookingUrlForm(e.target.value)}
-                placeholder="https://example.com/book or affiliate link"
-                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-indigo-600"
-                required
-              />
-              <p className="text-[10px] text-muted">
-                Guests clicking &quot;Book&quot; on the public portal will be redirected to this link.
-              </p>
-            </div>
-          )}
-
-          {/* Apply across all rooms option */}
-          <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3">
-            <label className="flex items-center gap-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={bookingChannelApplyToRooms}
-                onChange={(e) => setBookingChannelApplyToRooms(e.target.checked)}
-                className="h-4 w-4 rounded border-border-color text-blue-600 focus:ring-blue-500"
-              />
-              <div>
-                <p className="text-xs font-bold text-foreground">
-                  Apply channel across all individual rooms
-                </p>
-                <p className="text-[10px] text-muted">
-                  Propagates this booking configuration to every room and listing associated with {property?.name || "this property"}.
-                </p>
-              </div>
-            </label>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-3 border-t border-border-color">
-            <button
-              type="button"
-              onClick={() => setBookingChannelModalOpen(false)}
-              className="rounded-xl border border-border-color px-4 py-2 text-muted hover:bg-surface-elevated"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveBookingChannel}
-              disabled={savingBookingChannel}
-              className="rounded-xl bg-blue-600 px-5 py-2 font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-sm"
-            >
-              {savingBookingChannel ? "Saving..." : "Save Channel"}
-            </button>
-          </div>
-        </div>
-      </Modal>
 
       {/* Edit Promotional Discount Modal */}
       <Modal
