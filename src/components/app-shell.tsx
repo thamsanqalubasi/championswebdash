@@ -8,6 +8,7 @@ import { ProcurementRequestModal } from "./procurement-request-modal";
 import { NotificationsBell } from "./notifications-modal";
 import { ALL_ROLE_CAPABILITIES, fetchReminderThreshold, saveReminderThreshold, fetchRolePermissions, saveRolePermissions } from "@/lib/data";
 import { useLanguage, LANGUAGE_NAMES, LANGUAGE_FLAGS, LanguageAutoTranslator, type Language } from "@/lib/i18n";
+import { initActivityTracker } from "@/lib/activity-tracker";
 import {
   LayoutDashboard, Building2, Users, DollarSign, Wrench, ClipboardList,
   Truck, SearchCheck, CalendarClock, Package, FileSignature, Settings,
@@ -198,6 +199,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   const langDropdownRef = useRef<HTMLDivElement>(null);
   const { language, setLanguage, t } = useLanguage();
+
+  useEffect(() => {
+    initActivityTracker();
+  }, []);
 
   // Close language dropdown when clicking outside
   useEffect(() => {

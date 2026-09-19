@@ -34,7 +34,9 @@ import {
   Save,
   Check,
   Sparkles,
+  Activity,
 } from "lucide-react";
+import { UserProfileActivityModal } from "@/components/user-profile-activity-modal";
 import { useAuth } from "@/lib/auth";
 import {
   fetchCompanyUsers,
@@ -920,7 +922,7 @@ export const DEFAULT_DEPARTMENT_ORGANOGRAM_DATA: DepartmentOrganogramSpec[] = [
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
 export default function OrganogramPage() {
-  const { currentCompany, currentCompanyUser, isSuperAdmin } = useAuth();
+  const { currentCompany, currentCompanyUser, isSuperAdmin, isAdmin, isManager } = useAuth();
   const navigate = useNavigate();
 
   // Permissions check: Super Admin or staff holding 'manage_roles_organogram' right
@@ -996,6 +998,23 @@ export default function OrganogramPage() {
   // Company users to count active accounts
   const [companyUsers, setCompanyUsers] = useState<CompanyUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
+
+  // User Profile & Activity Inspection modal state
+  const [activityModalOpen, setActivityModalOpen] = useState(false);
+  const [selectedUserForActivity, setSelectedUserForActivity] = useState<CompanyUser | null>(null);
+
+  const canInspectUserActivity = (u: CompanyUser) => {
+    if (isSuperAdmin || isAdmin) return true;
+    if (isManager && (u.department === currentCompanyUser?.department || currentCompanyUser?.department === "manager")) {
+      return true;
+    }
+    return false;
+  };
+
+  const handleOpenUserActivity = (u: CompanyUser) => {
+    setSelectedUserForActivity(u);
+    setActivityModalOpen(true);
+  };
 
   // Expanded departments in tree view
   const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({
@@ -2253,13 +2272,21 @@ export default function OrganogramPage() {
               <div className="max-h-24 overflow-y-auto space-y-1">
                 {getActiveUsersForRole(selectedRoleModal.spec.title).length > 0 ? (
                   getActiveUsersForRole(selectedRoleModal.spec.title).map((user) => (
-                    <div
+                    <button
                       key={user.id}
-                      className="flex items-center justify-between rounded-lg bg-surface px-2.5 py-1 text-[11px] border border-border-color"
+                      type="button"
+                      onClick={() => handleOpenUserActivity(user)}
+                      className="w-full flex items-center justify-between rounded-lg bg-surface px-2.5 py-1.5 text-[11px] border border-border-color hover:border-violet-500/50 hover:bg-surface-elevated transition cursor-pointer text-left group"
+                      title={canInspectUserActivity(user) ? "Click to view full profile & system activity" : "Manager access limited to own department"}
                     >
-                      <span className="font-semibold text-foreground">{user.fullName}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-foreground group-hover:text-violet-400 transition">{user.fullName}</span>
+                        {canInspectUserActivity(user) && (
+                          <Activity size={11} className="text-violet-500 opacity-0 group-hover:opacity-100 transition" />
+                        )}
+                      </div>
                       <span className="text-muted text-[10px]">{user.email}</span>
-                    </div>
+                    </button>
                   ))
                 ) : (
                   <p className="text-[11px] text-muted italic">
@@ -3203,6 +3230,20 @@ export default function OrganogramPage() {
           </div>
         </div>
       )}
+
+      {/* User Profile & System Activity Intelligence Modal */}
+      <UserProfileActivityModal
+        isOpen={activityModalOpen}
+        onClose={() => {
+          setActivityModalOpen(false);
+          setSelectedUserForActivity(null);
+        }}
+        targetUser={selectedUserForActivity}
+        companyName={currentCompany.name}
+        isSuperAdmin={isSuperAdmin || isAdmin}
+        isManager={isManager}
+        currentManagerDept={currentCompanyUser?.department}
+      />
     </div>
   );
 }

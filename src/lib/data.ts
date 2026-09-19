@@ -1386,6 +1386,9 @@ export async function fetchCommercialRooms(
         priceBedLunch: toNumber(r.price_bed_lunch),
         priceFullBoard: toNumber(r.price_full_board),
         notes: r.notes,
+        discountPercentage: toNumber(r.discount_percentage),
+        discountStartDate: r.discount_start_date || undefined,
+        discountEndDate: r.discount_end_date || undefined,
       }));
     }
   } catch (err) {
@@ -1446,11 +1449,14 @@ export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise
     priceBedLunch,
     priceFullBoard,
     notes,
+    discountPercentage: room.discountPercentage ?? 0,
+    discountStartDate: room.discountStartDate,
+    discountEndDate: room.discountEndDate,
   };
 
   try {
     if (isValidUuid(companyId) && isValidUuid(propertyId)) {
-      const payload = {
+      const payload: Record<string, unknown> = {
         company_id: companyId,
         property_id: propertyId,
         room_number: roomNumber,
@@ -1466,18 +1472,39 @@ export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise
         price_bed_lunch: priceBedLunch,
         price_full_board: priceFullBoard,
         notes,
+        discount_percentage: room.discountPercentage ?? 0,
+        discount_start_date: room.discountStartDate || null,
+        discount_end_date: room.discountEndDate || null,
         updated_at: new Date().toISOString(),
       };
 
       if (isExisting) {
-        await supabase.from("commercial_rooms").update(payload).eq("id", id);
+        const { error: updErr } = await supabase.from("commercial_rooms").update(payload).eq("id", id);
+        if (updErr) {
+          const fallbackPayload = { ...payload };
+          delete fallbackPayload.discount_percentage;
+          delete fallbackPayload.discount_start_date;
+          delete fallbackPayload.discount_end_date;
+          await supabase.from("commercial_rooms").update(fallbackPayload).eq("id", id);
+        }
       } else {
         const { data, error } = await supabase
           .from("commercial_rooms")
           .insert({ id, ...payload })
           .select()
           .single();
-        if (!error && data) {
+        if (error) {
+          const fallbackPayload = { ...payload };
+          delete fallbackPayload.discount_percentage;
+          delete fallbackPayload.discount_start_date;
+          delete fallbackPayload.discount_end_date;
+          const { data: d2 } = await supabase
+            .from("commercial_rooms")
+            .insert({ id, ...fallbackPayload })
+            .select()
+            .single();
+          if (d2) updatedRoom.id = d2.id;
+        } else if (data) {
           updatedRoom.id = data.id;
         }
       }
@@ -3638,6 +3665,11 @@ export async function fetchProperties(companyId?: string): Promise<PropertyRow[]
         photos: p.photos || [],
         isPublished: p.is_published || false,
         availableFrom: p.available_from || undefined,
+        bookingMode: (p.booking_mode as any) || "platform",
+        externalBookingUrl: p.external_booking_url || "",
+        discountPercentage: toNumber(p.discount_percentage),
+        discountStartDate: p.discount_start_date || undefined,
+        discountEndDate: p.discount_end_date || undefined,
       }));
     }
   } catch (err) {

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { ImageSlider } from "@/components/image-slider";
-import { MapPin, BedDouble, Star, Send, ArrowLeft, CheckCircle, Users, Calendar, Baby, Wifi, Tv, Wind, Coffee, Bath, Dumbbell, ParkingCircle, Utensils, Globe, MessageSquareQuote, HelpCircle, MessageSquare } from "lucide-react";
+import { MapPin, BedDouble, Star, Send, ArrowLeft, CheckCircle, Users, Calendar, Baby, Wifi, Tv, Wind, Coffee, Bath, Dumbbell, ParkingCircle, Utensils, Globe, MessageSquareQuote, HelpCircle, MessageSquare, ExternalLink, Sparkles, Loader2 } from "lucide-react";
 import { DEFAULT_ENQUIRY_QUESTIONS, getDefaultResponseForQuestion, sendEnquiryResponseEmail } from "@/lib/enquiry-templates";
 
 const AMENITY_ICONS: Record<string, any> = { wifi: Wifi, tv: Tv, ac: Wind, coffee: Coffee, bath: Bath, gym: Dumbbell, parking: ParkingCircle, breakfast: Utensils, balcony: Globe };
@@ -47,6 +47,13 @@ export default function PortalListingPage() {
   const [automatedResponse, setAutomatedResponse] = useState<string>("");
   const [createdTicketId, setCreatedTicketId] = useState<string>("");
   const [selectedQuestionId, setSelectedQuestionId] = useState<string>("");
+
+  // External booking & marketing opt-in state
+  const [marketingAgreed, setMarketingAgreed] = useState(false);
+  const [marketingEmail, setMarketingEmail] = useState("");
+  const [savingMarketingEmail, setSavingMarketingEmail] = useState(false);
+  const [marketingSuccess, setMarketingSuccess] = useState(false);
+  const [showEnquiryForExternal, setShowEnquiryForExternal] = useState(false);
 
   async function loadReviews(propId: string, isRoomType: boolean, parentPropId?: string) {
     try {
@@ -99,9 +106,20 @@ export default function PortalListingPage() {
         await loadReviews(pid, false);
       } else {
         // Try room_type_listings
-        const { data: roomData } = await supabase.from("room_type_listings").select("*").eq("id", pid).maybeSingle();
+        const { data: roomData } = await supabase
+          .from("room_type_listings")
+          .select("*, properties(booking_mode, external_booking_url, discount_percentage)")
+          .eq("id", pid)
+          .maybeSingle();
         if (roomData) {
-          setData(roomData);
+          const parentProps = (roomData as any).properties;
+          const merged = {
+            ...roomData,
+            booking_mode: roomData.booking_mode || parentProps?.booking_mode || "platform",
+            external_booking_url: roomData.external_booking_url || parentProps?.external_booking_url || "",
+            discount_percentage: Number(roomData.discount_percentage || parentProps?.discount_percentage || 0),
+          };
+          setData(merged);
           setListingType("room_listing");
           await loadReviews(pid, true, roomData.property_id);
         }
@@ -110,6 +128,38 @@ export default function PortalListingPage() {
     }
     void load();
   }, [propertyId]);
+
+  const isExternalBooking = data?.booking_mode === "external" && Boolean(data?.external_booking_url);
+  const externalBookingUrl = data?.external_booking_url || "";
+
+  const handleExternalBooking = async () => {
+    if (!externalBookingUrl) return;
+
+    if (marketingAgreed) {
+      const em = marketingEmail.trim().toLowerCase();
+      if (!em || !em.includes("@") || !em.includes(".")) {
+        alert("Please enter a valid email address to receive discounts and marketing updates.");
+        return;
+      }
+      setSavingMarketingEmail(true);
+      try {
+        await supabase.from("marketing_agreed").insert({
+          email: em,
+          property_id: propertyId || null,
+          marketing_opt_in: true,
+          agreed_at: new Date().toISOString(),
+        });
+        setMarketingSuccess(true);
+      } catch (err) {
+        console.warn("Could not record marketing agreement:", err);
+      } finally {
+        setSavingMarketingEmail(false);
+      }
+    }
+
+    // Open direct partner booking link
+    window.open(externalBookingUrl, "_blank", "noopener,noreferrer");
+  };
 
   const isHosp = listingType === "room_listing" || (data && ["hotel","motel","lodge","guest_house","commercial"].includes(data.type));
   const avgRating = reviews.length > 0 ? reviews.reduce((s,r) => s+r.rating, 0) / reviews.length : 0;
@@ -302,6 +352,15 @@ export default function PortalListingPage() {
                 ({reviews.length} {reviews.length === 1 ? "review" : "reviews"} from verified customers)
               </span>
             </div>
+
+            {data.discount_percentage > 0 && (
+              <div className="flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-amber-800 dark:text-amber-200 text-xs font-semibold mt-2">
+                <Sparkles size={16} className="text-amber-500 shrink-0" />
+                <span>
+                  🔥 Promotional Discount: <strong>{data.discount_percentage}% OFF</strong> active for this listing!
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Room listing details */}
@@ -355,7 +414,25 @@ export default function PortalListingPage() {
             <div className="rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-xs space-y-3">
               <div>
                 <h3 className="font-bold text-gray-900 dark:text-white mb-1">Rental Details</h3>
-                <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">R{Number(data.monthly_rent||0).toLocaleString()}<span className="text-base font-normal text-gray-400 dark:text-slate-500">/month</span></p>
+                {data.discount_percentage > 0 ? (
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <p className="text-3xl font-black text-amber-600 dark:text-amber-400">
+                      R{Math.round(Number(data.monthly_rent || 0) * (1 - data.discount_percentage / 100)).toLocaleString()}
+                      <span className="text-base font-normal text-gray-400 dark:text-slate-500">/month</span>
+                    </p>
+                    <span className="text-base line-through text-gray-400 dark:text-slate-500">
+                      R{Number(data.monthly_rent || 0).toLocaleString()}
+                    </span>
+                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-black text-amber-600">
+                      -{data.discount_percentage}% OFF
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                    R{Number(data.monthly_rent||0).toLocaleString()}
+                    <span className="text-base font-normal text-gray-400 dark:text-slate-500">/month</span>
+                  </p>
+                )}
               </div>
 
               {data.status !== "vacant" && (
@@ -473,7 +550,105 @@ export default function PortalListingPage() {
         {/* Enquiry / Booking Form */}
         <div className="lg:col-span-1">
           <div className="sticky top-20 rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-lg space-y-4">
-            {enquirySent ? (
+            {isExternalBooking && !showEnquiryForExternal ? (
+              /* External Direct Booking Card */
+              <div className="space-y-4">
+                <div className="pb-3 border-b border-gray-100 dark:border-slate-800">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+                    <ExternalLink size={11} /> Official Booking Partner
+                  </span>
+                  <h3 className="font-bold text-gray-900 dark:text-white text-lg mt-1.5">
+                    Direct Partner Booking
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                    Book directly with {data?.name || data?.display_name || "the provider"} on their official reservation site.
+                  </p>
+                </div>
+
+                {data.discount_percentage > 0 && (
+                  <div className="flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-amber-800 dark:text-amber-200 text-xs">
+                    <Sparkles size={16} className="text-amber-500 shrink-0" />
+                    <div>
+                      <span className="font-bold block">🔥 {data.discount_percentage}% Promotional Discount</span>
+                      <span className="text-[11px] opacity-90">Special rates apply when booking directly.</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Marketing & Discounts Agreement Checkbox */}
+                <label className="flex items-start gap-2.5 p-3 rounded-xl border border-blue-200 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/20 cursor-pointer transition hover:bg-blue-50 dark:hover:bg-blue-950/30">
+                  <input
+                    type="checkbox"
+                    checked={marketingAgreed}
+                    onChange={(e) => {
+                      setMarketingAgreed(e.target.checked);
+                      if (!e.target.checked) {
+                        setMarketingEmail("");
+                        setMarketingSuccess(false);
+                      }
+                    }}
+                    className="mt-0.5 h-4 w-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <span className="text-xs font-semibold text-gray-800 dark:text-slate-200 leading-snug">
+                    Receive property discounts from Paimbabook and marketing material
+                  </span>
+                </label>
+
+                {/* If checkbox is ticked, prompt for email */}
+                {marketingAgreed && (
+                  <div className="space-y-1.5 p-3.5 rounded-xl border border-blue-100 dark:border-blue-900/30 bg-white dark:bg-slate-800">
+                    <label className="text-xs font-bold text-gray-700 dark:text-slate-300 block">
+                      Enter your email to unlock discounts *
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="visitor@example.com"
+                      value={marketingEmail}
+                      onChange={(e) => setMarketingEmail(e.target.value)}
+                      className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"
+                      required
+                    />
+                    <p className="text-[10px] text-gray-500 dark:text-slate-400">
+                      We store this in our marketing table and notify you of new property promotions.
+                    </p>
+                    {marketingSuccess && (
+                      <p className="text-xs font-bold text-emerald-600 flex items-center gap-1">
+                        <CheckCircle size={12} /> Email registered! Redirecting to booking...
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Main Action Button */}
+                <button
+                  type="button"
+                  onClick={handleExternalBooking}
+                  disabled={savingMarketingEmail || (marketingAgreed && !marketingEmail.trim())}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 text-sm font-bold shadow-md transition disabled:opacity-50"
+                >
+                  {savingMarketingEmail ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <ExternalLink size={16} />
+                  )}
+                  <span>
+                    {marketingAgreed
+                      ? (marketingEmail.trim() ? "Submit & Book Now ↗" : "Enter Email to Enable Booking")
+                      : "Book Now on Partner Site ↗"}
+                  </span>
+                </button>
+
+                <div className="pt-2 border-t border-gray-100 dark:border-slate-800 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowEnquiryForExternal(true)}
+                    className="text-xs font-medium text-gray-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 underline transition"
+                  >
+                    Need to ask a question first? Send an enquiry message ↓
+                  </button>
+                </div>
+              </div>
+            ) : enquirySent ? (
               <div className="py-4 space-y-4">
                 <div className="text-center">
                   <div className="h-12 w-12 rounded-2xl bg-green-100 dark:bg-green-950/60 text-green-600 dark:text-green-400 mx-auto flex items-center justify-center mb-3 shadow-xs">
@@ -533,6 +708,15 @@ export default function PortalListingPage() {
                 </div>
               </div>
             ) : (<>
+              {isExternalBooking && (
+                <button
+                  type="button"
+                  onClick={() => setShowEnquiryForExternal(false)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline mb-2"
+                >
+                  <ArrowLeft size={12} /> Back to Direct Booking
+                </button>
+              )}
               <h3 className="font-bold text-gray-900 dark:text-white text-lg">{isHosp ? "Book a Room" : "Enquire Now"}</h3>
               <input placeholder="Your name *" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
               <input placeholder="Email address *" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>

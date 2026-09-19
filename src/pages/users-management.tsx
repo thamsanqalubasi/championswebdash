@@ -18,7 +18,9 @@ import {
   Globe,
   Network,
   Crown,
+  Activity,
 } from "lucide-react";
+import { UserProfileActivityModal } from "@/components/user-profile-activity-modal";
 import { supabase } from "@/lib/supabase";
 import {
   fetchCompanyUsers,
@@ -170,6 +172,23 @@ export default function UsersManagementPage() {
       return u.roleLevel !== "admin" && u.roleLevel !== "super_admin" && u.department !== "admin";
     }
     return false;
+  };
+
+  // User Profile & Activity Inspection modal state
+  const [activityModalOpen, setActivityModalOpen] = useState(false);
+  const [selectedUserForActivity, setSelectedUserForActivity] = useState<CompanyUser | null>(null);
+
+  const canInspectUserActivity = (u: CompanyUser) => {
+    if (isSuperAdmin || isAdmin) return true;
+    if (isManager && (u.department === currentCompanyUser?.department || currentCompanyUser?.department === "manager")) {
+      return true;
+    }
+    return false;
+  };
+
+  const handleOpenUserActivity = (u: CompanyUser) => {
+    setSelectedUserForActivity(u);
+    setActivityModalOpen(true);
   };
 
   const openResetPasswordModal = (u: CompanyUser) => {
@@ -766,8 +785,20 @@ export default function UsersManagementPage() {
               filteredUsers.map((u) => (
                 <tr key={u.id} className="hover:bg-surface-elevated/30 transition">
                   <td className="px-4 py-3.5">
-                    <p className="font-bold text-foreground">{u.fullName}</p>
-                    <p className="text-xs text-muted">{u.email}</p>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenUserActivity(u)}
+                      className="text-left group/user focus:outline-none cursor-pointer"
+                      title={canInspectUserActivity(u) ? "Click to view full profile, activity log, button clicks & sessions" : "Manager access limited to own department"}
+                    >
+                      <p className="font-bold text-foreground group-hover/user:text-blue-600 transition flex items-center gap-1.5">
+                        <span>{u.fullName}</span>
+                        {canInspectUserActivity(u) && (
+                          <Activity size={12} className="text-blue-500 opacity-0 group-hover/user:opacity-100 transition-opacity" />
+                        )}
+                      </p>
+                      <p className="text-xs text-muted">{u.email}</p>
+                    </button>
                   </td>
 
                   <td className="px-4 py-3.5 capitalize font-medium text-foreground">
@@ -818,6 +849,17 @@ export default function UsersManagementPage() {
 
                   <td className="px-4 py-3.5 text-right">
                     <div className="flex items-center justify-end gap-1.5">
+                      {canInspectUserActivity(u) && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenUserActivity(u)}
+                          className="flex items-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-500/20 transition"
+                          title="View Full Profile, System Activity Log, Button Clicks & Sessions"
+                        >
+                          <Activity size={13} />
+                          <span>Activity</span>
+                        </button>
+                      )}
                       {isSuperAdmin && u.roleLevel !== "super_admin" && u.id !== currentCompanyUser.id && (
                         <button
                           type="button"
@@ -1654,6 +1696,20 @@ export default function UsersManagementPage() {
           </div>
         </div>
       )}
+
+      {/* User Profile & System Activity Intelligence Modal */}
+      <UserProfileActivityModal
+        isOpen={activityModalOpen}
+        onClose={() => {
+          setActivityModalOpen(false);
+          setSelectedUserForActivity(null);
+        }}
+        targetUser={selectedUserForActivity}
+        companyName={currentCompany.name}
+        isSuperAdmin={isSuperAdmin || isAdmin}
+        isManager={isManager}
+        currentManagerDept={currentCompanyUser?.department}
+      />
     </div>
   );
 }

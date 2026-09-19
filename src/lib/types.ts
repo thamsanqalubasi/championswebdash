@@ -31,6 +31,11 @@ export type PropertyRow = {
   floors?: string[];
   isPublished?: boolean;
   availableFrom?: string;
+  bookingMode?: "platform" | "external";
+  externalBookingUrl?: string;
+  discountPercentage?: number;
+  discountStartDate?: string;
+  discountEndDate?: string;
 };
 
 export type RoomTypeListing = {
@@ -52,6 +57,9 @@ export type RoomTypeListing = {
   isActive: boolean;
   sortOrder: number;
   createdAt?: string;
+  discountPercentage?: number;
+  discountStartDate?: string;
+  discountEndDate?: string;
 };
 
 export type Company = {
@@ -150,6 +158,9 @@ export type CommercialRoom = {
   priceFullBoard: number;
   notes?: string;
   currentBooking?: CommercialBooking;
+  discountPercentage?: number;
+  discountStartDate?: string;
+  discountEndDate?: string;
 };
 
 export type BookingStatus =

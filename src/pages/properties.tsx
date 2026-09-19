@@ -10,7 +10,7 @@ import { uploadFileToBucket } from "@/lib/storage";
 import { supabase } from "@/lib/supabase";
 import type { PropertyRow } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
-import { Plus, Pencil, Trash, ChevronRight, Building2, BedDouble, X, Layers, Image as ImageIcon, Loader2, Eye, Globe, EyeOff, MapPin, DollarSign, Calendar, TrendingUp, KeyRound } from "lucide-react";
+import { Plus, Pencil, Trash, ChevronRight, Building2, BedDouble, X, Layers, Image as ImageIcon, Loader2, Eye, Globe, EyeOff, MapPin, DollarSign, Calendar, TrendingUp, KeyRound, ExternalLink, Percent, Sparkles } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 import { useCurrency } from "@/lib/currency";
 import { PropertyStatsModal } from "@/components/property-stats-modal";
@@ -55,7 +55,24 @@ const COUNTRIES_AND_CITIES: Record<string, string[]> = {
   Other: [],
 };
 
-const emptyForm = { name: "", type: "lodge", address: "", city: "Windhoek", country: "Namibia", status: "occupied", monthlyRent: 0, totalRooms: 10, defaultRoomPrice: 1200, defaultBedBreakfast: 1500, availableFrom: "" };
+const emptyForm = {
+  name: "",
+  type: "lodge",
+  address: "",
+  city: "Windhoek",
+  country: "Namibia",
+  status: "occupied",
+  monthlyRent: 0,
+  totalRooms: 10,
+  defaultRoomPrice: 1200,
+  defaultBedBreakfast: 1500,
+  availableFrom: "",
+  bookingMode: "platform" as "platform" | "external",
+  externalBookingUrl: "",
+  discountPercentage: 0,
+  discountStartDate: "",
+  discountEndDate: "",
+};
 
 export default function PropertiesPage() {
   const navigate = useNavigate();
@@ -163,6 +180,11 @@ export default function PropertiesPage() {
       defaultRoomPrice: row.defaultRoomPrice || 0,
       defaultBedBreakfast: row.defaultBedBreakfast || 0,
       availableFrom: row.availableFrom || "",
+      bookingMode: row.bookingMode || "platform",
+      externalBookingUrl: row.externalBookingUrl || "",
+      discountPercentage: row.discountPercentage || 0,
+      discountStartDate: row.discountStartDate || "",
+      discountEndDate: row.discountEndDate || "",
     });
     setIsCustomCity(isCustom);
     setFormPhotos(row.photos || []);
@@ -212,25 +234,40 @@ export default function PropertiesPage() {
         default_room_price: form.defaultRoomPrice,
         default_bed_breakfast: form.defaultBedBreakfast,
         available_from: form.availableFrom || null,
+        booking_mode: form.bookingMode || "platform",
+        external_booking_url: form.bookingMode === "external" ? (form.externalBookingUrl?.trim() || null) : null,
+        discount_percentage: Number(form.discountPercentage) || 0,
+        discount_start_date: form.discountStartDate || null,
+        discount_end_date: form.discountEndDate || null,
         company_id: currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null,
         photos: formPhotos,
       };
+
+      const fallbackPayload = (p: Record<string, unknown>) => {
+        const copy = { ...p };
+        delete copy.available_from;
+        delete copy.booking_mode;
+        delete copy.external_booking_url;
+        delete copy.discount_percentage;
+        delete copy.discount_start_date;
+        delete copy.discount_end_date;
+        return copy;
+      };
+
       let savedId = editingId;
       if (editingId) {
         const { error: err } = await supabase.from("properties").update(payload).eq("id", editingId);
         if (err) {
-          const sp = { ...payload };
-          delete sp.available_from;
-          const { error: e2 } = await supabase.from("properties").update(sp).eq("id", editingId);
+          console.warn("Retrying property update with fallback payload:", err.message);
+          const { error: e2 } = await supabase.from("properties").update(fallbackPayload(payload)).eq("id", editingId);
           if (e2) throw e2;
         }
       } else {
         savedId = generateUuid();
         const { data, error: err } = await supabase.from("properties").insert({ id: savedId, ...payload }).select("id").maybeSingle();
         if (err) {
-          const sp = { ...payload };
-          delete sp.available_from;
-          const { data: d2, error: e2 } = await supabase.from("properties").insert({ id: savedId, ...sp }).select("id").maybeSingle();
+          console.warn("Retrying property insert with fallback payload:", err.message);
+          const { data: d2, error: e2 } = await supabase.from("properties").insert({ id: savedId, ...fallbackPayload(payload) }).select("id").maybeSingle();
           if (e2) throw e2;
           if (d2?.id) savedId = d2.id;
         } else if (data?.id) {
@@ -374,7 +411,20 @@ export default function PropertiesPage() {
                               {hosp?<BedDouble size={20}/>:<Building2 size={20}/>}
                             </div>
                             <div className="min-w-0">
-                              <div className="flex items-center gap-2"><p className="font-bold text-foreground truncate">{row.name}</p>{row.isPublished&&<span className="shrink-0 rounded-full bg-green-500/15 px-2 py-0.5 text-[10px] font-bold text-green-600 uppercase">Live</span>}</div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-bold text-foreground truncate">{row.name}</p>
+                                {row.isPublished&&<span className="shrink-0 rounded-full bg-green-500/15 px-2 py-0.5 text-[10px] font-bold text-green-600 uppercase">Live</span>}
+                                {row.bookingMode === "external" && (
+                                  <span className="shrink-0 rounded-full bg-indigo-500/15 px-2 py-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                                    <ExternalLink size={10} /> Direct Link
+                                  </span>
+                                )}
+                                {row.discountPercentage && row.discountPercentage > 0 ? (
+                                  <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-0.5">
+                                    <Sparkles size={10} /> -{row.discountPercentage}%
+                                  </span>
+                                ) : null}
+                              </div>
                               <div className="flex items-center gap-1 text-xs text-muted"><MapPin size={10}/><span className="truncate">{[row.address,row.city,row.country].filter(Boolean).join(", ")}</span></div>
                             </div>
                           </div>
@@ -403,7 +453,22 @@ export default function PropertiesPage() {
                             <StatusBadge status={row.status}/>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-right font-bold text-foreground">{hosp?`From ${formatCurrency(row.defaultRoomPrice||0)}/night`:`${formatCurrency(row.monthlyRent)}/mo`}</td>
+                        <td className="px-6 py-4 text-right font-bold text-foreground">
+                          {row.discountPercentage && row.discountPercentage > 0 ? (
+                            <div>
+                              <span className="text-xs text-muted line-through mr-1.5 block sm:inline">
+                                {hosp ? formatCurrency(row.defaultRoomPrice || 0) : formatCurrency(row.monthlyRent)}
+                              </span>
+                              <span className="text-amber-600 font-extrabold">
+                                {hosp
+                                  ? `From ${formatCurrency(Math.round((row.defaultRoomPrice || 0) * (1 - row.discountPercentage / 100)))}/night`
+                                  : `${formatCurrency(Math.round(row.monthlyRent * (1 - row.discountPercentage / 100)))}/mo`}
+                              </span>
+                            </div>
+                          ) : (
+                            hosp ? `From ${formatCurrency(row.defaultRoomPrice||0)}/night` : `${formatCurrency(row.monthlyRent)}/mo`
+                          )}
+                        </td>
                         <td className="px-6 py-4" onClick={(e)=>e.stopPropagation()}>
                           <TableRowActions>
                             <TableActionButton icon={Eye} label="View" onClick={()=>setViewTarget(row)}/>
@@ -450,6 +515,31 @@ export default function PropertiesPage() {
                 <div className="rounded-xl bg-surface-elevated/50 border border-border-color p-3"><p className="text-[10px] font-bold uppercase text-muted/60 mb-1">Scheduled Vacancy</p><div className="flex items-center gap-1.5"><Calendar size={13} className="shrink-0 text-amber-500"/><span className="font-semibold text-foreground">{new Date(viewTarget.availableFrom).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</span></div></div>
               )}
             </div>
+            {viewTarget.bookingMode === "external" && viewTarget.externalBookingUrl && (
+              <div className="rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-3 text-xs">
+                <p className="font-bold text-indigo-700 dark:text-indigo-400 flex items-center gap-1.5 mb-1">
+                  <ExternalLink size={13} /> Direct External Booking Channel
+                </p>
+                <a
+                  href={viewTarget.externalBookingUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-600 dark:text-blue-400 hover:underline truncate block font-mono text-[11px]"
+                >
+                  {viewTarget.externalBookingUrl}
+                </a>
+              </div>
+            )}
+            {viewTarget.discountPercentage && viewTarget.discountPercentage > 0 ? (
+              <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 text-xs">
+                <p className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5 mb-1">
+                  <Sparkles size={13} /> Active Promotion: {viewTarget.discountPercentage}% Discount
+                </p>
+                <p className="text-muted text-[11px]">
+                  {viewTarget.discountStartDate ? `From ${viewTarget.discountStartDate}` : "Immediate"} {viewTarget.discountEndDate ? `until ${viewTarget.discountEndDate}` : "ongoing"}
+                </p>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between pt-2 border-t border-border-color">
               <button type="button" onClick={()=>{setViewTarget(null);navigate(`/properties/${viewTarget.id}`);}} className="rounded-xl border border-border-color px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-elevated transition">Full Details →</button>
               <div className="flex gap-2">
@@ -606,6 +696,108 @@ export default function PropertiesPage() {
               <div><label className="mb-1 block font-medium text-foreground">Available / Vacant From (Optional)</label><input type="date" value={form.availableFrom||""} onChange={(e)=>setForm({...form,availableFrom:e.target.value})} className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"/><p className="text-[10px] text-muted mt-0.5">Required before publishing occupied properties to the public portal.</p></div>
             </div>
           )}
+
+          {/* Booking Channel Selection */}
+          <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3.5 space-y-2.5">
+            <label className="block font-bold text-foreground">Booking &amp; Reservation Channel</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, bookingMode: "platform" })}
+                className={`flex flex-col gap-0.5 rounded-xl border p-2.5 text-left transition ${
+                  form.bookingMode === "platform"
+                    ? "border-blue-600 bg-blue-600/10 text-blue-700 dark:text-blue-400 font-semibold"
+                    : "border-border-color bg-surface text-muted hover:border-blue-400/50"
+                }`}
+              >
+                <span className="text-xs font-bold text-foreground">🏨 Paimbabook Platform</span>
+                <span className="text-[10px] text-muted">Process reservations, enquiries &amp; check-ins here</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, bookingMode: "external" })}
+                className={`flex flex-col gap-0.5 rounded-xl border p-2.5 text-left transition ${
+                  form.bookingMode === "external"
+                    ? "border-indigo-600 bg-indigo-600/10 text-indigo-700 dark:text-indigo-400 font-semibold"
+                    : "border-border-color bg-surface text-muted hover:border-indigo-400/50"
+                }`}
+              >
+                <span className="text-xs font-bold text-foreground flex items-center gap-1">
+                  <ExternalLink size={12} /> Custom Booking Link
+                </span>
+                <span className="text-[10px] text-muted">Redirect to own website, affiliate or external URL</span>
+              </button>
+            </div>
+
+            {form.bookingMode === "external" && (
+              <div className="pt-1.5 space-y-1">
+                <label className="text-[11px] font-semibold text-foreground">External Booking URL *</label>
+                <input
+                  type="url"
+                  value={form.externalBookingUrl}
+                  onChange={(e) => setForm({ ...form, externalBookingUrl: e.target.value })}
+                  placeholder="https://example.com/book or affiliate link"
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-indigo-600"
+                  required
+                />
+                <p className="text-[10px] text-muted">
+                  Guests clicking &quot;Book&quot; on the public portal will be redirected to this link.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Promotional Discount Section */}
+          <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-foreground flex items-center gap-1.5">
+                <Sparkles size={14} className="text-amber-500" />
+                <span>Promotional Discount (Optional)</span>
+              </label>
+              {Number(form.discountPercentage) > 0 && (
+                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-black text-amber-600">
+                  {form.discountPercentage}% OFF
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-muted">
+              Apply special offers with promotional badges on the public portal and index page.
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="text-[10px] font-medium text-foreground block mb-1">Discount %</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  placeholder="e.g. 15"
+                  value={form.discountPercentage || ""}
+                  onChange={(e) => setForm({ ...form, discountPercentage: Number(e.target.value) || 0 })}
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-amber-500"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-medium text-foreground block mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={form.discountStartDate}
+                  onChange={(e) => setForm({ ...form, discountStartDate: e.target.value })}
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-2 py-2 text-foreground outline-none focus:border-amber-500"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-medium text-foreground block mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={form.discountEndDate}
+                  onChange={(e) => setForm({ ...form, discountEndDate: e.target.value })}
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-2 py-2 text-foreground outline-none focus:border-amber-500"
+                />
+              </div>
+            </div>
+          </div>
+
           <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3 space-y-2.5"><div className="flex items-center justify-between"><label className="font-bold text-foreground flex items-center gap-1.5"><ImageIcon size={14} className="text-emerald-600"/><span>Photos ({formPhotos.length})</span></label><div className="flex items-center gap-2"><input type="file" ref={fileInputRef} onChange={handlePhotoUpload} accept="image/*" multiple className="hidden" id="property-photo-upload"/><label htmlFor="property-photo-upload" className={`inline-flex items-center gap-1.5 cursor-pointer rounded-lg bg-surface border border-border-color px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-surface-elevated ${uploadingPhoto?"opacity-50 pointer-events-none":""}`}>{uploadingPhoto?<Loader2 size={12} className="animate-spin"/>:<Plus size={12}/>}<span>{uploadingPhoto?"Uploading...":"Upload"}</span></label></div></div>{formPhotos.length===0?(<p className="text-[11px] text-muted italic py-1">No photos yet.</p>):(<div className="grid grid-cols-4 gap-2 pt-1">{formPhotos.map((url,idx)=>(<div key={idx} className="group relative aspect-video rounded-lg overflow-hidden border border-border-color bg-black/10"><img src={url} alt={`${idx+1}`} className="h-full w-full object-cover"/><button type="button" onClick={()=>promptDeletePhoto(idx)} className="absolute top-1 right-1 rounded-md bg-black/70 p-1 text-white hover:bg-red-600 opacity-0 group-hover:opacity-100 transition"><Trash size={12}/></button></div>))}</div>)}</div>
           <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={()=>setModalOpen(false)} className="rounded-xl border border-border-color px-3.5 py-1.5 text-muted hover:bg-surface-elevated">Cancel</button><button type="button" onClick={onSave} disabled={saving} className="rounded-xl bg-blue-600 px-5 py-1.5 font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-50">{saving?"Saving...":"Save Property"}</button></div>
         </div>

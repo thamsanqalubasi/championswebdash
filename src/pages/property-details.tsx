@@ -38,6 +38,9 @@ import {
   BedDouble,
   TrendingUp,
   KeyRound,
+  ExternalLink,
+  Sparkles,
+  Edit3,
 } from "lucide-react";
 import { StatusBadge } from "@/components/data-table";
 import { PropertyStatsModal } from "@/components/property-stats-modal";
@@ -61,6 +64,11 @@ type PropertyDetails = {
   status: string;
   monthlyRent: number;
   photos: string[];
+  bookingMode?: "platform" | "external";
+  externalBookingUrl?: string;
+  discountPercentage?: number;
+  discountStartDate?: string;
+  discountEndDate?: string;
 };
 
 type AssignedTenant = {
@@ -252,6 +260,20 @@ export default function PropertyDetailsPage() {
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [manageRoomsModalOpen, setManageRoomsModalOpen] = useState(false);
 
+  // Booking channel & discount modals
+  const [bookingChannelModalOpen, setBookingChannelModalOpen] = useState(false);
+  const [bookingModeForm, setBookingModeForm] = useState<"platform" | "external">("platform");
+  const [externalBookingUrlForm, setExternalBookingUrlForm] = useState("");
+  const [savingBookingChannel, setSavingBookingChannel] = useState(false);
+
+  const [discountModalOpen, setDiscountModalOpen] = useState(false);
+  const [discountForm, setDiscountForm] = useState({
+    percentage: 0,
+    startDate: "",
+    endDate: "",
+  });
+  const [savingDiscount, setSavingDiscount] = useState(false);
+
   const occupiedRoomsCount = useMemo(() => {
     return rooms.filter((r) => r.status === "occupied").length;
   }, [rooms]);
@@ -326,7 +348,7 @@ export default function PropertyDetailsPage() {
         ] = await Promise.all([
           supabase
             .from("properties")
-            .select("id, name, type, address, status, monthly_rent, photos, company_id")
+            .select("*")
             .eq("id", propertyId)
             .single(),
           supabase
@@ -390,6 +412,11 @@ export default function PropertyDetailsPage() {
             status: String(propertyRow.status ?? "vacant"),
             monthlyRent: Number(propertyRow.monthly_rent ?? 0),
             photos: photosList,
+            bookingMode: (propertyRow.booking_mode as any) || "platform",
+            externalBookingUrl: propertyRow.external_booking_url || "",
+            discountPercentage: Number(propertyRow.discount_percentage) || 0,
+            discountStartDate: propertyRow.discount_start_date || "",
+            discountEndDate: propertyRow.discount_end_date || "",
           });
           setRooms(roomsData || []);
 
@@ -704,6 +731,77 @@ export default function PropertyDetailsPage() {
       alert(deleteError instanceof Error ? deleteError.message : "Could not delete photo.");
     } finally {
       setDeletingPhoto(false);
+    }
+  };
+
+  const openBookingChannelModal = () => {
+    if (!property) return;
+    setBookingModeForm(property.bookingMode || "platform");
+    setExternalBookingUrlForm(property.externalBookingUrl || "");
+    setBookingChannelModalOpen(true);
+  };
+
+  const handleSaveBookingChannel = async () => {
+    if (!propertyId) return;
+    if (bookingModeForm === "external" && !externalBookingUrlForm.trim()) {
+      alert("Please enter a valid external booking URL.");
+      return;
+    }
+    setSavingBookingChannel(true);
+    try {
+      const payload: Record<string, unknown> = {
+        booking_mode: bookingModeForm,
+        external_booking_url: bookingModeForm === "external" ? externalBookingUrlForm.trim() : null,
+      };
+      const { error: err } = await supabase.from("properties").update(payload).eq("id", propertyId);
+      if (err) throw err;
+      setProperty((prev) => prev ? {
+        ...prev,
+        bookingMode: bookingModeForm,
+        externalBookingUrl: bookingModeForm === "external" ? externalBookingUrlForm.trim() : "",
+      } : null);
+      setBookingChannelModalOpen(false);
+      reload();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to update booking channel");
+    } finally {
+      setSavingBookingChannel(false);
+    }
+  };
+
+  const openDiscountModal = () => {
+    if (!property) return;
+    setDiscountForm({
+      percentage: property.discountPercentage || 0,
+      startDate: property.discountStartDate || "",
+      endDate: property.discountEndDate || "",
+    });
+    setDiscountModalOpen(true);
+  };
+
+  const handleSaveDiscount = async () => {
+    if (!propertyId) return;
+    setSavingDiscount(true);
+    try {
+      const payload: Record<string, unknown> = {
+        discount_percentage: Number(discountForm.percentage) || 0,
+        discount_start_date: discountForm.startDate || null,
+        discount_end_date: discountForm.endDate || null,
+      };
+      const { error: err } = await supabase.from("properties").update(payload).eq("id", propertyId);
+      if (err) throw err;
+      setProperty((prev) => prev ? {
+        ...prev,
+        discountPercentage: Number(discountForm.percentage) || 0,
+        discountStartDate: discountForm.startDate || "",
+        discountEndDate: discountForm.endDate || "",
+      } : null);
+      setDiscountModalOpen(false);
+      reload();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to update promotional discount");
+    } finally {
+      setSavingDiscount(false);
     }
   };
 
@@ -1375,6 +1473,87 @@ export default function PropertyDetailsPage() {
 
             {/* Side Column: Media & Finance Actions */}
             <aside className="space-y-6">
+              {/* Booking Channel Panel */}
+              <section className="rounded-2xl border border-border-color bg-surface overflow-hidden">
+                <header className="px-6 py-4 border-b border-border-color/50 bg-surface-elevated/30 flex items-center justify-between">
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-muted/60">Booking Channel</h3>
+                  <ExternalLink size={16} className="text-muted/40" />
+                </header>
+                <div className="p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted font-medium">Channel Mode:</span>
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                      property.bookingMode === "external"
+                        ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-500/20"
+                        : "bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20"
+                    }`}>
+                      {property.bookingMode === "external" ? "Custom Booking Link" : "Paimbabook Platform"}
+                    </span>
+                  </div>
+
+                  {property.bookingMode === "external" && property.externalBookingUrl && (
+                    <div className="rounded-xl bg-surface-elevated/60 border border-border-color/50 p-3">
+                      <p className="text-[10px] font-bold uppercase text-muted mb-1">Direct Booking URL</p>
+                      <a
+                        href={property.externalBookingUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline break-all font-mono block"
+                      >
+                        {property.externalBookingUrl}
+                      </a>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={openBookingChannelModal}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated/50 py-2 text-xs font-bold text-foreground hover:bg-surface-elevated transition"
+                  >
+                    <Edit3 size={13} />
+                    <span>Change Booking Channel</span>
+                  </button>
+                </div>
+              </section>
+
+              {/* Promotional Discounts Panel */}
+              <section className="rounded-2xl border border-border-color bg-surface overflow-hidden">
+                <header className="px-6 py-4 border-b border-border-color/50 bg-surface-elevated/30 flex items-center justify-between">
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-muted/60">Promotional Discounts</h3>
+                  <Sparkles size={16} className="text-amber-500" />
+                </header>
+                <div className="p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted font-medium">Active Offer:</span>
+                    {property.discountPercentage && property.discountPercentage > 0 ? (
+                      <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-black text-amber-600 dark:text-amber-400">
+                        🔥 {property.discountPercentage}% OFF
+                      </span>
+                    ) : (
+                      <span className="text-xs font-semibold text-muted">No discount active</span>
+                    )}
+                  </div>
+
+                  {property.discountPercentage && property.discountPercentage > 0 ? (
+                    <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 text-xs space-y-1">
+                      <p className="font-bold text-amber-800 dark:text-amber-300">Live on Public Portal</p>
+                      <p className="text-[11px] text-muted">
+                        Valid: {property.discountStartDate ? `From ${property.discountStartDate}` : "Immediate"} {property.discountEndDate ? `until ${property.discountEndDate}` : "ongoing"}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={openDiscountModal}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated/50 py-2 text-xs font-bold text-foreground hover:bg-surface-elevated transition"
+                  >
+                    <Sparkles size={13} className="text-amber-500" />
+                    <span>{property.discountPercentage ? "Edit Promotional Discount" : "Set Promotional Discount"}</span>
+                  </button>
+                </div>
+              </section>
+
               {/* Media Gallery Panel */}
               <section className="rounded-2xl border border-border-color bg-surface overflow-hidden">
                 <header className="px-6 py-4 border-b border-border-color/50 bg-surface-elevated/30 flex items-center justify-between">
@@ -1595,6 +1774,149 @@ export default function PropertyDetailsPage() {
             <button type="button" onClick={() => setBillPaymentTarget(null)} className="flex-1 rounded-xl border border-border-color py-3 text-sm font-bold text-muted hover:bg-surface-elevated transition-all">Cancel</button>
             <button type="button" onClick={() => void saveBillPayment()} disabled={savingBillPayment} className="flex-[2] rounded-xl bg-foreground py-3 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50">
               {savingBillPayment ? "Processing..." : "Confirm & Save"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Booking Channel Modal */}
+      <Modal
+        open={bookingChannelModalOpen}
+        onClose={() => setBookingChannelModalOpen(false)}
+        title="Configure Booking & Reservation Channel"
+      >
+        <div className="space-y-4 text-xs">
+          <p className="text-muted leading-relaxed">
+            Choose whether guests booking this property on Paimbabook use our native reservation flow, or are redirected to your external direct booking link or affiliate site.
+          </p>
+
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={() => setBookingModeForm("platform")}
+              className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition ${
+                bookingModeForm === "platform"
+                  ? "border-blue-600 bg-blue-600/10 text-blue-700 dark:text-blue-400 font-semibold"
+                  : "border-border-color bg-surface text-muted hover:border-blue-400/50"
+              }`}
+            >
+              <span className="text-xs font-bold text-foreground">🏨 Paimbabook Platform</span>
+              <span className="text-[10px] text-muted">Process reservations, enquiries &amp; check-ins here</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setBookingModeForm("external")}
+              className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition ${
+                bookingModeForm === "external"
+                  ? "border-indigo-600 bg-indigo-600/10 text-indigo-700 dark:text-indigo-400 font-semibold"
+                  : "border-border-color bg-surface text-muted hover:border-indigo-400/50"
+              }`}
+            >
+              <span className="text-xs font-bold text-foreground flex items-center gap-1">
+                <ExternalLink size={12} /> Custom Booking Link
+              </span>
+              <span className="text-[10px] text-muted">Redirect to own website, affiliate or external engine</span>
+            </button>
+          </div>
+
+          {bookingModeForm === "external" && (
+            <div className="space-y-1.5 pt-1">
+              <label className="font-semibold text-foreground">External Booking URL *</label>
+              <input
+                type="url"
+                value={externalBookingUrlForm}
+                onChange={(e) => setExternalBookingUrlForm(e.target.value)}
+                placeholder="https://example.com/book or affiliate link"
+                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-indigo-600"
+                required
+              />
+              <p className="text-[10px] text-muted">
+                Guests clicking &quot;Book&quot; on the public portal will be redirected to this link.
+              </p>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-border-color">
+            <button
+              type="button"
+              onClick={() => setBookingChannelModalOpen(false)}
+              className="rounded-xl border border-border-color px-4 py-2 text-muted hover:bg-surface-elevated"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveBookingChannel}
+              disabled={savingBookingChannel}
+              className="rounded-xl bg-blue-600 px-5 py-2 font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-sm"
+            >
+              {savingBookingChannel ? "Saving..." : "Save Channel"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Promotional Discount Modal */}
+      <Modal
+        open={discountModalOpen}
+        onClose={() => setDiscountModalOpen(false)}
+        title="Configure Promotional Discount"
+      >
+        <div className="space-y-4 text-xs">
+          <p className="text-muted leading-relaxed">
+            Apply a special percentage discount. Live discounts show promotional badges (e.g. 🔥 -15% OFF) and strike-through pricing on the public portal.
+          </p>
+
+          <div>
+            <label className="font-semibold text-foreground block mb-1">Discount Percentage (%)</label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              placeholder="e.g. 15 (set to 0 to disable discount)"
+              value={discountForm.percentage || ""}
+              onChange={(e) => setDiscountForm({ ...discountForm, percentage: Number(e.target.value) || 0 })}
+              className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-amber-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="font-semibold text-foreground block mb-1">Start Date (Optional)</label>
+              <input
+                type="date"
+                value={discountForm.startDate}
+                onChange={(e) => setDiscountForm({ ...discountForm, startDate: e.target.value })}
+                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-amber-500"
+              />
+            </div>
+            <div>
+              <label className="font-semibold text-foreground block mb-1">End Date (Optional)</label>
+              <input
+                type="date"
+                value={discountForm.endDate}
+                onChange={(e) => setDiscountForm({ ...discountForm, endDate: e.target.value })}
+                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-amber-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-border-color">
+            <button
+              type="button"
+              onClick={() => setDiscountModalOpen(false)}
+              className="rounded-xl border border-border-color px-4 py-2 text-muted hover:bg-surface-elevated"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveDiscount}
+              disabled={savingDiscount}
+              className="rounded-xl bg-amber-600 px-5 py-2 font-bold text-white hover:bg-amber-700 disabled:opacity-50 transition shadow-sm"
+            >
+              {savingDiscount ? "Saving..." : "Save Discount"}
             </button>
           </div>
         </div>

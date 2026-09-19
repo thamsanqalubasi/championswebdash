@@ -748,6 +748,52 @@ export function ManageRoomsRatesModal({
                                             />
                                           </div>
 
+                                          {/* Promotional Discount */}
+                                          <div className="rounded-lg border border-border-color bg-surface/50 p-2.5 space-y-2">
+                                            <div className="flex items-center justify-between">
+                                              <label className="text-[10px] font-bold text-muted uppercase flex items-center gap-1">
+                                                <Sparkles size={11} className="text-amber-500" /> Promotional Discount
+                                              </label>
+                                              {Number(roomEditForm.discountPercentage) > 0 && (
+                                                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-black text-amber-600">
+                                                  {roomEditForm.discountPercentage}% OFF
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-1.5">
+                                              <div>
+                                                <label className="text-[9px] text-muted block mb-0.5">Discount %</label>
+                                                <input
+                                                  type="number"
+                                                  min="0"
+                                                  max="100"
+                                                  placeholder="0"
+                                                  value={roomEditForm.discountPercentage ?? ""}
+                                                  onChange={(e) => setRoomEditForm({ ...roomEditForm, discountPercentage: Number(e.target.value) || 0 })}
+                                                  className="w-full rounded border border-border-color bg-surface px-2 py-1 text-xs text-foreground outline-none"
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="text-[9px] text-muted block mb-0.5">Start Date</label>
+                                                <input
+                                                  type="date"
+                                                  value={roomEditForm.discountStartDate ?? ""}
+                                                  onChange={(e) => setRoomEditForm({ ...roomEditForm, discountStartDate: e.target.value })}
+                                                  className="w-full rounded border border-border-color bg-surface px-1 py-1 text-[11px] text-foreground outline-none"
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="text-[9px] text-muted block mb-0.5">End Date</label>
+                                                <input
+                                                  type="date"
+                                                  value={roomEditForm.discountEndDate ?? ""}
+                                                  onChange={(e) => setRoomEditForm({ ...roomEditForm, discountEndDate: e.target.value })}
+                                                  className="w-full rounded border border-border-color bg-surface px-1 py-1 text-[11px] text-foreground outline-none"
+                                                />
+                                              </div>
+                                            </div>
+                                          </div>
+
                                           {/* Photo upload */}
                                           <div>
                                             <label className="text-[10px] font-bold text-muted uppercase block mb-1">Room Photos</label>
@@ -823,10 +869,23 @@ export function ManageRoomsRatesModal({
                                           </div>
 
                                           <div className="flex items-center justify-between text-xs text-muted mt-3 pt-3 border-t border-border-color/40">
-                                            <span className="font-black text-foreground">
-                                              NAD {room.pricePerNight}
-                                              <span className="text-[10px] font-normal text-muted">/nt</span>
-                                            </span>
+                                            {room.discountPercentage && room.discountPercentage > 0 ? (
+                                              <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="font-black text-amber-600 dark:text-amber-400">
+                                                  NAD {Math.round(room.pricePerNight * (1 - room.discountPercentage / 100))}
+                                                  <span className="text-[10px] font-normal text-muted">/nt</span>
+                                                </span>
+                                                <span className="text-[10px] line-through text-muted">NAD {room.pricePerNight}</span>
+                                                <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-black text-amber-600">
+                                                  -{room.discountPercentage}%
+                                                </span>
+                                              </div>
+                                            ) : (
+                                              <span className="font-black text-foreground">
+                                                NAD {room.pricePerNight}
+                                                <span className="text-[10px] font-normal text-muted">/nt</span>
+                                              </span>
+                                            )}
                                             <button
                                               type="button"
                                               onClick={() => startEditRoom(room)}

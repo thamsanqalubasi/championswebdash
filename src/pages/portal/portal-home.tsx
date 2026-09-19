@@ -15,6 +15,10 @@ type RentalProp = {
   monthly_rent: number;
   photos: string[];
   available_from?: string;
+  discount_percentage?: number;
+  discount_start_date?: string;
+  discount_end_date?: string;
+  booking_mode?: string;
 };
 
 type RoomListing = {
@@ -33,6 +37,10 @@ type RoomListing = {
   amenities: string[];
   city?: string;
   country?: string;
+  discount_percentage?: number;
+  discount_start_date?: string;
+  discount_end_date?: string;
+  booking_mode?: string;
 };
 
 type AgentListing = {
@@ -54,6 +62,19 @@ function formatVacancyDate(isoDate?: string): string | null {
   } catch {
     return null;
   }
+}
+
+function isDiscountActive(pct?: number, start?: string, end?: string): boolean {
+  if (!pct || pct <= 0) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  if (start && start > today) return false;
+  if (end && end < today) return false;
+  return true;
+}
+
+function calculateDiscountedPrice(original: number, pct?: number): number {
+  if (!pct || pct <= 0) return original;
+  return Math.round(original * (1 - pct / 100));
 }
 
 function PhotoSlider({ photos, name }: { photos: string[]; name: string }) {
@@ -89,27 +110,56 @@ export default function PortalHomePage() {
     async function load() {
       setLoading(true);
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("properties")
-          .select("id,name,type,address,city,country,status,monthly_rent,photos,available_from")
+          .select("id,name,type,address,city,country,status,monthly_rent,photos,available_from,discount_percentage,discount_start_date,discount_end_date,booking_mode")
           .eq("is_published", true)
           .in("type", ["house","apartment","storage"])
           .order("name");
-        setRentals((data || []) as RentalProp[]);
+        if (error) {
+          const fallback = await supabase
+            .from("properties")
+            .select("id,name,type,address,city,country,status,monthly_rent,photos,available_from")
+            .eq("is_published", true)
+            .in("type", ["house","apartment","storage"])
+            .order("name");
+          setRentals((fallback.data || []) as RentalProp[]);
+        } else {
+          setRentals((data || []) as RentalProp[]);
+        }
       } catch { setRentals([]); }
 
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("room_type_listings")
-          .select("id,property_id,display_name,property_name,type_key,adults_capacity,kids_capacity,total_rooms_of_type,price_room_only,price_bed_breakfast,price_full_board,photos,amenities,properties(city,country)")
+          .select("id,property_id,display_name,property_name,type_key,adults_capacity,kids_capacity,total_rooms_of_type,price_room_only,price_bed_breakfast,price_full_board,photos,amenities,discount_percentage,discount_start_date,discount_end_date,booking_mode,properties(city,country,discount_percentage,discount_start_date,discount_end_date,booking_mode)")
           .eq("is_active", true)
           .order("sort_order")
           .order("created_at");
-        if (data) {
+        if (error) {
+          const fallback = await supabase
+            .from("room_type_listings")
+            .select("id,property_id,display_name,property_name,type_key,adults_capacity,kids_capacity,total_rooms_of_type,price_room_only,price_bed_breakfast,price_full_board,photos,amenities,properties(city,country)")
+            .eq("is_active", true)
+            .order("sort_order")
+            .order("created_at");
+          if (fallback.data) {
+            const mapped = fallback.data.map((r: any) => ({
+              ...r,
+              city: r.properties?.city || "",
+              country: r.properties?.country || "",
+            }));
+            setRoomListings(mapped as RoomListing[]);
+          }
+        } else if (data) {
           const mapped = data.map((r: any) => ({
             ...r,
             city: r.properties?.city || "",
             country: r.properties?.country || "",
+            discount_percentage: r.discount_percentage ?? r.properties?.discount_percentage,
+            discount_start_date: r.discount_start_date ?? r.properties?.discount_start_date,
+            discount_end_date: r.discount_end_date ?? r.properties?.discount_end_date,
+            booking_mode: r.booking_mode ?? r.properties?.booking_mode,
           }));
           setRoomListings(mapped as RoomListing[]);
         }
@@ -474,12 +524,21 @@ export default function PortalHomePage() {
               {filteredRooms.map(r => {
                 const stat = reviewsMap[r.id] || reviewsMap[r.property_id];
                 const boost = boostedMap[r.id] || boostedMap[r.property_id];
+                const hasDiscount = isDiscountActive(r.discount_percentage, r.discount_start_date, r.discount_end_date);
+                const originalPrice = lowestPrice(r);
+                const discountedPrice = hasDiscount ? calculateDiscountedPrice(originalPrice, r.discount_percentage) : originalPrice;
                 return (
                   <Link key={r.id} to={`/listing/${r.id}`} className={`group relative rounded-2xl border ${boost ? "border-amber-400 dark:border-amber-500 shadow-md ring-2 ring-amber-400/30" : "border-gray-200 dark:border-slate-800"} bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:shadow-lg transition-all hover:-translate-y-1`}>
                     {boost && (
                       <div className="absolute top-3 left-3 z-20 flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white px-2.5 py-1 text-[11px] font-black shadow-md tracking-wider uppercase">
                         <Sparkles size={11} className="fill-white" />
                         {boost.badge}
+                      </div>
+                    )}
+                    {hasDiscount && (
+                      <div className="absolute top-3 right-3 z-20 flex items-center gap-1 rounded-full bg-rose-600 text-white px-2.5 py-1 text-[11px] font-black shadow-md tracking-wider uppercase">
+                        <Flame size={11} className="fill-white" />
+                        -{r.discount_percentage}% OFF
                       </div>
                     )}
                     <PhotoSlider photos={r.photos||[]} name={r.display_name}/>
@@ -516,7 +575,17 @@ export default function PortalHomePage() {
                         </div>
                       )}
                       <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-slate-800">
-                        <div><span className="text-xl font-bold text-purple-600 dark:text-purple-400">R{lowestPrice(r).toLocaleString()}</span><span className="text-sm text-gray-400 dark:text-slate-500">/night</span></div>
+                        <div>
+                          {hasDiscount ? (
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-xl font-bold text-rose-600 dark:text-rose-400">R{discountedPrice.toLocaleString()}</span>
+                              <span className="text-xs line-through text-gray-400">R{originalPrice.toLocaleString()}</span>
+                              <span className="text-sm text-gray-400 dark:text-slate-500">/night</span>
+                            </div>
+                          ) : (
+                            <div><span className="text-xl font-bold text-purple-600 dark:text-purple-400">R{originalPrice.toLocaleString()}</span><span className="text-sm text-gray-400 dark:text-slate-500">/night</span></div>
+                          )}
+                        </div>
                         <span className="rounded-full bg-green-100 dark:bg-green-950/80 px-2.5 py-1 text-xs font-semibold text-green-700 dark:text-green-300">Available</span>
                       </div>
                     </div>
@@ -600,12 +669,21 @@ export default function PortalHomePage() {
               {filteredRentals.map(l => {
                 const stat = reviewsMap[l.id];
                 const boost = boostedMap[l.id];
+                const hasDiscount = isDiscountActive(l.discount_percentage, l.discount_start_date, l.discount_end_date);
+                const originalRent = l.monthly_rent || 0;
+                const discountedRent = hasDiscount ? calculateDiscountedPrice(originalRent, l.discount_percentage) : originalRent;
                 return (
                   <Link key={l.id} to={`/listing/${l.id}`} className={`group relative rounded-2xl border ${boost ? "border-amber-400 dark:border-amber-500 shadow-md ring-2 ring-amber-400/30" : "border-gray-200 dark:border-slate-800"} bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:shadow-lg transition-all hover:-translate-y-1`}>
                     {boost && (
                       <div className="absolute top-3 left-3 z-20 flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white px-2.5 py-1 text-[11px] font-black shadow-md tracking-wider uppercase">
                         <Sparkles size={11} className="fill-white" />
                         {boost.badge}
+                      </div>
+                    )}
+                    {hasDiscount && (
+                      <div className="absolute top-3 right-3 z-20 flex items-center gap-1 rounded-full bg-rose-600 text-white px-2.5 py-1 text-[11px] font-black shadow-md tracking-wider uppercase">
+                        <Flame size={11} className="fill-white" />
+                        -{l.discount_percentage}% OFF
                       </div>
                     )}
                     <PhotoSlider photos={l.photos||[]} name={l.name}/>
@@ -630,7 +708,17 @@ export default function PortalHomePage() {
                       </div>
 
                       <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-slate-800">
-                        <div><span className="text-xl font-bold text-blue-600 dark:text-blue-400">R{(l.monthly_rent||0).toLocaleString()}</span><span className="text-sm text-gray-400 dark:text-slate-500">/month</span></div>
+                        <div>
+                          {hasDiscount ? (
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-xl font-bold text-rose-600 dark:text-rose-400">R{discountedRent.toLocaleString()}</span>
+                              <span className="text-xs line-through text-gray-400">R{originalRent.toLocaleString()}</span>
+                              <span className="text-sm text-gray-400 dark:text-slate-500">/month</span>
+                            </div>
+                          ) : (
+                            <div><span className="text-xl font-bold text-blue-600 dark:text-blue-400">R{originalRent.toLocaleString()}</span><span className="text-sm text-gray-400 dark:text-slate-500">/month</span></div>
+                          )}
+                        </div>
                         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${l.status==="vacant"?"bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300":"bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300"}`}>
                           {l.status==="vacant" ? "Available" : (l.available_from ? `Occupied · Available ${formatVacancyDate(l.available_from)}` : "Occupied")}
                         </span>
