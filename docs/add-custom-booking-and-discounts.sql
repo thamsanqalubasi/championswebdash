@@ -8,8 +8,10 @@ ADD COLUMN IF NOT EXISTS discount_percentage numeric DEFAULT 0,
 ADD COLUMN IF NOT EXISTS discount_start_date date,
 ADD COLUMN IF NOT EXISTS discount_end_date date;
 
--- 2. Add discount fields to commercial rooms
+-- 2. Add booking channel and discount fields to commercial rooms
 ALTER TABLE IF EXISTS public.commercial_rooms
+ADD COLUMN IF NOT EXISTS booking_mode text DEFAULT 'platform',
+ADD COLUMN IF NOT EXISTS external_booking_url text,
 ADD COLUMN IF NOT EXISTS discount_percentage numeric DEFAULT 0,
 ADD COLUMN IF NOT EXISTS discount_start_date date,
 ADD COLUMN IF NOT EXISTS discount_end_date date;

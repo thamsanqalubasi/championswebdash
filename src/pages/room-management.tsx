@@ -28,6 +28,8 @@ import {
   X,
   Loader2,
   Lock,
+  ExternalLink,
+  KeyRound,
 } from "lucide-react";
 import {
   fetchCommercialRooms,
@@ -41,6 +43,7 @@ import {
   fetchPropertyFloors,
   savePropertyFloors,
   deleteCommercialRoom,
+  verifyUserPin,
 } from "@/lib/data";
 import { uploadFileToBucket } from "@/lib/storage";
 import { PinPromptDialog } from "@/components/pin-dialog";
@@ -100,6 +103,16 @@ export default function RoomManagementPage() {
   const [notes, setNotes] = useState("");
   const roomPhotoInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Booking Channel & Discounts State for Room
+  const [bookingMode, setBookingMode] = useState<"platform" | "external">("platform");
+  const [externalBookingUrl, setExternalBookingUrl] = useState("");
+  const [discountPercentage, setDiscountPercentage] = useState(0);
+  const [discountStartDate, setDiscountStartDate] = useState("");
+  const [discountEndDate, setDiscountEndDate] = useState("");
+  const [roomDiscountPin, setRoomDiscountPin] = useState("");
+  const [roomDiscountPinError, setRoomDiscountPinError] = useState<string | null>(null);
+  const [savingRoom, setSavingRoom] = useState(false);
+
   // PIN security states
   const [roomToDelete, setRoomToDelete] = useState<CommercialRoom | null>(null);
   const [pinDialogForRoom, setPinDialogForRoom] = useState(false);
@@ -138,24 +151,19 @@ export default function RoomManagementPage() {
     setProperties(props);
 
     const accomm = props.filter((p) =>
-      ["hotel", "motel", "lodge", "guest_house", "commercial"].includes(p.type)
+      ["hotel", "motel", "lodge", "guest_house", "commercial"].includes(p.type?.toLowerCase() || "")
     );
-    const candidateList = accomm.length > 0 ? accomm : props;
 
-    let activePropId = selectedPropertyId;
-    if (!activePropId || !props.some((p) => p.id === activePropId)) {
-      activePropId = candidateList[0]?.id || "";
+    if (!selectedPropertyId && accomm.length > 0) {
+      setSelectedPropertyId(accomm[0].id);
     }
-    setSelectedPropertyId(activePropId);
 
-    const [allRooms, hk, rs, floors] = await Promise.all([
-      activePropId ? fetchCommercialRooms(currentCompany.id, activePropId) : Promise.resolve([]),
-      fetchHousekeepingSchedules(currentCompany.id),
-      fetchRoomServiceSchedules(currentCompany.id),
-      activePropId ? fetchPropertyFloors(currentCompany.id, activePropId) : Promise.resolve(["Ground Floor", "1st Floor", "2nd Floor"]),
-    ]);
+    const rms = await fetchCommercialRooms(currentCompany.id, selectedPropertyId);
+    const hk = await fetchHousekeepingSchedules(currentCompany.id);
+    const rs = await fetchRoomServiceSchedules(currentCompany.id);
+    const floors = await fetchPropertyFloors(currentCompany.id, selectedPropertyId);
 
-    setRooms(allRooms);
+    setRooms(rms);
     setHousekeeping(hk);
     setRoomServices(rs);
     setPropertyFloors(floors);
@@ -184,6 +192,13 @@ export default function RoomManagementPage() {
     setAmenities(["wifi", "tv", "ac", "ensuite"]);
     setRoomPhotos([]);
     setNotes("");
+    setBookingMode("platform");
+    setExternalBookingUrl("");
+    setDiscountPercentage(0);
+    setDiscountStartDate("");
+    setDiscountEndDate("");
+    setRoomDiscountPin("");
+    setRoomDiscountPinError(null);
     setShowNewFloorInput(false);
     setRoomModalOpen(true);
   };
@@ -205,6 +220,13 @@ export default function RoomManagementPage() {
     setAmenities(r.amenities || []);
     setRoomPhotos(r.photos || []);
     setNotes(r.notes || "");
+    setBookingMode(r.bookingMode || "platform");
+    setExternalBookingUrl(r.externalBookingUrl || "");
+    setDiscountPercentage(r.discountPercentage || 0);
+    setDiscountStartDate(r.discountStartDate || "");
+    setDiscountEndDate(r.discountEndDate || "");
+    setRoomDiscountPin("");
+    setRoomDiscountPinError(null);
     setShowNewFloorInput(false);
     setRoomModalOpen(true);
   };
@@ -286,25 +308,54 @@ export default function RoomManagementPage() {
       alert("Room photo is mandatory! Please upload at least one picture of the room before saving.");
       return;
     }
-    await saveCommercialRoom({
-      id: editingRoom?.id,
-      companyId: currentCompany.id,
-      propertyId: selectedPropertyId,
-      roomNumber,
-      roomType,
-      floor,
-      capacityAdults,
-      capacityChildren,
-      pricePerNight,
-      priceBedBreakfast,
-      priceBedLunch,
-      priceFullBoard,
-      amenities,
-      photos: roomPhotos,
-      notes,
-    });
-    setRoomModalOpen(false);
-    loadData();
+    if (bookingMode === "external" && !externalBookingUrl.trim()) {
+      alert("Please enter a valid external booking URL for this room.");
+      return;
+    }
+    const pct = Number(discountPercentage) || 0;
+    if (pct > 0) {
+      if (!roomDiscountPin.trim()) {
+        setRoomDiscountPinError("Security PIN is required to activate a promotional discount.");
+        return;
+      }
+      const isPinValid = await verifyUserPin(currentCompanyUser?.email || "", roomDiscountPin.trim());
+      if (!isPinValid) {
+        setRoomDiscountPinError("Incorrect security PIN. Default is 1234 if not yet configured.");
+        return;
+      }
+    }
+
+    setSavingRoom(true);
+    try {
+      await saveCommercialRoom({
+        id: editingRoom?.id,
+        companyId: currentCompany.id,
+        propertyId: selectedPropertyId,
+        roomNumber,
+        roomType,
+        floor,
+        capacityAdults,
+        capacityChildren,
+        pricePerNight,
+        priceBedBreakfast,
+        priceBedLunch,
+        priceFullBoard,
+        amenities,
+        photos: roomPhotos,
+        notes,
+        bookingMode,
+        externalBookingUrl: externalBookingUrl.trim(),
+        discountPercentage: pct,
+        discountStartDate: discountStartDate || undefined,
+        discountEndDate: discountEndDate || undefined,
+      });
+      setRoomModalOpen(false);
+      await loadData();
+    } catch (err) {
+      alert("Could not save room: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSavingRoom(false);
+    }
   };
 
   const handleApplyUniformPricing = async (e: React.FormEvent) => {
@@ -535,19 +586,31 @@ export default function RoomManagementPage() {
                     </span>
                     <h3 className="text-lg font-black text-foreground">{r.roomNumber}</h3>
                   </div>
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${
-                      r.status === "available"
-                        ? "bg-emerald-500/10 text-emerald-600"
-                        : r.status === "occupied"
-                        ? "bg-blue-500/10 text-blue-600"
-                        : r.status === "cleaning_needed"
-                        ? "bg-amber-500/10 text-amber-600"
-                        : "bg-purple-500/10 text-purple-600"
-                    }`}
-                  >
-                    {r.status.replace("_", " ")}
-                  </span>
+                  <div className="flex flex-col items-end gap-1">
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${
+                        r.status === "available"
+                          ? "bg-emerald-500/10 text-emerald-600"
+                          : r.status === "occupied"
+                          ? "bg-blue-500/10 text-blue-600"
+                          : r.status === "cleaning_needed"
+                          ? "bg-amber-500/10 text-amber-600"
+                          : "bg-purple-500/10 text-purple-600"
+                      }`}
+                    >
+                      {r.status.replace("_", " ")}
+                    </span>
+                    {r.bookingMode === "external" && (
+                      <span className="inline-flex items-center gap-0.5 rounded-full bg-indigo-500/15 px-2 py-0.5 text-[9px] font-bold text-indigo-600 dark:text-indigo-400">
+                        <ExternalLink size={9} /> Direct Link
+                      </span>
+                    )}
+                    {r.discountPercentage && r.discountPercentage > 0 ? (
+                      <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] font-black text-amber-600">
+                        <Sparkles size={9} /> {r.discountPercentage}% OFF
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="space-y-2 text-xs">
@@ -563,7 +626,16 @@ export default function RoomManagementPage() {
                     <div className="grid grid-cols-2 gap-1 text-[11px]">
                       <div>
                         <span className="text-muted">Bed Only:</span>{" "}
-                        <span className="font-bold text-foreground">R{r.pricePerNight}</span>
+                        {r.discountPercentage && r.discountPercentage > 0 ? (
+                          <>
+                            <span className="font-bold text-amber-600">
+                              R{Math.round(r.pricePerNight * (1 - r.discountPercentage / 100))}
+                            </span>{" "}
+                            <span className="text-[10px] line-through text-muted">R{r.pricePerNight}</span>
+                          </>
+                        ) : (
+                          <span className="font-bold text-foreground">R{r.pricePerNight}</span>
+                        )}
                       </div>
                       <div>
                         <span className="text-muted">B&B:</span>{" "}
@@ -830,362 +902,575 @@ export default function RoomManagementPage() {
         </div>
       )}
 
-      {/* Add / Edit Room Modal */}
+      {/* Add / Edit Room Modal (Scrollable with Booking Channel & Discounts) */}
       {roomModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-border-color pb-3">
-              <h3 className="text-base font-bold text-foreground">
-                {editingRoom ? `Edit ${editingRoom.roomNumber}` : "Add New Room"}
-              </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-6 backdrop-blur-sm overflow-y-auto">
+          <div className="relative w-full max-w-2xl rounded-2xl border border-border-color bg-surface text-foreground shadow-2xl overflow-hidden my-auto flex flex-col max-h-[92vh]">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-border-color/60 bg-surface-elevated/70 px-6 py-4 shrink-0">
+              <div>
+                <h3 className="text-base font-bold text-foreground">
+                  {editingRoom ? `Edit ${editingRoom.roomNumber}` : "Add New Room"}
+                </h3>
+                <p className="text-xs text-muted">
+                  Configure room rates, booking channel, discounts and details
+                </p>
+              </div>
               <button
+                type="button"
                 onClick={() => setRoomModalOpen(false)}
-                className="rounded-lg p-1.5 text-muted hover:bg-surface-elevated"
+                className="rounded-lg p-1.5 text-muted hover:bg-surface-elevated text-xl leading-none"
               >
                 ✕
               </button>
             </div>
 
-            {/* Modal Accommodation Property Warning Banner */}
-            <div
-              className={`rounded-xl border p-3 flex items-start gap-2.5 text-xs ${
-                properties.length === 0
-                  ? "border-amber-400 bg-amber-500/10 text-amber-900 dark:text-amber-200"
-                  : "border-blue-200 dark:border-blue-900/40 bg-blue-50/70 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200"
-              }`}
-            >
-              <Building2
-                size={16}
-                className={`shrink-0 mt-0.5 ${
-                  properties.length === 0 ? "text-amber-600" : "text-blue-600"
-                }`}
-              />
-              <div>
-                <p className="font-bold">
-                  {properties.length === 0
-                    ? "⚠️ Accommodation Property Required"
-                    : "🏨 Accommodation Property Assignment"}
-                </p>
-                <p className="text-[11px] opacity-90 mt-0.5">
-                  All rooms must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial). Without selecting a property or having an accommodation property in the system, you cannot create or manage rooms.
-                </p>
-              </div>
-            </div>
-
-            <form onSubmit={handleSaveRoom} className="space-y-4 text-xs">
-              <div>
-                <label className="mb-1 block font-semibold text-foreground">
-                  Accommodation Property <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={selectedPropertyId}
-                  onChange={(e) => setSelectedPropertyId(e.target.value)}
-                  disabled={properties.length === 0}
-                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none disabled:opacity-50"
-                  required
+            {/* Scrollable Form Body */}
+            <form onSubmit={handleSaveRoom} className="flex flex-col flex-1 overflow-hidden">
+              <div className="overflow-y-auto p-6 space-y-5 flex-1 text-xs">
+                {/* Modal Accommodation Property Warning Banner */}
+                <div
+                  className={`rounded-xl border p-3 flex items-start gap-2.5 text-xs ${
+                    properties.length === 0
+                      ? "border-amber-400 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+                      : "border-blue-200 dark:border-blue-900/40 bg-blue-50/70 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200"
+                  }`}
                 >
-                  {properties.length === 0 ? (
-                    <option value="">No accommodation property found</option>
-                  ) : (
-                    properties.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.type.replace(/_/g, " ").toUpperCase()})
-                      </option>
-                    ))
-                  )}
-                </select>
-                {properties.length === 0 && (
-                  <p className="mt-1 text-[11px] text-amber-600 font-medium">
-                    You cannot create a room without an accommodation property. Please create a property first.
-                  </p>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-medium text-foreground">Room Number / Name *</label>
-                  <input
-                    type="text"
-                    value={roomNumber}
-                    onChange={(e) => setRoomNumber(e.target.value)}
-                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
-                    required
+                  <Building2
+                    size={16}
+                    className={`shrink-0 mt-0.5 ${
+                      properties.length === 0 ? "text-amber-600" : "text-blue-600"
+                    }`}
                   />
-                </div>
-
-                <div>
-                  <label className="mb-1 block font-medium text-foreground">Room Category *</label>
-                  <select
-                    value={roomType}
-                    onChange={(e) => setRoomType(e.target.value as RoomType)}
-                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
-                  >
-                    <option value="standard">Standard Room</option>
-                    <option value="single">Single Room</option>
-                    <option value="double">Double Room</option>
-                    <option value="twin">Twin Room</option>
-                    <option value="suite">Luxury Suite</option>
-                    <option value="deluxe">Deluxe Room</option>
-                    <option value="family">Family Chalet</option>
-                    <option value="penthouse">Penthouse</option>
-                    <option value="executive">Executive</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-medium text-foreground">Floor / Level</label>
-                    {!showNewFloorInput && (
-                      <button
-                        type="button"
-                        onClick={() => setShowNewFloorInput(true)}
-                        className="text-[10px] text-blue-600 hover:underline font-semibold"
-                      >
-                        + New
-                      </button>
-                    )}
+                  <div>
+                    <p className="font-bold">
+                      {properties.length === 0
+                        ? "⚠️ Accommodation Property Required"
+                        : "🏨 Accommodation Property Assignment"}
+                    </p>
+                    <p className="text-[11px] opacity-90 mt-0.5">
+                      All rooms must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial). Without selecting a property or having an accommodation property in the system, you cannot create or manage rooms.
+                    </p>
                   </div>
-                  {showNewFloorInput ? (
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="text"
-                        value={newFloorName}
-                        onChange={(e) => setNewFloorName(e.target.value)}
-                        placeholder="Floor name"
-                        className="w-full rounded-lg border border-border-color bg-surface-elevated px-2 py-1 text-xs text-foreground focus:border-blue-600 focus:outline-none"
-                        autoFocus
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddNewFloor}
-                        className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-700"
-                      >
-                        Add
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowNewFloorInput(false)}
-                        className="rounded-lg border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ) : (
-                    <select
-                      value={floor}
-                      onChange={(e) => {
-                        if (e.target.value === "__add_new__") {
-                          setShowNewFloorInput(true);
-                        } else {
-                          setFloor(e.target.value);
-                        }
-                      }}
-                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
-                    >
-                      {propertyFloors.map((fl) => (
-                        <option key={fl} value={fl}>
-                          {fl}
+                </div>
+
+                <div>
+                  <label className="mb-1 block font-semibold text-foreground">
+                    Accommodation Property <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={selectedPropertyId}
+                    onChange={(e) => setSelectedPropertyId(e.target.value)}
+                    disabled={properties.length === 0}
+                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none disabled:opacity-50"
+                    required
+                  >
+                    {properties.length === 0 ? (
+                      <option value="">No accommodation property found</option>
+                    ) : (
+                      properties.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.type.replace(/_/g, " ").toUpperCase()})
                         </option>
-                      ))}
-                      <option value="__add_new__">+ Add new floor...</option>
-                    </select>
-                  )}
-                </div>
-
-                <div>
-                  <label className="mb-1 block font-medium text-foreground">Adults Capacity</label>
-                  <input
-                    type="number"
-                    value={capacityAdults}
-                    onChange={(e) => setCapacityAdults(Number(e.target.value))}
-                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block font-medium text-foreground">Kids Capacity</label>
-                  <input
-                    type="number"
-                    value={capacityChildren}
-                    onChange={(e) => setCapacityChildren(Number(e.target.value))}
-                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Price tiers with permission check */}
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-foreground">Nightly Rate & Meal Plan Pricing ({currency})</label>
-                  {editingRoom && !canEditPricing && (
-                    <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded">
-                      <Lock size={12} />
-                      <span>Pricing Locked (Requires Admin, Manager, or Accountant)</span>
-                    </span>
+                      ))
+                    )}
+                  </select>
+                  {properties.length === 0 && (
+                    <p className="mt-1 text-[11px] text-amber-600 font-medium">
+                      You cannot create a room without an accommodation property. Please create a property first.
+                    </p>
                   )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1 block font-medium text-foreground">Bed Only Rate ({currency})</label>
+                    <label className="mb-1 block font-medium text-foreground">Room Number / Name *</label>
                     <input
-                      type="number"
-                      value={pricePerNight}
-                      disabled={editingRoom !== null && !canEditPricing}
-                      readOnly={editingRoom !== null && !canEditPricing}
-                      onChange={(e) => setPricePerNight(Number(e.target.value))}
-                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                      type="text"
+                      value={roomNumber}
+                      onChange={(e) => setRoomNumber(e.target.value)}
+                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none font-semibold"
+                      required
                     />
                   </div>
-                  <div>
-                    <label className="mb-1 block font-medium text-foreground">Bed & Breakfast Rate ({currency})</label>
-                    <input
-                      type="number"
-                      value={priceBedBreakfast}
-                      disabled={editingRoom !== null && !canEditPricing}
-                      readOnly={editingRoom !== null && !canEditPricing}
-                      onChange={(e) => setPriceBedBreakfast(Number(e.target.value))}
-                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block font-medium text-foreground">Bed, B/Fast & Lunch ({currency})</label>
-                    <input
-                      type="number"
-                      value={priceBedLunch}
-                      disabled={editingRoom !== null && !canEditPricing}
-                      readOnly={editingRoom !== null && !canEditPricing}
-                      onChange={(e) => setPriceBedLunch(Number(e.target.value))}
-                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block font-medium text-foreground">Full Board Rate ({currency})</label>
-                    <input
-                      type="number"
-                      value={priceFullBoard}
-                      disabled={editingRoom !== null && !canEditPricing}
-                      readOnly={editingRoom !== null && !canEditPricing}
-                      onChange={(e) => setPriceFullBoard(Number(e.target.value))}
-                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
-                    />
-                  </div>
-                </div>
-              </div>
 
-              {/* Room Amenities Multi-Select */}
-              <div className="space-y-1.5 pt-1">
-                <label className="block font-medium text-foreground">
-                  Room Features & Amenities ({amenities.length} selected)
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                  {AVAILABLE_AMENITIES.map((item) => {
-                    const Icon = item.icon;
-                    const isSelected = amenities.includes(item.key);
-                    return (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onClick={() => toggleAmenity(item.key)}
-                        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
-                          isSelected
-                            ? "border-blue-600 bg-blue-600/10 text-blue-600 dark:text-blue-400"
-                            : "border-border-color bg-surface-elevated text-muted hover:text-foreground"
-                        }`}
-                      >
-                        <Icon size={13} />
-                        <span className="truncate">{item.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Room Photos Section */}
-              <div className={`space-y-2 rounded-xl border p-3 ${
-                roomPhotos.length === 0
-                  ? "border-amber-500/40 bg-amber-500/5 dark:bg-amber-950/20"
-                  : "border-border-color bg-surface-elevated/40"
-              }`}>
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-foreground flex items-center gap-1.5">
-                    <ImageIcon size={14} className="text-emerald-600" />
-                    <span>Room Pictures ({roomPhotos.length})</span>
-                    <span className="text-red-500 text-xs font-semibold">* (Mandatory)</span>
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="file"
-                      ref={roomPhotoInputRef}
-                      onChange={handleRoomPhotoUpload}
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                      id="room-photo-upload"
-                    />
-                    <label
-                      htmlFor="room-photo-upload"
-                      className={`inline-flex items-center gap-1.5 cursor-pointer rounded-lg bg-surface border border-border-color px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-surface-elevated shadow-xs ${
-                        uploadingPhoto ? "opacity-50 pointer-events-none" : ""
-                      }`}
+                  <div>
+                    <label className="mb-1 block font-medium text-foreground">Room Category *</label>
+                    <select
+                      value={roomType}
+                      onChange={(e) => setRoomType(e.target.value as RoomType)}
+                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
                     >
-                      {uploadingPhoto ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-                      <span>{uploadingPhoto ? "Uploading..." : "Upload Photo"}</span>
-                    </label>
+                      <option value="standard">Standard Room</option>
+                      <option value="single">Single Room</option>
+                      <option value="double">Double Room</option>
+                      <option value="twin">Twin Room</option>
+                      <option value="suite">Luxury Suite</option>
+                      <option value="deluxe">Deluxe Room</option>
+                      <option value="family">Family Chalet</option>
+                      <option value="penthouse">Penthouse</option>
+                      <option value="executive">Executive</option>
+                    </select>
                   </div>
                 </div>
 
-                {roomPhotos.length === 0 ? (
-                  <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
-                    <AlertCircle size={14} className="shrink-0" />
-                    <span>A room photo is strictly mandatory before saving. Please click Upload Photo above.</span>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-4 gap-2 pt-1">
-                    {roomPhotos.map((url, idx) => (
-                      <div key={idx} className="group relative aspect-video rounded-lg overflow-hidden border border-border-color bg-black/10">
-                        <img src={url} alt={`Room ${idx + 1}`} className="h-full w-full object-cover" />
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-medium text-foreground">Floor / Level</label>
+                      {!showNewFloorInput && (
                         <button
                           type="button"
-                          onClick={() => promptDeletePhoto(idx)}
-                          className="absolute top-1 right-1 rounded-md bg-black/70 p-1 text-white hover:bg-red-600 opacity-0 group-hover:opacity-100 transition shadow-sm"
-                          title="Delete picture (Requires PIN)"
+                          onClick={() => setShowNewFloorInput(true)}
+                          className="text-[10px] text-blue-600 hover:underline font-semibold"
                         >
-                          <Trash2 size={12} />
+                          + New
+                        </button>
+                      )}
+                    </div>
+                    {showNewFloorInput ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={newFloorName}
+                          onChange={(e) => setNewFloorName(e.target.value)}
+                          placeholder="Floor name"
+                          className="w-full rounded-lg border border-border-color bg-surface-elevated px-2 py-1 text-xs text-foreground focus:border-blue-600 focus:outline-none"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddNewFloor}
+                          className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-700"
+                        >
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowNewFloorInput(false)}
+                          className="rounded-lg border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated"
+                        >
+                          ✕
                         </button>
                       </div>
-                    ))}
+                    ) : (
+                      <select
+                        value={floor}
+                        onChange={(e) => {
+                          if (e.target.value === "__add_new__") {
+                            setShowNewFloorInput(true);
+                          } else {
+                            setFloor(e.target.value);
+                          }
+                        }}
+                        className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                      >
+                        {propertyFloors.map((fl) => (
+                          <option key={fl} value={fl}>
+                            {fl}
+                          </option>
+                        ))}
+                        <option value="__add_new__">+ Add new floor...</option>
+                      </select>
+                    )}
                   </div>
-                )}
+
+                  <div>
+                    <label className="mb-1 block font-medium text-foreground">Adults Capacity</label>
+                    <input
+                      type="number"
+                      value={capacityAdults}
+                      onChange={(e) => setCapacityAdults(Number(e.target.value))}
+                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block font-medium text-foreground">Kids Capacity</label>
+                    <input
+                      type="number"
+                      value={capacityChildren}
+                      onChange={(e) => setCapacityChildren(Number(e.target.value))}
+                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Price tiers with permission check */}
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-foreground">Nightly Rate &amp; Meal Plan Pricing ({currency})</label>
+                    {editingRoom && !canEditPricing && (
+                      <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded">
+                        <Lock size={12} />
+                        <span>Pricing Locked (Requires Admin, Manager, or Accountant)</span>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block font-medium text-foreground">Bed Only Rate ({currency}) *</label>
+                      <input
+                        type="number"
+                        value={pricePerNight}
+                        disabled={editingRoom !== null && !canEditPricing}
+                        readOnly={editingRoom !== null && !canEditPricing}
+                        onChange={(e) => setPricePerNight(Number(e.target.value))}
+                        className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground font-semibold focus:border-blue-600 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block font-medium text-foreground">Bed &amp; Breakfast Rate ({currency})</label>
+                      <input
+                        type="number"
+                        value={priceBedBreakfast}
+                        disabled={editingRoom !== null && !canEditPricing}
+                        readOnly={editingRoom !== null && !canEditPricing}
+                        onChange={(e) => setPriceBedBreakfast(Number(e.target.value))}
+                        className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block font-medium text-foreground">Bed, B/Fast &amp; Lunch ({currency})</label>
+                      <input
+                        type="number"
+                        value={priceBedLunch}
+                        disabled={editingRoom !== null && !canEditPricing}
+                        readOnly={editingRoom !== null && !canEditPricing}
+                        onChange={(e) => setPriceBedLunch(Number(e.target.value))}
+                        className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block font-medium text-foreground">Full Board Rate ({currency})</label>
+                      <input
+                        type="number"
+                        value={priceFullBoard}
+                        disabled={editingRoom !== null && !canEditPricing}
+                        readOnly={editingRoom !== null && !canEditPricing}
+                        onChange={(e) => setPriceFullBoard(Number(e.target.value))}
+                        className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Booking & Reservation Channel for this Room */}
+                <div className="pt-3 border-t border-border-color/50 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-muted block">
+                      Booking &amp; Reservation Channel
+                    </label>
+                    <span className="text-[10px] text-muted">Configured per room</span>
+                  </div>
+                  <p className="text-[11px] text-muted">
+                    Choose whether guests booking this room use our native Paimbabook reservation flow, or are redirected to an external direct link or affiliate booking site.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setBookingMode("platform")}
+                      className={`flex flex-col items-start p-3 rounded-xl border text-left transition ${
+                        bookingMode === "platform"
+                          ? "border-blue-600 bg-blue-600/10 text-blue-700 dark:text-blue-300 ring-2 ring-blue-600/30"
+                          : "border-border-color bg-surface hover:border-blue-400/50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-base">🏨</span>
+                        <span className="font-bold text-xs text-foreground">Paimbabook Platform</span>
+                      </div>
+                      <p className="text-[10px] text-muted">
+                        Process reservations, enquiries &amp; check-ins directly on Paimbabook.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setBookingMode("external")}
+                      className={`flex flex-col items-start p-3 rounded-xl border text-left transition ${
+                        bookingMode === "external"
+                          ? "border-indigo-600 bg-indigo-600/10 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-600/30"
+                          : "border-border-color bg-surface hover:border-indigo-400/50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <ExternalLink size={14} className="text-indigo-600" />
+                        <span className="font-bold text-xs text-foreground">Custom Booking Link</span>
+                      </div>
+                      <p className="text-[10px] text-muted">
+                        Redirect guests to your website, affiliate or external engine.
+                      </p>
+                    </button>
+                  </div>
+
+                  {bookingMode === "external" && (
+                    <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-1.5">
+                      <label className="text-[11px] font-bold text-indigo-800 dark:text-indigo-300 block">
+                        External Booking URL *
+                      </label>
+                      <input
+                        type="url"
+                        placeholder="https://example.com/book or affiliate link"
+                        value={externalBookingUrl}
+                        onChange={(e) => setExternalBookingUrl(e.target.value)}
+                        className="w-full rounded-lg border border-indigo-400/50 bg-surface px-3 py-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-indigo-500"
+                        required
+                      />
+                      <p className="text-[10px] text-muted">
+                        Guests clicking &quot;Book&quot; on this room in the public portal will be redirected to this link.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Promotional Discounts */}
+                <div className="pt-3 border-t border-border-color/50 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-amber-500" />
+                      <span>Promotional Discounts</span>
+                    </label>
+                    {discountPercentage > 0 ? (
+                      <span className="rounded-full bg-amber-500/20 px-2.5 py-0.5 text-xs font-black text-amber-600">
+                        {discountPercentage}% OFF Active
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-muted/10 px-2.5 py-0.5 text-[10px] font-bold text-muted">
+                        No discount active
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-4 space-y-3.5">
+                    {/* Movable Bar (Slider) from 0% to 100% */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-[11px] font-bold text-foreground">
+                          Discount Percentage: <span className="text-amber-600 font-black">{discountPercentage}%</span>
+                        </label>
+                        {discountPercentage > 0 && (
+                          <span className="text-[10px] text-muted">
+                            Bed Only becomes: <strong className="text-foreground">R{Math.round(pricePerNight * (1 - discountPercentage / 100))}</strong>/nt
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="5"
+                        value={discountPercentage}
+                        onChange={(e) => {
+                          setDiscountPercentage(Number(e.target.value));
+                          setRoomDiscountPinError(null);
+                        }}
+                        className="w-full accent-amber-600 cursor-pointer h-2 bg-border-color rounded-lg appearance-none"
+                      />
+                      <div className="flex justify-between text-[9px] text-muted font-bold mt-1 px-1">
+                        <span>0%</span>
+                        <span>25%</span>
+                        <span>50%</span>
+                        <span>75%</span>
+                        <span>100%</span>
+                      </div>
+                    </div>
+
+                    {/* Presets */}
+                    <div>
+                      <label className="text-[10px] font-bold text-muted uppercase block mb-1">Presets</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[0, 5, 10, 15, 20, 25, 30, 40, 50, 75].map((pct) => (
+                          <button
+                            key={pct}
+                            type="button"
+                            onClick={() => {
+                              setDiscountPercentage(pct);
+                              setRoomDiscountPinError(null);
+                            }}
+                            className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                              discountPercentage === pct
+                                ? "bg-amber-600 text-white shadow-xs"
+                                : "border border-border-color bg-surface text-muted hover:border-amber-500"
+                            }`}
+                          >
+                            {pct === 0 ? "Off" : `${pct}%`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Dates */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-muted uppercase block mb-1">Start Date</label>
+                        <input
+                          type="date"
+                          value={discountStartDate}
+                          onChange={(e) => setDiscountStartDate(e.target.value)}
+                          className="w-full rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs text-foreground outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-muted uppercase block mb-1">End Date</label>
+                        <input
+                          type="date"
+                          value={discountEndDate}
+                          onChange={(e) => setDiscountEndDate(e.target.value)}
+                          className="w-full rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs text-foreground outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Security PIN Requirement when discount > 0 */}
+                    {discountPercentage > 0 && (
+                      <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
+                        <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-xs">
+                          <KeyRound size={13} />
+                          <span>Security PIN Required to Activate Discount</span>
+                        </div>
+                        <p className="text-[11px] text-muted leading-tight">
+                          Confirm setting <strong>{discountPercentage}% discount</strong> on <strong>{roomNumber || "this room"}</strong>:
+                        </p>
+                        <div className="max-w-xs">
+                          <input
+                            type="password"
+                            maxLength={8}
+                            value={roomDiscountPin}
+                            onChange={(e) => {
+                              setRoomDiscountPin(e.target.value);
+                              setRoomDiscountPinError(null);
+                            }}
+                            placeholder="Security PIN (default 1234)"
+                            className="w-full rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs text-foreground tracking-widest outline-none focus:border-amber-500"
+                          />
+                        </div>
+                        {roomDiscountPinError && (
+                          <p className="text-xs text-red-600 font-semibold flex items-center gap-1">
+                            <AlertCircle size={12} /> {roomDiscountPinError}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Room Amenities Multi-Select */}
+                <div className="space-y-1.5 pt-1">
+                  <label className="block font-medium text-foreground">
+                    Room Features &amp; Amenities ({amenities.length} selected)
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    {AVAILABLE_AMENITIES.map((item) => {
+                      const Icon = item.icon;
+                      const isSelected = amenities.includes(item.key);
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => toggleAmenity(item.key)}
+                          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+                            isSelected
+                              ? "border-blue-600 bg-blue-600/10 text-blue-600 dark:text-blue-400"
+                              : "border-border-color bg-surface-elevated text-muted hover:text-foreground"
+                          }`}
+                        >
+                          <Icon size={13} />
+                          <span className="truncate">{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Room Photos Section */}
+                <div className={`space-y-2 rounded-xl border p-3 ${
+                  roomPhotos.length === 0
+                    ? "border-amber-500/40 bg-amber-500/5 dark:bg-amber-950/20"
+                    : "border-border-color bg-surface-elevated/40"
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-foreground flex items-center gap-1.5">
+                      <ImageIcon size={14} className="text-emerald-600" />
+                      <span>Room Pictures ({roomPhotos.length})</span>
+                      <span className="text-red-500 text-xs font-semibold">* (Mandatory)</span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="file"
+                        ref={roomPhotoInputRef}
+                        onChange={handleRoomPhotoUpload}
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        id="room-photo-upload"
+                      />
+                      <label
+                        htmlFor="room-photo-upload"
+                        className={`inline-flex items-center gap-1.5 cursor-pointer rounded-lg bg-surface border border-border-color px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-surface-elevated shadow-xs ${
+                          uploadingPhoto ? "opacity-50 pointer-events-none" : ""
+                        }`}
+                      >
+                        {uploadingPhoto ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                        <span>{uploadingPhoto ? "Uploading..." : "Upload Photo"}</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {roomPhotos.length === 0 ? (
+                    <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
+                      <AlertCircle size={14} className="shrink-0" />
+                      <span>A room photo is strictly mandatory before saving. Please click Upload Photo above.</span>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-4 gap-2 pt-1">
+                      {roomPhotos.map((url, idx) => (
+                        <div key={idx} className="group relative aspect-video rounded-lg overflow-hidden border border-border-color bg-black/10">
+                          <img src={url} alt={`Room ${idx + 1}`} className="h-full w-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => promptDeletePhoto(idx)}
+                            className="absolute top-1 right-1 rounded-md bg-black/70 p-1 text-white hover:bg-red-600 opacity-0 group-hover:opacity-100 transition shadow-sm"
+                            title="Delete picture (Requires PIN)"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="mb-1 block font-medium text-foreground">Room Notes &amp; Special Instructions</label>
+                  <input
+                    type="text"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="e.g. Garden facing, recently refurbished with extra storage"
+                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="mb-1 block font-medium text-foreground">Room Notes & Special Instructions</label>
-                <input
-                  type="text"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="e.g. Garden facing, recently refurbished with extra storage"
-                  className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3">
+              {/* Modal Sticky Footer */}
+              <div className="flex items-center justify-between border-t border-border-color/60 bg-surface-elevated/70 px-6 py-4 shrink-0">
                 <button
                   type="button"
                   onClick={() => setRoomModalOpen(false)}
-                  className="rounded-lg border border-border-color px-3 py-1.5 font-medium text-muted hover:bg-surface-elevated"
+                  className="rounded-xl border border-border-color px-4 py-2 font-medium text-muted hover:bg-surface-elevated"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={properties.length === 0 || !selectedPropertyId || roomPhotos.length === 0 || uploadingPhoto}
-                  className="rounded-lg bg-blue-600 px-5 py-1.5 font-semibold text-white shadow-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={properties.length === 0 || !selectedPropertyId || roomPhotos.length === 0 || uploadingPhoto || savingRoom}
+                  className="rounded-xl bg-blue-600 px-6 py-2 font-semibold text-white shadow-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  Save Room
+                  {savingRoom && <Loader2 size={14} className="animate-spin" />}
+                  <span>{savingRoom ? "Saving Room..." : "Save Room"}</span>
                 </button>
               </div>
             </form>

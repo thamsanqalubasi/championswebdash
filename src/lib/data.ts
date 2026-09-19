@@ -1368,30 +1368,66 @@ export async function fetchCommercialRooms(
 
     const { data, error } = await query;
     if (!error && data) {
-      return data.map((r) => ({
-        id: r.id,
-        companyId: r.company_id,
-        propertyId: r.property_id,
-        propertyName: r.properties?.name || "Lodge Property",
-        roomNumber: r.room_number,
-        roomType: r.room_type,
-        floor: r.floor || "Ground Floor",
-        status: r.status,
-        capacityAdults: r.capacity_adults,
-        capacityChildren: r.capacity_children,
-        amenities: r.amenities || [],
-        photos: r.photos || [],
-        pricePerNight: toNumber(r.price_per_night),
-        priceBedBreakfast: toNumber(r.price_bed_breakfast),
-        priceBedLunch: toNumber(r.price_bed_lunch),
-        priceFullBoard: toNumber(r.price_full_board),
-        notes: r.notes,
-        discountPercentage: toNumber(r.discount_percentage),
-        discountStartDate: r.discount_start_date || undefined,
-        discountEndDate: r.discount_end_date || undefined,
-        bookingMode: r.booking_mode || "platform",
-        externalBookingUrl: r.external_booking_url || "",
-      }));
+      return data.map((r) => {
+        let bookingMode = (r.booking_mode || "platform") as "platform" | "external";
+        let externalBookingUrl = r.external_booking_url || "";
+        let discountPercentage = toNumber(r.discount_percentage);
+        let discountStartDate = r.discount_start_date || undefined;
+        let discountEndDate = r.discount_end_date || undefined;
+        let cleanNotes = r.notes || "";
+
+        if (cleanNotes && cleanNotes.includes("<!--ROOM_META:")) {
+          try {
+            const match = cleanNotes.match(/<!--ROOM_META:([\s\S]*?)-->/);
+            if (match && match[1]) {
+              const meta = JSON.parse(match[1]);
+              if (meta.bookingMode && (!r.booking_mode || r.booking_mode === "platform")) {
+                bookingMode = meta.bookingMode;
+              }
+              if (meta.externalBookingUrl && !externalBookingUrl) {
+                externalBookingUrl = meta.externalBookingUrl;
+              }
+              if (meta.discountPercentage && !discountPercentage) {
+                discountPercentage = Number(meta.discountPercentage);
+              }
+              if (meta.discountStartDate && !discountStartDate) {
+                discountStartDate = meta.discountStartDate;
+              }
+              if (meta.discountEndDate && !discountEndDate) {
+                discountEndDate = meta.discountEndDate;
+              }
+            }
+            cleanNotes = cleanNotes.replace(/<!--ROOM_META:[\s\S]*?-->/g, "").trim();
+          } catch {
+            // ignore
+          }
+        }
+
+        return {
+          id: r.id,
+          companyId: r.company_id,
+          propertyId: r.property_id,
+          propertyName: r.properties?.name || "Lodge Property",
+          roomNumber: r.room_number,
+          roomType: r.room_type,
+          floor: r.floor || "Ground Floor",
+          status: r.status,
+          capacityAdults: r.capacity_adults,
+          capacityChildren: r.capacity_children,
+          amenities: r.amenities || [],
+          photos: r.photos || [],
+          pricePerNight: toNumber(r.price_per_night),
+          priceBedBreakfast: toNumber(r.price_bed_breakfast),
+          priceBedLunch: toNumber(r.price_bed_lunch),
+          priceFullBoard: toNumber(r.price_full_board),
+          notes: cleanNotes,
+          discountPercentage,
+          discountStartDate,
+          discountEndDate,
+          bookingMode,
+          externalBookingUrl,
+        };
+      });
     }
   } catch (err) {
     console.warn("Could not load commercial rooms from server", err);
@@ -1425,13 +1461,22 @@ export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise
   const priceBedBreakfast = room.priceBedBreakfast ?? 1300;
   const priceBedLunch = room.priceBedLunch ?? 1600;
   const priceFullBoard = room.priceFullBoard ?? 2000;
-  const notes = room.notes || "";
+  const rawNotes = (room.notes || "").replace(/<!--ROOM_META:[\s\S]*?-->/g, "").trim();
 
   let id = room.id;
   const isExisting = isValidUuid(id);
   if (!id || !isExisting) {
     id = generateUuid();
   }
+
+  const metaObj = {
+    bookingMode: room.bookingMode || "platform",
+    externalBookingUrl: room.externalBookingUrl || "",
+    discountPercentage: room.discountPercentage ?? 0,
+    discountStartDate: room.discountStartDate || null,
+    discountEndDate: room.discountEndDate || null,
+  };
+  const notesWithMeta = `${rawNotes ? rawNotes + "\n" : ""}<!--ROOM_META:${JSON.stringify(metaObj)}-->`;
 
   const updatedRoom: CommercialRoom = {
     id,
@@ -1450,7 +1495,7 @@ export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise
     priceBedBreakfast,
     priceBedLunch,
     priceFullBoard,
-    notes,
+    notes: rawNotes,
     discountPercentage: room.discountPercentage ?? 0,
     discountStartDate: room.discountStartDate,
     discountEndDate: room.discountEndDate,
@@ -1475,7 +1520,7 @@ export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise
         price_bed_breakfast: priceBedBreakfast,
         price_bed_lunch: priceBedLunch,
         price_full_board: priceFullBoard,
-        notes,
+        notes: notesWithMeta,
         discount_percentage: room.discountPercentage ?? 0,
         discount_start_date: room.discountStartDate || null,
         discount_end_date: room.discountEndDate || null,
@@ -1487,13 +1532,18 @@ export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise
       if (isExisting) {
         const { error: updErr } = await supabase.from("commercial_rooms").update(payload).eq("id", id);
         if (updErr) {
+          console.warn("Retrying update with fallback; metadata preserved in notes:", updErr.message);
           const fallbackPayload = { ...payload };
           delete fallbackPayload.discount_percentage;
           delete fallbackPayload.discount_start_date;
           delete fallbackPayload.discount_end_date;
           delete fallbackPayload.booking_mode;
           delete fallbackPayload.external_booking_url;
-          await supabase.from("commercial_rooms").update(fallbackPayload).eq("id", id);
+          const { error: fbErr } = await supabase.from("commercial_rooms").update(fallbackPayload).eq("id", id);
+          if (fbErr) {
+            console.error("Commercial room update failed completely:", fbErr);
+            throw fbErr;
+          }
         }
       } else {
         const { data, error } = await supabase
@@ -1502,17 +1552,22 @@ export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise
           .select()
           .single();
         if (error) {
+          console.warn("Retrying insert with fallback; metadata preserved in notes:", error.message);
           const fallbackPayload = { ...payload };
           delete fallbackPayload.discount_percentage;
           delete fallbackPayload.discount_start_date;
           delete fallbackPayload.discount_end_date;
           delete fallbackPayload.booking_mode;
           delete fallbackPayload.external_booking_url;
-          const { data: d2 } = await supabase
+          const { data: d2, error: fbErr } = await supabase
             .from("commercial_rooms")
             .insert({ id, ...fallbackPayload })
             .select()
             .single();
+          if (fbErr) {
+            console.error("Commercial room insert failed completely:", fbErr);
+            throw fbErr;
+          }
           if (d2) updatedRoom.id = d2.id;
         } else if (data) {
           updatedRoom.id = data.id;
@@ -1521,6 +1576,7 @@ export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise
     }
   } catch (err) {
     console.warn("Could not save commercial room to Supabase", err);
+    throw err;
   }
 
   const existingIdx = MOCK_COMMERCIAL_ROOMS.findIndex((r) => r.id === updatedRoom.id);
