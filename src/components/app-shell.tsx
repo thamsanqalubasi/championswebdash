@@ -7,7 +7,7 @@ import { LeaveRequestModal } from "./leave-request-modal";
 import { ProcurementRequestModal } from "./procurement-request-modal";
 import { NotificationsBell } from "./notifications-modal";
 import { ALL_ROLE_CAPABILITIES, fetchReminderThreshold, saveReminderThreshold, fetchRolePermissions, saveRolePermissions } from "@/lib/data";
-import { useLanguage, LANGUAGE_NAMES, LANGUAGE_FLAGS, type Language } from "@/lib/i18n";
+import { useLanguage, LANGUAGE_NAMES, LANGUAGE_FLAGS, LanguageAutoTranslator, type Language } from "@/lib/i18n";
 import {
   LayoutDashboard, Building2, Users, DollarSign, Wrench, ClipboardList,
   Truck, SearchCheck, CalendarClock, Package, FileSignature, Settings,
@@ -562,6 +562,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
 
+      <LanguageAutoTranslator language={language} />
       <CheckinModal isOpen={checkinOpen} onClose={() => setCheckinOpen(false)} onSuccess={() => {}}/>
       <LeaveRequestModal isOpen={leaveModalOpen} onClose={() => setLeaveModalOpen(false)} />
       <ProcurementRequestModal open={procurementModalOpen} onClose={() => setProcurementModalOpen(false)} />
