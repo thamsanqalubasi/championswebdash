@@ -173,8 +173,15 @@ function addMonths(date: Date, months: number) {
   return new Date(date.getFullYear(), date.getMonth() + months, 1);
 }
 
+function toLocalDateString(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 function toIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return toLocalDateString(date);
 }
 
 function toMonthKey(value: string) {
@@ -510,7 +517,7 @@ export default function FinanceAccountsPage() {
     paymentMethod: "EFT / Bank Transfer",
     referenceNumber: "",
     description: "",
-    transactionDate: new Date().toISOString().slice(0, 10),
+    transactionDate: toLocalDateString(new Date()),
     requestApproval: false,
     approvalRequestedTo: "fin-mgr",
     priority: "normal" as "low" | "normal" | "urgent" | "critical",
@@ -1402,14 +1409,34 @@ export default function FinanceAccountsPage() {
     });
   }, [financeTransactions, txSearch, txTypeFilter, txStatusFilter]);
 
-  // KPI calculations for Today's operations
-  const todayStr = new Date().toISOString().slice(0, 10);
+  // KPI calculations for Today's operations (timezone-resilient across local & UTC boundaries)
+  const isTransactionToday = (t: FinanceTransaction) => {
+    const now = new Date();
+    const localToday = toLocalDateString(now);
+    const utcToday = now.toISOString().slice(0, 10);
+    const txDate = String(t.transactionDate || "").slice(0, 10);
+
+    if (txDate === localToday || txDate === utcToday) return true;
+
+    if (t.createdAt) {
+      const createdLocal = toLocalDateString(new Date(t.createdAt));
+      const createdUtc = String(t.createdAt).slice(0, 10);
+      if (createdLocal === localToday || createdUtc === utcToday) return true;
+      try {
+        const diffMs = Math.abs(now.getTime() - new Date(t.createdAt).getTime());
+        if (diffMs <= 24 * 60 * 60 * 1000) return true;
+      } catch {}
+    }
+
+    return false;
+  };
+
   const todayInflow = financeTransactions
-    .filter((t) => t.transactionDate === todayStr && t.status === "approved" && t.type === "income")
+    .filter((t) => isTransactionToday(t) && t.status === "approved" && t.type === "income")
     .reduce((sum, t) => sum + t.amount, 0);
 
   const todayOutflow = financeTransactions
-    .filter((t) => t.transactionDate === todayStr && t.status === "approved" && (t.type === "expense" || t.type === "payment"))
+    .filter((t) => isTransactionToday(t) && t.status === "approved" && (t.type === "expense" || t.type === "payment"))
     .reduce((sum, t) => sum + t.amount, 0);
 
   const pendingApprovalsCount =
