@@ -1109,6 +1109,7 @@ const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "CODE", "PRE", "SVG", "NOSCRIPT"])
 
 function shouldSkipElement(el: Element): boolean {
   if (SKIP_TAGS.has(el.tagName)) return true;
+  if (el.closest("svg")) return true;
   if (el.hasAttribute("data-no-translate")) return true;
   if (el.classList.contains("no-translate")) return true;
   return false;

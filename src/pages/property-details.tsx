@@ -9,7 +9,7 @@ import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, uploadPdfFromHtml
 import { buildProfessionalInvoiceHtml, buildProfessionalContractHtml } from "@/lib/document-templates";
 import { useAuth } from "@/lib/auth";
 import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
-import { verifyAdminPin, isValidUuid } from "@/lib/data";
+import { verifyAdminPin, verifyUserPin, isValidUuid } from "@/lib/data";
 import { DocumentShareModal } from "@/components/document-share-modal";
 import { billStatusMeta, frequencyLabel, type BillFrequency, type BillRow } from "@/lib/bills";
 import {
@@ -265,6 +265,7 @@ export default function PropertyDetailsPage() {
   const [bookingModeForm, setBookingModeForm] = useState<"platform" | "external">("platform");
   const [externalBookingUrlForm, setExternalBookingUrlForm] = useState("");
   const [savingBookingChannel, setSavingBookingChannel] = useState(false);
+  const [bookingChannelApplyToRooms, setBookingChannelApplyToRooms] = useState(true);
 
   const [discountModalOpen, setDiscountModalOpen] = useState(false);
   const [discountForm, setDiscountForm] = useState({
@@ -273,6 +274,9 @@ export default function PropertyDetailsPage() {
     endDate: "",
   });
   const [savingDiscount, setSavingDiscount] = useState(false);
+  const [discountApplyToRooms, setDiscountApplyToRooms] = useState(true);
+  const [discountPin, setDiscountPin] = useState("");
+  const [discountPinError, setDiscountPinError] = useState<string | null>(null);
 
   const occupiedRoomsCount = useMemo(() => {
     return rooms.filter((r) => r.status === "occupied").length;
@@ -738,6 +742,7 @@ export default function PropertyDetailsPage() {
     if (!property) return;
     setBookingModeForm(property.bookingMode || "platform");
     setExternalBookingUrlForm(property.externalBookingUrl || "");
+    setBookingChannelApplyToRooms(true);
     setBookingChannelModalOpen(true);
   };
 
@@ -755,6 +760,28 @@ export default function PropertyDetailsPage() {
       };
       const { error: err } = await supabase.from("properties").update(payload).eq("id", propertyId);
       if (err) throw err;
+
+      // Sync across all individual rooms & listings if requested
+      if (bookingChannelApplyToRooms) {
+        try {
+          await supabase.from("commercial_rooms").update({
+            booking_mode: bookingModeForm,
+            external_booking_url: bookingModeForm === "external" ? externalBookingUrlForm.trim() : null,
+          }).eq("property_id", propertyId);
+        } catch (syncErr) {
+          console.warn("Could not sync booking channel to commercial_rooms:", syncErr);
+        }
+
+        try {
+          await supabase.from("room_type_listings").update({
+            booking_mode: bookingModeForm,
+            external_booking_url: bookingModeForm === "external" ? externalBookingUrlForm.trim() : null,
+          }).eq("property_id", propertyId);
+        } catch (syncErr) {
+          console.warn("Could not sync booking channel to room_type_listings:", syncErr);
+        }
+      }
+
       setProperty((prev) => prev ? {
         ...prev,
         bookingMode: bookingModeForm,
@@ -776,23 +803,65 @@ export default function PropertyDetailsPage() {
       startDate: property.discountStartDate || "",
       endDate: property.discountEndDate || "",
     });
+    setDiscountPin("");
+    setDiscountPinError(null);
+    setDiscountApplyToRooms(true);
     setDiscountModalOpen(true);
   };
 
   const handleSaveDiscount = async () => {
     if (!propertyId) return;
+
+    // If setting a discount (> 0), require PIN confirmation
+    const pct = Number(discountForm.percentage) || 0;
+    if (pct > 0) {
+      if (!discountPin.trim()) {
+        setDiscountPinError("Security PIN is required to activate promotional discount.");
+        return;
+      }
+      const isPinValid = await verifyUserPin(user?.email || "", discountPin.trim());
+      if (!isPinValid) {
+        setDiscountPinError("Incorrect security PIN. Default is 1234 if not yet configured.");
+        return;
+      }
+    }
+
     setSavingDiscount(true);
     try {
       const payload: Record<string, unknown> = {
-        discount_percentage: Number(discountForm.percentage) || 0,
+        discount_percentage: pct,
         discount_start_date: discountForm.startDate || null,
         discount_end_date: discountForm.endDate || null,
       };
       const { error: err } = await supabase.from("properties").update(payload).eq("id", propertyId);
       if (err) throw err;
+
+      // Sync across all individual rooms & listings if requested
+      if (discountApplyToRooms) {
+        try {
+          await supabase.from("commercial_rooms").update({
+            discount_percentage: pct,
+            discount_start_date: discountForm.startDate || null,
+            discount_end_date: discountForm.endDate || null,
+          }).eq("property_id", propertyId);
+        } catch (syncErr) {
+          console.warn("Could not sync discount to commercial_rooms:", syncErr);
+        }
+
+        try {
+          await supabase.from("room_type_listings").update({
+            discount_percentage: pct,
+            discount_start_date: discountForm.startDate || null,
+            discount_end_date: discountForm.endDate || null,
+          }).eq("property_id", propertyId);
+        } catch (syncErr) {
+          console.warn("Could not sync discount to room_type_listings:", syncErr);
+        }
+      }
+
       setProperty((prev) => prev ? {
         ...prev,
-        discountPercentage: Number(discountForm.percentage) || 0,
+        discountPercentage: pct,
         discountStartDate: discountForm.startDate || "",
         discountEndDate: discountForm.endDate || "",
       } : null);
@@ -1837,6 +1906,26 @@ export default function PropertyDetailsPage() {
             </div>
           )}
 
+          {/* Apply across all rooms option */}
+          <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3">
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={bookingChannelApplyToRooms}
+                onChange={(e) => setBookingChannelApplyToRooms(e.target.checked)}
+                className="h-4 w-4 rounded border-border-color text-blue-600 focus:ring-blue-500"
+              />
+              <div>
+                <p className="text-xs font-bold text-foreground">
+                  Apply channel across all individual rooms
+                </p>
+                <p className="text-[10px] text-muted">
+                  Propagates this booking configuration to every room and listing associated with {property?.name || "this property"}.
+                </p>
+              </div>
+            </label>
+          </div>
+
           <div className="flex justify-end gap-2 pt-3 border-t border-border-color">
             <button
               type="button"
@@ -1868,19 +1957,74 @@ export default function PropertyDetailsPage() {
             Apply a special percentage discount. Live discounts show promotional badges (e.g. 🔥 -15% OFF) and strike-through pricing on the public portal.
           </p>
 
-          <div>
-            <label className="font-semibold text-foreground block mb-1">Discount Percentage (%)</label>
+          {/* Movable Bar (Slider) from 5% to 100% */}
+          <div className="rounded-xl border border-border-color bg-surface-elevated/50 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="font-bold text-foreground block text-xs">Discount Percentage (%)</label>
+                <span className="text-[10px] text-muted">Drag the bar to select a discount rate</span>
+              </div>
+              <div className="flex items-baseline gap-1">
+                <span className="text-2xl font-black text-amber-600 dark:text-amber-400">
+                  {discountForm.percentage}%
+                </span>
+                {discountForm.percentage > 0 ? (
+                  <span className="text-xs font-bold text-amber-600">OFF</span>
+                ) : (
+                  <span className="text-xs font-semibold text-muted">(Disabled)</span>
+                )}
+              </div>
+            </div>
+
+            {/* Range Slider */}
             <input
-              type="number"
+              type="range"
               min="0"
               max="100"
-              placeholder="e.g. 15 (set to 0 to disable discount)"
-              value={discountForm.percentage || ""}
-              onChange={(e) => setDiscountForm({ ...discountForm, percentage: Number(e.target.value) || 0 })}
-              className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-amber-500"
+              step="5"
+              value={discountForm.percentage}
+              onChange={(e) => {
+                setDiscountForm({ ...discountForm, percentage: Number(e.target.value) });
+                setDiscountPinError(null);
+              }}
+              className="w-full accent-amber-600 cursor-pointer h-2 bg-border-color rounded-lg appearance-none"
             />
+            <div className="flex justify-between text-[10px] text-muted font-semibold px-0.5">
+              <span>0% (Off)</span>
+              <span>25%</span>
+              <span>50%</span>
+              <span>75%</span>
+              <span>100% (Free)</span>
+            </div>
+
+            {/* Quick Presets */}
+            <div className="pt-1">
+              <span className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1.5">
+                Quick Presets
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {[0, 5, 10, 15, 20, 25, 30, 50, 75].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => {
+                      setDiscountForm({ ...discountForm, percentage: pct });
+                      setDiscountPinError(null);
+                    }}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                      discountForm.percentage === pct
+                        ? "bg-amber-600 text-white shadow-xs"
+                        : "border border-border-color bg-surface text-muted hover:border-amber-500 hover:text-amber-600"
+                    }`}
+                  >
+                    {pct === 0 ? "Off (0%)" : `${pct}%`}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
+          {/* Dates */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="font-semibold text-foreground block mb-1">Start Date (Optional)</label>
@@ -1901,6 +2045,55 @@ export default function PropertyDetailsPage() {
               />
             </div>
           </div>
+
+          {/* Apply across all rooms option */}
+          <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3">
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={discountApplyToRooms}
+                onChange={(e) => setDiscountApplyToRooms(e.target.checked)}
+                className="h-4 w-4 rounded border-border-color text-amber-600 focus:ring-amber-500"
+              />
+              <div>
+                <p className="text-xs font-bold text-foreground">
+                  Apply discount across all individual rooms
+                </p>
+                <p className="text-[10px] text-muted">
+                  Sets this {discountForm.percentage}% promotional discount on every room and listing for this property.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          {/* PIN Confirmation Box (Required if discount > 0) */}
+          {discountForm.percentage > 0 && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 space-y-2.5">
+              <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold">
+                <KeyRound size={15} />
+                <span>Security PIN Confirmation Required</span>
+              </div>
+              <p className="text-muted text-[11px] leading-relaxed">
+                Confirm you want to set <strong>{discountForm.percentage}% promotional discount</strong> on <strong>{property?.name}</strong>{discountApplyToRooms ? " and across all its individual rooms" : ""}. Please enter your security PIN.
+              </p>
+              <input
+                type="password"
+                maxLength={8}
+                value={discountPin}
+                onChange={(e) => {
+                  setDiscountPin(e.target.value);
+                  setDiscountPinError(null);
+                }}
+                placeholder="Enter Security PIN (e.g. 1234)"
+                className="w-full rounded-xl border border-border-color bg-surface px-3 py-2 text-sm text-foreground tracking-widest outline-none focus:border-amber-500"
+              />
+              {discountPinError && (
+                <p className="text-xs text-red-600 font-semibold flex items-center gap-1">
+                  <AlertCircle size={13} /> {discountPinError}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-3 border-t border-border-color">
             <button

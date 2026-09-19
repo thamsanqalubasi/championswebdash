@@ -43,3 +43,4 @@ DROP POLICY IF EXISTS "Allow authenticated read marketing_agreed" ON public.mark
 CREATE POLICY "Allow authenticated read marketing_agreed"
 ON public.marketing_agreed FOR SELECT TO authenticated
 USING (true);
+

@@ -5,7 +5,9 @@ import {
   saveCommercialRoom,
   fetchCommercialBookings,
   isValidUuid,
+  verifyUserPin,
 } from "@/lib/data";
+import { useAuth } from "@/lib/auth";
 import { uploadFileToBucket } from "@/lib/storage";
 import type { PropertyRow, CommercialRoom, RoomStatus, RoomType, CommercialBooking } from "@/lib/types";
 import {
@@ -27,6 +29,9 @@ import {
   Sparkles,
   Save,
   Trash2,
+  KeyRound,
+  AlertCircle,
+  ExternalLink,
 } from "lucide-react";
 
 interface ManageRoomsRatesModalProps {
@@ -44,6 +49,7 @@ export function ManageRoomsRatesModal({
   companyId,
   onUpdated,
 }: ManageRoomsRatesModalProps) {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"rates" | "rooms">("rates");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [rooms, setRooms] = useState<CommercialRoom[]>([]);
@@ -54,6 +60,8 @@ export function ManageRoomsRatesModal({
   const [roomEditForm, setRoomEditForm] = useState<Partial<CommercialRoom>>({});
   const [savingRoom, setSavingRoom] = useState(false);
   const [roomPhotoUploading, setRoomPhotoUploading] = useState(false);
+  const [roomDiscountPin, setRoomDiscountPin] = useState("");
+  const [roomDiscountPinError, setRoomDiscountPinError] = useState<string | null>(null);
 
   // New room modal/inline state
   const [showAddRoom, setShowAddRoom] = useState(false);
@@ -189,8 +197,12 @@ export function ManageRoomsRatesModal({
 
   const startEditRoom = (room: CommercialRoom) => {
     setEditingRoomId(room.id);
+    setRoomDiscountPin("");
+    setRoomDiscountPinError(null);
     setRoomEditForm({
       ...room,
+      bookingMode: room.bookingMode || "platform",
+      externalBookingUrl: room.externalBookingUrl || "",
       photos: [...(room.photos || [])],
       amenities: [...(room.amenities || [])],
     });
@@ -199,6 +211,8 @@ export function ManageRoomsRatesModal({
   const cancelEditRoom = () => {
     setEditingRoomId(null);
     setRoomEditForm({});
+    setRoomDiscountPin("");
+    setRoomDiscountPinError(null);
   };
 
   const handleSaveRoomEdit = async () => {
@@ -206,10 +220,30 @@ export function ManageRoomsRatesModal({
       alert("Please provide a valid Room Number.");
       return;
     }
+
+    if (roomEditForm.bookingMode === "external" && !roomEditForm.externalBookingUrl?.trim()) {
+      alert("Please enter a valid external booking URL for this room.");
+      return;
+    }
+
+    const pct = Number(roomEditForm.discountPercentage) || 0;
+    if (pct > 0) {
+      if (!roomDiscountPin.trim()) {
+        setRoomDiscountPinError("Security PIN is required to set a promotional discount.");
+        return;
+      }
+      const isPinValid = await verifyUserPin(user?.email || "", roomDiscountPin.trim());
+      if (!isPinValid) {
+        setRoomDiscountPinError("Incorrect security PIN. Default is 1234 if not yet configured.");
+        return;
+      }
+    }
+
     setSavingRoom(true);
     try {
       await saveCommercialRoom({
         ...roomEditForm,
+        discountPercentage: pct,
         id: editingRoomId,
         propertyId: property.id,
         companyId,
@@ -218,6 +252,8 @@ export function ManageRoomsRatesModal({
       await loadRoomsAndBookings();
       setEditingRoomId(null);
       setRoomEditForm({});
+      setRoomDiscountPin("");
+      setRoomDiscountPinError(null);
       onUpdated?.();
     } catch (err) {
       alert("Could not update room: " + (err instanceof Error ? err.message : String(err)));
@@ -748,51 +784,163 @@ export function ManageRoomsRatesModal({
                                             />
                                           </div>
 
-                                          {/* Promotional Discount */}
-                                          <div className="rounded-lg border border-border-color bg-surface/50 p-2.5 space-y-2">
-                                            <div className="flex items-center justify-between">
-                                              <label className="text-[10px] font-bold text-muted uppercase flex items-center gap-1">
-                                                <Sparkles size={11} className="text-amber-500" /> Promotional Discount
-                                              </label>
-                                              {Number(roomEditForm.discountPercentage) > 0 && (
-                                                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-black text-amber-600">
-                                                  {roomEditForm.discountPercentage}% OFF
-                                                </span>
-                                              )}
-                                            </div>
-                                            <div className="grid grid-cols-3 gap-1.5">
-                                              <div>
-                                                <label className="text-[9px] text-muted block mb-0.5">Discount %</label>
-                                                <input
-                                                  type="number"
-                                                  min="0"
-                                                  max="100"
-                                                  placeholder="0"
-                                                  value={roomEditForm.discountPercentage ?? ""}
-                                                  onChange={(e) => setRoomEditForm({ ...roomEditForm, discountPercentage: Number(e.target.value) || 0 })}
-                                                  className="w-full rounded border border-border-color bg-surface px-2 py-1 text-xs text-foreground outline-none"
-                                                />
-                                              </div>
-                                              <div>
-                                                <label className="text-[9px] text-muted block mb-0.5">Start Date</label>
-                                                <input
-                                                  type="date"
-                                                  value={roomEditForm.discountStartDate ?? ""}
-                                                  onChange={(e) => setRoomEditForm({ ...roomEditForm, discountStartDate: e.target.value })}
-                                                  className="w-full rounded border border-border-color bg-surface px-1 py-1 text-[11px] text-foreground outline-none"
-                                                />
-                                              </div>
-                                              <div>
-                                                <label className="text-[9px] text-muted block mb-0.5">End Date</label>
-                                                <input
-                                                  type="date"
-                                                  value={roomEditForm.discountEndDate ?? ""}
-                                                  onChange={(e) => setRoomEditForm({ ...roomEditForm, discountEndDate: e.target.value })}
-                                                  className="w-full rounded border border-border-color bg-surface px-1 py-1 text-[11px] text-foreground outline-none"
-                                                />
-                                              </div>
-                                            </div>
-                                          </div>
+                                           {/* Booking Channel for this Room */}
+                                           <div className="rounded-lg border border-border-color bg-surface/50 p-2.5 space-y-2">
+                                             <label className="text-[10px] font-bold text-muted uppercase block">
+                                               Booking Channel
+                                             </label>
+                                             <div className="grid grid-cols-2 gap-1.5">
+                                               <button
+                                                 type="button"
+                                                 onClick={() => setRoomEditForm({ ...roomEditForm, bookingMode: "platform" })}
+                                                 className={`flex flex-col items-start p-2 rounded-lg border text-left text-[11px] transition ${
+                                                   (roomEditForm.bookingMode || "platform") === "platform"
+                                                     ? "border-blue-600 bg-blue-600/10 text-blue-700 dark:text-blue-400 font-semibold"
+                                                     : "border-border-color bg-surface text-muted hover:border-blue-400/50"
+                                                 }`}
+                                               >
+                                                 <span className="font-bold">🏨 Paimbabook</span>
+                                                 <span className="text-[9px] text-muted">Native booking</span>
+                                               </button>
+                                               <button
+                                                 type="button"
+                                                 onClick={() => setRoomEditForm({ ...roomEditForm, bookingMode: "external" })}
+                                                 className={`flex flex-col items-start p-2 rounded-lg border text-left text-[11px] transition ${
+                                                   roomEditForm.bookingMode === "external"
+                                                     ? "border-indigo-600 bg-indigo-600/10 text-indigo-700 dark:text-indigo-400 font-semibold"
+                                                     : "border-border-color bg-surface text-muted hover:border-indigo-400/50"
+                                                 }`}
+                                               >
+                                                 <span className="font-bold flex items-center gap-1">
+                                                   <ExternalLink size={10} /> Custom Link
+                                                 </span>
+                                                 <span className="text-[9px] text-muted">Direct / Affiliate</span>
+                                               </button>
+                                             </div>
+                                             {roomEditForm.bookingMode === "external" && (
+                                               <div className="pt-1">
+                                                 <label className="text-[9px] text-muted block mb-0.5">External Booking URL *</label>
+                                                 <input
+                                                   type="url"
+                                                   placeholder="https://example.com/book or affiliate link"
+                                                   value={roomEditForm.externalBookingUrl || ""}
+                                                   onChange={(e) => setRoomEditForm({ ...roomEditForm, externalBookingUrl: e.target.value })}
+                                                   className="w-full rounded border border-border-color bg-surface px-2 py-1 text-xs text-foreground outline-none focus:border-indigo-600"
+                                                   required
+                                                 />
+                                               </div>
+                                             )}
+                                           </div>
+
+                                           {/* Promotional Discount */}
+                                           <div className="rounded-lg border border-border-color bg-surface/50 p-2.5 space-y-2">
+                                             <div className="flex items-center justify-between">
+                                               <label className="text-[10px] font-bold text-muted uppercase flex items-center gap-1">
+                                                 <Sparkles size={11} className="text-amber-500" /> Promotional Discount
+                                               </label>
+                                               {Number(roomEditForm.discountPercentage) > 0 ? (
+                                                 <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-black text-amber-600">
+                                                   {roomEditForm.discountPercentage}% OFF
+                                                 </span>
+                                               ) : (
+                                                 <span className="text-[9px] text-muted font-semibold">Inactive</span>
+                                               )}
+                                             </div>
+
+                                             {/* Movable Bar (Slider) from 5% to 100% */}
+                                             <div className="space-y-1">
+                                               <input
+                                                 type="range"
+                                                 min="0"
+                                                 max="100"
+                                                 step="5"
+                                                 value={roomEditForm.discountPercentage || 0}
+                                                 onChange={(e) => {
+                                                   setRoomEditForm({ ...roomEditForm, discountPercentage: Number(e.target.value) });
+                                                   setRoomDiscountPinError(null);
+                                                 }}
+                                                 className="w-full accent-amber-600 cursor-pointer h-1.5 bg-border-color rounded-lg appearance-none"
+                                               />
+                                               <div className="flex justify-between text-[8px] text-muted font-semibold">
+                                                 <span>0%</span>
+                                                 <span>25%</span>
+                                                 <span>50%</span>
+                                                 <span>75%</span>
+                                                 <span>100%</span>
+                                               </div>
+                                             </div>
+
+                                             {/* Presets */}
+                                             <div className="flex flex-wrap gap-1">
+                                               {[0, 5, 10, 15, 20, 25, 50, 75].map((pct) => (
+                                                 <button
+                                                   key={pct}
+                                                   type="button"
+                                                   onClick={() => {
+                                                     setRoomEditForm({ ...roomEditForm, discountPercentage: pct });
+                                                     setRoomDiscountPinError(null);
+                                                   }}
+                                                   className={`rounded px-1.5 py-0.5 text-[10px] font-bold transition ${
+                                                     roomEditForm.discountPercentage === pct
+                                                       ? "bg-amber-600 text-white"
+                                                       : "border border-border-color bg-surface text-muted hover:border-amber-500"
+                                                   }`}
+                                                 >
+                                                   {pct === 0 ? "Off" : `${pct}%`}
+                                                 </button>
+                                               ))}
+                                             </div>
+
+                                             <div className="grid grid-cols-2 gap-1.5 pt-1">
+                                               <div>
+                                                 <label className="text-[9px] text-muted block mb-0.5">Start Date</label>
+                                                 <input
+                                                   type="date"
+                                                   value={roomEditForm.discountStartDate ?? ""}
+                                                   onChange={(e) => setRoomEditForm({ ...roomEditForm, discountStartDate: e.target.value })}
+                                                   className="w-full rounded border border-border-color bg-surface px-1 py-1 text-[11px] text-foreground outline-none"
+                                                 />
+                                               </div>
+                                               <div>
+                                                 <label className="text-[9px] text-muted block mb-0.5">End Date</label>
+                                                 <input
+                                                   type="date"
+                                                   value={roomEditForm.discountEndDate ?? ""}
+                                                   onChange={(e) => setRoomEditForm({ ...roomEditForm, discountEndDate: e.target.value })}
+                                                   className="w-full rounded border border-border-color bg-surface px-1 py-1 text-[11px] text-foreground outline-none"
+                                                 />
+                                               </div>
+                                             </div>
+
+                                             {/* PIN Confirmation prompt if discount > 0 */}
+                                             {Number(roomEditForm.discountPercentage) > 0 && (
+                                               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 space-y-1.5 mt-2">
+                                                 <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 text-[11px] font-bold">
+                                                   <KeyRound size={12} />
+                                                   <span>PIN Required to Set Discount</span>
+                                                 </div>
+                                                 <p className="text-[10px] text-muted leading-tight">
+                                                   Confirm setting <strong>{roomEditForm.discountPercentage}% discount</strong> on Room <strong>{roomEditForm.roomNumber}</strong>:
+                                                 </p>
+                                                 <input
+                                                   type="password"
+                                                   maxLength={8}
+                                                   value={roomDiscountPin}
+                                                   onChange={(e) => {
+                                                     setRoomDiscountPin(e.target.value);
+                                                     setRoomDiscountPinError(null);
+                                                   }}
+                                                   placeholder="PIN (default 1234)"
+                                                   className="w-full rounded border border-border-color bg-surface px-2 py-1 text-xs text-foreground tracking-widest outline-none focus:border-amber-500"
+                                                 />
+                                                 {roomDiscountPinError && (
+                                                   <p className="text-[10px] text-red-600 font-semibold flex items-center gap-1">
+                                                     <AlertCircle size={10} /> {roomDiscountPinError}
+                                                   </p>
+                                                 )}
+                                               </div>
+                                             )}
+                                           </div>
 
                                           {/* Photo upload */}
                                           <div>
@@ -853,19 +1001,26 @@ export function ManageRoomsRatesModal({
                                                 {room.roomType.replace(/_/g, " ")}
                                               </span>
                                             </div>
-                                            <span
-                                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                                                room.status === "available"
-                                                  ? "bg-green-500/10 text-green-700 dark:text-green-300"
-                                                  : room.status === "occupied"
-                                                  ? "bg-purple-500/10 text-purple-700 dark:text-purple-300"
-                                                  : room.status === "cleaning_needed"
-                                                  ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                                                  : "bg-red-500/10 text-red-700 dark:text-red-300"
-                                              }`}
-                                            >
-                                              {room.status.replace(/_/g, " ")}
-                                            </span>
+                                            <div className="flex items-center gap-1 flex-wrap justify-end">
+                                              {room.bookingMode === "external" && (
+                                                <span className="rounded-full bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5">
+                                                  <ExternalLink size={9} /> Direct Link
+                                                </span>
+                                              )}
+                                              <span
+                                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                                  room.status === "available"
+                                                    ? "bg-green-500/10 text-green-700 dark:text-green-300"
+                                                    : room.status === "occupied"
+                                                    ? "bg-purple-500/10 text-purple-700 dark:text-purple-300"
+                                                    : room.status === "cleaning_needed"
+                                                    ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                                                    : "bg-red-500/10 text-red-700 dark:text-red-300"
+                                                }`}
+                                              >
+                                                {room.status.replace(/_/g, " ")}
+                                              </span>
+                                            </div>
                                           </div>
 
                                           <div className="flex items-center justify-between text-xs text-muted mt-3 pt-3 border-t border-border-color/40">

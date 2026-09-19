@@ -161,6 +161,8 @@ export type CommercialRoom = {
   discountPercentage?: number;
   discountStartDate?: string;
   discountEndDate?: string;
+  bookingMode?: "platform" | "external";
+  externalBookingUrl?: string;
 };
 
 export type BookingStatus =

@@ -1389,6 +1389,8 @@ export async function fetchCommercialRooms(
         discountPercentage: toNumber(r.discount_percentage),
         discountStartDate: r.discount_start_date || undefined,
         discountEndDate: r.discount_end_date || undefined,
+        bookingMode: r.booking_mode || "platform",
+        externalBookingUrl: r.external_booking_url || "",
       }));
     }
   } catch (err) {
@@ -1452,6 +1454,8 @@ export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise
     discountPercentage: room.discountPercentage ?? 0,
     discountStartDate: room.discountStartDate,
     discountEndDate: room.discountEndDate,
+    bookingMode: room.bookingMode || "platform",
+    externalBookingUrl: room.externalBookingUrl || "",
   };
 
   try {
@@ -1475,6 +1479,8 @@ export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise
         discount_percentage: room.discountPercentage ?? 0,
         discount_start_date: room.discountStartDate || null,
         discount_end_date: room.discountEndDate || null,
+        booking_mode: room.bookingMode || "platform",
+        external_booking_url: room.externalBookingUrl || null,
         updated_at: new Date().toISOString(),
       };
 
@@ -1485,6 +1491,8 @@ export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise
           delete fallbackPayload.discount_percentage;
           delete fallbackPayload.discount_start_date;
           delete fallbackPayload.discount_end_date;
+          delete fallbackPayload.booking_mode;
+          delete fallbackPayload.external_booking_url;
           await supabase.from("commercial_rooms").update(fallbackPayload).eq("id", id);
         }
       } else {
@@ -1498,6 +1506,8 @@ export async function saveCommercialRoom(room: Partial<CommercialRoom>): Promise
           delete fallbackPayload.discount_percentage;
           delete fallbackPayload.discount_start_date;
           delete fallbackPayload.discount_end_date;
+          delete fallbackPayload.booking_mode;
+          delete fallbackPayload.external_booking_url;
           const { data: d2 } = await supabase
             .from("commercial_rooms")
             .insert({ id, ...fallbackPayload })

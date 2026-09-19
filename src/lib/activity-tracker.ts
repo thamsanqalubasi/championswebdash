@@ -522,3 +522,4 @@ function generateRoleBaselineLogs(
 
   return logs;
 }
+
