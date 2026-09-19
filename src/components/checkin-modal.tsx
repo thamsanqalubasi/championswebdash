@@ -14,6 +14,10 @@ import {
   Sparkles,
   ArrowLeft,
   Loader2,
+  Download,
+  Mail,
+  Printer,
+  RefreshCw,
 } from "lucide-react";
 import {
   fetchCommercialRooms,
@@ -22,10 +26,18 @@ import {
   verifyAndCheckinBookingCode,
   generateInstantBookingCode,
 } from "@/lib/data";
-import type { CommercialRoom, MealPlan, PropertyRow } from "@/lib/types";
+import type { CommercialBooking, CommercialRoom, MealPlan, PropertyRow } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
 import { supabase } from "@/lib/supabase";
+import { downloadPdfDocument } from "@/lib/storage";
+import { DocumentShareModal } from "@/components/document-share-modal";
+import {
+  buildFolioHtml,
+  buildCheckinEmailTemplates,
+  formatRoomDisplayName,
+  formatMealPlanLabel,
+} from "@/lib/booking-folio";
 
 class SafeErrorBoundary extends React.Component<
   { children: React.ReactNode; onClose?: () => void },
@@ -137,6 +149,23 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [completedBooking, setCompletedBooking] = useState<CommercialBooking | null>(null);
+  const [shareModalDoc, setShareModalDoc] = useState<{
+    isOpen: boolean;
+    documentTitle: string;
+    documentType?: string;
+    documentHtml?: string;
+    documentUrl?: string;
+    fileNameBase?: string;
+    ownerName?: string;
+    ownerEmail?: string;
+    defaultSubject?: string;
+    defaultMessage?: string;
+    emailTemplates?: any;
+  }>({
+    isOpen: false,
+    documentTitle: "",
+  });
 
   const compId = currentCompany?.id || "";
   const compName = currentCompany?.name || "Company";
@@ -294,7 +323,7 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
 
       const actorName = currentCompanyUser?.fullName || currentCompanyUser?.jobTitle || "Front Desk Staff";
 
-      await createInstantCheckin({
+      const newBooking = await createInstantCheckin({
         companyId: compId,
         propertyId: selectedPropertyId,
         propertyName: selectedProperty?.name || "Safari Lodge",
@@ -318,11 +347,8 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
         notes: combinedNotes,
       });
 
-      setSuccessMsg(`Guest ${guestName} checked in successfully into ${selectedRoom.roomNumber}! Booking Code: ${instantCode}`);
-      setTimeout(() => {
-        onSuccess?.();
-        onClose();
-      }, 1800);
+      setCompletedBooking(newBooking);
+      onSuccess?.();
     } catch (err: any) {
       const msg = err?.message || err?.error_description || (err instanceof Error ? err.message : String(err));
       setErrorMsg(msg || "Failed to execute check-in");
@@ -348,15 +374,161 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
 
     setLoading(false);
     if (res.success && res.booking) {
-      setSuccessMsg(`Booking ${res.booking.bookingCode} verified! Guest ${res.booking.guestName} checked into ${res.booking.roomNumber}.`);
-      setTimeout(() => {
-        onSuccess?.();
-        onClose();
-      }, 1800);
+      setCompletedBooking(res.booking);
+      onSuccess?.();
     } else {
       setErrorMsg(res.error || "Invalid booking code.");
     }
   };
+
+  if (completedBooking) {
+    const cleanRoom = formatRoomDisplayName(completedBooking.roomNumber, completedBooking.roomType);
+    const folioHtml = buildFolioHtml(completedBooking, compName, symbol);
+    const emailTemplates = buildCheckinEmailTemplates(completedBooking, compName);
+
+    return (
+      <div className="space-y-6 py-2" data-no-translate="true">
+        <div className="text-center space-y-2">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+            <CheckCircle2 size={32} />
+          </div>
+          <h2 className="text-xl font-black text-foreground">Guest Checked In Successfully!</h2>
+          <p className="text-xs text-muted max-w-md mx-auto">
+            Official proof of check-in folio has been generated. You can now download, print, or email the proof to the guest or staff.
+          </p>
+        </div>
+
+        {/* Quick Details Card */}
+        <div className="rounded-2xl border border-border-color bg-surface-elevated/40 p-4 space-y-3">
+          <div className="flex items-center justify-between border-b border-border-color pb-2.5">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted">Booking Reference</span>
+              <p className="font-mono text-base font-black text-blue-600">#{completedBooking.bookingCode}</p>
+            </div>
+            <div className="text-right">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted">Status</span>
+              <p className="inline-block rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 text-xs font-bold text-emerald-600">
+                ✓ Checked In
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div>
+              <span className="text-muted block text-[11px]">Guest Name</span>
+              <span className="font-bold text-foreground truncate block">{completedBooking.guestName}</span>
+            </div>
+            <div>
+              <span className="text-muted block text-[11px]">Room &amp; Property</span>
+              <span className="font-bold text-foreground truncate block">{cleanRoom}</span>
+            </div>
+            <div>
+              <span className="text-muted block text-[11px]">Dates ({completedBooking.nights} night{completedBooking.nights > 1 ? "s" : ""})</span>
+              <span className="font-bold text-foreground block">
+                {completedBooking.checkInDate.slice(0, 10)} &rarr; {completedBooking.checkOutDate.slice(0, 10)}
+              </span>
+            </div>
+            <div>
+              <span className="text-muted block text-[11px]">Amount Collected</span>
+              <span className="font-black text-emerald-600 block">
+                {symbol}{completedBooking.amountPaid.toLocaleString()}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              downloadPdfDocument(folioHtml, `checkin-proof-${completedBooking.bookingCode}`);
+            }}
+            className="flex items-center justify-center gap-2 rounded-xl border border-border-color bg-surface-elevated p-3 text-xs font-bold text-foreground hover:bg-surface-elevated/80 shadow-xs transition"
+          >
+            <Download size={15} />
+            <span>Download PDF Proof</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setShareModalDoc({
+                isOpen: true,
+                documentTitle: `Proof of Check-In - #${completedBooking.bookingCode} (${completedBooking.guestName})`,
+                documentType: "checkin",
+                documentHtml: folioHtml,
+                fileNameBase: `checkin-proof-${completedBooking.bookingCode}-${completedBooking.guestName.replace(/\s+/g, "_")}`,
+                ownerName: completedBooking.guestName,
+                ownerEmail: completedBooking.guestEmail || "",
+                defaultSubject: emailTemplates.ownerSubject,
+                defaultMessage: emailTemplates.ownerMessage,
+                emailTemplates,
+              });
+            }}
+            className="flex items-center justify-center gap-2 rounded-xl bg-sky-600 p-3 text-xs font-bold text-white hover:bg-sky-700 shadow-md transition"
+          >
+            <Mail size={15} />
+            <span>Email / Share Proof</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="flex items-center justify-center gap-2 rounded-xl border border-border-color bg-surface-elevated p-3 text-xs font-bold text-foreground hover:bg-surface-elevated/80 shadow-xs transition"
+          >
+            <Printer size={15} />
+            <span>Print Folio / Receipt</span>
+          </button>
+        </div>
+
+        {/* Footer actions */}
+        <div className="flex items-center justify-between border-t border-border-color pt-4">
+          <button
+            type="button"
+            onClick={() => {
+              setCompletedBooking(null);
+              setGuestName("");
+              setGuestPhone("");
+              setGuestEmail("");
+              setGuestIdNumber("");
+              setNotes("");
+              setAmountPaid(0);
+              setAmountDifferenceReason("");
+              setInstantCode(generateInstantBookingCode("BK"));
+            }}
+            className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-foreground"
+          >
+            <RefreshCw size={13} />
+            <span>Check-In Another Guest</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700"
+          >
+            Done &amp; Close Window
+          </button>
+        </div>
+
+        <DocumentShareModal
+          isOpen={shareModalDoc.isOpen}
+          onClose={() => setShareModalDoc((prev) => ({ ...prev, isOpen: false }))}
+          documentTitle={shareModalDoc.documentTitle}
+          documentType={shareModalDoc.documentType}
+          documentHtml={shareModalDoc.documentHtml}
+          documentUrl={shareModalDoc.documentUrl}
+          fileNameBase={shareModalDoc.fileNameBase}
+          ownerName={shareModalDoc.ownerName}
+          ownerEmail={shareModalDoc.ownerEmail}
+          defaultSubject={shareModalDoc.defaultSubject}
+          defaultMessage={shareModalDoc.defaultMessage}
+          emailTemplates={shareModalDoc.emailTemplates}
+        />
+      </div>
+    );
+  }
 
   return (
     <>

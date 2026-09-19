@@ -33,6 +33,10 @@ import type {
   BookingStatus,
 } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
+import {
+  buildFolioHtml,
+  buildCheckinEmailTemplates,
+} from "@/lib/booking-folio";
 
 interface CommercialBookingDetailModalProps {
   isOpen: boolean;
@@ -87,6 +91,7 @@ export function CommercialBookingDetailModal({
     ownerEmail?: string;
     defaultSubject?: string;
     defaultMessage?: string;
+    emailTemplates?: any;
   }>({
     isOpen: false,
     documentTitle: "",
@@ -537,10 +542,9 @@ export function CommercialBookingDetailModal({
                   type="button"
                   onClick={() => {
                     if (!booking) return;
-                    const balance = (booking.totalAmount || 0) - (booking.amountPaid || 0);
                     const companyName = currentCompany?.name || "Paimbabook";
-                    const html = `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>Booking Receipt - ${booking.bookingCode}</title></head><body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 32px; color: #0f172a; background: #ffffff;"><div style="max-width: 680px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 28px;"><div style="border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start;"><div><h1 style="margin: 0 0 4px 0; font-size: 20px; font-weight: 800; color: #0f172a; text-transform: uppercase;">${companyName}</h1><p style="margin: 0; font-size: 12px; color: #64748b;">Hospitality & Guest Operations</p></div><div style="text-align: right;"><div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #2563eb;">Guest Folio & Receipt</div><div style="font-family: monospace; font-size: 15px; font-weight: 700; color: #0f172a; margin-top: 4px;">#${booking.bookingCode}</div><div style="font-size: 11px; color: #64748b; margin-top: 2px;">${new Date().toLocaleDateString()}</div></div></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0;"><div><div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b;">Guest Details</div><div style="font-size: 14px; font-weight: 700; color: #0f172a; margin-top: 4px;">${booking.guestName}</div><div style="font-size: 12px; color: #475569; margin-top: 2px;">Email: ${booking.guestEmail || "-"}</div><div style="font-size: 12px; color: #475569;">Phone: ${booking.guestPhone || "-"}</div></div><div><div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b;">Stay Details</div><div style="font-size: 13px; font-weight: 600; color: #0f172a; margin-top: 4px;">Room: ${booking.roomNumber} (${booking.propertyName})</div><div style="font-size: 12px; color: #475569; margin-top: 2px;">${booking.checkInDate?.slice(0, 10)} to ${booking.checkOutDate?.slice(0, 10)} (${booking.nights} night${booking.nights > 1 ? "s" : ""})</div><div style="font-size: 12px; color: #475569;">Meal Board: ${booking.mealPlan.replace(/_/g, " ")} | Status: ${booking.bookingStatus}</div></div></div><table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;"><thead><tr style="background: #0f172a; color: #ffffff; text-align: left;"><th style="padding: 10px 12px;">Description</th><th style="padding: 10px 12px; text-align: center;">Nights</th><th style="padding: 10px 12px; text-align: right;">Amount</th></tr></thead><tbody><tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 10px 12px;">Room Accommodation (${booking.propertyName} - Room ${booking.roomNumber})</td><td style="padding: 10px 12px; text-align: center;">${booking.nights}</td><td style="padding: 10px 12px; text-align: right; font-weight: 600;">R${booking.totalAmount.toLocaleString()}</td></tr></tbody><tfoot><tr><td colspan="2" style="padding: 8px 12px; text-align: right; font-weight: 600; color: #64748b;">Total Charges:</td><td style="padding: 8px 12px; text-align: right; font-weight: 700; color: #0f172a;">R${booking.totalAmount.toLocaleString()}</td></tr><tr><td colspan="2" style="padding: 6px 12px; text-align: right; font-weight: 600; color: #16a34a;">Amount Paid:</td><td style="padding: 6px 12px; text-align: right; font-weight: 700; color: #16a34a;">R${booking.amountPaid.toLocaleString()}</td></tr><tr style="border-top: 2px solid #0f172a;"><td colspan="2" style="padding: 10px 12px; text-align: right; font-weight: 800; color: #0f172a; font-size: 14px;">Balance:</td><td style="padding: 10px 12px; text-align: right; font-weight: 800; color: ${balance > 0 ? "#dc2626" : "#16a34a"}; font-size: 14px;">R${balance.toLocaleString()}</td></tr></tfoot></table><div style="border-top: 1px dashed #cbd5e1; padding-top: 16px; font-size: 11px; color: #64748b; text-align: center;"><p style="margin: 0;">Thank you for staying with us at ${companyName}!</p></div></div></body></html>`;
-                    downloadPdfDocument(html, `receipt-${booking.bookingCode}`);
+                    const html = buildFolioHtml(booking, companyName, "R");
+                    downloadPdfDocument(html, `checkin-proof-${booking.bookingCode}`);
                   }}
                   className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs font-bold text-foreground hover:bg-surface-elevated/80 transition"
                 >
@@ -551,19 +555,20 @@ export function CommercialBookingDetailModal({
                   type="button"
                   onClick={() => {
                     if (!booking) return;
-                    const balance = (booking.totalAmount || 0) - (booking.amountPaid || 0);
                     const companyName = currentCompany?.name || "Paimbabook";
-                    const html = `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>Booking Receipt - ${booking.bookingCode}</title></head><body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 32px; color: #0f172a; background: #ffffff;"><div style="max-width: 680px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 28px;"><div style="border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start;"><div><h1 style="margin: 0 0 4px 0; font-size: 20px; font-weight: 800; color: #0f172a; text-transform: uppercase;">${companyName}</h1><p style="margin: 0; font-size: 12px; color: #64748b;">Hospitality & Guest Operations</p></div><div style="text-align: right;"><div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #2563eb;">Guest Folio & Receipt</div><div style="font-family: monospace; font-size: 15px; font-weight: 700; color: #0f172a; margin-top: 4px;">#${booking.bookingCode}</div><div style="font-size: 11px; color: #64748b; margin-top: 2px;">${new Date().toLocaleDateString()}</div></div></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0;"><div><div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b;">Guest Details</div><div style="font-size: 14px; font-weight: 700; color: #0f172a; margin-top: 4px;">${booking.guestName}</div><div style="font-size: 12px; color: #475569; margin-top: 2px;">Email: ${booking.guestEmail || "-"}</div><div style="font-size: 12px; color: #475569;">Phone: ${booking.guestPhone || "-"}</div></div><div><div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b;">Stay Details</div><div style="font-size: 13px; font-weight: 600; color: #0f172a; margin-top: 4px;">Room: ${booking.roomNumber} (${booking.propertyName})</div><div style="font-size: 12px; color: #475569; margin-top: 2px;">${booking.checkInDate?.slice(0, 10)} to ${booking.checkOutDate?.slice(0, 10)} (${booking.nights} night${booking.nights > 1 ? "s" : ""})</div><div style="font-size: 12px; color: #475569;">Meal Board: ${booking.mealPlan.replace(/_/g, " ")} | Status: ${booking.bookingStatus}</div></div></div><table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;"><thead><tr style="background: #0f172a; color: #ffffff; text-align: left;"><th style="padding: 10px 12px;">Description</th><th style="padding: 10px 12px; text-align: center;">Nights</th><th style="padding: 10px 12px; text-align: right;">Amount</th></tr></thead><tbody><tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 10px 12px;">Room Accommodation (${booking.propertyName} - Room ${booking.roomNumber})</td><td style="padding: 10px 12px; text-align: center;">${booking.nights}</td><td style="padding: 10px 12px; text-align: right; font-weight: 600;">R${booking.totalAmount.toLocaleString()}</td></tr></tbody><tfoot><tr><td colspan="2" style="padding: 8px 12px; text-align: right; font-weight: 600; color: #64748b;">Total Charges:</td><td style="padding: 8px 12px; text-align: right; font-weight: 700; color: #0f172a;">R${booking.totalAmount.toLocaleString()}</td></tr><tr><td colspan="2" style="padding: 6px 12px; text-align: right; font-weight: 600; color: #16a34a;">Amount Paid:</td><td style="padding: 6px 12px; text-align: right; font-weight: 700; color: #16a34a;">R${booking.amountPaid.toLocaleString()}</td></tr><tr style="border-top: 2px solid #0f172a;"><td colspan="2" style="padding: 10px 12px; text-align: right; font-weight: 800; color: #0f172a; font-size: 14px;">Balance:</td><td style="padding: 10px 12px; text-align: right; font-weight: 800; color: ${balance > 0 ? "#dc2626" : "#16a34a"}; font-size: 14px;">R${balance.toLocaleString()}</td></tr></tfoot></table><div style="border-top: 1px dashed #cbd5e1; padding-top: 16px; font-size: 11px; color: #64748b; text-align: center;"><p style="margin: 0;">Thank you for staying with us at ${companyName}!</p></div></div></body></html>`;
+                    const html = buildFolioHtml(booking, companyName, "R");
+                    const templates = buildCheckinEmailTemplates(booking, companyName);
                     setShareModalDoc({
                       isOpen: true,
-                      documentTitle: `Guest Folio & Receipt - #${booking.bookingCode} (${booking.guestName})`,
-                      documentType: "Receipt",
+                      documentTitle: `Proof of Check-In - #${booking.bookingCode} (${booking.guestName})`,
+                      documentType: "checkin",
                       documentHtml: html,
-                      fileNameBase: `receipt-${booking.bookingCode}-${booking.guestName.replace(/\s+/g, "_")}`,
+                      fileNameBase: `checkin-proof-${booking.bookingCode}-${booking.guestName.replace(/\s+/g, "_")}`,
                       ownerName: booking.guestName,
                       ownerEmail: booking.guestEmail || "",
-                      defaultSubject: `Folio Receipt #${booking.bookingCode} - ${currentCompany?.name || "Paimbabook"}`,
-                      defaultMessage: `Dear ${booking.guestName},\n\nPlease find attached your official guest folio and payment receipt for your stay in Room ${booking.roomNumber}.`,
+                      defaultSubject: templates.ownerSubject,
+                      defaultMessage: templates.ownerMessage,
+                      emailTemplates: templates,
                     });
                   }}
                   className="flex items-center gap-1.5 rounded-xl bg-sky-600 px-3 py-2 text-xs font-bold text-white shadow-md hover:bg-sky-700 transition"
@@ -922,6 +927,7 @@ export function CommercialBookingDetailModal({
         ownerEmail={shareModalDoc.ownerEmail}
         defaultSubject={shareModalDoc.defaultSubject}
         defaultMessage={shareModalDoc.defaultMessage}
+        emailTemplates={shareModalDoc.emailTemplates}
       />
     </div>
   );

@@ -29,6 +29,15 @@ import {
   wrapDocumentInEmailHtml,
 } from "@/lib/notifications";
 
+export interface DocumentEmailTemplates {
+  ownerSubject?: string;
+  ownerMessage?: string;
+  staffSubject?: string;
+  staffMessage?: string;
+  customSubject?: string;
+  customMessage?: string;
+}
+
 export interface DocumentShareModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -41,6 +50,7 @@ export interface DocumentShareModalProps {
   ownerEmail?: string;
   defaultSubject?: string;
   defaultMessage?: string;
+  emailTemplates?: DocumentEmailTemplates;
   onSuccess?: () => void;
 }
 
@@ -56,6 +66,7 @@ export function DocumentShareModal({
   ownerEmail = "",
   defaultSubject = "",
   defaultMessage = "",
+  emailTemplates,
   onSuccess,
 }: DocumentShareModalProps) {
   const { currentCompany } = useAuth();
@@ -79,25 +90,83 @@ export function DocumentShareModal({
   const [sendError, setSendError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
+  const getTemplateForMode = (mode: "owner" | "staff" | "custom", currentName: string) => {
+    const custName = currentName.trim() || ownerName || "Customer";
+    const company = currentCompany?.name || "Hospitality Operations";
+
+    if (emailTemplates) {
+      if (mode === "owner") {
+        return {
+          subject: emailTemplates.ownerSubject || defaultSubject || `Your Proof of Check-In - ${company}`,
+          message: emailTemplates.ownerMessage || defaultMessage || `Dear ${custName},\n\nPlease find your proof of check-in attached.`,
+        };
+      }
+      if (mode === "staff") {
+        return {
+          subject: emailTemplates.staffSubject || `[Staff Record] Check-In Proof: ${custName}`,
+          message: emailTemplates.staffMessage || `Kindly find customer ${custName}'s check-in proof attached for your records.`,
+        };
+      }
+      if (mode === "custom") {
+        return {
+          subject: emailTemplates.customSubject || `Proof of Check-In: ${custName} at ${company}`,
+          message: emailTemplates.customMessage || `Good day,\n\nKindly find ${custName}'s proof of check-in at ${company} attached for your reference.`,
+        };
+      }
+    }
+
+    const isCheckinOrReceipt = /checkin|receipt|folio/i.test(`${documentType} ${documentTitle}`);
+    if (isCheckinOrReceipt) {
+      if (mode === "owner") {
+        return {
+          subject: defaultSubject || `Your Proof of Check-In - ${company}`,
+          message: defaultMessage || `Dear ${custName},\n\nPlease find your proof of check-in attached. Thank you for staying with us!`,
+        };
+      }
+      if (mode === "staff") {
+        return {
+          subject: `[Staff Record] Check-In Proof: ${custName}`,
+          message: `Kindly find customer ${custName}'s check-in proof attached for your records.`,
+        };
+      }
+      if (mode === "custom") {
+        return {
+          subject: `Proof of Check-In: ${custName} at ${company}`,
+          message: `Good day,\n\nKindly find ${custName}'s proof of check-in at ${company} attached for your reference.`,
+        };
+      }
+    }
+
+    if (mode === "owner") {
+      return {
+        subject: defaultSubject || `${documentTitle} - ${company}`,
+        message: defaultMessage || `Please find the official ${documentType.toLowerCase()} attached for your reference.`,
+      };
+    }
+    if (mode === "staff") {
+      return {
+        subject: `[Staff Dispatch] ${documentTitle} (${custName})`,
+        message: `Kindly find customer ${custName}'s ${documentType.toLowerCase()} attached for your records.`,
+      };
+    }
+    return {
+      subject: `${documentTitle} - ${custName}`,
+      message: `Good day,\n\nKindly find ${custName}'s ${documentType.toLowerCase()} attached for your reference.`,
+    };
+  };
+
   useEffect(() => {
     if (isOpen) {
       setOwnerEmailInput(ownerEmail);
       setOwnerNameInput(ownerName);
+      setRecipientMode("owner");
       setSendSuccess(null);
       setSendError(null);
 
-      // Default subject and message
-      const subj =
-        defaultSubject ||
-        `${documentTitle} - ${currentCompany?.name || "Paimbabook"}`;
-      setSubject(subj);
+      const initialTmpl = getTemplateForMode("owner", ownerName);
+      setSubject(initialTmpl.subject);
+      setMessage(initialTmpl.message);
 
-      const msg =
-        defaultMessage ||
-        `Please find the official ${documentType.toLowerCase()} attached for your reference.`;
-      setMessage(msg);
-
-      // Fetch staff list for staff recipient option
       if (currentCompany?.id) {
         fetchCompanyUsers(currentCompany.id).then((users) => {
           setStaffList(users);
@@ -107,7 +176,14 @@ export function DocumentShareModal({
         });
       }
     }
-  }, [isOpen, ownerEmail, ownerName, documentTitle, documentType, defaultSubject, defaultMessage, currentCompany?.id, currentCompany?.name]);
+  }, [isOpen, ownerEmail, ownerName, documentTitle, documentType, defaultSubject, defaultMessage, emailTemplates, currentCompany?.id, currentCompany?.name]);
+
+  const switchRecipientMode = (mode: "owner" | "staff" | "custom") => {
+    setRecipientMode(mode);
+    const tmpl = getTemplateForMode(mode, ownerNameInput);
+    setSubject(tmpl.subject);
+    setMessage(tmpl.message);
+  };
 
   if (!isOpen) return null;
 
@@ -293,7 +369,7 @@ export function DocumentShareModal({
           <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
-              onClick={() => setRecipientMode("owner")}
+              onClick={() => switchRecipientMode("owner")}
               className={`flex flex-col items-center justify-center gap-1 rounded-xl border p-2.5 text-xs font-bold transition ${
                 recipientMode === "owner"
                   ? "border-blue-600 bg-blue-500/10 text-blue-600"
@@ -301,12 +377,12 @@ export function DocumentShareModal({
               }`}
             >
               <User size={16} />
-              <span>Owner / Client</span>
+              <span>Customer / Guest</span>
             </button>
 
             <button
               type="button"
-              onClick={() => setRecipientMode("staff")}
+              onClick={() => switchRecipientMode("staff")}
               className={`flex flex-col items-center justify-center gap-1 rounded-xl border p-2.5 text-xs font-bold transition ${
                 recipientMode === "staff"
                   ? "border-blue-600 bg-blue-500/10 text-blue-600"
@@ -319,7 +395,7 @@ export function DocumentShareModal({
 
             <button
               type="button"
-              onClick={() => setRecipientMode("custom")}
+              onClick={() => switchRecipientMode("custom")}
               className={`flex flex-col items-center justify-center gap-1 rounded-xl border p-2.5 text-xs font-bold transition ${
                 recipientMode === "custom"
                   ? "border-blue-600 bg-blue-500/10 text-blue-600"
@@ -327,7 +403,7 @@ export function DocumentShareModal({
               }`}
             >
               <Mail size={16} />
-              <span>New / Custom Email</span>
+              <span>Custom / Other Email</span>
             </button>
           </div>
         </div>
@@ -434,12 +510,32 @@ export function DocumentShareModal({
             </div>
 
             <div>
-              <label className="mb-1 block font-semibold text-foreground">Personal Message / Note</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block font-semibold text-foreground">Personal Message / Note</label>
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                    <Sparkles size={10} />
+                    {recipientMode === "owner" ? "Tailored for Customer" : recipientMode === "staff" ? "Tailored for Staff" : "Tailored for Custom Recipient"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tmpl = getTemplateForMode(recipientMode, ownerNameInput);
+                      setSubject(tmpl.subject);
+                      setMessage(tmpl.message);
+                    }}
+                    className="text-[10px] text-muted hover:text-blue-600 underline"
+                    title="Restore default personalized text for this recipient"
+                  >
+                    Reset Text
+                  </button>
+                </div>
+              </div>
               <textarea
-                rows={3}
+                rows={4}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                className="w-full rounded-xl border border-border-color bg-surface-elevated p-3 text-foreground focus:border-blue-600 focus:outline-none"
+                className="w-full rounded-xl border border-border-color bg-surface-elevated p-3 text-foreground focus:border-blue-600 focus:outline-none leading-relaxed"
                 placeholder="Add a polite note to accompany the attached PDF..."
               />
             </div>

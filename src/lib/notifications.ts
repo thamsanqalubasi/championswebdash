@@ -30,6 +30,12 @@ export function wrapDocumentInEmailHtml(opts: {
     : companyLogo;
   const year = new Date().getFullYear();
 
+  const hasGreeting = /^(dear\s|good\s+day|kindly\s|hello\s|hi\s|greetings)/i.test((bodyText || "").trim());
+  const greetingHtml = hasGreeting ? "" : `<p class="greeting">Dear ${recipientName},</p>`;
+  const formattedBody = (bodyText || "")
+    .replace(/\n\n+/g, "</p><p class=\"body-text\">")
+    .replace(/\n/g, "<br/>");
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -37,16 +43,16 @@ export function wrapDocumentInEmailHtml(opts: {
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>${subject}</title>
 <style>
-  body { margin: 0; padding: 0; background: #f4f6f8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1a1a2e; }
-  .email-container { max-width: 640px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
-  .email-header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 32px 28px; text-align: center; }
-  .email-header img { max-height: 48px; max-width: 220px; object-fit: contain; margin-bottom: 12px; display: inline-block; }
-  .email-header h1 { color: #ffffff; font-size: 22px; margin: 0 0 4px; letter-spacing: 0.5px; }
-  .email-header p { color: rgba(255,255,255,0.7); font-size: 13px; margin: 0; }
-  .email-body { padding: 28px; }
-  .greeting { font-size: 16px; color: #333; margin: 0 0 16px; }
-  .body-text { font-size: 14px; line-height: 1.6; color: #555; margin: 0 0 24px; }
-  .pdf-badge { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 16px; margin: 0 0 20px; font-size: 13px; color: #166534; }
+  body { margin: 0; padding: 0; background: #f4f5f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+  .email-container { max-width: 680px; margin: 0 auto; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
+  .email-header { background: #1a1a2e; color: #ffffff; padding: 28px 32px; text-align: center; }
+  .email-header img { max-height: 48px; width: auto; margin-bottom: 12px; }
+  .email-header h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; color: #ffffff; }
+  .email-header p { margin: 0; font-size: 12px; color: #a0a0b0; }
+  .email-body { padding: 32px; color: #333333; line-height: 1.6; }
+  .greeting { font-size: 16px; font-weight: 600; color: #1a1a2e; margin: 0 0 16px; }
+  .body-text { font-size: 14px; color: #555555; margin: 0 0 20px; }
+  .pdf-badge { background: #f0f7ff; border: 1px solid #cce3ff; border-radius: 6px; padding: 12px 16px; margin: 0 0 20px; font-size: 13px; color: #0052cc; }
   .document-frame { border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; margin: 0 0 24px; }
   .document-frame-header { background: #f8f9fa; border-bottom: 1px solid #e0e0e0; padding: 10px 16px; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
   .document-frame-content { padding: 0; }
@@ -68,8 +74,8 @@ export function wrapDocumentInEmailHtml(opts: {
       <p>Hospitality &amp; Property Management</p>
     </div>
     <div class="email-body">
-      <p class="greeting">Dear ${recipientName},</p>
-      <p class="body-text">${bodyText}</p>
+      ${greetingHtml}
+      <p class="body-text">${formattedBody}</p>
       <div class="pdf-badge">
         📎 <strong>Official PDF Attached:</strong> A printable PDF document has been generated and attached to this email for your records.
       </div>
