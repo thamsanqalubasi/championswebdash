@@ -4,11 +4,12 @@ import { supabase } from '@/lib/supabase';
 import { uploadFileToBucket } from '@/lib/storage';
 import { useAuth } from '@/lib/auth';
 import { useCurrency } from '@/lib/currency';
+import { fetchProperties } from '@/lib/data';
 import { 
   Plus, Edit, Trash, Eye, EyeOff, Upload, X, Save, User, Building2, 
   ChevronLeft, ChevronRight, MapPin, Phone, Mail, Camera, Home, 
   DollarSign, Image as ImageIcon, CheckCircle2, Globe, Search, Filter,
-  Sparkles, Loader2, RefreshCw, AlertTriangle
+  Sparkles, Loader2, RefreshCw, AlertTriangle, Building, Hotel, Check
 } from 'lucide-react';
 
 type AgentListing = {
@@ -46,19 +47,29 @@ type OrgResidentialProperty = {
   address?: string;
   city?: string;
   country?: string;
+  status?: string;
   monthly_rent?: number;
+  default_room_price?: number;
+  total_rooms?: number;
   photos?: string[];
   description?: string;
   is_published?: boolean;
   company_id?: string;
 };
 
+const HOSPITALITY_TYPES = [
+  'hotel', 'guesthouse', 'lodge', 'bed_and_breakfast', 'resort', 
+  'motel', 'hostel', 'inn', 'boutique_hotel', 'safari_camp'
+];
+
+const isHospitality = (type?: string) => HOSPITALITY_TYPES.includes((type || '').toLowerCase());
+
 const AMENITIES_OPTIONS = [
   'wifi', 'parking', 'pool', 'garden', 'security', 
   'ac', 'gym', 'balcony', 'furnished', 'pet_friendly'
 ];
 
-const TABS = ['Published Residential Properties', 'My Custom Listings', 'Add / Edit Listing', 'My Profile'];
+const TABS = ['Published Properties & Lodges', 'My Custom Listings', 'Add / Edit Listing', 'My Profile'];
 
 export default function AgentPortalPage() {
   const { user, currentCompany } = useAuth();
@@ -75,6 +86,11 @@ export default function AgentPortalPage() {
   const [orgTypeFilter, setOrgTypeFilter] = useState('all');
   const [orgStatusFilter, setOrgStatusFilter] = useState<'all' | 'published' | 'hidden'>('all');
   const [showProfileWarningModal, setShowProfileWarningModal] = useState(false);
+
+  // Select from System Properties Modal State
+  const [openSystemPropsModal, setOpenSystemPropsModal] = useState(false);
+  const [systemModalSearch, setSystemModalSearch] = useState('');
+  const [systemModalCategoryFilter, setSystemModalCategoryFilter] = useState<'all' | 'hospitality' | 'rental' | 'published' | 'hidden'>('all');
 
   const defaultFormData = {
     name: '',
@@ -166,36 +182,61 @@ export default function AgentPortalPage() {
   const fetchOrgProperties = async () => {
     setLoadingOrgProps(true);
     try {
-      let query = supabase
-        .from('properties')
-        .select('id, name, type, address, city, country, monthly_rent, photos, description, is_published, company_id')
-        .in('type', ['house', 'apartment', 'storage', 'room', 'flat', 'residential', 'commercial', 'townhouse', 'lodge']);
-      
       const compId = currentCompany?.id;
+      let propertiesList: any[] = [];
+
+      // 1. Try standardized company properties fetch
+      if (compId) {
+        try {
+          const compData = await fetchProperties(compId);
+          if (compData && compData.length > 0) {
+            propertiesList = compData;
+          }
+        } catch (e) {
+          console.warn('Could not fetch company properties via fetchProperties:', e);
+        }
+      }
+
+      // 2. Direct Supabase query (all property types, including hotel, lodge, apartment, house, etc.)
+      let query = supabase.from('properties').select('*');
       if (compId) {
         query = query.or(`company_id.eq.${compId},company_id.is.null`);
       }
-
       const { data, error } = await query.order('name');
-      if (error) {
-        // Fallback without company filter
-        const { data: fallbackData } = await supabase
-          .from('properties')
-          .select('id, name, type, address, city, country, monthly_rent, photos, description, is_published')
-          .in('type', ['house', 'apartment', 'storage', 'room', 'flat', 'residential', 'commercial', 'townhouse', 'lodge'])
-          .order('name');
-        if (fallbackData) {
-          setOrgProperties(fallbackData.map((p: any) => ({
-            ...p,
-            photos: Array.isArray(p.photos) ? p.photos : typeof p.photos === 'string' ? (() => { try { return JSON.parse(p.photos); } catch { return []; } })() : [],
-          })));
-        }
-      } else if (data) {
-        setOrgProperties(data.map((p: any) => ({
-          ...p,
-          photos: Array.isArray(p.photos) ? p.photos : typeof p.photos === 'string' ? (() => { try { return JSON.parse(p.photos); } catch { return []; } })() : [],
-        })));
+      if (!error && data && data.length > 0) {
+        const existingIds = new Set(propertiesList.map(p => p.id));
+        const extra = data.filter((p: any) => !existingIds.has(p.id));
+        propertiesList = [...propertiesList, ...extra];
       }
+
+      // 3. Fallback: if still empty, fetch any properties
+      if (propertiesList.length === 0) {
+        const { data: allProps } = await supabase.from('properties').select('*').order('name');
+        if (allProps && allProps.length > 0) {
+          propertiesList = allProps;
+        }
+      }
+
+      setOrgProperties(propertiesList.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        type: p.type || 'residential',
+        address: p.address || '',
+        city: p.city || '',
+        country: p.country || '',
+        status: p.status || 'occupied',
+        monthly_rent: Number(p.monthly_rent || p.monthlyRent || 0),
+        default_room_price: Number(p.default_room_price || p.defaultRoomPrice || 0),
+        total_rooms: Number(p.total_rooms || p.totalRooms || 1),
+        description: p.description || '',
+        is_published: Boolean(p.is_published || p.isPublished),
+        company_id: p.company_id || p.companyId || compId,
+        photos: Array.isArray(p.photos)
+          ? p.photos
+          : typeof p.photos === 'string'
+            ? (() => { try { return JSON.parse(p.photos); } catch { return []; } })()
+            : [],
+      })));
     } catch (err) {
       console.error('Error fetching org properties:', err);
     } finally {
@@ -249,19 +290,21 @@ export default function AgentPortalPage() {
       } else {
         // Publish new to Agent Index
         const propPhotos = prop.photos || [];
+        const isHosp = isHospitality(prop.type);
+        const priceVal = prop.monthly_rent || prop.default_room_price || 0;
         const payload = {
           name: prop.name,
-          type: prop.type || 'house',
+          type: prop.type || (isHosp ? 'lodge' : 'house'),
           listing_type: 'rent' as const,
-          price: prop.monthly_rent || 0,
+          price: priceVal,
           address: prop.address || '',
           city: prop.city || '',
           country: prop.country || '',
-          description: prop.description || `${prop.name} - managed residential property ready for leasing.`,
-          bedrooms: 1,
+          description: prop.description || `${prop.name} — managed ${isHosp ? 'hospitality lodge' : 'residential property'} available for lease or booking.`,
+          bedrooms: prop.total_rooms || 1,
           bathrooms: 1,
           area_sqm: 0,
-          amenities: ['wifi', 'parking', 'security'],
+          amenities: isHosp ? ['wifi', 'parking', 'security', 'ac'] : ['wifi', 'parking', 'security'],
           photos: propPhotos,
           is_published: true,
           agent_name: agentName,
@@ -288,6 +331,29 @@ export default function AgentPortalPage() {
     }
   };
 
+  const handleSelectAndEditSystemProperty = (prop: OrgResidentialProperty) => {
+    const isHosp = isHospitality(prop.type);
+    const priceVal = prop.monthly_rent || prop.default_room_price || 0;
+    setFormData({
+      name: prop.name,
+      type: prop.type || (isHosp ? 'lodge' : 'apartment'),
+      listingType: 'rent',
+      price: priceVal,
+      address: prop.address || '',
+      city: prop.city || '',
+      country: prop.country || '',
+      description: prop.description || `${prop.name} — managed ${isHosp ? 'hospitality lodge' : 'residential property'} available in ${prop.city || 'Windhoek'}.`,
+      bedrooms: prop.total_rooms || 1,
+      bathrooms: 1,
+      areaSqm: 0,
+      amenities: isHosp ? ['wifi', 'parking', 'security', 'ac'] : ['wifi', 'parking', 'security'],
+      photos: prop.photos || [],
+    });
+    setEditingId(null);
+    setOpenSystemPropsModal(false);
+    setActiveTab(2); // Switch to "Add / Edit Listing"
+  };
+
   useEffect(() => {
     fetchListings();
     fetchOrgProperties();
@@ -311,7 +377,7 @@ export default function AgentPortalPage() {
         lastName: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
       }));
     }
-  }, [user]);
+  }, [user, currentCompany?.id]);
 
   const saveProfile = async () => {
     localStorage.setItem('agent_profile', JSON.stringify(profile));
@@ -501,7 +567,16 @@ export default function AgentPortalPage() {
             }`}
           >
             <Home size={15} className={activeTab === 0 && orgStatusFilter === 'published' ? 'text-white' : 'text-emerald-500'} />
-            <span>Published Residential Properties ({livePropsCount})</span>
+            <span>Published Properties ({livePropsCount})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setOpenSystemPropsModal(true)}
+            className="rounded-xl px-4 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-2 shadow-xs transition"
+          >
+            <Building2 size={15} />
+            <span>Select from system properties</span>
           </button>
 
           <button 
@@ -539,28 +614,38 @@ export default function AgentPortalPage() {
       </div>
 
       <div className="bg-surface rounded-2xl border border-border-color p-6 shadow-sm">
-        {/* Tab 0: Published Residential Properties */}
+        {/* Tab 0: Published Properties & Lodges */}
         {activeTab === 0 && (
           <div className="space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border-color pb-4">
               <div>
                 <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
                   <Building2 size={20} className="text-blue-600" />
-                  <span>Residential Portfolio Properties — Front Page Visibility</span>
+                  <span>Properties & Lodges — Front Page Visibility</span>
                 </h2>
                 <p className="text-xs text-muted mt-1">
-                  Control which residential properties appear on the public front page index for prospective customers. Click "Show" or "Hide" to toggle visibility.
+                  Control which properties and lodges appear on the public front page index for prospective customers. Click "Show" or "Hide" to toggle visibility, or select from system properties to import and customize.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={fetchOrgProperties}
-                disabled={loadingOrgProps}
-                className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface transition self-start md:self-auto"
-              >
-                <RefreshCw size={13} className={loadingOrgProps ? "animate-spin" : ""} />
-                <span>Refresh Portfolio</span>
-              </button>
+              <div className="flex items-center gap-2 self-start md:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setOpenSystemPropsModal(true)}
+                  className="flex items-center gap-1.5 rounded-xl border border-indigo-500/40 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 px-3 py-1.5 text-xs font-bold transition shadow-2xs"
+                >
+                  <Building2 size={13} />
+                  <span>Select from system properties</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={fetchOrgProperties}
+                  disabled={loadingOrgProps}
+                  className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface transition"
+                >
+                  <RefreshCw size={13} className={loadingOrgProps ? "animate-spin" : ""} />
+                  <span>Refresh</span>
+                </button>
+              </div>
             </div>
 
             {/* Agent Profile Status Banner */}
@@ -661,11 +746,15 @@ export default function AgentPortalPage() {
                   onChange={(e) => setOrgTypeFilter(e.target.value)}
                   className="rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none focus:border-blue-600"
                 >
-                  <option value="all">All Types</option>
-                  <option value="house">Houses</option>
+                  <option value="all">All Properties</option>
+                  <option value="hospitality">🏨 Hospitality & Lodges</option>
+                  <option value="rental">🏠 Residential Rentals</option>
+                  <option value="hotel">Hotels</option>
+                  <option value="lodge">Lodges</option>
                   <option value="apartment">Apartments</option>
-                  <option value="storage">Storage</option>
+                  <option value="house">Houses</option>
                   <option value="room">Rooms</option>
+                  <option value="storage">Storage</option>
                 </select>
               </div>
             </div>
@@ -678,10 +767,18 @@ export default function AgentPortalPage() {
             ) : orgProperties.length === 0 ? (
               <div className="text-center py-16 text-muted bg-surface-elevated/40 rounded-2xl border border-dashed border-border-color">
                 <Building2 size={44} className="mx-auto mb-3 opacity-30" />
-                <p className="text-sm font-semibold text-foreground">No residential portfolio properties found</p>
+                <p className="text-sm font-semibold text-foreground">No properties or lodges found in system</p>
                 <p className="text-xs text-muted mt-1 max-w-sm mx-auto">
-                  Add residential properties (houses, apartments, storage units) in Property Management to toggle them here.
+                  Add properties and lodges in Property Management or click "Select from system properties" to browse available listings.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setOpenSystemPropsModal(true)}
+                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition"
+                >
+                  <Building2 size={14} />
+                  <span>Select from system properties</span>
+                </button>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -692,7 +789,11 @@ export default function AgentPortalPage() {
                       prop.name.toLowerCase().includes(q) ||
                       (prop.address || "").toLowerCase().includes(q) ||
                       (prop.city || "").toLowerCase().includes(q);
-                    const matchesType = orgTypeFilter === "all" || prop.type === orgTypeFilter;
+                    const isHosp = isHospitality(prop.type);
+                    const matchesType = orgTypeFilter === "all" || 
+                      (orgTypeFilter === "hospitality" ? isHosp : 
+                       orgTypeFilter === "rental" ? !isHosp : 
+                       prop.type === orgTypeFilter);
                     
                     const matchedListing = listings.find(
                       (l) => l.name.trim().toLowerCase() === prop.name.trim().toLowerCase()
@@ -712,6 +813,7 @@ export default function AgentPortalPage() {
                     );
                     const isLive = Boolean(matchedListing && matchedListing.isPublished) || Boolean(prop.is_published);
                     const isToggling = togglingPropId === prop.id;
+                    const isHosp = isHospitality(prop.type);
                     const primaryPhoto = prop.photos?.[0];
 
                     return (
@@ -739,8 +841,9 @@ export default function AgentPortalPage() {
 
                             {/* Top Badges */}
                             <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 pointer-events-none">
-                              <span className="capitalize px-2.5 py-1 rounded-full text-[11px] font-bold bg-black/70 text-white backdrop-blur-xs">
-                                {prop.type}
+                              <span className="capitalize px-2.5 py-1 rounded-full text-[11px] font-bold bg-black/70 text-white backdrop-blur-xs flex items-center gap-1">
+                                <span>{isHosp ? "🏨" : "🏠"}</span>
+                                <span>{prop.type}</span>
                               </span>
 
                               {isLive ? (
@@ -758,52 +861,83 @@ export default function AgentPortalPage() {
 
                           {/* Content */}
                           <div className="p-4 space-y-2">
-                            <h3 className="font-bold text-sm text-foreground line-clamp-1 group-hover:text-blue-600 transition">
-                              {prop.name}
-                            </h3>
+                            <div className="flex items-start justify-between gap-2">
+                              <h3 className="font-bold text-sm text-foreground line-clamp-1 group-hover:text-blue-600 transition">
+                                {prop.name}
+                              </h3>
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 capitalize ${
+                                prop.status === 'occupied' 
+                                  ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300'
+                                  : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                              }`}>
+                                {prop.status || 'occupied'}
+                              </span>
+                            </div>
+
                             <p className="text-xs text-muted flex items-center gap-1 line-clamp-1">
                               <MapPin size={12} className="shrink-0 text-muted" />
-                              <span>{prop.address ? `${prop.address}, ${prop.city || ""}` : prop.city || "Location not listed"}</span>
+                              <span>{prop.address ? `${prop.address}, ${prop.city || ""}` : prop.city || "Windhoek"}</span>
                             </p>
+
+                            <div className="text-[11px] text-muted flex items-center justify-between pt-1">
+                              <span>Units:</span>
+                              <span className="font-semibold text-foreground">
+                                {prop.total_rooms && prop.total_rooms > 1 ? `${prop.total_rooms} Rooms · Total Rooms` : "Single Unit"}
+                              </span>
+                            </div>
+
                             <div className="pt-2 flex items-baseline justify-between border-t border-border-color/60">
-                              <span className="text-xs text-muted">Monthly Rent:</span>
+                              <span className="text-xs text-muted">Pricing:</span>
                               <span className="text-sm font-black text-emerald-600">
-                                {formatWhole(prop.monthly_rent || 0)} / mo
+                                {isHosp
+                                  ? `From ${symbol} ${formatWhole(prop.default_room_price || prop.monthly_rent || 0)}/night`
+                                  : `${symbol} ${formatWhole(prop.monthly_rent || 0)}/mo`}
                               </span>
                             </div>
                           </div>
                         </div>
 
                         {/* Actions Footer */}
-                        <div className="p-4 pt-0 flex items-center gap-2">
+                        <div className="p-4 pt-0 flex flex-col gap-2">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePublishOrgProperty(prop)}
+                              disabled={isToggling}
+                              className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 ${
+                                isLive
+                                  ? "border border-amber-500/30 text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
+                                  : "bg-blue-600 text-white hover:bg-blue-700"
+                              }`}
+                            >
+                              {isToggling ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : isLive ? (
+                                <EyeOff size={14} />
+                              ) : (
+                                <Eye size={14} />
+                              )}
+                              <span>{isLive ? "Hide from Front Page Index" : "Show on Front Page Index"}</span>
+                            </button>
+
+                            <Link
+                              to="/marketing"
+                              title="Boost this property on marketing portal"
+                              className="py-2 px-3 text-xs font-bold rounded-xl border border-border-color bg-surface-elevated hover:bg-surface text-foreground flex items-center gap-1 transition"
+                            >
+                              <Sparkles size={13} className="text-amber-500" />
+                              <span>Boost</span>
+                            </Link>
+                          </div>
+
                           <button
                             type="button"
-                            onClick={() => handleTogglePublishOrgProperty(prop)}
-                            disabled={isToggling}
-                            className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 ${
-                              isLive
-                                ? "border border-amber-500/30 text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
-                                : "bg-blue-600 text-white hover:bg-blue-700"
-                            }`}
+                            onClick={() => handleSelectAndEditSystemProperty(prop)}
+                            className="w-full py-1.5 px-3 text-xs font-semibold rounded-xl border border-border-color bg-surface hover:bg-surface-elevated text-foreground flex items-center justify-center gap-1.5 transition"
                           >
-                            {isToggling ? (
-                              <Loader2 size={14} className="animate-spin" />
-                            ) : isLive ? (
-                              <EyeOff size={14} />
-                            ) : (
-                              <Eye size={14} />
-                            )}
-                            <span>{isLive ? "Hide from Front Page Index" : "Show on Front Page Index"}</span>
+                            <Edit size={12} />
+                            <span>Edit / Customise as Agent Listing</span>
                           </button>
-
-                          <Link
-                            to="/marketing"
-                            title="Boost this property on marketing portal"
-                            className="py-2 px-3 text-xs font-bold rounded-xl border border-border-color bg-surface-elevated hover:bg-surface text-foreground flex items-center gap-1 transition"
-                          >
-                            <Sparkles size={13} className="text-amber-500" />
-                            <span>Boost</span>
-                          </Link>
                         </div>
                       </div>
                     );
@@ -1190,6 +1324,330 @@ export default function AgentPortalPage() {
               >
                 <User size={14} />
                 <span>Complete Agent Profile Now</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Select from System Properties Modal */}
+      {openSystemPropsModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-surface max-w-5xl w-full rounded-3xl border border-border-color shadow-2xl overflow-hidden my-6 flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border-color bg-surface-elevated/50">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                  <Building2 size={22} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                    <span>Select from System Properties</span>
+                    <span className="text-xs font-normal text-muted">({currentCompany?.name || 'Miola Real Estate'})</span>
+                  </h3>
+                  <p className="text-xs text-muted">
+                    Browse and select rental units or hospitality lodges to show on the public front page index or customize.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpenSystemPropsModal(false)}
+                className="h-8 w-8 rounded-xl border border-border-color text-muted hover:text-foreground flex items-center justify-center transition"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Summary KPI Tiles */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-4 border-b border-border-color bg-surface/60">
+              <div className="bg-surface-elevated rounded-xl p-3 border border-border-color">
+                <p className="text-[11px] font-semibold text-muted uppercase">All Properties</p>
+                <p className="text-xl font-extrabold text-foreground mt-0.5">{orgProperties.length}</p>
+              </div>
+              <div className="bg-surface-elevated rounded-xl p-3 border border-border-color">
+                <p className="text-[11px] font-semibold text-muted uppercase">🏨 Hospitality</p>
+                <p className="text-xl font-extrabold text-amber-600 dark:text-amber-400 mt-0.5">
+                  {orgProperties.filter(p => isHospitality(p.type)).length}
+                </p>
+              </div>
+              <div className="bg-surface-elevated rounded-xl p-3 border border-border-color">
+                <p className="text-[11px] font-semibold text-muted uppercase">🏠 Rental</p>
+                <p className="text-xl font-extrabold text-blue-600 dark:text-blue-400 mt-0.5">
+                  {orgProperties.filter(p => !isHospitality(p.type)).length}
+                </p>
+              </div>
+              <div className="bg-surface-elevated rounded-xl p-3 border border-border-color">
+                <p className="text-[11px] font-semibold text-muted uppercase">Occupied</p>
+                <p className="text-xl font-extrabold text-purple-600 dark:text-purple-400 mt-0.5">
+                  {orgProperties.filter(p => p.status === 'occupied').length}
+                </p>
+              </div>
+              <div className="bg-surface-elevated rounded-xl p-3 border border-border-color col-span-2 sm:col-span-1">
+                <p className="text-[11px] font-semibold text-muted uppercase">Live on Index</p>
+                <p className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                  {livePropsCount}
+                </p>
+              </div>
+            </div>
+
+            {/* Toolbar: Search and Filter Pills */}
+            <div className="p-4 border-b border-border-color flex flex-wrap items-center justify-between gap-3 bg-surface">
+              <div className="relative flex-1 min-w-[240px]">
+                <Search size={14} className="absolute left-3 top-2.5 text-muted" />
+                <input
+                  type="text"
+                  placeholder="Search by name, city, country, address..."
+                  value={systemModalSearch}
+                  onChange={(e) => setSystemModalSearch(e.target.value)}
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated pl-9 pr-3 py-1.5 text-xs text-foreground outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setSystemModalCategoryFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition ${
+                    systemModalCategoryFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-surface-elevated text-muted hover:text-foreground'
+                  }`}
+                >
+                  All ({orgProperties.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSystemModalCategoryFilter('hospitality')}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition ${
+                    systemModalCategoryFilter === 'hospitality' ? 'bg-indigo-600 text-white' : 'bg-surface-elevated text-muted hover:text-foreground'
+                  }`}
+                >
+                  🏨 Hospitality ({orgProperties.filter(p => isHospitality(p.type)).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSystemModalCategoryFilter('rental')}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition ${
+                    systemModalCategoryFilter === 'rental' ? 'bg-indigo-600 text-white' : 'bg-surface-elevated text-muted hover:text-foreground'
+                  }`}
+                >
+                  🏠 Rental ({orgProperties.filter(p => !isHospitality(p.type)).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSystemModalCategoryFilter('published')}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition ${
+                    systemModalCategoryFilter === 'published' ? 'bg-emerald-600 text-white' : 'bg-surface-elevated text-emerald-600'
+                  }`}
+                >
+                  🟢 Showing ({livePropsCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSystemModalCategoryFilter('hidden')}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition ${
+                    systemModalCategoryFilter === 'hidden' ? 'bg-slate-700 text-white' : 'bg-surface-elevated text-muted'
+                  }`}
+                >
+                  ⚪ Hidden ({orgProperties.length - livePropsCount})
+                </button>
+              </div>
+            </div>
+
+            {/* Property List / Table matching user request format */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {orgProperties.filter((prop) => {
+                const q = systemModalSearch.toLowerCase();
+                const matchesSearch = !q ||
+                  prop.name.toLowerCase().includes(q) ||
+                  (prop.address || "").toLowerCase().includes(q) ||
+                  (prop.city || "").toLowerCase().includes(q);
+                const isHosp = isHospitality(prop.type);
+                
+                const matchedListing = listings.find(
+                  (l) => l.name.trim().toLowerCase() === prop.name.trim().toLowerCase()
+                );
+                const isLive = Boolean(matchedListing && matchedListing.isPublished) || Boolean(prop.is_published);
+
+                const matchesCategory = 
+                  systemModalCategoryFilter === 'all' ||
+                  (systemModalCategoryFilter === 'hospitality' && isHosp) ||
+                  (systemModalCategoryFilter === 'rental' && !isHosp) ||
+                  (systemModalCategoryFilter === 'published' && isLive) ||
+                  (systemModalCategoryFilter === 'hidden' && !isLive);
+
+                return matchesSearch && matchesCategory;
+              }).length === 0 ? (
+                <div className="text-center py-12 text-muted">
+                  <Building2 size={36} className="mx-auto mb-2 opacity-30" />
+                  <p className="text-sm font-semibold text-foreground">No matching system properties found</p>
+                  <p className="text-xs text-muted mt-1">Try changing search query or category filter.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-border-color text-muted uppercase font-bold text-[10px] tracking-wider">
+                        <th className="pb-2.5 pl-3">Property</th>
+                        <th className="pb-2.5 px-3">Type</th>
+                        <th className="pb-2.5 px-3">Units</th>
+                        <th className="pb-2.5 px-3">Status</th>
+                        <th className="pb-2.5 px-3">Pricing</th>
+                        <th className="pb-2.5 pr-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border-color/60">
+                      {orgProperties.filter((prop) => {
+                        const q = systemModalSearch.toLowerCase();
+                        const matchesSearch = !q ||
+                          prop.name.toLowerCase().includes(q) ||
+                          (prop.address || "").toLowerCase().includes(q) ||
+                          (prop.city || "").toLowerCase().includes(q);
+                        const isHosp = isHospitality(prop.type);
+                        
+                        const matchedListing = listings.find(
+                          (l) => l.name.trim().toLowerCase() === prop.name.trim().toLowerCase()
+                        );
+                        const isLive = Boolean(matchedListing && matchedListing.isPublished) || Boolean(prop.is_published);
+
+                        const matchesCategory = 
+                          systemModalCategoryFilter === 'all' ||
+                          (systemModalCategoryFilter === 'hospitality' && isHosp) ||
+                          (systemModalCategoryFilter === 'rental' && !isHosp) ||
+                          (systemModalCategoryFilter === 'published' && isLive) ||
+                          (systemModalCategoryFilter === 'hidden' && !isLive);
+
+                        return matchesSearch && matchesCategory;
+                      }).map((prop) => {
+                        const matchedListing = listings.find(
+                          (l) => l.name.trim().toLowerCase() === prop.name.trim().toLowerCase()
+                        );
+                        const isLive = Boolean(matchedListing && matchedListing.isPublished) || Boolean(prop.is_published);
+                        const isToggling = togglingPropId === prop.id;
+                        const isHosp = isHospitality(prop.type);
+                        const primaryPhoto = prop.photos?.[0];
+
+                        return (
+                          <tr key={prop.id} className="hover:bg-surface-elevated/40 transition">
+                            <td className="py-3 pl-3">
+                              <div className="flex items-center gap-3">
+                                <div className="h-12 w-14 rounded-xl bg-surface-elevated overflow-hidden shrink-0 border border-border-color">
+                                  {primaryPhoto ? (
+                                    <img src={primaryPhoto} alt={prop.name} className="h-full w-full object-cover" />
+                                  ) : (
+                                    <div className="h-full w-full flex items-center justify-center text-muted">
+                                      <Building2 size={18} className="opacity-40" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-bold text-foreground text-sm">{prop.name}</p>
+                                    {isLive && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                        <span>Live</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-muted text-[11px] flex items-center gap-1 mt-0.5">
+                                    <MapPin size={11} className="shrink-0 text-muted" />
+                                    <span>{prop.address ? `${prop.address}, ${prop.city || ''}` : prop.city || 'Windhoek'}</span>
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="py-3 px-3">
+                              <span className="capitalize font-semibold text-foreground block">{prop.type}</span>
+                              <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold mt-1 ${
+                                isHosp
+                                  ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                                  : 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300'
+                              }`}>
+                                {isHosp ? '🏨 Hospitality' : '🏠 Rental'}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-3">
+                              <span className="font-semibold text-foreground block">
+                                {prop.total_rooms && prop.total_rooms > 1 ? `${prop.total_rooms} Rooms` : 'Single Unit'}
+                              </span>
+                              {prop.total_rooms && prop.total_rooms > 1 && (
+                                <span className="text-muted text-[10px]">Total Rooms</span>
+                              )}
+                            </td>
+
+                            <td className="py-3 px-3">
+                              <span className={`inline-block px-2 py-0.5 rounded-md text-[11px] font-bold capitalize ${
+                                prop.status === 'occupied' 
+                                  ? 'bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300' 
+                                  : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
+                              }`}>
+                                {prop.status || 'occupied'}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-3">
+                              <span className="font-bold text-foreground">
+                                {isHosp
+                                  ? `From ${symbol} ${formatWhole(prop.default_room_price || prop.monthly_rent || 0)}/night`
+                                  : `${symbol} ${formatWhole(prop.monthly_rent || 0)}/mo`}
+                              </span>
+                            </td>
+
+                            <td className="py-3 pr-3 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleTogglePublishOrgProperty(prop)}
+                                  disabled={isToggling}
+                                  className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 shadow-2xs ${
+                                    isLive
+                                      ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30 hover:bg-amber-500/20'
+                                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                  }`}
+                                >
+                                  {isToggling ? (
+                                    <Loader2 size={12} className="animate-spin" />
+                                  ) : isLive ? (
+                                    <EyeOff size={12} />
+                                  ) : (
+                                    <Eye size={12} />
+                                  )}
+                                  <span>{isLive ? 'Hide from Index' : 'Show on Index'}</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectAndEditSystemProperty(prop)}
+                                  className="px-2.5 py-1.5 rounded-xl border border-border-color bg-surface hover:bg-surface-elevated text-foreground font-semibold flex items-center gap-1 transition"
+                                  title="Import and customize this property in Add/Edit listing form"
+                                >
+                                  <Edit size={12} />
+                                  <span>Edit Listing</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 border-t border-border-color bg-surface-elevated/40 flex items-center justify-between">
+              <p className="text-xs text-muted">
+                Properties shown on the index will feature your verified agent contact badge.
+              </p>
+              <button
+                type="button"
+                onClick={() => setOpenSystemPropsModal(false)}
+                className="px-5 py-2 rounded-xl bg-foreground text-background font-bold text-xs hover:opacity-90 transition"
+              >
+                Done
               </button>
             </div>
           </div>

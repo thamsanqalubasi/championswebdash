@@ -115,14 +115,12 @@ export default function PortalHomePage() {
           .from("properties")
           .select("id,name,type,address,city,country,status,monthly_rent,photos,available_from,discount_percentage,discount_start_date,discount_end_date,booking_mode")
           .eq("is_published", true)
-          .in("type", ["house","apartment","storage"])
           .order("name");
         if (error) {
           const fallback = await supabase
             .from("properties")
             .select("id,name,type,address,city,country,status,monthly_rent,photos,available_from")
             .eq("is_published", true)
-            .in("type", ["house","apartment","storage"])
             .order("name");
           setRentals((fallback.data || []) as RentalProp[]);
         } else {
