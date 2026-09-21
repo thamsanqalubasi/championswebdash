@@ -169,7 +169,7 @@ export default function BillsPage() {
         const compId = currentCompany?.id;
         let monthlyQ = supabase
           .from("property_monthly_bills")
-          .select("id, schedule_id, month, due_date, amount, status, paid_at, pop_url, executed_by_name, confirmed_by_name")
+          .select("id, schedule_id, property_id, month, due_date, amount, status, paid_at, executed_by_name")
           .order("month", { ascending: false });
         let propsQ = supabase.from("properties").select("id, name, type").order("name");
         if (compId && isValidUuid(compId)) {
@@ -186,7 +186,7 @@ export default function BillsPage() {
         if (monthlyResult.error) {
           let fbMonthlyQ = supabase
             .from("property_monthly_bills")
-            .select("id, schedule_id, month, due_date, amount, status, paid_at, pop_url, executed_by_name, confirmed_by_name")
+            .select("id, schedule_id, property_id, month, due_date, amount, status, paid_at, executed_by_name")
             .order("month", { ascending: false });
           if (compId && isValidUuid(compId)) {
             fbMonthlyQ = fbMonthlyQ.or(`company_id.eq.${compId},company_id.is.null`);
@@ -199,16 +199,35 @@ export default function BillsPage() {
 
         const scheduleIds = (scheduleRows ?? []).map((s: any) => String(s.id || "")).filter(Boolean);
         const creatorMap = new Map<string, { creatorName: string; createdAt: string }>();
+        const popMap = new Map<string, { popUrl: string; confirmedBy: string }>();
 
-        if (scheduleIds.length > 0) {
-          try {
-            const { data: auditRows } = await supabase
-              .from("audit_log")
-              .select("entity_id, user_name, user_email, created_at")
-              .eq("entity_type", "property_bill_schedule")
-              .in("entity_id", scheduleIds.slice(0, 100));
+        try {
+          const { data: auditRows } = await supabase
+            .from("audit_log")
+            .select("entity_id, user_name, user_email, action, details, created_at")
+            .or("entity_type.eq.property_bill_schedule,action.eq.bill_payment_confirmed")
+            .order("created_at", { ascending: false })
+            .limit(200);
 
-            (auditRows ?? []).forEach((row) => {
+          (auditRows ?? []).forEach((row: any) => {
+            if (row.action === "bill_payment_confirmed") {
+              let d: any = {};
+              try {
+                d = typeof row.details === "string" ? JSON.parse(row.details) : (row.details || {});
+              } catch {}
+              const pop = d.pop_url || "";
+              const sid = String(row.entity_id || d.schedule_id || "");
+              const month = String(d.month || "");
+              const conf = String(d.confirmed_by_name || row.user_name || row.user_email || "Admin");
+              if (pop || conf) {
+                if (sid && month && !popMap.has(`${sid}_${month}`)) {
+                  popMap.set(`${sid}_${month}`, { popUrl: pop, confirmedBy: conf });
+                }
+                if (sid && !popMap.has(sid)) {
+                  popMap.set(sid, { popUrl: pop, confirmedBy: conf });
+                }
+              }
+            } else {
               const eid = String(row.entity_id || "");
               if (eid && !creatorMap.has(eid)) {
                 creatorMap.set(eid, {
@@ -216,23 +235,28 @@ export default function BillsPage() {
                   createdAt: String(row.created_at || ""),
                 });
               }
-            });
-          } catch {}
-        }
+            }
+          });
+        } catch {}
 
         if (!cancelled) {
-          const monthlyRows = (monthlyResult.data ?? []).map((row: any) => ({
-            id: row.id ? String(row.id) : undefined,
-            schedule_id: String(row.schedule_id ?? ""),
-            month: String(row.month ?? ""),
-            due_date: String(row.due_date ?? ""),
-            amount: Number(row.amount ?? 0),
-            status: String(row.status ?? "pending"),
-            paid_at: row.paid_at ? String(row.paid_at) : null,
-            pop_url: row.pop_url ? String(row.pop_url) : null,
-            executed_by_name: row.executed_by_name ? String(row.executed_by_name) : null,
-            confirmed_by_name: row.confirmed_by_name ? String(row.confirmed_by_name) : null,
-          })) as MonthlyBillRow[];
+          const monthlyRows = (monthlyResult.data ?? []).map((row: any) => {
+            const sid = String(row.schedule_id ?? "");
+            const mKey = String(row.month ?? "");
+            const auditInfo = popMap.get(`${sid}_${mKey}`) || popMap.get(sid);
+            return {
+              id: row.id ? String(row.id) : undefined,
+              schedule_id: sid,
+              month: mKey,
+              due_date: String(row.due_date ?? ""),
+              amount: Number(row.amount ?? 0),
+              status: String(row.status ?? "pending"),
+              paid_at: row.paid_at ? String(row.paid_at) : null,
+              pop_url: row.pop_url || auditInfo?.popUrl || null,
+              executed_by_name: row.executed_by_name ? String(row.executed_by_name) : null,
+              confirmed_by_name: row.confirmed_by_name || auditInfo?.confirmedBy || row.executed_by_name || null,
+            };
+          }) as MonthlyBillRow[];
 
           const monthlyBySchedule = new Map<string, MonthlyBillRow[]>();
           monthlyRows.forEach((row) => {
@@ -555,28 +579,16 @@ export default function BillsPage() {
         amount: popStatus === "paid" ? popPaidAmount : paymentModalBill.amount,
         status: popStatus,
         paid_at: popStatus === "paid" ? (popPaidDate ? new Date(popPaidDate).toISOString() : new Date().toISOString()) : null,
-        pop_url: finalPopUrl || null,
         executed_by_name: executorName,
-        confirmed_by_name: executorName,
         company_id: compId,
       };
 
       if (existingMonthly?.id) {
-        try {
-          await supabase.from("property_monthly_bills").update(monthlyPayload).eq("id", existingMonthly.id);
-        } catch {
-          delete monthlyPayload.pop_url;
-          delete monthlyPayload.confirmed_by_name;
-          await supabase.from("property_monthly_bills").update(monthlyPayload).eq("id", existingMonthly.id);
-        }
+        const { error: updErr } = await supabase.from("property_monthly_bills").update(monthlyPayload).eq("id", existingMonthly.id);
+        if (updErr) console.warn("Could not update monthly bill", updErr);
       } else {
-        try {
-          await supabase.from("property_monthly_bills").insert(monthlyPayload);
-        } catch {
-          delete monthlyPayload.pop_url;
-          delete monthlyPayload.confirmed_by_name;
-          await supabase.from("property_monthly_bills").insert(monthlyPayload);
-        }
+        const { error: insErr } = await supabase.from("property_monthly_bills").insert(monthlyPayload);
+        if (insErr) console.warn("Could not insert monthly bill", insErr);
       }
 
       await supabase.from("audit_log").insert({
@@ -584,21 +596,24 @@ export default function BillsPage() {
         user_name: executorName,
         action: "bill_payment_confirmed",
         entity_type: "property_monthly_bill",
+        entity_id: paymentModalBill.id,
         company_id: compId,
         details: {
+          schedule_id: paymentModalBill.id,
           bill_name: paymentModalBill.name,
           property_id: paymentModalBill.propertyId,
           month: monthKey,
           amount: popStatus === "paid" ? popPaidAmount : paymentModalBill.amount,
           status: popStatus,
           pop_url: finalPopUrl || null,
+          confirmed_by_name: executorName,
         },
       });
 
       setPaymentModalBill(null);
       reload();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to update payment status and POP.");
+      alert(err instanceof Error ? err.message : "Failed to update payment status and POP");
     } finally {
       setUpdatingPayment(false);
     }

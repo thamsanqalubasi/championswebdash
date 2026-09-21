@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog } from "@/components/modal";
-import { fetchInvoicesData, isValidUuid } from "@/lib/data";
+import { fetchInvoicesData, isValidUuid, verifyAdminPin, canDeleteSuppressedRecords } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
@@ -82,7 +82,8 @@ async function openUnifiedInvoiceDocument(
 }
 
 export default function InvoicesPage() {
-  const { user, currentCompany } = useAuth();
+  const { user, currentCompany, currentCompanyUser, isSuperAdmin } = useAuth();
+  const canDeletePermanently = canDeleteSuppressedRecords(currentCompanyUser, isSuperAdmin);
   const { format: formatCurrency } = useCurrency();
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,6 +93,8 @@ export default function InvoicesPage() {
   const [activeFilter, setActiveFilter] = useState("all");
   const [activeInfoId, setActiveInfoId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<InvoiceRow | null>(null);
+  const [deleteAdminPin, setDeleteAdminPin] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -498,15 +501,53 @@ export default function InvoicesPage() {
       return;
     }
 
+    if (!canDeletePermanently) {
+      alert("Permission Denied: Only Super Admin or authorized users with delete permissions can permanently delete invoices.");
+      return;
+    }
+
+    if (!deleteAdminPin.trim()) {
+      setDeleteError("Admin PIN is required to authorize deletion.");
+      return;
+    }
+
     setDeleting(true);
+    setDeleteError(null);
 
     try {
+      const pinOk = await verifyAdminPin(deleteAdminPin);
+      if (!pinOk) {
+        setDeleteError("Invalid Admin PIN. Deletion cancelled.");
+        setDeleting(false);
+        return;
+      }
+
       const { error: deleteError } = await supabase.from("invoices").delete().eq("id", deleteTarget.id);
       if (deleteError) throw deleteError;
+
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      await supabase.from("audit_log").insert({
+        user_email: user?.email || "admin@paimbabook.com",
+        user_name: user?.user_metadata?.full_name || user?.email || "Admin",
+        action: "invoice_permanently_deleted",
+        entity_type: "invoice",
+        entity_id: deleteTarget.id,
+        company_id: compId,
+        details: {
+          invoice_id: deleteTarget.id,
+          tenant_name: deleteTarget.tenantName,
+          total_amount: deleteTarget.totalAmount,
+          month: deleteTarget.month,
+          status: deleteTarget.status,
+          authorized_by_pin: true,
+        },
+      });
+
       setDeleteTarget(null);
+      setDeleteAdminPin("");
       reload();
     } catch (deleteError) {
-      alert(deleteError instanceof Error ? deleteError.message : "Delete failed");
+      setDeleteError(deleteError instanceof Error ? deleteError.message : "Delete failed");
     } finally {
       setDeleting(false);
     }
@@ -1076,15 +1117,73 @@ export default function InvoicesPage() {
         </div>
       </Modal>
 
-      <ConfirmDialog
+      <Modal
         open={Boolean(deleteTarget)}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={onDelete}
-        title="Delete Invoice"
-        message={`Delete invoice for ${deleteTarget?.tenantName}?`}
-        confirmLabel="Delete"
-        loading={deleting}
-      />
+        onClose={() => { setDeleteTarget(null); setDeleteAdminPin(""); setDeleteError(null); }}
+        title="Authorize Invoice Deletion"
+      >
+        <div className="space-y-4">
+          <div className="p-3.5 rounded-xl border border-red-500/20 bg-red-500/10 text-xs text-red-700 dark:text-red-400 space-y-1">
+            <p className="font-bold">⚠️ Warning: Permanent Action</p>
+            <p>
+              Are you sure you want to permanently delete the invoice for <strong>{deleteTarget?.tenantName}</strong> ({deleteTarget?.month}, {formatCurrency(deleteTarget?.totalAmount || 0)})?
+            </p>
+            <p className="text-[11px] opacity-80">
+              This invoice and its payment records will be permanently removed from the ledger. To preserve historical records for audits, consider suppressing instead.
+            </p>
+          </div>
+
+          {!canDeletePermanently ? (
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs">
+              <p className="font-bold">Permission Denied</p>
+              <p className="mt-0.5">Only Super Administrators or authorized users with delete permissions can delete invoice records.</p>
+            </div>
+          ) : (
+            <div>
+              <label className="mb-1 block text-xs font-bold text-foreground">
+                Admin PIN (Required to authorize deletion) *
+              </label>
+              <input
+                type="password"
+                value={deleteAdminPin}
+                onChange={(e) => {
+                  setDeleteAdminPin(e.target.value);
+                  if (deleteError) setDeleteError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && deleteAdminPin.trim()) {
+                    void onDelete();
+                  }
+                }}
+                placeholder="Enter Admin PIN"
+                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500"
+                autoFocus
+              />
+              {deleteError && (
+                <p className="text-xs text-red-600 font-semibold mt-1.5">{deleteError}</p>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-border-color">
+            <button
+              type="button"
+              onClick={() => { setDeleteTarget(null); setDeleteAdminPin(""); setDeleteError(null); }}
+              className="rounded-xl border border-border-color px-4 py-2 text-xs font-semibold text-muted hover:text-foreground"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={deleting || !canDeletePermanently || !deleteAdminPin.trim()}
+              className="rounded-xl bg-red-600 hover:bg-red-700 px-5 py-2 text-xs font-bold text-white transition disabled:opacity-50 shadow-sm"
+            >
+              {deleting ? "Verifying PIN & Deleting..." : "Authorize & Delete Invoice"}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {shareModalDoc && (
         <DocumentShareModal
