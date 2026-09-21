@@ -163,7 +163,7 @@ export default function InvoicesPage() {
 
         let pQuery = supabase
           .from("tenant_rent_payments")
-          .select("id, tenant_id, payment_date, amount_paid, tenants(full_name, property_id, properties(name))")
+          .select("id, tenant_id, payment_date, amount_paid, notes, is_suppressed, tenants(full_name, property_id, properties(name))")
           .gte("payment_date", fromDate)
           .lte("payment_date", toDate)
           .order("payment_date", { ascending: false });
@@ -172,11 +172,15 @@ export default function InvoicesPage() {
           pQuery = pQuery.or(`company_id.eq.${compId},company_id.is.null`);
         }
 
-        const { data: payments, error: paymentsError } = await pQuery;
+        const { data: rawPayments, error: paymentsError } = await pQuery;
 
         if (paymentsError) throw paymentsError;
 
-        const paymentIds = (payments ?? []).map((row) => String(row.id ?? "")).filter(Boolean);
+        const payments = (rawPayments ?? []).filter(
+          (row: any) => !row.is_suppressed && !(row.notes && String(row.notes).includes("[SUPPRESSED"))
+        );
+
+        const paymentIds = payments.map((row) => String(row.id ?? "")).filter(Boolean);
 
         let collectorNameByPaymentId = new Map<string, string>();
 
@@ -206,7 +210,7 @@ export default function InvoicesPage() {
         }
 
         if (!cancelled) {
-          const mappedRows: RentPaymentTransaction[] = (payments ?? [])
+          const mappedRows: RentPaymentTransaction[] = payments
             .map((row) => {
               const tenant = row.tenants as
                 | { full_name?: string; property_id?: string; properties?: { name?: string } | null }

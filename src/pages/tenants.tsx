@@ -53,8 +53,21 @@ import {
   ChevronDown,
   History,
   Clock,
+  Ban,
+  RotateCcw,
+  AlertCircle,
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
+import {
+  isPaymentSuppressed,
+  isPaymentAdvance,
+  getPaymentMonths,
+  calculateMonthRentState,
+  suppressRentPayment,
+  unsuppressRentPayment,
+  generateUpcomingMonths,
+  formatMonthLabel,
+} from "@/lib/rent-calculator";
 
 export type AccountStatusInfo = {
   type: "has_account" | "other_org_staff" | "no_account";
@@ -75,6 +88,13 @@ export type PaymentTimelineItem = {
   notes?: string;
   status?: string;
   paymentId?: string;
+  isSuppressed?: boolean;
+  suppressedAt?: string;
+  suppressedBy?: string;
+  suppressedReason?: string;
+  isAdvance?: boolean;
+  advanceMonths?: string[];
+  paidMonths?: string[];
 };
 
 type TenantPaymentRow = {
@@ -82,6 +102,16 @@ type TenantPaymentRow = {
   paymentDate: string;
   amountPaid: number;
   recordedBy: string;
+  paidMonth?: string;
+  paidMonths?: string[];
+  notes?: string;
+  popUrl?: string;
+  isSuppressed?: boolean;
+  suppressedAt?: string;
+  suppressedBy?: string;
+  suppressedReason?: string;
+  isAdvance?: boolean;
+  advanceMonths?: string[];
 };
 
 type TenantInvoiceRow = {
@@ -277,10 +307,47 @@ export default function TenantsPage() {
     receiptUrl: "",
     referenceNumber: "",
     notes: "",
+    isAdvancePayment: false,
+    advanceMonths: [] as string[],
+  });
+  const [suppressPrompt, setSuppressPrompt] = useState<{
+    isOpen: boolean;
+    paymentId: string | null;
+    amount: number;
+    reason: string;
+    submitting: boolean;
+  }>({
+    isOpen: false,
+    paymentId: null,
+    amount: 0,
+    reason: "",
+    submitting: false,
   });
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [recordingPayment, setRecordingPayment] = useState(false);
   const [detailsRequiredRent, setDetailsRequiredRent] = useState<number>(0);
+
+  const currentMonthCalc = useMemo(() => {
+    if (!detailsRow) return null;
+    const paymentObjs = payments.map((p) => ({
+      id: p.id,
+      amount_paid: p.amountPaid,
+      payment_date: p.paymentDate,
+      paid_months: p.paidMonths || (p.paidMonth ? [p.paidMonth] : [toMonthKey(p.paymentDate)]),
+      paid_month: p.paidMonth || toMonthKey(p.paymentDate),
+      notes: p.notes,
+      is_suppressed: p.isSuppressed,
+      is_advance: p.isAdvance,
+      advance_months: p.advanceMonths,
+      pop_url: p.popUrl,
+      executed_by_name: p.recordedBy,
+    }));
+    return calculateMonthRentState({
+      monthlyRent: detailsRequiredRent,
+      payments: paymentObjs,
+      targetMonth: rentRecordForm.paidMonth || new Date().toISOString().slice(0, 7),
+    });
+  }, [detailsRow, payments, detailsRequiredRent, rentRecordForm.paidMonth]);
   const [generateInvoiceModalOpen, setGenerateInvoiceModalOpen] = useState(false);
   const [companyStaffList, setCompanyStaffList] = useState<CompanyUser[]>([]);
   const [openStaffDropdownInvoiceId, setOpenStaffDropdownInvoiceId] = useState<string | null>(null);
@@ -576,12 +643,12 @@ export default function TenantsPage() {
           .maybeSingle(),
         supabase
           .from("tenant_rent_payments")
-          .select("id, payment_date, amount_paid, paid_months, notes, payment_method, pop_url")
+          .select("id, payment_date, amount_paid, paid_months, paid_month, notes, payment_method, pop_url, is_suppressed, suppressed_at, suppressed_by, suppressed_reason, is_advance, advance_months")
           .eq("tenant_id", tenantId)
           .order("payment_date", { ascending: false }),
         supabase
           .from("invoices")
-          .select("id, month, due_date, total_amount, status, pdf_url, created_at")
+          .select("id, month, due_date, total_amount, status, pdf_url, created_at, is_suppressed")
           .eq("tenant_id", tenantId)
           .order("created_at", { ascending: false }),
         supabase
@@ -732,12 +799,27 @@ export default function TenantsPage() {
       setDetailsRequiredRent(reqRent);
 
       setPayments(
-        paymentRows.map((row) => ({
-          id: String(row.id ?? ""),
-          paymentDate: String(row.payment_date ?? ""),
-          amountPaid: Number(row.amount_paid ?? 0),
-          recordedBy: recordedByMap.get(String(row.id ?? "")) ?? "Admin",
-        })),
+        paymentRows.map((row) => {
+          const isSupp = isPaymentSuppressed(row);
+          const isAdv = isPaymentAdvance(row);
+          const pMonths = getPaymentMonths(row);
+          return {
+            id: String(row.id ?? ""),
+            paymentDate: String(row.payment_date ?? ""),
+            amountPaid: Number(row.amount_paid ?? 0),
+            recordedBy: recordedByMap.get(String(row.id ?? "")) ?? "Admin",
+            paidMonth: String(row.paid_month || (Array.isArray(row.paid_months) ? row.paid_months[0] : "") || toMonthKey(row.payment_date || "")),
+            paidMonths: pMonths,
+            notes: row.notes || "",
+            popUrl: row.pop_url || "",
+            isSuppressed: isSupp,
+            suppressedAt: row.suppressed_at || "",
+            suppressedBy: row.suppressed_by || "",
+            suppressedReason: row.suppressed_reason || "",
+            isAdvance: isAdv,
+            advanceMonths: Array.isArray(row.advance_months) ? row.advance_months : [],
+          };
+        }),
       );
 
       // Also gather proofs by email if exists
@@ -773,8 +855,11 @@ export default function TenantsPage() {
         if (!receiptUrl && rMatch) receiptUrl = rMatch[1].trim();
 
         const clerk = recordedByMap.get(String(p.id)) || "Staff";
-        const monthLabel = Array.isArray(p.paid_months)
-          ? p.paid_months.join(", ")
+        const isSupp = isPaymentSuppressed(p);
+        const isAdv = isPaymentAdvance(p);
+        const pMonths = getPaymentMonths(p);
+        const monthLabel = pMonths.length > 0
+          ? pMonths.join(", ")
           : String(p.paid_months || p.paid_month || "");
 
         timelineItems.push({
@@ -789,6 +874,13 @@ export default function TenantsPage() {
           monthLabel,
           notes: notesStr,
           paymentId: String(p.id),
+          isSuppressed: isSupp,
+          suppressedAt: p.suppressed_at || undefined,
+          suppressedBy: p.suppressed_by || undefined,
+          suppressedReason: p.suppressed_reason || undefined,
+          isAdvance: isAdv,
+          advanceMonths: Array.isArray(p.advance_months) ? p.advance_months : [],
+          paidMonths: pMonths,
         });
       });
 
@@ -860,16 +952,74 @@ export default function TenantsPage() {
   };
 
   const selectedPayments = useMemo(
-    () => payments.filter((payment) => selectedPaymentIds.includes(payment.id)),
+    () => payments.filter((payment) => selectedPaymentIds.includes(payment.id) && !payment.isSuppressed),
     [payments, selectedPaymentIds],
   );
 
   const togglePaymentSelection = (paymentId: string) => {
+    const p = payments.find((item) => item.id === paymentId);
+    if (p?.isSuppressed) {
+      alert("Suppressed payment records are voided and cannot be included in invoices.");
+      return;
+    }
     setSelectedPaymentIds((previous) =>
       previous.includes(paymentId)
         ? previous.filter((id) => id !== paymentId)
         : [...previous, paymentId],
     );
+  };
+
+  const handleSuppressPayment = async () => {
+    if (!suppressPrompt.paymentId) return;
+    setSuppressPrompt((prev) => ({ ...prev, submitting: true }));
+    try {
+      const admin = await fetchAdminInfo(user?.email ?? undefined);
+      const staffName = admin.fullName || user?.email || "Staff";
+      const res = await suppressRentPayment({
+        supabase,
+        paymentId: suppressPrompt.paymentId,
+        staffName,
+        reason: suppressPrompt.reason || "Clerical amendment / voided entry",
+        currentCompanyId: currentCompany?.id,
+      });
+      if (!res.success) {
+        alert("Could not suppress payment: " + res.error);
+        return;
+      }
+      setSuppressPrompt({ isOpen: false, paymentId: null, amount: 0, reason: "", submitting: false });
+      if (detailsRow) {
+        await loadTenantDetails(detailsRow.id);
+      }
+      reload();
+    } catch (err: any) {
+      alert("Error suppressing payment: " + err.message);
+    } finally {
+      setSuppressPrompt((prev) => ({ ...prev, submitting: false }));
+    }
+  };
+
+  const handleUnsuppressPayment = async (paymentId: string, amount: number) => {
+    if (!confirm(`Are you sure you want to restore this suppressed payment of ${formatCurrency(amount)}? It will be restored to active accounting totals.`)) return;
+    try {
+      const admin = await fetchAdminInfo(user?.email ?? undefined);
+      const staffName = admin.fullName || user?.email || "Staff";
+      const res = await unsuppressRentPayment({
+        supabase,
+        paymentId,
+        staffName,
+        currentCompanyId: currentCompany?.id,
+      });
+      if (!res.success) {
+        alert("Could not restore payment: " + res.error);
+        return;
+      }
+      if (detailsRow) {
+        await loadTenantDetails(detailsRow.id);
+      }
+      reload();
+    } catch (err: any) {
+      alert("Error restoring payment: " + err.message);
+    }
   };
 
   const assignTenantToProperty = async () => {
@@ -1074,14 +1224,47 @@ export default function TenantsPage() {
         : null;
       const targetMonth = rentRecordForm.paidMonth || new Date().toISOString().slice(0, 7);
 
+      // 1. Advance Payment Validation: Requires at least one advance month
+      if (rentRecordForm.isAdvancePayment) {
+        if (!rentRecordForm.advanceMonths || rentRecordForm.advanceMonths.length === 0) {
+          alert("Please select at least one advance payment month (mandatory for advance payment).");
+          setRecordingPayment(false);
+          return;
+        }
+      } else {
+        // 2. Regular Payment Flow: Check month rent status and remaining due
+        if (currentMonthCalc) {
+          if (currentMonthCalc.isFullyPaid) {
+            alert(
+              `Monthly rent for ${formatMonthLabel(targetMonth)} is already fully paid (${formatCurrency(currentMonthCalc.totalPaid)} of ${formatCurrency(currentMonthCalc.allocatedRent)}).\n\n` +
+              `Recording additional regular payments for this month is prohibited.\n\n` +
+              `To proceed, either suppress an invalid entry in the list above, or tick 'Advance Payment' to record rent for future months.`
+            );
+            setRecordingPayment(false);
+            return;
+          }
+
+          if (currentMonthCalc.remainingDue > 0 && numAmount > currentMonthCalc.remainingDue) {
+            alert(
+              `Payment amount of ${formatCurrency(numAmount)} exceeds the remaining balance of ${formatCurrency(currentMonthCalc.remainingDue)} for this month (${formatMonthLabel(targetMonth)}).\n\n` +
+              `Allocated monthly rent is ${formatCurrency(currentMonthCalc.allocatedRent)} (already recorded: ${formatCurrency(currentMonthCalc.totalPaid)}).\n\n` +
+              `If this payment includes advance rent for upcoming months, please tick the 'Advance Payment' box.`
+            );
+            setRecordingPayment(false);
+            return;
+          }
+        }
+      }
+
       // Check for existing payments for this tenant and billing month to prevent duplicate accounting
       const { data: existingRentPayments } = await supabase
         .from("tenant_rent_payments")
-        .select("id, amount_paid, payment_date, paid_months, pop_url, notes")
+        .select("id, amount_paid, payment_date, paid_months, pop_url, notes, is_suppressed")
         .eq("tenant_id", detailsRow.id)
         .order("created_at", { ascending: false });
 
       const matchingPayment = (existingRentPayments || []).find((p: any) => {
+        if (isPaymentSuppressed(p)) return false;
         const matchesMonth = (Array.isArray(p.paid_months) && p.paid_months.includes(targetMonth)) ||
           String(p.payment_date || "").startsWith(targetMonth) ||
           (p.notes && p.notes.includes(targetMonth));
@@ -1089,6 +1272,7 @@ export default function TenantsPage() {
       });
 
       const notesPayload = [
+        rentRecordForm.isAdvancePayment ? `[ADVANCE PAYMENT: ${rentRecordForm.advanceMonths.join(", ")}]` : null,
         `Means: ${rentRecordForm.paymentMethod}`,
         `Ref: ${rentRecordForm.referenceNumber || "None"}`,
         rentRecordForm.receiptUrl ? `Receipt: ${rentRecordForm.receiptUrl}` : null,
@@ -1097,9 +1281,8 @@ export default function TenantsPage() {
         .filter(Boolean)
         .join(" | ");
 
-      // If a matching payment already exists for this billing month:
-      if (matchingPayment) {
-        // Case A: User is attaching a POP receipt to a payment that didn't have one yet
+      // If a matching payment already exists for this billing month and user just attaches a POP receipt:
+      if (matchingPayment && !rentRecordForm.isAdvancePayment) {
         if (rentRecordForm.receiptUrl && !matchingPayment.pop_url) {
           const { error: updateErr } = await supabase
             .from("tenant_rent_payments")
@@ -1137,6 +1320,8 @@ export default function TenantsPage() {
               receiptUrl: "",
               referenceNumber: "",
               notes: "",
+              isAdvancePayment: false,
+              advanceMonths: [],
             });
             await loadTenantDetails(detailsRow.id);
             reload();
@@ -1144,31 +1329,23 @@ export default function TenantsPage() {
             return;
           }
         }
-
-        // Case B: Exactly same amount already recorded for this month
-        if (Number(matchingPayment.amount_paid) === numAmount) {
-          const proceed = window.confirm(
-            `A payment of ${formatCurrency(numAmount)} for ${detailsRow.fullName} for billing period ${targetMonth} is already on record (recorded on ${matchingPayment.payment_date}).\n\n` +
-            `Are you sure you want to record an additional separate payment for this month?\n` +
-            `Click Cancel to prevent duplicate accounting, or OK if this is a genuine separate installment.`
-          );
-          if (!proceed) {
-            setRecordingPayment(false);
-            return;
-          }
-        }
       }
 
-      // Valid columns in tenant_rent_payments table:
-      // id, tenant_id, payment_date, amount_paid, paid_months, notes, payment_method, company_id, executed_by_name, pop_url, pop_uploaded_by_name, pop_uploaded_at
-      // Note: property_id DOES NOT exist on tenant_rent_payments!
+      const paidMonths = rentRecordForm.isAdvancePayment && rentRecordForm.advanceMonths.length > 0
+        ? rentRecordForm.advanceMonths
+        : [targetMonth];
+
       const paymentPayload: Record<string, any> = {
         tenant_id: detailsRow.id,
         payment_date: rentRecordForm.paymentDate,
         amount_paid: numAmount,
-        paid_months: [targetMonth],
+        paid_months: paidMonths,
+        paid_month: targetMonth,
         payment_method: rentRecordForm.paymentMethod || "EFT / Bank Transfer",
         notes: notesPayload,
+        is_suppressed: false,
+        is_advance: rentRecordForm.isAdvancePayment,
+        advance_months: rentRecordForm.isAdvancePayment ? rentRecordForm.advanceMonths : null,
       };
       if (compId) paymentPayload.company_id = compId;
       if (staffName) paymentPayload.executed_by_name = staffName;
@@ -1194,10 +1371,16 @@ export default function TenantsPage() {
           tenant_id: detailsRow.id,
           payment_date: rentRecordForm.paymentDate,
           amount_paid: numAmount,
-          paid_months: [rentRecordForm.paidMonth || new Date().toISOString().slice(0, 7)],
+          paid_months: paidMonths,
           notes: notesPayload,
         };
         if (compId) fallbackPayload.company_id = compId;
+        if (staffName) fallbackPayload.executed_by_name = staffName;
+        if (rentRecordForm.receiptUrl) {
+          fallbackPayload.pop_url = rentRecordForm.receiptUrl;
+          fallbackPayload.pop_uploaded_by_name = staffName;
+          fallbackPayload.pop_uploaded_at = new Date().toISOString();
+        }
         const { data: d2, error: e2 } = await supabase
           .from("tenant_rent_payments")
           .insert(fallbackPayload)
@@ -1286,6 +1469,8 @@ export default function TenantsPage() {
         receiptUrl: "",
         referenceNumber: "",
         notes: "",
+        isAdvancePayment: false,
+        advanceMonths: [],
       });
 
       await loadTenantDetails(detailsRow.id);
@@ -2261,11 +2446,11 @@ export default function TenantsPage() {
                           key={item.id}
                           className={`p-4 hover:bg-surface-elevated/30 transition-colors ${
                             isSelected ? "bg-foreground/[0.02]" : ""
-                          }`}
+                          } ${item.isSuppressed ? "bg-red-500/[0.02] opacity-80" : ""}`}
                         >
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div className="flex items-start gap-3">
-                              {item.paymentId && (
+                              {item.paymentId && !item.isSuppressed ? (
                                 <input
                                   type="checkbox"
                                   checked={isSelected}
@@ -2273,7 +2458,11 @@ export default function TenantsPage() {
                                   className="h-4 w-4 rounded border-border-color accent-foreground mt-1 cursor-pointer"
                                   title="Select to batch into invoice"
                                 />
-                              )}
+                              ) : item.isSuppressed ? (
+                                <span className="mt-1" title="Suppressed records cannot be invoiced">
+                                  <Ban size={15} className="text-red-400 shrink-0" />
+                                </span>
+                              ) : null}
                               <div className="space-y-1">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   {item.source === "tenant_pop" ? (
@@ -2295,19 +2484,34 @@ export default function TenantsPage() {
                                       Period: {item.monthLabel}
                                     </span>
                                   )}
-                                  {item.status && (
+                                  {item.isSuppressed && (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-600 dark:text-red-400 border border-red-500/20">
+                                      <Ban size={10} />
+                                      <span>Suppressed</span>
+                                    </span>
+                                  )}
+                                  {item.isAdvance && (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                                      Advance Payment
+                                    </span>
+                                  )}
+                                  {item.status && !item.isSuppressed && (
                                     <StatusBadge status={item.status} />
                                   )}
                                 </div>
 
                                 <div className="flex items-center gap-3 text-xs">
-                                  <span className="font-bold text-foreground text-sm">
+                                  <span className={`font-bold text-sm ${item.isSuppressed ? "line-through text-muted/70" : "text-foreground"}`}>
                                     {formatCurrency(item.amount)}
                                   </span>
                                   <span className="rounded-md bg-surface-elevated px-2 py-0.5 text-[11px] font-medium text-muted">
                                     Means: {item.method}
                                   </span>
                                 </div>
+
+                                {item.isSuppressed && item.suppressedReason && (
+                                  <p className="text-[11px] text-red-500 font-medium">Reason: {item.suppressedReason}</p>
+                                )}
 
                                 {item.notes && (
                                   <p className="text-[11px] text-muted/80 line-clamp-1">{item.notes}</p>
@@ -2328,7 +2532,7 @@ export default function TenantsPage() {
                                     <span>View Attached POP</span>
                                     <ExternalLink size={11} className="text-muted" />
                                   </a>
-                                  {item.paymentId && (
+                                  {item.paymentId && !item.isSuppressed && (
                                     <label className="cursor-pointer p-1.5 rounded-lg border border-border-color bg-surface hover:bg-surface-elevated text-muted hover:text-foreground transition text-xs" title="Update / Replace POP">
                                       <Upload size={12} />
                                       <input
@@ -2344,7 +2548,7 @@ export default function TenantsPage() {
                                     </label>
                                   )}
                                 </div>
-                              ) : item.paymentId ? (
+                              ) : item.paymentId && !item.isSuppressed ? (
                                 <label className="flex items-center gap-1.5 rounded-lg border border-dashed border-blue-500/50 bg-blue-500/5 px-2.5 py-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 cursor-pointer transition">
                                   <Upload size={12} />
                                   <span>{attachingPopPaymentId === item.paymentId ? "Attaching..." : "Attach POP / Receipt"}</span>
@@ -2361,6 +2565,31 @@ export default function TenantsPage() {
                                 </label>
                               ) : (
                                 <span className="text-[11px] text-muted/40 italic">No receipt attached</span>
+                              )}
+
+                              {/* Action Buttons for Suppression & Restoration */}
+                              {item.paymentId && (
+                                item.isSuppressed ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleUnsuppressPayment(item.paymentId!, item.amount)}
+                                    className="flex items-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition"
+                                    title="Restore payment to active status"
+                                  >
+                                    <RotateCcw size={11} />
+                                    <span>Restore</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSuppressPrompt({ isOpen: true, paymentId: item.paymentId!, amount: item.amount, reason: "", submitting: false })}
+                                    className="flex items-center gap-1 rounded-lg border border-red-500/20 bg-red-500/10 px-2 py-1 text-[11px] font-bold text-red-600 dark:text-red-400 hover:bg-red-500/20 transition"
+                                    title="Suppress this entry so it does not count in totals"
+                                  >
+                                    <Ban size={11} />
+                                    <span>Suppress</span>
+                                  </button>
+                                )
                               )}
                             </div>
                           </div>
@@ -2730,6 +2959,162 @@ export default function TenantsPage() {
             </div>
           </div>
 
+          {/* REAL-TIME MONTHLY CALCULATION & BANNER */}
+          {currentMonthCalc && (
+            <div className="space-y-3">
+              {currentMonthCalc.isFullyPaid ? (
+                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-amber-600 dark:text-amber-400 text-sm">
+                    <CheckCircle2 size={18} className="shrink-0" />
+                    <span>Monthly Rent for {formatMonthLabel(rentRecordForm.paidMonth)} is Fully Paid</span>
+                  </div>
+                  <p className="text-muted leading-relaxed">
+                    The tenant has completely paid the allocated property rent of <strong>{formatCurrency(currentMonthCalc.allocatedRent)}</strong> for <strong>{formatMonthLabel(rentRecordForm.paidMonth)}</strong> (Total recorded: <strong>{formatCurrency(currentMonthCalc.totalPaid)}</strong> across {currentMonthCalc.activePayments.length} payment{currentMonthCalc.activePayments.length !== 1 ? "s" : ""}).
+                  </p>
+                  <div className="rounded-lg bg-surface/80 border border-amber-500/30 p-2.5 text-[11px] text-foreground font-semibold flex items-center gap-2">
+                    <Ban size={14} className="text-red-500 shrink-0" />
+                    <span>Recording additional regular rent for this month is prohibited.</span>
+                  </div>
+                  <p className="text-[11px] text-muted">
+                    <strong>To record another payment:</strong> Either suppress one of the entries below (if void/invalid) to reopen the balance, or tick <strong>Advance Payment</strong> below to record rent for future months.
+                  </p>
+                </div>
+              ) : currentMonthCalc.isPartial ? (
+                <div className="rounded-xl border border-blue-500/40 bg-blue-500/10 p-3.5 text-xs space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-blue-600 dark:text-blue-400 text-sm">
+                    <AlertCircle size={18} className="shrink-0" />
+                    <span>Partial Rent Recorded for {formatMonthLabel(rentRecordForm.paidMonth)}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 p-2 rounded-lg bg-surface/80 border border-blue-500/20 text-center">
+                    <div>
+                      <span className="text-[10px] text-muted block font-bold uppercase">Required</span>
+                      <span className="font-bold text-foreground">{formatCurrency(currentMonthCalc.allocatedRent)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted block font-bold uppercase">Paid So Far</span>
+                      <span className="font-bold text-blue-600 dark:text-blue-400">{formatCurrency(currentMonthCalc.totalPaid)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted block font-bold uppercase">Remaining Balance</span>
+                      <span className="font-black text-emerald-600 dark:text-emerald-400">{formatCurrency(currentMonthCalc.remainingDue)}</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted">
+                    Multiple collections are permitted for this tenant until the remaining balance of <strong>{formatCurrency(currentMonthCalc.remainingDue)}</strong> is fully collected.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3 text-xs flex items-center justify-between">
+                  <span className="text-muted">
+                    No active payments recorded yet for <strong>{formatMonthLabel(rentRecordForm.paidMonth)}</strong>.
+                  </span>
+                  <span className="font-bold text-foreground">
+                    Required: {formatCurrency(currentMonthCalc.allocatedRent)}
+                  </span>
+                </div>
+              )}
+
+              {/* All Recorded Entries for this Month */}
+              <div className="rounded-xl border border-border-color bg-surface-elevated/20 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-muted flex items-center gap-1.5">
+                    <History size={12} />
+                    <span>All Entries on Record for {formatMonthLabel(rentRecordForm.paidMonth)} ({currentMonthCalc.allPaymentsForMonth.length})</span>
+                  </label>
+                  <span className="text-[11px] font-bold text-muted">
+                    Active Total: <strong className="text-foreground">{formatCurrency(currentMonthCalc.totalPaid)}</strong> / {formatCurrency(currentMonthCalc.allocatedRent)}
+                  </span>
+                </div>
+
+                {currentMonthCalc.allPaymentsForMonth.length === 0 ? (
+                  <p className="text-[11px] text-muted/60 italic py-1">No payments recorded for this billing month yet.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5">
+                    {currentMonthCalc.allPaymentsForMonth.map((p) => {
+                      const isSupp = isPaymentSuppressed(p);
+                      const isAdv = isPaymentAdvance(p);
+                      const amt = Number(p.amount_paid || p.amountPaid || 0);
+                      const pDate = p.payment_date || p.paymentDate || "-";
+                      const pMethod = p.payment_method || p.paymentMethod || "EFT / Bank";
+                      const clerk = p.executed_by_name || p.executedByName || p.recorded_by || "Staff";
+                      const popUrl = p.pop_url || p.popUrl;
+                      const suppReason = p.suppressed_reason || p.suppressedReason;
+                      return (
+                        <div
+                          key={p.id}
+                          className={`rounded-lg border p-2.5 text-xs flex items-center justify-between gap-2 transition ${
+                            isSupp
+                              ? "border-red-500/20 bg-red-500/[0.03] opacity-75"
+                              : "border-border-color bg-surface"
+                          }`}
+                        >
+                          <div className="space-y-0.5 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`font-bold ${isSupp ? "line-through text-muted" : "text-foreground"}`}>
+                                {formatCurrency(amt)}
+                              </span>
+                              {isSupp && (
+                                <span className="rounded bg-red-500/10 border border-red-500/20 px-1.5 py-0.2 text-[9px] font-bold text-red-600">
+                                  Suppressed
+                                </span>
+                              )}
+                              {isAdv && (
+                                <span className="rounded bg-indigo-500/10 border border-indigo-500/20 px-1.5 py-0.2 text-[9px] font-bold text-indigo-600">
+                                  Advance
+                                </span>
+                              )}
+                              <span className="rounded bg-surface-elevated px-1.5 py-0.2 text-[9px] font-medium text-muted">
+                                {pMethod}
+                              </span>
+                              <span className="text-[10px] text-muted font-medium">{pDate}</span>
+                            </div>
+                            <p className="text-[10px] text-muted truncate">
+                              Recorded by: {clerk}
+                              {isSupp && suppReason && ` • Reason: ${suppReason}`}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {popUrl && (
+                              <a
+                                href={popUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline px-1.5 py-1"
+                                title="View attached Proof of Payment"
+                              >
+                                <FileText size={11} /> POP
+                              </a>
+                            )}
+                            {isSupp ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleUnsuppressPayment(p.id, amt)}
+                                className="rounded border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-500/20 transition flex items-center gap-1"
+                                title="Restore this entry to active accounting totals"
+                              >
+                                <RotateCcw size={10} /> Restore
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setSuppressPrompt({ isOpen: true, paymentId: p.id, amount: amt, reason: "", submitting: false })}
+                                className="rounded border border-red-500/20 bg-red-500/10 px-2 py-1 text-[10px] font-bold text-red-600 hover:bg-red-500/20 transition flex items-center gap-1"
+                                title="Suppress / Void this entry so it does not count in totals"
+                              >
+                                <Ban size={10} /> Suppress
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-foreground mb-1">
@@ -2758,21 +3143,171 @@ export default function TenantsPage() {
             </div>
           </div>
 
+          {/* ADVANCE PAYMENT TICK BOX & MULTI-MONTH SELECTOR */}
+          <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3.5 space-y-3">
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rentRecordForm.isAdvancePayment}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setRentRecordForm((prev) => {
+                    const upcoming = checked && prev.advanceMonths.length === 0
+                      ? generateUpcomingMonths(1, true, prev.paidMonth)
+                      : prev.advanceMonths;
+                    const autoAmount = checked && detailsRequiredRent > 0 && upcoming.length > 0
+                      ? String(upcoming.length * detailsRequiredRent)
+                      : prev.amountPaid;
+                    return {
+                      ...prev,
+                      isAdvancePayment: checked,
+                      advanceMonths: upcoming,
+                      amountPaid: autoAmount,
+                    };
+                  });
+                }}
+                className="mt-0.5 h-4 w-4 rounded border-border-color text-indigo-600 focus:ring-indigo-500"
+              />
+              <div>
+                <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <span>Advance Payment</span>
+                  <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[9px] font-black text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">
+                    Multi-Month / Future Rent
+                  </span>
+                </span>
+                <p className="text-[10px] text-muted mt-0.5">
+                  Tick this box to record payments in advance for upcoming months. Advance payments can exceed single-month rent (e.g. paying 6 months at once) and can be recorded multiple times.
+                </p>
+              </div>
+            </label>
+
+            {rentRecordForm.isAdvancePayment && (
+              <div className="pt-2 border-t border-indigo-500/20 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
+                    <span>Select Advance Payment Months</span>
+                    <span className="text-red-500 font-bold">* (Mandatory)</span>
+                  </label>
+                  <span className="text-[11px] font-bold text-foreground">
+                    {rentRecordForm.advanceMonths.length} month{rentRecordForm.advanceMonths.length !== 1 ? "s" : ""} selected
+                  </span>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] text-muted font-bold mr-1">Quick Select:</span>
+                  {[1, 2, 3, 6, 12].map((cnt) => {
+                    const gen = generateUpcomingMonths(cnt, true, rentRecordForm.paidMonth);
+                    const isSelectedPreset = rentRecordForm.advanceMonths.length === cnt && gen.every(m => rentRecordForm.advanceMonths.includes(m));
+                    return (
+                      <button
+                        key={cnt}
+                        type="button"
+                        onClick={() => {
+                          setRentRecordForm((prev) => ({
+                            ...prev,
+                            advanceMonths: gen,
+                            amountPaid: detailsRequiredRent > 0 ? String(cnt * detailsRequiredRent) : prev.amountPaid,
+                          }));
+                        }}
+                        className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                          isSelectedPreset
+                            ? "bg-indigo-600 text-white shadow-xs"
+                            : "border border-border-color bg-surface hover:bg-surface-elevated text-foreground"
+                        }`}
+                      >
+                        +{cnt} {cnt === 1 ? "Month" : "Months"}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Month Toggle Chips */}
+                <div className="flex items-center gap-1.5 flex-wrap max-h-32 overflow-y-auto p-1.5 bg-surface rounded-lg border border-border-color">
+                  {generateUpcomingMonths(12, true, rentRecordForm.paidMonth).map((m) => {
+                    const isSel = rentRecordForm.advanceMonths.includes(m);
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => {
+                          setRentRecordForm((prev) => {
+                            const next = isSel ? prev.advanceMonths.filter(x => x !== m) : [...prev.advanceMonths, m].sort();
+                            const autoAmt = detailsRequiredRent > 0 && next.length > 0
+                              ? String(next.length * detailsRequiredRent)
+                              : prev.amountPaid;
+                            return { ...prev, advanceMonths: next, amountPaid: autoAmt };
+                          });
+                        }}
+                        className={`rounded-md px-2.5 py-1 text-xs font-bold transition flex items-center gap-1 select-none ${
+                          isSel
+                            ? "bg-indigo-600 text-white"
+                            : "bg-surface-elevated hover:bg-surface text-muted hover:text-foreground border border-border-color"
+                        }`}
+                      >
+                        {isSel && <Check size={12} />}
+                        <span>{formatMonthLabel(m)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {rentRecordForm.advanceMonths.length === 0 && (
+                  <p className="text-[11px] font-bold text-red-500">
+                    * Please select at least one advance payment month.
+                  </p>
+                )}
+
+                {rentRecordForm.advanceMonths.length > 0 && detailsRequiredRent > 0 && (
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-xs">
+                    <span className="text-muted">
+                      Suggested total ({rentRecordForm.advanceMonths.length} × {formatCurrency(detailsRequiredRent)}):
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setRentRecordForm(prev => ({ ...prev, amountPaid: String(prev.advanceMonths.length * detailsRequiredRent) }))}
+                      className="font-black text-indigo-600 dark:text-indigo-400 hover:underline"
+                    >
+                      {formatCurrency(rentRecordForm.advanceMonths.length * detailsRequiredRent)} (Apply Suggested)
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-foreground mb-1">
-                Amount Paid <span className="text-red-500">*</span>
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-foreground">
+                  Amount Paid <span className="text-red-500">*</span>
+                </label>
+                {!rentRecordForm.isAdvancePayment && currentMonthCalc && !currentMonthCalc.isFullyPaid && currentMonthCalc.remainingDue > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setRentRecordForm((prev) => ({ ...prev, amountPaid: String(currentMonthCalc.remainingDue) }))}
+                    className="text-[10px] font-bold text-emerald-600 hover:underline"
+                  >
+                    Fill Remaining ({formatCurrency(currentMonthCalc.remainingDue)})
+                  </button>
+                )}
+              </div>
               <input
                 type="number"
                 step="0.01"
                 min="0.01"
                 required
                 placeholder="0.00"
+                disabled={!rentRecordForm.isAdvancePayment && currentMonthCalc?.isFullyPaid}
                 value={rentRecordForm.amountPaid}
                 onChange={(e) => setRentRecordForm((prev) => ({ ...prev, amountPaid: e.target.value }))}
-                className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm font-bold text-foreground focus:border-foreground focus:outline-hidden"
+                className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm font-bold text-foreground focus:border-foreground focus:outline-hidden disabled:opacity-50 disabled:bg-surface-elevated"
               />
+              {!rentRecordForm.isAdvancePayment && currentMonthCalc && !currentMonthCalc.isFullyPaid && Number(rentRecordForm.amountPaid) > currentMonthCalc.remainingDue && (
+                <p className="text-[10px] font-bold text-amber-600 mt-1">
+                  Exceeds remaining monthly balance of {formatCurrency(currentMonthCalc.remainingDue)}. Tick &quot;Advance Payment&quot; if paying ahead.
+                </p>
+              )}
             </div>
 
             <div>
@@ -2884,7 +3419,14 @@ export default function TenantsPage() {
             </button>
             <button
               type="submit"
-              disabled={recordingPayment || uploadingReceipt || !rentRecordForm.amountPaid || Number(rentRecordForm.amountPaid) <= 0}
+              disabled={
+                recordingPayment ||
+                uploadingReceipt ||
+                !rentRecordForm.amountPaid ||
+                Number(rentRecordForm.amountPaid) <= 0 ||
+                (!rentRecordForm.isAdvancePayment && currentMonthCalc?.isFullyPaid) ||
+                (rentRecordForm.isAdvancePayment && rentRecordForm.advanceMonths.length === 0)
+              }
               className="flex items-center gap-2 rounded-lg bg-foreground px-5 py-2 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50"
             >
               <CreditCard size={15} />
@@ -2892,6 +3434,60 @@ export default function TenantsPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Payment Suppression Confirmation Modal */}
+      <Modal
+        open={suppressPrompt.isOpen}
+        onClose={() => setSuppressPrompt({ isOpen: false, paymentId: null, amount: 0, reason: "", submitting: false })}
+        title="Suppress Payment Record"
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3.5 text-xs space-y-2">
+            <div className="flex items-center gap-2 font-bold text-red-600 dark:text-red-400 text-sm">
+              <Ban size={16} />
+              <span>Suppress Entry of {formatCurrency(suppressPrompt.amount)}</span>
+            </div>
+            <p className="text-muted leading-relaxed">
+              Suppressed records are <strong>not deleted</strong> and remain in system audit logs with a permanent &quot;Suppressed&quot; label.
+            </p>
+            <p className="text-muted leading-relaxed">
+              However, this entry will be <strong>strictly excluded from all accounting, financial reports, revenue totals, collection rates, and balance calculations</strong> throughout the platform.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-muted mb-1.5">
+              Reason for Suppression <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              rows={3}
+              value={suppressPrompt.reason}
+              onChange={(e) => setSuppressPrompt(prev => ({ ...prev, reason: e.target.value }))}
+              placeholder="e.g. Accidental duplicate entry, bounced bank transfer, clerical correction..."
+              className="w-full rounded-xl border border-border-color bg-surface p-3 text-sm outline-none focus:ring-2 focus:ring-red-500/20"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-color">
+            <button
+              type="button"
+              onClick={() => setSuppressPrompt({ isOpen: false, paymentId: null, amount: 0, reason: "", submitting: false })}
+              className="rounded-lg border border-border-color px-4 py-2 text-sm font-bold text-muted hover:text-foreground"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={suppressPrompt.submitting || !suppressPrompt.reason.trim()}
+              onClick={handleSuppressPayment}
+              className="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              <Ban size={14} />
+              <span>{suppressPrompt.submitting ? "Suppressing..." : "Confirm Suppression"}</span>
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Generate Invoice from Payments Modal */}

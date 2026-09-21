@@ -3809,30 +3809,30 @@ export async function fetchReportsData(companyId?: string): Promise<ReportsData>
         ? supabase.from("invoices").select("id, tenant_id, total_amount, status, created_at, due_date, month").eq("company_id", validCompId).neq("status", "suppressed")
         : supabase.from("invoices").select("id, tenant_id, total_amount, status, created_at, due_date, month").neq("status", "suppressed"),
       validCompId
-        ? supabase.from("tenant_rent_payments").select("id, tenant_id, amount_paid, payment_date, paid_months, company_id, created_at").eq("company_id", validCompId)
-        : supabase.from("tenant_rent_payments").select("id, tenant_id, amount_paid, payment_date, paid_months, company_id, created_at"),
+        ? supabase.from("tenant_rent_payments").select("id, tenant_id, amount_paid, payment_date, paid_months, company_id, created_at, is_suppressed, notes").eq("company_id", validCompId)
+        : supabase.from("tenant_rent_payments").select("id, tenant_id, amount_paid, payment_date, paid_months, company_id, created_at, is_suppressed, notes"),
       validCompId
         ? supabase.from("commercial_bookings").select("id, total_amount, paid_amount, payment_status, check_in_date, created_at").eq("company_id", validCompId)
         : supabase.from("commercial_bookings").select("id, total_amount, paid_amount, payment_status, check_in_date, created_at"),
       validCompId
-        ? supabase.from("finance_transactions").select("id, amount, type, category, transaction_date, date, created_at").eq("company_id", validCompId)
-        : supabase.from("finance_transactions").select("id, amount, type, category, transaction_date, date, created_at"),
+        ? supabase.from("finance_transactions").select("id, amount, type, category, transaction_date, date, created_at, status, is_suppressed").eq("company_id", validCompId)
+        : supabase.from("finance_transactions").select("id, amount, type, category, transaction_date, date, created_at, status, is_suppressed"),
     ]);
 
-    const invList = invoicesRes.status === "fulfilled" && invoicesRes.value.data ? invoicesRes.value.data : [];
-    const rawRentList = rentRes.status === "fulfilled" && rentRes.value.data ? rentRes.value.data : [];
+    const invList = (invoicesRes.status === "fulfilled" && invoicesRes.value.data ? invoicesRes.value.data : [])
+      .filter((i: any) => !i.is_suppressed && i.status !== "suppressed");
+    const rawRentList = (rentRes.status === "fulfilled" && rentRes.value.data ? rentRes.value.data : [])
+      .filter((r: any) => !r.is_suppressed && !(r.notes && String(r.notes).includes("[SUPPRESSED")));
     const bookList = bookRes.status === "fulfilled" && bookRes.value.data ? bookRes.value.data : [];
-    const finList = finRes.status === "fulfilled" && finRes.value.data ? finRes.value.data : [];
+    const finList = (finRes.status === "fulfilled" && finRes.value.data ? finRes.value.data : [])
+      .filter((f: any) => !f.is_suppressed && f.status !== "suppressed" && f.status !== "cancelled");
 
-    // Deduplicate rent payments: skip duplicate records sharing same tenant, amount, and billing month/date
-    const seenRentKeys = new Set<string>();
-    const rentList = rawRentList.filter((r) => {
-      const monthKey = Array.isArray(r.paid_months) && r.paid_months[0]
-        ? String(r.paid_months[0]).slice(0, 7)
-        : String(r.payment_date || "").slice(0, 7);
-      const key = `${r.tenant_id || r.id}_${monthKey}_${Number(r.amount_paid || 0)}`;
-      if (seenRentKeys.has(key)) return false;
-      seenRentKeys.add(key);
+    // Deduplicate rent payments by unique ID to preserve legitimate multiple collections/installments
+    const seenRentIds = new Set<string>();
+    const rentList = rawRentList.filter((r: any) => {
+      const id = String(r.id || "");
+      if (id && seenRentIds.has(id)) return false;
+      if (id) seenRentIds.add(id);
       return true;
     });
 

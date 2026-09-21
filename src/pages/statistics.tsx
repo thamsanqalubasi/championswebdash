@@ -3,6 +3,7 @@ import { useAuth } from '@/lib/auth';
 import { useCurrency } from '@/lib/currency';
 import { supabase } from '@/lib/supabase';
 import { isValidUuid } from '@/lib/data';
+import { isPaymentSuppressed } from '@/lib/rent-calculator';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
@@ -96,7 +97,7 @@ export default function StatisticsPage() {
           rentPaymentsRes,
           financeTxsRes,
         ] = await Promise.all([
-          supabase.from("invoices").select("id, tenant_id, month, total_amount, status, created_at").eq("company_id", compId),
+          supabase.from("invoices").select("id, tenant_id, month, total_amount, status, created_at, is_suppressed").eq("company_id", compId).neq("status", "suppressed"),
           supabase.from("commercial_bookings").select("total_amount, amount_paid, booking_status, created_at").eq("company_id", compId),
           supabase.from("properties").select("id, name, status, monthly_rent").eq("company_id", compId),
           supabase.from("commercial_rooms").select("id, status").eq("company_id", compId),
@@ -106,13 +107,14 @@ export default function StatisticsPage() {
           supabase.from("stores_inventory").select("quantity, unit_cost").eq("company_id", compId),
           supabase.from("company_users").select("id, department, is_active").eq("company_id", compId),
           supabase.from("property_expenses").select("amount, category, created_at").eq("company_id", compId),
-          supabase.from("tenant_rent_payments").select("id, tenant_id, amount_paid, payment_date, paid_months, created_at").eq("company_id", compId),
-          supabase.from("finance_transactions").select("amount, type, category, transaction_date, created_at").eq("company_id", compId).eq("status", "approved"),
+          supabase.from("tenant_rent_payments").select("id, tenant_id, amount_paid, payment_date, paid_months, created_at, is_suppressed, notes").eq("company_id", compId),
+          supabase.from("finance_transactions").select("amount, type, category, transaction_date, created_at, status, is_suppressed").eq("company_id", compId).eq("status", "approved"),
         ]);
 
         if (cancelled) return;
 
-        const invoices = invoicesRes.data || [];
+        // Strictly exclude suppressed invoices, payments, and transactions from revenue metrics
+        const invoices = (invoicesRes.data || []).filter((i: any) => !i.is_suppressed && i.status !== "suppressed");
         const bookings = bookingsRes.data || [];
         const props = propsRes.data || [];
         const rooms = roomsRes.data || [];
@@ -122,18 +124,15 @@ export default function StatisticsPage() {
         const storesItems = storesRes.data || [];
         const compUsers = usersRes.data || [];
         const propExpenses = expensesRes.data || [];
-        const rentPayments = rentPaymentsRes.data || [];
-        const financeTxs = financeTxsRes.data || [];
+        const rentPayments = (rentPaymentsRes.data || []).filter((r: any) => !isPaymentSuppressed(r));
+        const financeTxs = (financeTxsRes.data || []).filter((tx: any) => !tx.is_suppressed && tx.status !== "suppressed" && tx.status !== "cancelled");
 
-        // Deduplicate rent payments to avoid double-counting accidental re-entries
-        const seenRentKeys = new Set<string>();
+        // Deduplicate rent payments by unique record ID to preserve legitimate multiple installments within the same billing month
+        const seenRentIds = new Set<string>();
         const deduplicatedRentPayments = (rentPayments || []).filter((r: any) => {
-          const monthKey = Array.isArray(r.paid_months) && r.paid_months[0]
-            ? String(r.paid_months[0]).slice(0, 7)
-            : String(r.payment_date || "").slice(0, 7);
-          const key = `${r.tenant_id || r.id}_${monthKey}_${Number(r.amount_paid || 0)}`;
-          if (seenRentKeys.has(key)) return false;
-          seenRentKeys.add(key);
+          const id = String(r.id || "");
+          if (id && seenRentIds.has(id)) return false;
+          if (id) seenRentIds.add(id);
           return true;
         });
 

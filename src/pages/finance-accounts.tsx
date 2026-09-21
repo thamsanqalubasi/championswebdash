@@ -287,19 +287,21 @@ function pickExecutor(record: Record<string, unknown>) {
 async function fetchPaymentsWithProperty(startDate: string, endDate: string): Promise<PaymentWithProperty[]> {
   const richJoin = await supabase
     .from("tenant_rent_payments")
-    .select("payment_date, amount_paid, tenant_id, executed_by_name, created_by, recorded_by, collected_by, tenants(property_id, full_name)")
+    .select("payment_date, amount_paid, tenant_id, executed_by_name, created_by, recorded_by, collected_by, is_suppressed, notes, tenants(property_id, full_name)")
     .gte("payment_date", startDate)
     .lte("payment_date", endDate)
     .order("payment_date");
 
   if (!richJoin.error) {
-    return ((richJoin.data ?? []) as PaymentProjection[]).map((row) => ({
-      paymentDate: String(row.payment_date ?? ""),
-      amountPaid: Number(row.amount_paid ?? 0),
-      tenantPropertyId: String((row.tenants as { property_id?: string } | null)?.property_id ?? ""),
-      tenantName: String((row.tenants as { full_name?: string } | null)?.full_name ?? "Tenant"),
-      executor: String(row.executed_by_name ?? "") || pickExecutor(row as Record<string, unknown>),
-    }));
+    return ((richJoin.data ?? []) as any[])
+      .filter((row) => !row.is_suppressed && !(row.notes && String(row.notes).includes("[SUPPRESSED")))
+      .map((row) => ({
+        paymentDate: String(row.payment_date ?? ""),
+        amountPaid: Number(row.amount_paid ?? 0),
+        tenantPropertyId: String((row.tenants as { property_id?: string } | null)?.property_id ?? ""),
+        tenantName: String((row.tenants as { full_name?: string } | null)?.full_name ?? "Tenant"),
+        executor: String(row.executed_by_name ?? "") || pickExecutor(row as Record<string, unknown>),
+      }));
   }
 
   if (!isMissingDbObjectError(richJoin.error)) {
@@ -601,13 +603,13 @@ export default function FinanceAccountsPage() {
               .order("transaction_date", { ascending: false }),
             supabase
               .from("tenant_rent_payments")
-              .select("id, tenant_id, payment_date, amount_paid, payment_method, notes, executed_by_name, pop_url, created_at, tenants(full_name, property_id)")
+              .select("id, tenant_id, payment_date, amount_paid, payment_method, notes, executed_by_name, pop_url, created_at, is_suppressed, tenants(full_name, property_id)")
               .eq("company_id", compId)
               .order("payment_date", { ascending: false }),
           ]);
 
-          const rawDbTxs = dbTxsRes.data || [];
-          const rawRent = rentPaymentsRes.data || [];
+          const rawDbTxs = (dbTxsRes.data || []).filter((row: any) => !row.is_suppressed && row.status !== "suppressed" && row.status !== "cancelled");
+          const rawRent = (rentPaymentsRes.data || []).filter((rp: any) => !rp.is_suppressed && !(rp.notes && String(rp.notes).includes("[SUPPRESSED")));
 
           const txList: FinanceTransaction[] = rawDbTxs.map((row: any) => ({
             id: row.id,
