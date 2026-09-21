@@ -97,6 +97,7 @@ export default function PortalHomePage() {
   const [rentals, setRentals] = useState<RentalProp[]>([]);
   const [roomListings, setRoomListings] = useState<RoomListing[]>([]);
   const [saleListings, setSaleListings] = useState<AgentListing[]>([]);
+  const [agentMap, setAgentMap] = useState<Record<string, AgentListing>>({});
   const [reviewsMap, setReviewsMap] = useState<Record<string, { avg: number; count: number }>>({});
   const [ads, setAds] = useState<any[]>([]);
   const [boostedMap, setBoostedMap] = useState<Record<string, { badge: string; tier: string; score: number }>>({});
@@ -169,10 +170,56 @@ export default function PortalHomePage() {
         const { data: agentData } = await supabase.from('agent_listings')
           .select('*')
           .eq('is_published', true)
-          .eq('listing_type', 'sale')
           .order('created_at', { ascending: false });
-        setSaleListings((agentData || []) as AgentListing[]);
-      } catch { setSaleListings([]); }
+
+        if (agentData && agentData.length > 0) {
+          // Strictly ensure agent details are entered before appearing on the front page index
+          const validAgentListings = agentData.filter((row: any) => 
+            Boolean(row.agent_name && (row.agent_phone || row.agent_whatsapp))
+          );
+
+          // Sales listings
+          const sales = validAgentListings.filter((l: any) => l.listing_type === 'sale');
+          setSaleListings(sales as AgentListing[]);
+
+          // Build agent lookup map by name and ID
+          const aMap: Record<string, AgentListing> = {};
+          validAgentListings.forEach((al: any) => {
+            if (al.name) aMap[al.name.trim().toLowerCase()] = al;
+            if (al.id) aMap[al.id] = al;
+          });
+          setAgentMap(aMap);
+
+          // Merge any residential rentals from agent_listings into rentals
+          const agentRentals: RentalProp[] = validAgentListings
+            .filter((l: any) => l.listing_type === 'rent')
+            .map((l: any) => ({
+              id: l.id,
+              name: l.name,
+              type: l.type || 'residential',
+              address: l.address || '',
+              city: l.city || '',
+              country: l.country || '',
+              status: 'vacant',
+              monthly_rent: l.price || 0,
+              photos: l.photos || [],
+            }));
+
+          if (agentRentals.length > 0) {
+            setRentals(prev => {
+              const existingNames = new Set(prev.map(p => p.name.trim().toLowerCase()));
+              const newProps = agentRentals.filter(p => !existingNames.has(p.name.trim().toLowerCase()));
+              return [...prev, ...newProps];
+            });
+          }
+        } else {
+          setSaleListings([]);
+          setAgentMap({});
+        }
+      } catch { 
+        setSaleListings([]); 
+        setAgentMap({});
+      }
 
       try {
         const { data: revs } = await supabase.from("listing_reviews").select("property_id, rating");
@@ -723,6 +770,48 @@ export default function PortalHomePage() {
                           {l.status==="vacant" ? "Available" : (l.available_from ? `Occupied · Available ${formatVacancyDate(l.available_from)}` : "Occupied")}
                         </span>
                       </div>
+
+                      {/* Agent Contact Card */}
+                      {(() => {
+                        const agent = agentMap[l.name.trim().toLowerCase()] || agentMap[l.id];
+                        if (!agent || !agent.agent_name) return null;
+                        return (
+                          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center gap-2.5">
+                            {agent.agent_photo_url ? (
+                              <img src={agent.agent_photo_url} alt={agent.agent_name} className="w-8 h-8 rounded-full object-cover border border-white dark:border-slate-700 shadow-xs shrink-0"/>
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold text-xs shrink-0">
+                                {agent.agent_name.charAt(0)}
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-xs text-gray-900 dark:text-white truncate flex items-center gap-1.5">
+                                <span>{agent.agent_name}</span>
+                                <span className="text-[9px] bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 px-1.5 py-0.5 rounded-full font-bold">Agent</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">
+                                {agent.agent_phone && (
+                                  <span 
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = `tel:${agent.agent_phone}`; }}
+                                    className="flex items-center gap-1 hover:text-blue-600 cursor-pointer"
+                                  >
+                                    <Phone size={10} className="text-gray-400 shrink-0" />
+                                    <span>{agent.agent_phone}</span>
+                                  </span>
+                                )}
+                                {agent.agent_whatsapp && (
+                                  <span 
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(`https://wa.me/${agent.agent_whatsapp.replace(/[^0-9]/g,'')}`, '_blank'); }}
+                                    className="text-green-600 dark:text-green-400 font-bold hover:underline cursor-pointer"
+                                  >
+                                    WhatsApp
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </Link>
                 );

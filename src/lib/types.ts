@@ -724,6 +724,12 @@ export type ProcurementRequest = {
   status: "open" | "completed" | "cancelled";
   events?: ProcurementPipelineEvent[];
   quotations?: ProcurementQuotation[];
+  attachments?: Array<{
+    name: string;
+    url: string;
+    size?: number;
+    type?: string;
+  }>;
   createdAt: string;
   updatedAt: string;
 };

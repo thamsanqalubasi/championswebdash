@@ -4914,6 +4914,11 @@ export async function fetchProcurementRequests(companyId: string = MOCK_COMPANIE
           uploadedByName: q.uploaded_by_name as string | undefined,
           createdAt: q.created_at as string,
         })),
+        attachments: Array.isArray(r.attachments)
+          ? r.attachments
+          : typeof r.attachments === "string"
+          ? (() => { try { return JSON.parse(r.attachments); } catch { return []; } })()
+          : [],
         createdAt: r.created_at,
         updatedAt: r.updated_at,
       }));
@@ -4946,13 +4951,14 @@ export async function createProcurementRequest(
       },
     ],
     quotations: [],
+    attachments: req.attachments || [],
     createdAt: now,
     updatedAt: now,
   };
 
   try {
     if (isValidUuid(req.companyId)) {
-      await supabase.from("procurement_requests").insert({
+      const insertPayload: Record<string, any> = {
         company_id: req.companyId,
         requested_by_name: req.requestedByName,
         requesting_department: req.requestingDepartment,
@@ -4967,7 +4973,15 @@ export async function createProcurementRequest(
         stage_entered_at: now,
         status: "open",
         notes: req.notes || "",
-      });
+      };
+      if (req.attachments && req.attachments.length > 0) {
+        insertPayload.attachments = req.attachments;
+      }
+      const { error: insertErr } = await supabase.from("procurement_requests").insert(insertPayload);
+      if (insertErr && insertPayload.attachments) {
+        delete insertPayload.attachments;
+        await supabase.from("procurement_requests").insert(insertPayload);
+      }
     }
   } catch (err) {
     console.warn("Could not insert procurement request in Supabase", err);

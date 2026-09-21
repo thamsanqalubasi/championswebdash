@@ -49,6 +49,12 @@ export type ProcurementRequestItem = {
   approvalNotes?: string;
   quoteFileUrl?: string;
   quoteFileName?: string;
+  attachments?: Array<{
+    name: string;
+    url: string;
+    size?: number;
+    type?: string;
+  }>;
   pipelineStage: string;
   createdAt: string;
   updatedAt: string;
@@ -133,6 +139,7 @@ export function ProcurementRequestModal({ open, onClose, initialTab = "request" 
     selectedApproverEmail: string;
     quoteFileUrl: string;
     quoteFileName: string;
+    attachments: Array<{ name: string; url: string; size?: number; type?: string }>;
   }>({
     itemName: "",
     category: CATEGORIES[0],
@@ -147,6 +154,7 @@ export function ProcurementRequestModal({ open, onClose, initialTab = "request" 
     selectedApproverEmail: "",
     quoteFileUrl: "",
     quoteFileName: "",
+    attachments: [],
   });
 
   const isProcurementOrAdmin = useMemo(() => {
@@ -290,26 +298,51 @@ export function ProcurementRequestModal({ open, onClose, initialTab = "request" 
     setRequests(combinedList);
   };
 
-  // Handle quote file attachment
+  // Handle quote & supporting file attachments
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert("File size exceeds 5MB limit. Please upload a smaller document.");
-      return;
-    }
+    const fileList = Array.from(files);
+    fileList.forEach(file => {
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`File "${file.name}" exceeds 10MB limit. Please upload a smaller document.`);
+        return;
+      }
 
-    const reader = new FileReader();
-    reader.onload = (loadEv) => {
-      const dataUri = loadEv.target?.result as string;
-      setFormData((prev) => ({
+      const reader = new FileReader();
+      reader.onload = (loadEv) => {
+        const dataUri = loadEv.target?.result as string;
+        setFormData((prev) => ({
+          ...prev,
+          quoteFileUrl: prev.quoteFileUrl || dataUri,
+          quoteFileName: prev.quoteFileName || file.name,
+          attachments: [
+            ...prev.attachments,
+            {
+              name: file.name,
+              url: dataUri,
+              size: file.size,
+              type: file.type || 'document',
+            }
+          ],
+        }));
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const removeModalAttachment = (index: number) => {
+    setFormData((prev) => {
+      const updated = prev.attachments.filter((_, i) => i !== index);
+      return {
         ...prev,
-        quoteFileUrl: dataUri,
-        quoteFileName: file.name,
-      }));
-    };
-    reader.readAsDataURL(file);
+        attachments: updated,
+        quoteFileName: updated[0]?.name || "",
+        quoteFileUrl: updated[0]?.url || "",
+      };
+    });
   };
 
   // Handle Create Procurement Request
@@ -374,6 +407,7 @@ export function ProcurementRequestModal({ open, onClose, initialTab = "request" 
       approvalStatus: initialApprovalStatus,
       quoteFileUrl: formData.quoteFileUrl || undefined,
       quoteFileName: formData.quoteFileName || undefined,
+      attachments: formData.attachments,
       pipelineStage: initialPipelineStage,
       createdAt: now,
       updatedAt: now,
@@ -459,6 +493,7 @@ export function ProcurementRequestModal({ open, onClose, initialTab = "request" 
         selectedApproverEmail: companyStaff[0]?.email || "",
         quoteFileUrl: "",
         quoteFileName: "",
+        attachments: [],
       });
 
       // Switch to View Requests tab after 1.5 seconds
@@ -891,29 +926,38 @@ export function ProcurementRequestModal({ open, onClose, initialTab = "request" 
 
                 {/* Quotation / Reference File */}
                 <div className="md:col-span-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-muted mb-1 block">
-                    Optional Quote / Proforma / Spec Document
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2 px-4 py-2 rounded-xl border border-dashed border-border-color bg-surface-elevated hover:bg-surface cursor-pointer text-xs font-medium text-muted hover:text-foreground transition">
-                      <Paperclip size={14} />
-                      <span>{formData.quoteFileName ? "Replace Document" : "Attach Quote / Proforma"}</span>
-                      <input type="file" onChange={handleFileUpload} className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" />
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-muted block">
+                      Supporting Attachments (Quotes, Proformas, Spec Documents)
                     </label>
-                    {formData.quoteFileName && (
-                      <div className="flex items-center gap-1.5 text-xs text-foreground font-semibold bg-surface-elevated px-3 py-1.5 rounded-lg border border-border-color">
-                        <FileText size={13} className="text-blue-500" />
-                        <span className="max-w-[200px] truncate">{formData.quoteFileName}</span>
-                        <button
-                          type="button"
-                          onClick={() => setFormData({ ...formData, quoteFileName: "", quoteFileUrl: "" })}
-                          className="text-muted hover:text-red-500 ml-1"
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    )}
+                    <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-dashed border-border-color bg-surface-elevated hover:bg-surface cursor-pointer text-xs font-semibold text-blue-600 dark:text-blue-400 transition">
+                      <Paperclip size={13} />
+                      <span>Attach Documents</span>
+                      <input type="file" multiple onChange={handleFileUpload} className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx" />
+                    </label>
                   </div>
+                  
+                  {formData.attachments && formData.attachments.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {formData.attachments.map((att, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-xs text-foreground font-semibold bg-surface-elevated px-3 py-1.5 rounded-lg border border-border-color shadow-2xs">
+                          <FileText size={13} className="text-blue-500 shrink-0" />
+                          <span className="max-w-[180px] truncate">{att.name}</span>
+                          {att.size ? <span className="text-[10px] text-muted">({(att.size / 1024).toFixed(0)}KB)</span> : null}
+                          <button
+                            type="button"
+                            onClick={() => removeModalAttachment(idx)}
+                            className="text-muted hover:text-red-500 ml-1"
+                            title="Remove attachment"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted mt-1">No attachments added yet. You can attach quotation PDFs, images, or spec sheets.</p>
+                  )}
                 </div>
               </div>
 

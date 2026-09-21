@@ -8,7 +8,7 @@ import {
   Plus, Edit, Trash, Eye, EyeOff, Upload, X, Save, User, Building2, 
   ChevronLeft, ChevronRight, MapPin, Phone, Mail, Camera, Home, 
   DollarSign, Image as ImageIcon, CheckCircle2, Globe, Search, Filter,
-  Sparkles, Loader2, RefreshCw
+  Sparkles, Loader2, RefreshCw, AlertTriangle
 } from 'lucide-react';
 
 type AgentListing = {
@@ -58,7 +58,7 @@ const AMENITIES_OPTIONS = [
   'ac', 'gym', 'balcony', 'furnished', 'pet_friendly'
 ];
 
-const TABS = ['My Listings', 'Publish from Portfolio', 'Add / Edit Listing', 'My Profile'];
+const TABS = ['Published Residential Properties', 'My Custom Listings', 'Add / Edit Listing', 'My Profile'];
 
 export default function AgentPortalPage() {
   const { user, currentCompany } = useAuth();
@@ -73,6 +73,8 @@ export default function AgentPortalPage() {
   const [togglingPropId, setTogglingPropId] = useState<string | null>(null);
   const [orgSearch, setOrgSearch] = useState('');
   const [orgTypeFilter, setOrgTypeFilter] = useState('all');
+  const [orgStatusFilter, setOrgStatusFilter] = useState<'all' | 'published' | 'hidden'>('all');
+  const [showProfileWarningModal, setShowProfileWarningModal] = useState(false);
 
   const defaultFormData = {
     name: '',
@@ -105,6 +107,20 @@ export default function AgentPortalPage() {
     whatsapp: '',
     photoUrl: '',
   });
+
+  const isProfileComplete = Boolean(
+    (profile.firstName?.trim() && profile.lastName?.trim()) ||
+    user?.user_metadata?.full_name?.trim()
+  ) && Boolean(
+    profile.phone?.trim() || profile.whatsapp?.trim()
+  ) && Boolean(
+    profile.email?.trim() || user?.email?.trim()
+  );
+
+  const livePropsCount = orgProperties.filter(prop => {
+    const matched = listings.find(l => l.name.trim().toLowerCase() === prop.name.trim().toLowerCase());
+    return Boolean(matched && matched.isPublished) || Boolean(prop.is_published);
+  }).length;
 
   const fetchListings = async () => {
     setLoading(true);
@@ -191,7 +207,22 @@ export default function AgentPortalPage() {
     setTogglingPropId(prop.id);
     try {
       const existing = listings.find(l => l.name.trim().toLowerCase() === prop.name.trim().toLowerCase());
-      const isCurrentlyLive = existing ? existing.isPublished : false;
+      const isCurrentlyLive = existing ? existing.isPublished : Boolean(prop.is_published);
+
+      // STRICT VALIDATION: Agent details must be entered before a property can be shown on the front page index
+      if (!isCurrentlyLive) {
+        if (!isProfileComplete) {
+          setShowProfileWarningModal(true);
+          setTogglingPropId(null);
+          return;
+        }
+      }
+
+      const agentName = `${profile.firstName} ${profile.lastName}`.trim() || user?.user_metadata?.full_name || 'Property Agent';
+      const agentPhone = profile.phone || profile.whatsapp || '';
+      const agentWhatsapp = profile.whatsapp || profile.phone || '';
+      const agentEmail = profile.email || user?.email || '';
+      const agentPhotoUrl = profile.photoUrl || '';
 
       if (isCurrentlyLive && existing) {
         // Hide from Agent Index
@@ -200,10 +231,20 @@ export default function AgentPortalPage() {
         setListings(prev => prev.map(l => l.id === existing.id ? { ...l, isPublished: false } : l));
         setOrgProperties(prev => prev.map(p => p.id === prop.id ? { ...p, is_published: false } : p));
       } else if (existing) {
-        // Reactivate on Agent Index
-        await supabase.from('agent_listings').update({ is_published: true }).eq('id', existing.id);
+        // Reactivate on Agent Index with latest agent contact details
+        const updatePayload = {
+          is_published: true,
+          agent_name: agentName,
+          agent_email: agentEmail,
+          agent_phone: agentPhone,
+          agent_whatsapp: agentWhatsapp,
+          agent_photo_url: agentPhotoUrl,
+          agent_gender: profile.gender || 'other',
+          agent_user_id: user?.id,
+        };
+        await supabase.from('agent_listings').update(updatePayload).eq('id', existing.id);
         await supabase.from('properties').update({ is_published: true }).eq('id', prop.id);
-        setListings(prev => prev.map(l => l.id === existing.id ? { ...l, isPublished: true } : l));
+        setListings(prev => prev.map(l => l.id === existing.id ? { ...l, ...updatePayload, isPublished: true } : l));
         setOrgProperties(prev => prev.map(p => p.id === prop.id ? { ...p, is_published: true } : p));
       } else {
         // Publish new to Agent Index
@@ -223,11 +264,11 @@ export default function AgentPortalPage() {
           amenities: ['wifi', 'parking', 'security'],
           photos: propPhotos,
           is_published: true,
-          agent_name: `${profile.firstName} ${profile.lastName}`.trim() || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Property Agent',
-          agent_email: profile.email || user?.email || '',
-          agent_phone: profile.phone || '',
-          agent_whatsapp: profile.whatsapp || '',
-          agent_photo_url: profile.photoUrl || '',
+          agent_name: agentName,
+          agent_email: agentEmail,
+          agent_phone: agentPhone,
+          agent_whatsapp: agentWhatsapp,
+          agent_photo_url: agentPhotoUrl,
           agent_gender: profile.gender || 'other',
           agent_user_id: user?.id,
           company_id: prop.company_id || currentCompany?.id,
@@ -253,14 +294,42 @@ export default function AgentPortalPage() {
     const savedProfile = localStorage.getItem('agent_profile');
     if (savedProfile) {
       try {
-        setProfile(JSON.parse(savedProfile));
+        const parsed = JSON.parse(savedProfile);
+        setProfile(prev => ({
+          ...prev,
+          ...parsed,
+          email: parsed.email || user?.email || '',
+          firstName: parsed.firstName || user?.user_metadata?.full_name?.split(' ')[0] || '',
+          lastName: parsed.lastName || user?.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
+        }));
       } catch (e) {}
+    } else if (user) {
+      setProfile(prev => ({
+        ...prev,
+        email: user.email || '',
+        firstName: user.user_metadata?.full_name?.split(' ')[0] || '',
+        lastName: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
+      }));
     }
-  }, []);
+  }, [user]);
 
-  const saveProfile = () => {
+  const saveProfile = async () => {
     localStorage.setItem('agent_profile', JSON.stringify(profile));
-    alert('Profile saved!');
+    try {
+      if (user?.id) {
+        await supabase.from('agent_listings').update({
+          agent_name: `${profile.firstName} ${profile.lastName}`.trim(),
+          agent_email: profile.email,
+          agent_phone: profile.phone,
+          agent_whatsapp: profile.whatsapp,
+          agent_photo_url: profile.photoUrl,
+          agent_gender: profile.gender,
+        }).eq('agent_user_id', user.id);
+      }
+    } catch (e) {
+      console.warn("Could not sync agent profile to agent_listings", e);
+    }
+    alert('Agent profile saved successfully!');
   };
 
   const handleEdit = (listing: AgentListing) => {
@@ -295,13 +364,27 @@ export default function AgentPortalPage() {
   };
 
   const handleTogglePublish = async (id: string, currentStatus: boolean, photosCount: number) => {
-    if (!currentStatus && photosCount < 4) {
-      alert('You need at least 4 photos to publish a listing.');
-      return;
+    if (!currentStatus) {
+      if (!isProfileComplete) {
+        setShowProfileWarningModal(true);
+        return;
+      }
+      if (photosCount < 4) {
+        alert('You need at least 4 photos to publish a listing.');
+        return;
+      }
     }
     try {
-      await supabase.from('agent_listings').update({ is_published: !currentStatus }).eq('id', id);
-      setListings(prev => prev.map(l => l.id === id ? { ...l, isPublished: !currentStatus } : l));
+      const updateData: any = { is_published: !currentStatus };
+      if (!currentStatus) {
+        updateData.agent_name = `${profile.firstName} ${profile.lastName}`.trim() || user?.user_metadata?.full_name || 'Property Agent';
+        updateData.agent_email = profile.email || user?.email || '';
+        updateData.agent_phone = profile.phone || profile.whatsapp || '';
+        updateData.agent_whatsapp = profile.whatsapp || profile.phone || '';
+        updateData.agent_photo_url = profile.photoUrl || '';
+      }
+      await supabase.from('agent_listings').update(updateData).eq('id', id);
+      setListings(prev => prev.map(l => l.id === id ? { ...l, ...updateData, isPublished: !currentStatus } : l));
     } catch (e) {
       console.error(e);
       alert('Error updating status');
@@ -400,41 +483,358 @@ export default function AgentPortalPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Agent Portal — Property Listings</h1>
-        {activeTab === 0 && (
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Agent Portal — Property Listings</h1>
+          <p className="text-xs text-muted mt-1">
+            Manage published residential properties and control their visibility on the public front page index.
+          </p>
+        </div>
+        <div className="flex items-center gap-2.5 flex-wrap">
           <button 
-            onClick={() => { setEditingId(null); setFormData(defaultFormData); setActiveTab(2); }}
-            className="bg-blue-600 text-white rounded-xl px-4 py-2 text-sm font-medium hover:bg-blue-700 flex items-center gap-2"
+            type="button"
+            onClick={() => { setActiveTab(0); setOrgStatusFilter('published'); }}
+            className={`rounded-xl px-4 py-2 text-xs font-bold transition flex items-center gap-2 border shadow-xs ${
+              activeTab === 0 && orgStatusFilter === 'published'
+                ? 'bg-emerald-600 text-white border-emerald-600'
+                : 'bg-surface-elevated border-border-color text-foreground hover:bg-surface'
+            }`}
           >
-            <Plus size={16} /> Add Listing
+            <Home size={15} className={activeTab === 0 && orgStatusFilter === 'published' ? 'text-white' : 'text-emerald-500'} />
+            <span>Published Residential Properties ({livePropsCount})</span>
           </button>
-        )}
+
+          <button 
+            type="button"
+            onClick={() => { setEditingId(null); setFormData(defaultFormData); setActiveTab(2); }}
+            className="bg-blue-600 text-white rounded-xl px-4 py-2 text-xs font-bold hover:bg-blue-700 flex items-center gap-2 shadow-xs"
+          >
+            <Plus size={15} /> Add Custom Listing
+          </button>
+        </div>
       </div>
 
-      <div className="flex gap-6 border-b border-border-color">
+      <div className="flex gap-4 sm:gap-6 border-b border-border-color overflow-x-auto">
         {TABS.map((tab, idx) => (
           <button
             key={tab}
             onClick={() => setActiveTab(idx)}
-            className={`pb-3 px-2 font-medium text-sm transition-colors border-b-2 ${
-              activeTab === idx ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            className={`pb-3 px-2 font-medium text-sm transition-colors border-b-2 whitespace-nowrap ${
+              activeTab === idx ? 'border-blue-600 text-blue-600 font-bold' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             {tab}
+            {idx === 0 && (
+              <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                {livePropsCount} Live
+              </span>
+            )}
+            {idx === 1 && (
+              <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                {listings.length}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
       <div className="bg-surface rounded-2xl border border-border-color p-6 shadow-sm">
+        {/* Tab 0: Published Residential Properties */}
         {activeTab === 0 && (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border-color pb-4">
+              <div>
+                <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <Building2 size={20} className="text-blue-600" />
+                  <span>Residential Portfolio Properties — Front Page Visibility</span>
+                </h2>
+                <p className="text-xs text-muted mt-1">
+                  Control which residential properties appear on the public front page index for prospective customers. Click "Show" or "Hide" to toggle visibility.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={fetchOrgProperties}
+                disabled={loadingOrgProps}
+                className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface transition self-start md:self-auto"
+              >
+                <RefreshCw size={13} className={loadingOrgProps ? "animate-spin" : ""} />
+                <span>Refresh Portfolio</span>
+              </button>
+            </div>
+
+            {/* Agent Profile Status Banner */}
+            {!isProfileComplete ? (
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-white shrink-0 shadow-xs">
+                    <AlertTriangle size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-foreground">Agent Profile Incomplete — Contact Details Required</p>
+                    <p className="text-[11px] text-muted">Properties cannot be shown on the public front page index until your agent profile has a contact phone number and name.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab(3)}
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition shrink-0 flex items-center gap-1 shadow-xs"
+                >
+                  <User size={13} />
+                  <span>Complete Profile</span>
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white shrink-0">
+                    <CheckCircle2 size={16} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-foreground">
+                      Agent Profile Active: {`${profile.firstName} ${profile.lastName}`.trim() || user?.user_metadata?.full_name || 'Verified Agent'}
+                    </p>
+                    <p className="text-[11px] text-muted">
+                      📞 {profile.phone || profile.whatsapp || 'Phone active'} · ✉️ {profile.email || user?.email} · Ready to show properties on public front page.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab(3)}
+                  className="px-2.5 py-1 rounded-lg border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-[11px] font-semibold hover:bg-emerald-500/20 transition"
+                >
+                  Edit Profile
+                </button>
+              </div>
+            )}
+
+            {/* Filter & Search Toolbar */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative flex-1 min-w-[220px]">
+                <Search size={15} className="absolute left-3 top-2.5 text-muted" />
+                <input
+                  type="text"
+                  placeholder="Search properties by name, city, address..."
+                  value={orgSearch}
+                  onChange={(e) => setOrgSearch(e.target.value)}
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated pl-9 pr-3 py-2 text-xs text-foreground outline-none focus:border-blue-600"
+                />
+              </div>
+
+              {/* Status Tabs: All, Showing, Hidden */}
+              <div className="flex items-center gap-1 rounded-xl border border-border-color bg-surface-elevated p-1 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setOrgStatusFilter('all')}
+                  className={`px-3 py-1 rounded-lg font-semibold transition ${
+                    orgStatusFilter === 'all' ? 'bg-surface shadow-xs text-foreground font-bold' : 'text-muted hover:text-foreground'
+                  }`}
+                >
+                  All ({orgProperties.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrgStatusFilter('published')}
+                  className={`px-3 py-1 rounded-lg font-semibold transition flex items-center gap-1.5 ${
+                    orgStatusFilter === 'published' ? 'bg-emerald-600 text-white font-bold' : 'text-emerald-600 hover:bg-emerald-50/50'
+                  }`}
+                >
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Showing ({livePropsCount})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrgStatusFilter('hidden')}
+                  className={`px-3 py-1 rounded-lg font-semibold transition ${
+                    orgStatusFilter === 'hidden' ? 'bg-surface shadow-xs text-foreground font-bold' : 'text-muted hover:text-foreground'
+                  }`}
+                >
+                  Hidden ({orgProperties.length - livePropsCount})
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Filter size={14} className="text-muted" />
+                <select
+                  value={orgTypeFilter}
+                  onChange={(e) => setOrgTypeFilter(e.target.value)}
+                  className="rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none focus:border-blue-600"
+                >
+                  <option value="all">All Types</option>
+                  <option value="house">Houses</option>
+                  <option value="apartment">Apartments</option>
+                  <option value="storage">Storage</option>
+                  <option value="room">Rooms</option>
+                </select>
+              </div>
+            </div>
+
+            {loadingOrgProps ? (
+              <div className="text-center py-16 text-muted">
+                <Loader2 size={32} className="mx-auto mb-3 animate-spin text-blue-600" />
+                <p className="text-sm">Loading portfolio properties...</p>
+              </div>
+            ) : orgProperties.length === 0 ? (
+              <div className="text-center py-16 text-muted bg-surface-elevated/40 rounded-2xl border border-dashed border-border-color">
+                <Building2 size={44} className="mx-auto mb-3 opacity-30" />
+                <p className="text-sm font-semibold text-foreground">No residential portfolio properties found</p>
+                <p className="text-xs text-muted mt-1 max-w-sm mx-auto">
+                  Add residential properties (houses, apartments, storage units) in Property Management to toggle them here.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {orgProperties
+                  .filter((prop) => {
+                    const q = orgSearch.toLowerCase();
+                    const matchesSearch = !q ||
+                      prop.name.toLowerCase().includes(q) ||
+                      (prop.address || "").toLowerCase().includes(q) ||
+                      (prop.city || "").toLowerCase().includes(q);
+                    const matchesType = orgTypeFilter === "all" || prop.type === orgTypeFilter;
+                    
+                    const matchedListing = listings.find(
+                      (l) => l.name.trim().toLowerCase() === prop.name.trim().toLowerCase()
+                    );
+                    const isLive = Boolean(matchedListing && matchedListing.isPublished) || Boolean(prop.is_published);
+                    
+                    const matchesStatus = 
+                      orgStatusFilter === "all" ||
+                      (orgStatusFilter === "published" && isLive) ||
+                      (orgStatusFilter === "hidden" && !isLive);
+
+                    return matchesSearch && matchesType && matchesStatus;
+                  })
+                  .map((prop) => {
+                    const matchedListing = listings.find(
+                      (l) => l.name.trim().toLowerCase() === prop.name.trim().toLowerCase()
+                    );
+                    const isLive = Boolean(matchedListing && matchedListing.isPublished) || Boolean(prop.is_published);
+                    const isToggling = togglingPropId === prop.id;
+                    const primaryPhoto = prop.photos?.[0];
+
+                    return (
+                      <div
+                        key={prop.id}
+                        className={`group relative rounded-2xl border bg-surface overflow-hidden shadow-xs transition hover:shadow-md flex flex-col justify-between ${
+                          isLive ? "border-emerald-500/50 ring-1 ring-emerald-500/20" : "border-border-color"
+                        }`}
+                      >
+                        <div>
+                          {/* Image Container */}
+                          <div className="relative h-44 w-full bg-surface-elevated overflow-hidden">
+                            {primaryPhoto ? (
+                              <img
+                                src={primaryPhoto}
+                                alt={prop.name}
+                                className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                              />
+                            ) : (
+                              <div className="h-full w-full flex flex-col items-center justify-center text-muted bg-surface-elevated">
+                                <Building2 size={36} className="opacity-30 mb-1" />
+                                <span className="text-[11px]">No Photo</span>
+                              </div>
+                            )}
+
+                            {/* Top Badges */}
+                            <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 pointer-events-none">
+                              <span className="capitalize px-2.5 py-1 rounded-full text-[11px] font-bold bg-black/70 text-white backdrop-blur-xs">
+                                {prop.type}
+                              </span>
+
+                              {isLive ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-600 text-white shadow-xs">
+                                  <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
+                                  <span>Showing on Index</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-black/60 text-white backdrop-blur-xs">
+                                  <span>Hidden</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Content */}
+                          <div className="p-4 space-y-2">
+                            <h3 className="font-bold text-sm text-foreground line-clamp-1 group-hover:text-blue-600 transition">
+                              {prop.name}
+                            </h3>
+                            <p className="text-xs text-muted flex items-center gap-1 line-clamp-1">
+                              <MapPin size={12} className="shrink-0 text-muted" />
+                              <span>{prop.address ? `${prop.address}, ${prop.city || ""}` : prop.city || "Location not listed"}</span>
+                            </p>
+                            <div className="pt-2 flex items-baseline justify-between border-t border-border-color/60">
+                              <span className="text-xs text-muted">Monthly Rent:</span>
+                              <span className="text-sm font-black text-emerald-600">
+                                {formatWhole(prop.monthly_rent || 0)} / mo
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Actions Footer */}
+                        <div className="p-4 pt-0 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePublishOrgProperty(prop)}
+                            disabled={isToggling}
+                            className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 ${
+                              isLive
+                                ? "border border-amber-500/30 text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
+                                : "bg-blue-600 text-white hover:bg-blue-700"
+                            }`}
+                          >
+                            {isToggling ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : isLive ? (
+                              <EyeOff size={14} />
+                            ) : (
+                              <Eye size={14} />
+                            )}
+                            <span>{isLive ? "Hide from Front Page Index" : "Show on Front Page Index"}</span>
+                          </button>
+
+                          <Link
+                            to="/marketing"
+                            title="Boost this property on marketing portal"
+                            className="py-2 px-3 text-xs font-bold rounded-xl border border-border-color bg-surface-elevated hover:bg-surface text-foreground flex items-center gap-1 transition"
+                          >
+                            <Sparkles size={13} className="text-amber-500" />
+                            <span>Boost</span>
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 1: My Custom Listings */}
+        {activeTab === 1 && (
           <div>
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="text-lg font-bold">My Custom Listings</h2>
+                <p className="text-xs text-muted">Custom listings created manually under your agent profile.</p>
+              </div>
+              <button 
+                onClick={() => { setEditingId(null); setFormData(defaultFormData); setActiveTab(2); }}
+                className="bg-blue-600 text-white rounded-xl px-4 py-2 text-xs font-bold hover:bg-blue-700 flex items-center gap-2 shadow-xs"
+              >
+                <Plus size={15} /> Add Custom Listing
+              </button>
+            </div>
+
             {loading ? (
-              <div className="text-center py-10 text-gray-500">Loading listings...</div>
+              <div className="text-center py-10 text-gray-500">Loading custom listings...</div>
             ) : listings.length === 0 ? (
               <div className="text-center py-10 text-gray-500">
                 <Building2 size={48} className="mx-auto mb-4 opacity-30" />
-                <p>No listings found. Click "+ Add Listing" to create one.</p>
+                <p>No custom listings found. Click "+ Add Custom Listing" to create one.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -478,7 +878,7 @@ export default function AgentPortalPage() {
                           </span>
                         </td>
                         <td className="py-3 text-right space-x-2">
-                          <button onClick={() => handleTogglePublish(listing.id, listing.isPublished, listing.photos?.length || 0)} className={`p-1.5 rounded-lg border ${listing.isPublished ? 'text-orange-600 border-orange-200 hover:bg-orange-50' : 'text-green-600 border-green-200 hover:bg-green-50'}`} title={listing.isPublished ? "Unpublish" : "Publish"}>
+                          <button onClick={() => handleTogglePublish(listing.id, listing.isPublished, listing.photos?.length || 0)} className={`p-1.5 rounded-lg border ${listing.isPublished ? 'text-orange-600 border-orange-200 hover:bg-orange-50' : 'text-green-600 border-green-200 hover:bg-green-50'}`} title={listing.isPublished ? "Hide from Front Page" : "Show on Front Page"}>
                             {listing.isPublished ? <EyeOff size={16} /> : <Eye size={16} />}
                           </button>
                           <button onClick={() => handleEdit(listing)} className="p-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50" title="Edit">
@@ -492,192 +892,6 @@ export default function AgentPortalPage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tab 1: Publish from Portfolio */}
-        {activeTab === 1 && (
-          <div className="space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border-color pb-4">
-              <div>
-                <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
-                  <Building2 size={20} className="text-blue-600" />
-                  <span>Publish from Portfolio — Agent Index</span>
-                </h2>
-                <p className="text-xs text-muted mt-1">
-                  Promote residential properties from your organization's portfolio directly onto the public Agent Portal Index.
-                  Properties active on the index receive direct public inquiries and high-intent tenant leads.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={fetchOrgProperties}
-                disabled={loadingOrgProps}
-                className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface transition self-start md:self-auto"
-              >
-                <RefreshCw size={13} className={loadingOrgProps ? "animate-spin" : ""} />
-                <span>Refresh Portfolio</span>
-              </button>
-            </div>
-
-            {/* Filter & Search Toolbar */}
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="relative flex-1 min-w-[220px]">
-                <Search size={15} className="absolute left-3 top-2.5 text-muted" />
-                <input
-                  type="text"
-                  placeholder="Search properties by name, city, address..."
-                  value={orgSearch}
-                  onChange={(e) => setOrgSearch(e.target.value)}
-                  className="w-full rounded-xl border border-border-color bg-surface-elevated pl-9 pr-3 py-2 text-xs text-foreground outline-none focus:border-blue-600"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Filter size={14} className="text-muted" />
-                <select
-                  value={orgTypeFilter}
-                  onChange={(e) => setOrgTypeFilter(e.target.value)}
-                  className="rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none focus:border-blue-600"
-                >
-                  <option value="all">All Types</option>
-                  <option value="house">Houses</option>
-                  <option value="apartment">Apartments</option>
-                  <option value="storage">Storage</option>
-                  <option value="room">Rooms</option>
-                </select>
-              </div>
-            </div>
-
-            {loadingOrgProps ? (
-              <div className="text-center py-16 text-muted">
-                <Loader2 size={32} className="mx-auto mb-3 animate-spin text-blue-600" />
-                <p className="text-sm">Loading portfolio properties...</p>
-              </div>
-            ) : orgProperties.length === 0 ? (
-              <div className="text-center py-16 text-muted bg-surface-elevated/40 rounded-2xl border border-dashed border-border-color">
-                <Building2 size={44} className="mx-auto mb-3 opacity-30" />
-                <p className="text-sm font-semibold text-foreground">No residential portfolio properties found</p>
-                <p className="text-xs text-muted mt-1 max-w-sm mx-auto">
-                  Add residential properties (houses, apartments, storage units) in Property Management to toggle them here.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                {orgProperties
-                  .filter((prop) => {
-                    const q = orgSearch.toLowerCase();
-                    const matchesSearch = !q ||
-                      prop.name.toLowerCase().includes(q) ||
-                      (prop.address || "").toLowerCase().includes(q) ||
-                      (prop.city || "").toLowerCase().includes(q);
-                    const matchesType = orgTypeFilter === "all" || prop.type === orgTypeFilter;
-                    return matchesSearch && matchesType;
-                  })
-                  .map((prop) => {
-                    const matchedListing = listings.find(
-                      (l) => l.name.trim().toLowerCase() === prop.name.trim().toLowerCase()
-                    );
-                    const isLive = Boolean(matchedListing && matchedListing.isPublished);
-                    const isToggling = togglingPropId === prop.id;
-                    const primaryPhoto = prop.photos?.[0];
-
-                    return (
-                      <div
-                        key={prop.id}
-                        className={`group relative rounded-2xl border bg-surface overflow-hidden shadow-xs transition hover:shadow-md flex flex-col justify-between ${
-                          isLive ? "border-emerald-500/40 ring-1 ring-emerald-500/20" : "border-border-color"
-                        }`}
-                      >
-                        <div>
-                          {/* Image Container */}
-                          <div className="relative h-44 w-full bg-surface-elevated overflow-hidden">
-                            {primaryPhoto ? (
-                              <img
-                                src={primaryPhoto}
-                                alt={prop.name}
-                                className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                              />
-                            ) : (
-                              <div className="h-full w-full flex flex-col items-center justify-center text-muted bg-surface-elevated">
-                                <Building2 size={36} className="opacity-30 mb-1" />
-                                <span className="text-[11px]">No Photo</span>
-                              </div>
-                            )}
-
-                            {/* Top Badges */}
-                            <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 pointer-events-none">
-                              <span className="capitalize px-2.5 py-1 rounded-full text-[11px] font-bold bg-black/70 text-white backdrop-blur-xs">
-                                {prop.type}
-                              </span>
-
-                              {isLive ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-600 text-white shadow-xs">
-                                  <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
-                                  <span>Active on Index</span>
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-black/60 text-white backdrop-blur-xs">
-                                  <span>Not on Index</span>
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Content */}
-                          <div className="p-4 space-y-2">
-                            <h3 className="font-bold text-sm text-foreground line-clamp-1 group-hover:text-blue-600 transition">
-                              {prop.name}
-                            </h3>
-                            <p className="text-xs text-muted flex items-center gap-1 line-clamp-1">
-                              <MapPin size={12} className="shrink-0 text-muted" />
-                              <span>{prop.address ? `${prop.address}, ${prop.city || ""}` : prop.city || "Location not listed"}</span>
-                            </p>
-                            <div className="pt-2 flex items-baseline justify-between border-t border-border-color/60">
-                              <span className="text-xs text-muted">Monthly Rent:</span>
-                              <span className="text-sm font-black text-emerald-600">
-                                {formatWhole(prop.monthly_rent || 0)} / mo
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Actions Footer */}
-                        <div className="p-4 pt-0 flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleTogglePublishOrgProperty(prop)}
-                            disabled={isToggling}
-                            className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 ${
-                              isLive
-                                ? "border border-amber-500/30 text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
-                                : "bg-blue-600 text-white hover:bg-blue-700"
-                            }`}
-                          >
-                            {isToggling ? (
-                              <Loader2 size={14} className="animate-spin" />
-                            ) : isLive ? (
-                              <EyeOff size={14} />
-                            ) : (
-                              <Eye size={14} />
-                            )}
-                            <span>{isLive ? "Hide from Index" : "Show on Agent Index"}</span>
-                          </button>
-
-                          <Link
-                            to="/marketing"
-                            title="Boost this property on marketing portal"
-                            className="py-2 px-3 text-xs font-bold rounded-xl border border-border-color bg-surface-elevated hover:bg-surface text-foreground flex items-center gap-1 transition"
-                          >
-                            <Sparkles size={13} className="text-amber-500" />
-                            <span>Boost</span>
-                          </Link>
-                        </div>
-                      </div>
-                    );
-                  })}
               </div>
             )}
           </div>
@@ -918,6 +1132,69 @@ export default function AgentPortalPage() {
           </div>
         )}
       </div>
+
+      {/* Agent Details Required Warning Modal */}
+      {showProfileWarningModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-surface max-w-md w-full rounded-2xl border border-border-color p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center shrink-0">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-foreground">Agent Details Required</h3>
+                <p className="text-xs text-muted">Profile details needed before showing property</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted leading-relaxed">
+              To show properties on the public front page index for potential customers, your agent details (<strong className="text-foreground">Full Name, Phone Number/WhatsApp, and Email</strong>) must be entered. This allows interested tenants and buyers to contact you directly.
+            </p>
+
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className={((profile.firstName && profile.lastName) || user?.user_metadata?.full_name) ? "text-emerald-600 font-bold" : "text-amber-600 font-bold"}>
+                  {((profile.firstName && profile.lastName) || user?.user_metadata?.full_name) ? "✓" : "✗"} Agent Name:
+                </span>
+                <span className="text-foreground">{`${profile.firstName} ${profile.lastName}`.trim() || user?.user_metadata?.full_name || 'Missing (Required)'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={(profile.phone || profile.whatsapp) ? "text-emerald-600 font-bold" : "text-amber-600 font-bold"}>
+                  {(profile.phone || profile.whatsapp) ? "✓" : "✗"} Phone / WhatsApp:
+                </span>
+                <span className="text-foreground">{profile.phone || profile.whatsapp || 'Missing (Required)'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={(profile.email || user?.email) ? "text-emerald-600 font-bold" : "text-amber-600 font-bold"}>
+                  {(profile.email || user?.email) ? "✓" : "✗"} Email:
+                </span>
+                <span className="text-foreground">{profile.email || user?.email || 'Missing (Required)'}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowProfileWarningModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold border border-border-color hover:bg-surface-elevated text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowProfileWarningModal(false);
+                  setActiveTab(3); // Switch to My Profile tab
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 shadow-xs"
+              >
+                <User size={14} />
+                <span>Complete Agent Profile Now</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

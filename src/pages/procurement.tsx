@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Plus, CheckCircle, Clock, AlertTriangle, FileText, 
   Upload, Search, Mail, Download, ArrowRight, Package,
-  AlertCircle, DollarSign, Activity, FileCheck, Phone, MapPin, Building, User, X
+  AlertCircle, DollarSign, Activity, FileCheck, Phone, MapPin, Building, User, X,
+  Paperclip, Eye, Trash2
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useCurrency } from '@/lib/currency';
@@ -141,12 +142,108 @@ function formatStageName(stage: string) {
 }
 
 export default function ProcurementPage() {
-  const { currentCompany, currentCompanyUser } = useAuth();
+  const { user, currentCompany, currentCompanyUser } = useAuth();
   const { formatWhole, currency } = useCurrency();
   const [activeTab, setActiveTab] = useState('overview');
   const [requests, setRequests] = useState<ProcurementRequest[]>([]);
   const [reminderThreshold, setReminderThreshold] = useState(24);
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
+
+  // New Request Form State & Attachments
+  const [newRequestForm, setNewRequestForm] = useState({
+    itemName: '',
+    itemSpecifications: '',
+    quantity: 1,
+    unit: 'pcs',
+    urgency: 'medium' as ProcurementUrgency,
+    justification: '',
+    department: 'maintenance' as any,
+  });
+  const [newRequestAttachments, setNewRequestAttachments] = useState<Array<{ name: string; url: string; size: number; type: string }>>([]);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+
+  const handleAttachmentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploadingAttachment(true);
+    const fileList = Array.from(files);
+
+    fileList.forEach(file => {
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`File "${file.name}" exceeds 10MB limit.`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        setNewRequestAttachments(prev => [
+          ...prev,
+          {
+            name: file.name,
+            url: dataUrl,
+            size: file.size,
+            type: file.type || 'document',
+          }
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+    setUploadingAttachment(false);
+    e.target.value = '';
+  };
+
+  const removeAttachment = (index: number) => {
+    setNewRequestAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleCreateRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRequestForm.itemName.trim()) {
+      alert("Please enter an item name.");
+      return;
+    }
+    if (!newRequestForm.justification.trim()) {
+      alert("Please provide a justification for this request.");
+      return;
+    }
+    setSubmittingRequest(true);
+    try {
+      const actorName = currentCompanyUser?.fullName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || "Staff Member";
+      const created = await createProcurementRequest({
+        companyId: currentCompany?.id || "a0000000-0000-0000-0000-000000000001",
+        requestedByName: actorName,
+        requestedByUserId: user?.id,
+        requestingDepartment: newRequestForm.department || (currentCompanyUser?.department as any) || 'maintenance',
+        itemName: newRequestForm.itemName.trim(),
+        itemSpecifications: newRequestForm.itemSpecifications.trim(),
+        quantity: Number(newRequestForm.quantity) || 1,
+        unit: newRequestForm.unit,
+        urgency: newRequestForm.urgency,
+        justification: newRequestForm.justification.trim(),
+        attachments: newRequestAttachments,
+      });
+
+      setRequests(prev => [created, ...prev]);
+      setIsNewRequestModalOpen(false);
+      setNewRequestForm({
+        itemName: '',
+        itemSpecifications: '',
+        quantity: 1,
+        unit: 'pcs',
+        urgency: 'medium',
+        justification: '',
+        department: (currentCompanyUser?.department as any) || 'maintenance',
+      });
+      setNewRequestAttachments([]);
+      alert("Procurement request created successfully with supporting attachments!");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to submit procurement request.");
+    } finally {
+      setSubmittingRequest(false);
+    }
+  };
   
   // Suppliers Directory state
   const [suppliers, setSuppliers] = useState<SupplierContact[]>([]);
@@ -721,7 +818,7 @@ export default function ProcurementPage() {
             <div className="flex border-b border-border-color text-xs">
               {([
                 { key: 'map', label: 'Pipeline Map' },
-                { key: 'specs', label: 'Item & Specs' },
+                { key: 'specs', label: `Item & Specs${(req.attachments?.length || 0) > 0 ? ` (${req.attachments?.length})` : ''}` },
                 { key: 'quotes', label: `Quotations (${req.quotations?.length || 0})` },
                 { key: 'funds', label: 'Funds & Payment' },
                 { key: 'audit', label: `Audit Trail (${req.events?.length || 0})` },
@@ -823,6 +920,43 @@ export default function ProcurementPage() {
                     <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Business Justification</div>
                     <div className="text-sm whitespace-pre-wrap">{req.justification || 'No justification provided.'}</div>
                   </div>
+
+                  {/* Attachments Section */}
+                  <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold flex items-center gap-1.5">
+                        <Paperclip size={12} className="text-blue-500" />
+                        <span>Attached Documents & Quotes ({req.attachments?.length || 0})</span>
+                      </div>
+                    </div>
+                    {req.attachments && req.attachments.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                        {req.attachments.map((att, attIdx) => (
+                          <div key={attIdx} className="flex items-center justify-between p-2.5 rounded-lg border border-border-color bg-surface text-xs shadow-xs">
+                            <div className="flex items-center gap-2 truncate min-w-0">
+                              <FileText size={16} className="text-blue-500 shrink-0" />
+                              <div className="truncate">
+                                <p className="font-medium truncate">{att.name}</p>
+                                {att.size ? <p className="text-[10px] text-gray-400">{(att.size / 1024).toFixed(1)} KB</p> : null}
+                              </div>
+                            </div>
+                            <a 
+                              href={att.url} 
+                              download={att.name}
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="px-2.5 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-md text-[11px] font-semibold hover:bg-blue-100 transition shrink-0 ml-2"
+                            >
+                              Download
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-400 py-1 italic">No attachments uploaded with this request.</div>
+                    )}
+                  </div>
+
                   {req.notes && (
                     <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
                       <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Additional Notes</div>
@@ -1039,95 +1173,227 @@ export default function ProcurementPage() {
 
       {/* New Request Modal */}
       {isNewRequestModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-surface w-full max-w-lg rounded-2xl shadow-xl border border-border-color flex flex-col">
-            <div className="p-4 border-b border-border-color flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50 rounded-t-2xl">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-surface w-full max-w-xl rounded-2xl shadow-xl border border-border-color flex flex-col my-8 overflow-hidden">
+            <div className="p-4 border-b border-border-color flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
               <div>
-                <h3 className="font-semibold">New Procurement Request</h3>
-                <p className="text-xs text-gray-500 mt-0.5">Submit an item for purchase or stores dispatch</p>
+                <h3 className="font-semibold text-base">New Procurement Request</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Submit item requisition with quotes, specs, and attachments</p>
               </div>
               <button 
                 onClick={() => setIsNewRequestModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1"
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
               >
                 ✕
               </button>
             </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Item Name *</label>
-                <input 
-                  type="text" 
-                  className="w-full text-sm p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500" 
-                  placeholder="e.g. A4 Paper, Air Conditioner" 
-                />
-              </div>
-              
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Specifications / Description *</label>
-                <textarea 
-                  rows={3}
-                  className="w-full text-sm p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500" 
-                  placeholder="Brand, size, color, technical specs..." 
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+            
+            <form onSubmit={handleCreateRequest} className="flex flex-col">
+              <div className="p-6 space-y-4 max-h-[72vh] overflow-y-auto">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Quantity *</label>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Item Name *</label>
                   <input 
-                    type="number" 
-                    min="1"
+                    type="text" 
+                    required
+                    value={newRequestForm.itemName}
+                    onChange={(e) => setNewRequestForm(prev => ({ ...prev, itemName: e.target.value }))}
                     className="w-full text-sm p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500" 
-                    placeholder="1" 
+                    placeholder="e.g. Industrial Air Conditioner, A4 Paper Boxes" 
                   />
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Requesting Department</label>
+                    <select 
+                      value={newRequestForm.department}
+                      onChange={(e) => setNewRequestForm(prev => ({ ...prev, department: e.target.value }))}
+                      className="w-full text-sm p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500 capitalize"
+                    >
+                      <option value="maintenance">Maintenance</option>
+                      <option value="housekeeping">Housekeeping</option>
+                      <option value="front_desk">Front Desk</option>
+                      <option value="it">IT & Systems</option>
+                      <option value="stores">Stores & Inventory</option>
+                      <option value="admin">Administration</option>
+                      <option value="procurement">Procurement</option>
+                      <option value="manager">Management</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Urgency</label>
+                    <select 
+                      value={newRequestForm.urgency}
+                      onChange={(e) => setNewRequestForm(prev => ({ ...prev, urgency: e.target.value as ProcurementUrgency }))}
+                      className="w-full text-sm p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="low">Low (Standard Requisition)</option>
+                      <option value="medium">Medium (Replenishment)</option>
+                      <option value="high">High (Urgent Requirement)</option>
+                      <option value="critical">Critical (Immediate Operational Impact)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Quantity *</label>
+                    <input 
+                      type="number" 
+                      min="1"
+                      required
+                      value={newRequestForm.quantity}
+                      onChange={(e) => setNewRequestForm(prev => ({ ...prev, quantity: Math.max(1, parseInt(e.target.value) || 1) }))}
+                      className="w-full text-sm p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                      placeholder="1" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Unit *</label>
+                    <select 
+                      value={newRequestForm.unit}
+                      onChange={(e) => setNewRequestForm(prev => ({ ...prev, unit: e.target.value }))}
+                      className="w-full text-sm p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="pcs">pcs (Pieces)</option>
+                      <option value="units">units (Units)</option>
+                      <option value="sets">sets (Sets)</option>
+                      <option value="boxes">boxes (Boxes)</option>
+                      <option value="liters">liters (Liters)</option>
+                      <option value="kg">kg (Kilograms)</option>
+                      <option value="meters">meters (Meters)</option>
+                      <option value="reams">reams (Reams)</option>
+                      <option value="packs">packs (Packs)</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Unit *</label>
-                  <select className="w-full text-sm p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    <option>pcs</option>
-                    <option>sets</option>
-                    <option>boxes</option>
-                    <option>liters</option>
-                    <option>kg</option>
-                    <option>meters</option>
-                    <option>reams</option>
-                  </select>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Specifications / Technical Details</label>
+                  <textarea 
+                    rows={2}
+                    value={newRequestForm.itemSpecifications}
+                    onChange={(e) => setNewRequestForm(prev => ({ ...prev, itemSpecifications: e.target.value }))}
+                    className="w-full text-sm p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                    placeholder="Brand, size, color, model number, technical specs..." 
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Business Justification *</label>
+                  <textarea 
+                    rows={2}
+                    required
+                    value={newRequestForm.justification}
+                    onChange={(e) => setNewRequestForm(prev => ({ ...prev, justification: e.target.value }))}
+                    className="w-full text-sm p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                    placeholder="Why is this item needed and what is its operational purpose?" 
+                  />
+                </div>
+
+                {/* Attachments Section */}
+                <div className="pt-3 border-t border-border-color">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-900 dark:text-white">
+                        Supporting Attachments & Documents
+                      </label>
+                      <p className="text-[11px] text-gray-500">
+                        Attach supplier quotes, proforma invoices, spec sheets, photos, or receipts (Max 10MB each)
+                      </p>
+                    </div>
+                    <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-semibold hover:bg-blue-100 transition">
+                      <Paperclip size={13} />
+                      <span>{uploadingAttachment ? "Uploading..." : "Add File"}</span>
+                      <input 
+                        type="file" 
+                        multiple 
+                        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx" 
+                        className="hidden" 
+                        onChange={handleAttachmentUpload} 
+                        disabled={uploadingAttachment} 
+                      />
+                    </label>
+                  </div>
+
+                  {newRequestAttachments.length > 0 ? (
+                    <div className="space-y-2 mt-3">
+                      {newRequestAttachments.map((att, idx) => (
+                        <div 
+                          key={idx} 
+                          className="flex items-center justify-between p-2.5 rounded-xl border border-border-color bg-gray-50/60 dark:bg-gray-800/40 text-xs"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-600">
+                              <FileText size={15} />
+                            </div>
+                            <div className="truncate">
+                              <p className="font-semibold text-gray-900 dark:text-white truncate">{att.name}</p>
+                              <p className="text-[10px] text-gray-400">
+                                {(att.size / 1024).toFixed(1)} KB · {att.type.split('/')[1]?.toUpperCase() || 'FILE'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <a 
+                              href={att.url} 
+                              download={att.name} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="p-1 text-gray-500 hover:text-blue-600"
+                              title="Preview / Download"
+                            >
+                              <Eye size={14} />
+                            </a>
+                            <button 
+                              type="button" 
+                              onClick={() => removeAttachment(idx)} 
+                              className="p-1 text-gray-400 hover:text-rose-600"
+                              title="Remove file"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <label className="mt-2 flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl cursor-pointer hover:border-blue-400 transition bg-gray-50/30 dark:bg-gray-800/20 group">
+                      <Upload size={20} className="text-gray-400 group-hover:text-blue-500 mb-1" />
+                      <span className="text-xs text-gray-600 dark:text-gray-400 group-hover:text-blue-600">
+                        Click to upload attachments (PDF, image, Word, Excel)
+                      </span>
+                      <span className="text-[10px] text-gray-400">Optional supporting quotes or specifications</span>
+                      <input 
+                        type="file" 
+                        multiple 
+                        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx" 
+                        className="hidden" 
+                        onChange={handleAttachmentUpload} 
+                        disabled={uploadingAttachment} 
+                      />
+                    </label>
+                  )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2 md:col-span-1">
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Urgency</label>
-                  <select className="w-full text-sm p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="critical">Critical</option>
-                  </select>
-                </div>
+              <div className="p-4 border-t border-border-color bg-gray-50/50 dark:bg-gray-800/50 rounded-b-2xl flex justify-end gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsNewRequestModalOpen(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={submittingRequest || !newRequestForm.itemName.trim() || !newRequestForm.justification.trim()}
+                  className="px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {submittingRequest ? "Submitting..." : "Submit Procurement Request"}
+                </button>
               </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Justification *</label>
-                <textarea 
-                  rows={2}
-                  className="w-full text-sm p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500" 
-                  placeholder="Why is this item needed?" 
-                />
-              </div>
-            </div>
-            <div className="p-4 border-t border-border-color bg-gray-50/50 dark:bg-gray-800/50 rounded-b-2xl flex justify-end gap-3">
-              <button 
-                onClick={() => setIsNewRequestModalOpen(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
-              >
-                Cancel
-              </button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700">
-                Submit Request
-              </button>
-            </div>
+            </form>
           </div>
         </div>
       )}
