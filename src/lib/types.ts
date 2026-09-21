@@ -107,8 +107,10 @@ export type CompanyUser = {
   department: DepartmentType;
   jobTitle: string;
   roleLevel: RoleLevel;
-  permissions: Record<string, boolean>;
+  permissions: Record<string, any>;
   isActive: boolean;
+  jobGradeLevel?: string;
+  jobGradeId?: string;
   deactivationReason?: "resigned" | "terminated" | "deceased" | "contract_ended" | "other" | string;
   deactivationDate?: string;
   deactivationNotes?: string;
@@ -265,18 +267,28 @@ export type RoomServiceSchedule = {
   createdAt: string;
 };
 
+export type JobGradeBenefit = {
+  id: string;
+  name: string;
+  amount: number;
+  type: "allowance" | "deduction";
+};
+
 export type SalaryScale = {
   id: string;
   companyId: string;
   department: DepartmentType;
   jobTitle: string;
   gradeLevel: string;
+  gradeRank?: number;
+  description?: string;
   minSalary: number;
   midSalary: number;
   maxSalary: number;
   housingAllowance: number;
   transportAllowance: number;
   medicalAllowance: number;
+  benefits?: JobGradeBenefit[];
   taxDeductionPct: number;
   pensionDeductionPct: number;
 };

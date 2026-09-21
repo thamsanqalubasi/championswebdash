@@ -1091,6 +1091,8 @@ export async function fetchCompanyUsers(companyId?: string): Promise<CompanyUser
         jobTitle: cu.job_title,
         roleLevel: cu.role_level,
         permissions: cu.permissions || {},
+        jobGradeLevel: cu.permissions?.job_grade_level || undefined,
+        jobGradeId: cu.permissions?.job_grade_id || undefined,
         isActive: cu.is_active,
         createdAt: cu.created_at,
       }));
@@ -2732,34 +2734,68 @@ export async function createRoomServiceOrder(order: Partial<RoomServiceSchedule>
 }
 
 export async function fetchSalaryScales(companyId: string = MOCK_COMPANIES[0].id): Promise<SalaryScale[]> {
+  // Check local storage custom benefits cache
+  let localBenefitsMap: Record<string, any> = {};
+  try {
+    const raw = localStorage.getItem(`paimba_salary_benefits_${companyId}`);
+    if (raw) localBenefitsMap = JSON.parse(raw);
+  } catch {}
+
   try {
     let query = supabase.from("hr_salary_scales").select("*");
     if (isValidUuid(companyId)) {
       query = query.eq("company_id", companyId);
     }
     const { data, error } = await query.order("department");
-    if (!error && data) {
-      return data.map((s) => ({
-        id: s.id,
-        companyId: s.company_id,
-        department: s.department as DepartmentType,
-        jobTitle: s.job_title,
-        gradeLevel: "Standard",
-        minSalary: toNumber(s.base_salary_min),
-        midSalary: (toNumber(s.base_salary_min) + toNumber(s.base_salary_max)) / 2,
-        maxSalary: toNumber(s.base_salary_max),
-        housingAllowance: 1500,
-        transportAllowance: 1000,
-        medicalAllowance: 800,
-        taxDeductionPct: 15.0,
-        pensionDeductionPct: 5.0,
-      }));
+    if (!error && data && data.length > 0) {
+      return data.map((s) => {
+        const storedMeta = localBenefitsMap[s.id] || {};
+        const minSal = toNumber(s.min_salary ?? s.base_salary_min);
+        const maxSal = toNumber(s.max_salary ?? s.base_salary_max);
+        const midSal = toNumber(s.mid_salary) || (minSal + maxSal) / 2;
+        const housing = toNumber(s.housing_allowance ?? 1500);
+        const transport = toNumber(s.transport_allowance ?? 1000);
+        const medical = toNumber(s.medical_allowance ?? 800);
+
+        // Derive benefits array
+        const customBenefits = storedMeta.benefits || [
+          { id: "b-house", name: "Housing Allowance", amount: housing, type: "allowance" },
+          { id: "b-trans", name: "Transport Allowance", amount: transport, type: "allowance" },
+          { id: "b-med", name: "Medical Aid", amount: medical, type: "allowance" },
+        ];
+
+        return {
+          id: s.id,
+          companyId: s.company_id,
+          department: s.department as DepartmentType,
+          jobTitle: s.job_title,
+          gradeLevel: s.grade_level || storedMeta.gradeLevel || "Band B1",
+          gradeRank: storedMeta.gradeRank ?? 1,
+          description: storedMeta.description || "",
+          minSalary: minSal,
+          midSalary: midSal,
+          maxSalary: maxSal,
+          housingAllowance: housing,
+          transportAllowance: transport,
+          medicalAllowance: medical,
+          benefits: customBenefits,
+          taxDeductionPct: toNumber(s.tax_deduction_pct ?? 15.0),
+          pensionDeductionPct: toNumber(s.pension_deduction_pct ?? 5.0),
+        };
+      });
     }
   } catch (err) {
     console.warn("Could not load salary scales from server", err);
   }
   if (companyId === MOCK_COMPANIES[0].id || !isValidUuid(companyId)) {
-    return MOCK_SALARY_SCALES;
+    return MOCK_SALARY_SCALES.map((s) => ({
+      ...s,
+      benefits: s.benefits || [
+        { id: "b-house", name: "Housing Allowance", amount: s.housingAllowance, type: "allowance" },
+        { id: "b-trans", name: "Transport Allowance", amount: s.transportAllowance, type: "allowance" },
+        { id: "b-med", name: "Medical Aid", amount: s.medicalAllowance, type: "allowance" },
+      ],
+    }));
   }
   return [];
 }
@@ -2768,21 +2804,44 @@ export async function saveSalaryScale(scale: Partial<SalaryScale>): Promise<Sala
   const companyId = scale.companyId || MOCK_COMPANIES[0].id;
   const department = scale.department || "front_desk";
   const jobTitle = scale.jobTitle || "Front Desk - Staff";
+  const gradeLevel = scale.gradeLevel || "Band B1";
   const minSalary = scale.minSalary ?? 12000;
   const maxSalary = scale.maxSalary ?? 18000;
+  const midSalary = scale.midSalary ?? ((minSalary + maxSalary) / 2);
+
+  // Calculate default allowances from benefits if present
+  let housing = scale.housingAllowance ?? 1500;
+  let transport = scale.transportAllowance ?? 1000;
+  let medical = scale.medicalAllowance ?? 800;
+
+  if (scale.benefits && scale.benefits.length > 0) {
+    const h = scale.benefits.find((b) => b.name.toLowerCase().includes("housing"));
+    if (h) housing = h.amount;
+    const t = scale.benefits.find((b) => b.name.toLowerCase().includes("transport"));
+    if (t) transport = t.amount;
+    const m = scale.benefits.find((b) => b.name.toLowerCase().includes("medic"));
+    if (m) medical = m.amount;
+  }
 
   const updated: SalaryScale = {
     id: scale.id || generateUuid(),
     companyId,
     department,
     jobTitle,
-    gradeLevel: scale.gradeLevel || "Band B1",
+    gradeLevel,
+    gradeRank: scale.gradeRank ?? 1,
+    description: scale.description || "",
     minSalary,
-    midSalary: scale.midSalary ?? ((minSalary + maxSalary) / 2),
+    midSalary,
     maxSalary,
-    housingAllowance: scale.housingAllowance ?? 1500,
-    transportAllowance: scale.transportAllowance ?? 1000,
-    medicalAllowance: scale.medicalAllowance ?? 800,
+    housingAllowance: housing,
+    transportAllowance: transport,
+    medicalAllowance: medical,
+    benefits: scale.benefits || [
+      { id: "b-house", name: "Housing Allowance", amount: housing, type: "allowance" },
+      { id: "b-trans", name: "Transport Allowance", amount: transport, type: "allowance" },
+      { id: "b-med", name: "Medical Aid", amount: medical, type: "allowance" },
+    ],
     taxDeductionPct: scale.taxDeductionPct ?? 15.0,
     pensionDeductionPct: scale.pensionDeductionPct ?? 5.0,
   };
@@ -2790,25 +2849,70 @@ export async function saveSalaryScale(scale: Partial<SalaryScale>): Promise<Sala
   try {
     if (isValidUuid(companyId)) {
       const dbDept = mapDepartmentToDb(department);
-      await supabase.from("hr_salary_scales").upsert(
-        {
-          company_id: companyId,
-          department: dbDept,
-          job_title: jobTitle,
-          base_salary_min: minSalary,
-          base_salary_max: maxSalary,
-          currency: "ZAR",
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "company_id,department,job_title" }
-      );
+      const payload: any = {
+        company_id: companyId,
+        department: dbDept,
+        job_title: jobTitle,
+        grade_level: gradeLevel,
+        min_salary: minSalary,
+        mid_salary: midSalary,
+        max_salary: maxSalary,
+        housing_allowance: housing,
+        transport_allowance: transport,
+        medical_allowance: medical,
+        tax_deduction_pct: updated.taxDeductionPct,
+        pension_deduction_pct: updated.pensionDeductionPct,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (scale.id && isValidUuid(scale.id)) {
+        const { data: upData, error: upErr } = await supabase
+          .from("hr_salary_scales")
+          .update(payload)
+          .eq("id", scale.id)
+          .select()
+          .single();
+        if (upErr) {
+          console.warn("Could not update salary scale by id, attempting insert", upErr);
+        } else if (upData) {
+          updated.id = upData.id;
+        }
+      } else {
+        const { data: inData, error: inErr } = await supabase
+          .from("hr_salary_scales")
+          .insert({ id: updated.id, ...payload })
+          .select()
+          .single();
+        if (inErr) {
+          console.warn("Could not insert salary scale, attempting upsert fallback", inErr);
+          await supabase.from("hr_salary_scales").upsert(
+            { id: updated.id, ...payload },
+            { onConflict: "id" }
+          );
+        } else if (inData) {
+          updated.id = inData.id;
+        }
+      }
     }
   } catch (err) {
     console.warn("Could not save salary scale in Supabase", err);
   }
 
+  // Save benefits & metadata in local storage map
+  try {
+    const raw = localStorage.getItem(`paimba_salary_benefits_${companyId}`);
+    const map = raw ? JSON.parse(raw) : {};
+    map[updated.id] = {
+      benefits: updated.benefits,
+      gradeLevel: updated.gradeLevel,
+      gradeRank: updated.gradeRank,
+      description: updated.description,
+    };
+    localStorage.setItem(`paimba_salary_benefits_${companyId}`, JSON.stringify(map));
+  } catch {}
+
   const existingIdx = MOCK_SALARY_SCALES.findIndex(
-    (s) => s.department === department && s.jobTitle === jobTitle
+    (s) => s.id === updated.id || (s.department === department && s.jobTitle === jobTitle)
   );
   if (existingIdx !== -1) {
     MOCK_SALARY_SCALES[existingIdx] = updated;
@@ -2816,6 +2920,104 @@ export async function saveSalaryScale(scale: Partial<SalaryScale>): Promise<Sala
     MOCK_SALARY_SCALES.push(updated);
   }
   return updated;
+}
+
+export async function deleteSalaryScale(scaleId: string, companyId?: string): Promise<boolean> {
+  try {
+    if (isValidUuid(scaleId)) {
+      await supabase.from("hr_salary_scales").delete().eq("id", scaleId);
+    }
+  } catch (err) {
+    console.warn("Could not delete salary scale from Supabase", err);
+  }
+
+  if (companyId) {
+    try {
+      const raw = localStorage.getItem(`paimba_salary_benefits_${companyId}`);
+      if (raw) {
+        const map = JSON.parse(raw);
+        delete map[scaleId];
+        localStorage.setItem(`paimba_salary_benefits_${companyId}`, JSON.stringify(map));
+      }
+    } catch {}
+  }
+
+  const idx = MOCK_SALARY_SCALES.findIndex((s) => s.id === scaleId);
+  if (idx !== -1) {
+    MOCK_SALARY_SCALES.splice(idx, 1);
+  }
+  return true;
+}
+
+export async function updateStaffJobGrade(params: {
+  userIdOrCompanyUserId: string;
+  companyId: string;
+  newGradeLevel: string;
+  newGradeId: string;
+  actorName?: string;
+  previousGradeLevel?: string;
+}): Promise<boolean> {
+  const { userIdOrCompanyUserId, companyId, newGradeLevel, newGradeId, actorName, previousGradeLevel } = params;
+  try {
+    let targetCu: any = null;
+    if (isValidUuid(userIdOrCompanyUserId)) {
+      const { data } = await supabase
+        .from("company_users")
+        .select("*")
+        .or(`id.eq.${userIdOrCompanyUserId},user_id.eq.${userIdOrCompanyUserId}`)
+        .eq("company_id", companyId)
+        .maybeSingle();
+      targetCu = data;
+    }
+
+    if (targetCu) {
+      const updatedPermissions = {
+        ...(targetCu.permissions || {}),
+        job_grade_level: newGradeLevel,
+        job_grade_id: newGradeId,
+      };
+
+      await supabase
+        .from("company_users")
+        .update({
+          permissions: updatedPermissions,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", targetCu.id);
+    }
+
+    // Record audit event
+    await logAuditEvent({
+      companyId,
+      action: "STAFF_GRADE_CHANGED",
+      entityType: "staff_grade",
+      entityId: targetCu?.user_id || userIdOrCompanyUserId,
+      entityName: targetCu?.job_title || "Staff Member",
+      actorName: actorName || "HR Manager",
+      details: JSON.stringify({
+        previousGrade: previousGradeLevel || "Unassigned",
+        newGrade: newGradeLevel,
+        gradeId: newGradeId,
+        timestamp: new Date().toISOString(),
+      }),
+    });
+  } catch (err) {
+    console.warn("Could not update staff job grade", err);
+  }
+
+  // Update in mock users if present
+  const mockUser = MOCK_COMPANY_USERS.find(
+    (u) => u.id === userIdOrCompanyUserId || u.userId === userIdOrCompanyUserId
+  );
+  if (mockUser) {
+    mockUser.jobGradeLevel = newGradeLevel;
+    mockUser.jobGradeId = newGradeId;
+    if (!mockUser.permissions) mockUser.permissions = {};
+    mockUser.permissions.job_grade_level = newGradeLevel;
+    mockUser.permissions.job_grade_id = newGradeId;
+  }
+
+  return true;
 }
 
 export async function fetchPayslips(companyId: string = MOCK_COMPANIES[0].id, payPeriod?: string): Promise<Payslip[]> {
@@ -3280,23 +3482,60 @@ export async function massGeneratePayroll(params: {
       continue;
     }
 
+    // Find scale by assigned jobGradeLevel/jobGradeId first, or fallback to jobTitle/dept
     const contract = contracts.find((c) => c.userId === u.userId);
     const scale = salaryScales.find(
       (s) =>
+        (u.jobGradeId && s.id === u.jobGradeId) ||
+        (u.jobGradeLevel && s.gradeLevel.toLowerCase() === u.jobGradeLevel.toLowerCase()) ||
         s.jobTitle.toLowerCase() === u.jobTitle.toLowerCase() ||
         s.department === u.department
     );
 
     const basic = contract?.monthlySalary || scale?.midSalary || scale?.minSalary || 15000;
-    const house = scale?.housingAllowance ?? 1500;
-    const trans = scale?.transportAllowance ?? 1000;
-    const med = scale?.medicalAllowance ?? 800;
+    
+    // Compute allowances and deductions from scale benefits if configured
+    const allowancesMap: Record<string, number> = {};
+    const deductionsMap: Record<string, number> = {};
 
-    const gross = basic + house + trans + med;
-    const paye = (basic + house + trans) * 0.15;
-    const pension = basic * 0.05;
+    let totalBenefitsAllowances = 0;
+    let totalBenefitsDeductions = 0;
+
+    if (scale?.benefits && scale.benefits.length > 0) {
+      scale.benefits.forEach((b) => {
+        const key = b.name.toLowerCase().replace(/[^a-z0-9]/g, "_");
+        if (b.type === "allowance") {
+          allowancesMap[key] = b.amount;
+          totalBenefitsAllowances += b.amount;
+        } else {
+          deductionsMap[key] = b.amount;
+          totalBenefitsDeductions += b.amount;
+        }
+      });
+    } else {
+      const house = scale?.housingAllowance ?? 1500;
+      const trans = scale?.transportAllowance ?? 1000;
+      const med = scale?.medicalAllowance ?? 800;
+      allowancesMap.housing = house;
+      allowancesMap.transport = trans;
+      allowancesMap.medical = med;
+      totalBenefitsAllowances = house + trans + med;
+    }
+
+    const gross = basic + totalBenefitsAllowances;
+    const taxRate = (scale?.taxDeductionPct ?? 15.0) / 100;
+    const pensionRate = (scale?.pensionDeductionPct ?? 5.0) / 100;
+
+    const paye = gross * taxRate;
+    const pension = basic * pensionRate;
     const uif = Math.min(basic * 0.01, 177.12);
-    const net = gross - (paye + pension + uif);
+
+    deductionsMap.payeTax = paye;
+    deductionsMap.pension = pension;
+    deductionsMap.uif = uif;
+
+    const totalDeductions = paye + pension + uif + totalBenefitsDeductions;
+    const net = gross - totalDeductions;
 
     const newPayslip: Payslip = {
       id: generateUuid(),
@@ -3307,17 +3546,9 @@ export async function massGeneratePayroll(params: {
       department: u.department,
       payPeriod: params.payPeriod,
       basicSalary: basic,
-      allowances: {
-        housing: house,
-        transport: trans,
-        medical: med,
-      },
+      allowances: allowancesMap,
       grossPay: gross,
-      deductions: {
-        payeTax: paye,
-        pension,
-        uif,
-      },
+      deductions: deductionsMap,
       netPay: net,
       status: "paid",
       paymentMethod: "bank_transfer",

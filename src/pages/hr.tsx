@@ -42,6 +42,15 @@ import {
   CheckSquare,
   Square,
   Network,
+  Award,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
+  TrendingUp,
+  TrendingDown,
+  Layers,
+  Edit,
+  Sliders,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
@@ -50,6 +59,8 @@ import {
   sendStaffInvitation,
   fetchSalaryScales,
   saveSalaryScale,
+  deleteSalaryScale,
+  updateStaffJobGrade,
   fetchPayslips,
   generatePayslip,
   fetchEmployeeContracts,
@@ -70,6 +81,7 @@ import {
 import type {
   CompanyUser,
   SalaryScale,
+  JobGradeBenefit,
   Payslip,
   EmployeeContract,
   EmployeeContractTemplate,
@@ -147,6 +159,36 @@ export default function HRPage() {
   const [staffError, setStaffError] = useState<string | null>(null);
   const [staffSuccess, setStaffSuccess] = useState<string | null>(null);
   const [customRoles, setCustomRoles] = useState<RoleProfileDefinition[]>([]);
+
+  // Job Grades & Salary Scales Management State
+  const [gradeModalOpen, setGradeModalOpen] = useState(false);
+  const [editingGrade, setEditingGrade] = useState<SalaryScale | null>(null);
+  const [gradeJobTitle, setGradeJobTitle] = useState("");
+  const [gradeDepartment, setGradeDepartment] = useState<DepartmentType>("front_desk");
+  const [gradeLevelCode, setGradeLevelCode] = useState("Band B1");
+  const [gradeRank, setGradeRank] = useState<number>(1);
+  const [gradeMinSalary, setGradeMinSalary] = useState<number>(12000);
+  const [gradeMidSalary, setGradeMidSalary] = useState<number>(15000);
+  const [gradeMaxSalary, setGradeMaxSalary] = useState<number>(18000);
+  const [gradeDescription, setGradeDescription] = useState("");
+  const [gradeTaxPct, setGradeTaxPct] = useState<number>(15);
+  const [gradePensionPct, setGradePensionPct] = useState<number>(5);
+  const [gradeBenefits, setGradeBenefits] = useState<JobGradeBenefit[]>([
+    { id: "b-house", name: "Housing Allowance", amount: 1500, type: "allowance" },
+    { id: "b-trans", name: "Transport Allowance", amount: 1000, type: "allowance" },
+    { id: "b-med", name: "Medical Aid", amount: 800, type: "allowance" },
+  ]);
+  const [savingGrade, setSavingGrade] = useState(false);
+
+  // New Benefit input state
+  const [newBenefitName, setNewBenefitName] = useState("");
+  const [newBenefitAmount, setNewBenefitAmount] = useState<number>(500);
+  const [newBenefitType, setNewBenefitType] = useState<"allowance" | "deduction">("allowance");
+
+  // Staff Grade Adjustment Modal State
+  const [gradeAdjustmentEmployee, setGradeAdjustmentEmployee] = useState<CompanyUser | null>(null);
+  const [targetGradeId, setTargetGradeId] = useState<string>("");
+  const [savingStaffGrade, setSavingStaffGrade] = useState(false);
 
   // Advanced Single & Multi-Month Bulk Payslip Suite State
   const [batchGeneratorModalOpen, setBatchGeneratorModalOpen] = useState(false);
@@ -399,7 +441,204 @@ export default function HRPage() {
     }
   };
 
-  // Add staff modal opener
+  // Job Grade Modal Handlers
+  const openCreateGradeModal = () => {
+    setEditingGrade(null);
+    setGradeJobTitle("");
+    setGradeDepartment("front_desk");
+    setGradeLevelCode("Band B1");
+    setGradeRank(1);
+    setGradeMinSalary(12000);
+    setGradeMidSalary(15000);
+    setGradeMaxSalary(18000);
+    setGradeDescription("");
+    setGradeTaxPct(15);
+    setGradePensionPct(5);
+    setGradeBenefits([
+      { id: "b-house", name: "Housing Allowance", amount: 1500, type: "allowance" },
+      { id: "b-trans", name: "Transport Allowance", amount: 1000, type: "allowance" },
+      { id: "b-med", name: "Medical Aid", amount: 800, type: "allowance" },
+    ]);
+    setGradeModalOpen(true);
+  };
+
+  const openEditGradeModal = (scale: SalaryScale) => {
+    setEditingGrade(scale);
+    setGradeJobTitle(scale.jobTitle);
+    setGradeDepartment(scale.department);
+    setGradeLevelCode(scale.gradeLevel);
+    setGradeRank(scale.gradeRank ?? 1);
+    setGradeMinSalary(scale.minSalary);
+    setGradeMidSalary(scale.midSalary);
+    setGradeMaxSalary(scale.maxSalary);
+    setGradeDescription(scale.description || "");
+    setGradeTaxPct(scale.taxDeductionPct);
+    setGradePensionPct(scale.pensionDeductionPct);
+    setGradeBenefits(
+      scale.benefits && scale.benefits.length > 0
+        ? [...scale.benefits]
+        : [
+            { id: "b-house", name: "Housing Allowance", amount: scale.housingAllowance || 1500, type: "allowance" },
+            { id: "b-trans", name: "Transport Allowance", amount: scale.transportAllowance || 1000, type: "allowance" },
+            { id: "b-med", name: "Medical Aid", amount: scale.medicalAllowance || 800, type: "allowance" },
+          ]
+    );
+    setGradeModalOpen(true);
+  };
+
+  const handleSaveGradeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingGrade(true);
+    try {
+      await saveSalaryScale({
+        id: editingGrade?.id,
+        companyId: currentCompany.id,
+        jobTitle: gradeJobTitle.trim(),
+        department: gradeDepartment,
+        gradeLevel: gradeLevelCode.trim(),
+        gradeRank,
+        minSalary: Number(gradeMinSalary),
+        midSalary: Number(gradeMidSalary),
+        maxSalary: Number(gradeMaxSalary),
+        description: gradeDescription.trim(),
+        benefits: gradeBenefits,
+        taxDeductionPct: Number(gradeTaxPct),
+        pensionDeductionPct: Number(gradePensionPct),
+      });
+
+      await loadData();
+      setGradeModalOpen(false);
+      alert(editingGrade ? "Job grade updated successfully!" : "New job grade created successfully!");
+    } catch (err: any) {
+      alert(err.message || "Failed to save job grade.");
+    } finally {
+      setSavingGrade(false);
+    }
+  };
+
+  const handleDeleteGrade = async (scale: SalaryScale) => {
+    if (!confirm(`Are you sure you want to delete job grade "${scale.gradeLevel} - ${scale.jobTitle}"?`)) {
+      return;
+    }
+    try {
+      await deleteSalaryScale(scale.id, currentCompany.id);
+      await loadData();
+      alert("Job grade deleted.");
+    } catch (err: any) {
+      alert(err.message || "Failed to delete job grade.");
+    }
+  };
+
+  const handleAddBenefit = () => {
+    if (!newBenefitName.trim()) return;
+    const newB: JobGradeBenefit = {
+      id: "b-" + Date.now(),
+      name: newBenefitName.trim(),
+      amount: Number(newBenefitAmount) || 0,
+      type: newBenefitType,
+    };
+    setGradeBenefits([...gradeBenefits, newB]);
+    setNewBenefitName("");
+    setNewBenefitAmount(500);
+  };
+
+  const handleRemoveBenefit = (id: string) => {
+    setGradeBenefits(gradeBenefits.filter((b) => b.id !== id));
+  };
+
+  // Staff Grade Change Handler
+  const openStaffGradeModal = (employee: CompanyUser) => {
+    setGradeAdjustmentEmployee(employee);
+    // Find matching scale or first scale
+    const matching = salaryScales.find(
+      (s) =>
+        (employee.jobGradeId && s.id === employee.jobGradeId) ||
+        (employee.jobGradeLevel && s.gradeLevel.toLowerCase() === employee.jobGradeLevel.toLowerCase()) ||
+        s.jobTitle.toLowerCase() === employee.jobTitle.toLowerCase() ||
+        s.department === employee.department
+    );
+    setTargetGradeId(matching?.id || (salaryScales[0]?.id ?? ""));
+  };
+
+  const handleSaveStaffGrade = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!gradeAdjustmentEmployee || !targetGradeId) return;
+    const targetScale = salaryScales.find((s) => s.id === targetGradeId);
+    if (!targetScale) return;
+
+    setSavingStaffGrade(true);
+    try {
+      await updateStaffJobGrade({
+        userIdOrCompanyUserId: gradeAdjustmentEmployee.id,
+        companyId: currentCompany.id,
+        newGradeLevel: targetScale.gradeLevel,
+        newGradeId: targetScale.id,
+        actorName: currentCompanyUser?.fullName || "HR Manager",
+        previousGradeLevel: gradeAdjustmentEmployee.jobGradeLevel,
+      });
+
+      await loadData();
+      setGradeAdjustmentEmployee(null);
+      alert(`Successfully updated grade for ${gradeAdjustmentEmployee.fullName} to ${targetScale.gradeLevel}!`);
+    } catch (err: any) {
+      alert(err.message || "Failed to update staff grade.");
+    } finally {
+      setSavingStaffGrade(false);
+    }
+  };
+
+  // Direct promotion / demotion shortcut
+  const handleShiftStaffGrade = async (employee: CompanyUser, direction: "up" | "down") => {
+    // Rank or sort all scales
+    const sortedScales = [...salaryScales].sort((a, b) => {
+      if ((a.gradeRank ?? 0) !== (b.gradeRank ?? 0)) {
+        return (a.gradeRank ?? 0) - (b.gradeRank ?? 0);
+      }
+      return a.minSalary - b.minSalary;
+    });
+
+    const currentIdx = sortedScales.findIndex(
+      (s) =>
+        (employee.jobGradeId && s.id === employee.jobGradeId) ||
+        (employee.jobGradeLevel && s.gradeLevel.toLowerCase() === employee.jobGradeLevel.toLowerCase()) ||
+        s.jobTitle.toLowerCase() === employee.jobTitle.toLowerCase()
+    );
+
+    let nextIdx = 0;
+    if (direction === "up") {
+      if (currentIdx >= sortedScales.length - 1) {
+        alert(`${employee.fullName} is already at the highest grade scale!`);
+        return;
+      }
+      nextIdx = currentIdx === -1 ? 1 : currentIdx + 1;
+    } else {
+      if (currentIdx <= 0) {
+        alert(`${employee.fullName} is already at the entry level grade scale!`);
+        return;
+      }
+      nextIdx = currentIdx - 1;
+    }
+
+    const nextScale = sortedScales[nextIdx];
+    if (!confirm(`Confirm ${direction === "up" ? "Promotion" : "Demotion"} of ${employee.fullName} to ${nextScale.gradeLevel} (${nextScale.jobTitle} - ${currency} ${nextScale.minSalary.toLocaleString()} - ${nextScale.maxSalary.toLocaleString()})?`)) {
+      return;
+    }
+
+    try {
+      await updateStaffJobGrade({
+        userIdOrCompanyUserId: employee.id,
+        companyId: currentCompany.id,
+        newGradeLevel: nextScale.gradeLevel,
+        newGradeId: nextScale.id,
+        actorName: currentCompanyUser?.fullName || "HR Manager",
+        previousGradeLevel: employee.jobGradeLevel,
+      });
+      await loadData();
+      alert(`Updated: ${employee.fullName} is now assigned to ${nextScale.gradeLevel}!`);
+    } catch (err: any) {
+      alert(err.message || "Failed to shift staff grade.");
+    }
+  };
   const openAddStaffModal = async () => {
     setStaffFullName("");
     setStaffEmail("");
@@ -503,21 +742,48 @@ export default function HRPage() {
       const joinMonth = emp.createdAt ? emp.createdAt.slice(0, 7) : "2020-01";
 
       const scale = salaryScales.find(
-        (s) => s.jobTitle.toLowerCase() === emp.jobTitle.toLowerCase() || s.department === emp.department
+        (s) =>
+          (emp.jobGradeId && s.id === emp.jobGradeId) ||
+          (emp.jobGradeLevel && s.gradeLevel.toLowerCase() === emp.jobGradeLevel.toLowerCase()) ||
+          s.jobTitle.toLowerCase() === emp.jobTitle.toLowerCase() ||
+          s.department === emp.department
       );
       const bSalary = scale?.midSalary || scale?.minSalary || 15000;
-      const allowances = {
-        housing: scale?.housingAllowance || 1500,
-        transport: scale?.transportAllowance || 1000,
-        medical: scale?.medicalAllowance || 800,
-      };
-      const gross = bSalary + allowances.housing + allowances.transport + allowances.medical;
-      const deductions = {
-        paye_tax: gross * 0.15,
-        pension: bSalary * 0.05,
-        uif: Math.min(bSalary * 0.01, 177.12),
-      };
-      const net = gross - (deductions.paye_tax + deductions.pension + deductions.uif);
+
+      // Allowances & deductions derived from scale benefits
+      const allowances: Record<string, number> = {};
+      const deductions: Record<string, number> = {};
+
+      let totalBenefitsAllowances = 0;
+      let totalBenefitsDeductions = 0;
+
+      if (scale?.benefits && scale.benefits.length > 0) {
+        scale.benefits.forEach((b) => {
+          const key = b.name.toLowerCase().replace(/[^a-z0-9]/g, "_");
+          if (b.type === "allowance") {
+            allowances[key] = b.amount;
+            totalBenefitsAllowances += b.amount;
+          } else {
+            deductions[key] = b.amount;
+            totalBenefitsDeductions += b.amount;
+          }
+        });
+      } else {
+        allowances.housing = scale?.housingAllowance || 1500;
+        allowances.transport = scale?.transportAllowance || 1000;
+        allowances.medical = scale?.medicalAllowance || 800;
+        totalBenefitsAllowances = allowances.housing + allowances.transport + allowances.medical;
+      }
+
+      const gross = bSalary + totalBenefitsAllowances;
+      const taxRate = (scale?.taxDeductionPct ?? 15.0) / 100;
+      const pensionRate = (scale?.pensionDeductionPct ?? 5.0) / 100;
+
+      deductions.paye_tax = gross * taxRate;
+      deductions.pension = bSalary * pensionRate;
+      deductions.uif = Math.min(bSalary * 0.01, 177.12);
+
+      const net = gross - (deductions.paye_tax + deductions.pension + deductions.uif + totalBenefitsDeductions);
 
       for (const m of batchSelectedMonths) {
         // Tenure check: cannot generate payslips before person was hired / joined
@@ -901,7 +1167,8 @@ export default function HRPage() {
   return (
     <div className="space-y-6">
       {/* Top Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Top Header */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-black tracking-tight text-foreground">
@@ -911,153 +1178,270 @@ export default function HRPage() {
               {activeEmployees.length} Active / {users.length} Total Personnel
             </span>
           </div>
-          <p className="text-sm text-muted">
-            Manage personnel directory, contract countdowns & extensions, mass payroll runs, payslips, and staff lifecycle.
+          <p className="text-xs text-muted">
+            Executive control center for staff lifecycle, job grading, contract renewals, multi-month payroll runs, and leave tracking.
           </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setLeaveModalOpen(true)}
-            className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface px-4 py-2 text-xs font-semibold text-foreground hover:bg-surface-elevated transition-colors shadow-sm"
-          >
-            <Calendar size={15} />
-            <span>Request Leave</span>
-          </button>
-
-          {(isAdmin || isManager) && (
-            <>
-              <button
-                type="button"
-                onClick={openAddStaffModal}
-                className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3.5 py-2 text-xs font-bold text-foreground shadow-sm hover:border-blue-500 hover:text-blue-600 transition"
-                title="Add and onboard a new company staff member"
-              >
-                <UserPlus size={15} />
-                <span>Add Staff Member</span>
-              </button>
-
-              <Link
-                to="/organogram"
-                className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3.5 py-2 text-xs font-bold text-foreground shadow-sm hover:border-blue-500 hover:text-blue-600 transition"
-                title="Manage company job titles, role hierarchy & organogram"
-              >
-                <Network size={15} />
-                <span>Roles & Organogram</span>
-              </Link>
-
-              <button
-                type="button"
-                onClick={() => openBatchGenerator()}
-                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:from-blue-700 hover:to-indigo-700 transition"
-                title="Generate, review and dispatch single or multi-month payslips"
-              >
-                <FileText size={15} />
-                <span>Generate & Review Payslips</span>
-              </button>
-            </>
-          )}
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-border-color pb-2">
-        <button
-          type="button"
+      {/* EQUALLY ARRANGED EXECUTIVE FUNCTIONAL TILES (6 TILES) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+        {/* Tile 1: Staff Directory */}
+        <div
           onClick={() => setActiveTab("directory")}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
+          className={`cursor-pointer rounded-2xl border p-4 transition-all duration-200 flex flex-col justify-between shadow-sm relative group ${
             activeTab === "directory"
-              ? "bg-blue-600 text-white shadow-sm"
-              : "text-muted hover:bg-surface-elevated hover:text-foreground"
+              ? "border-blue-600 bg-blue-600/5 ring-2 ring-blue-500/20"
+              : "border-border-color bg-surface hover:border-blue-400 hover:bg-surface-elevated"
           }`}
         >
-          <Users size={16} />
-          Employees Directory ({users.length})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("expiring")}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
-            activeTab === "expiring"
-              ? "bg-blue-600 text-white shadow-sm"
-              : "text-muted hover:bg-surface-elevated hover:text-foreground"
-          }`}
-        >
-          <Hourglass size={16} />
-          <span>Expiring Contracts</span>
-          {expiringContractsList.length > 0 && (
-            <span className="rounded-full bg-red-500 px-2 py-0.2 text-[10px] font-extrabold text-white">
-              {expiringContractsList.length}
-            </span>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600 font-bold">
+                <Users size={18} />
+              </div>
+              <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[11px] font-bold text-blue-600">
+                {users.length} Total
+              </span>
+            </div>
+            <h3 className="font-bold text-xs text-foreground group-hover:text-blue-600 transition-colors">
+              Staff Directory
+            </h3>
+            <p className="text-[11px] text-muted line-clamp-1 mt-0.5">
+              {activeEmployees.length} active personnel
+            </p>
+          </div>
+          {(isAdmin || isManager) ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openAddStaffModal();
+              }}
+              className="mt-3 flex w-full items-center justify-center gap-1 rounded-xl bg-blue-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-blue-700 transition shadow-sm"
+              title="Add a new employee to the company"
+            >
+              <UserPlus size={12} />
+              <span>+ Add Staff</span>
+            </button>
+          ) : (
+            <div className="mt-3 text-[10px] text-muted font-medium">View personnel directory →</div>
           )}
-        </button>
+        </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("contracts")}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
-            activeTab === "contracts"
-              ? "bg-blue-600 text-white shadow-sm"
-              : "text-muted hover:bg-surface-elevated hover:text-foreground"
-          }`}
-        >
-          <FileSignature size={16} />
-          All Contracts ({contracts.length})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("payslips")}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
-            activeTab === "payslips"
-              ? "bg-blue-600 text-white shadow-sm"
-              : "text-muted hover:bg-surface-elevated hover:text-foreground"
-          }`}
-        >
-          <DollarSign size={16} />
-          Payslips & Payroll ({payslips.length})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("history")}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
-            activeTab === "history"
-              ? "bg-blue-600 text-white shadow-sm"
-              : "text-muted hover:bg-surface-elevated hover:text-foreground"
-          }`}
-        >
-          <History size={16} />
-          Salary History ({availablePeriods.length} Runs)
-        </button>
-
-        <button
-          type="button"
+        {/* Tile 2: Job Grades & Scales */}
+        <div
           onClick={() => setActiveTab("salaries")}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
+          className={`cursor-pointer rounded-2xl border p-4 transition-all duration-200 flex flex-col justify-between shadow-sm relative group ${
             activeTab === "salaries"
-              ? "bg-blue-600 text-white shadow-sm"
-              : "text-muted hover:bg-surface-elevated hover:text-foreground"
+              ? "border-purple-600 bg-purple-600/5 ring-2 ring-purple-500/20"
+              : "border-border-color bg-surface hover:border-purple-400 hover:bg-surface-elevated"
           }`}
         >
-          <BadgePercent size={16} />
-          Salary Scales ({salaryScales.length})
-        </button>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-600/10 text-purple-600 font-bold">
+                <Award size={18} />
+              </div>
+              <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-[11px] font-bold text-purple-600">
+                {salaryScales.length} Grades
+              </span>
+            </div>
+            <h3 className="font-bold text-xs text-foreground group-hover:text-purple-600 transition-colors">
+              Job Grades & Scales
+            </h3>
+            <p className="text-[11px] text-muted line-clamp-1 mt-0.5">
+              Salary brackets & benefits
+            </p>
+          </div>
+          {(isAdmin || isManager) ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openCreateGradeModal();
+              }}
+              className="mt-3 flex w-full items-center justify-center gap-1 rounded-xl bg-purple-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-purple-700 transition shadow-sm"
+              title="Create a new salary grade scale"
+            >
+              <Plus size={12} />
+              <span>+ New Grade</span>
+            </button>
+          ) : (
+            <div className="mt-3 text-[10px] text-muted font-medium">View pay grades →</div>
+          )}
+        </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("leave")}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
-            activeTab === "leave"
-              ? "bg-blue-600 text-white shadow-sm"
-              : "text-muted hover:bg-surface-elevated hover:text-foreground"
+        {/* Tile 3: Payroll & Payslips */}
+        <div
+          onClick={() => setActiveTab("payslips")}
+          className={`cursor-pointer rounded-2xl border p-4 transition-all duration-200 flex flex-col justify-between shadow-sm relative group ${
+            activeTab === "payslips"
+              ? "border-emerald-600 bg-emerald-600/5 ring-2 ring-emerald-500/20"
+              : "border-border-color bg-surface hover:border-emerald-400 hover:bg-surface-elevated"
           }`}
         >
-          <Clock size={16} />
-          Leave Tracking ({leaveRecords.length})
-        </button>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600/10 text-emerald-600 font-bold">
+                <DollarSign size={18} />
+              </div>
+              <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-600">
+                {payslips.length} Slips
+              </span>
+            </div>
+            <h3 className="font-bold text-xs text-foreground group-hover:text-emerald-600 transition-colors">
+              Payroll & Payslips
+            </h3>
+            <p className="text-[11px] text-muted line-clamp-1 mt-0.5">
+              Multi-month batch generator
+            </p>
+          </div>
+          {(isAdmin || isManager) ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openBatchGenerator();
+              }}
+              className="mt-3 flex w-full items-center justify-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700 transition shadow-sm"
+              title="Run and dispatch payroll for selected months"
+            >
+              <FileText size={12} />
+              <span>Run Payroll</span>
+            </button>
+          ) : (
+            <div className="mt-3 text-[10px] text-muted font-medium">View payslips →</div>
+          )}
+        </div>
+
+        {/* Tile 4: Contracts & Expiring */}
+        <div
+          onClick={() => setActiveTab(expiringContractsList.length > 0 ? "expiring" : "contracts")}
+          className={`cursor-pointer rounded-2xl border p-4 transition-all duration-200 flex flex-col justify-between shadow-sm relative group ${
+            activeTab === "contracts" || activeTab === "expiring"
+              ? "border-amber-600 bg-amber-600/5 ring-2 ring-amber-500/20"
+              : "border-border-color bg-surface hover:border-amber-400 hover:bg-surface-elevated"
+          }`}
+        >
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-600/10 text-amber-600 font-bold">
+                <FileSignature size={18} />
+              </div>
+              {expiringContractsList.length > 0 ? (
+                <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-extrabold text-white animate-pulse">
+                  {expiringContractsList.length} Expiring
+                </span>
+              ) : (
+                <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-600">
+                  {contracts.length} Total
+                </span>
+              )}
+            </div>
+            <h3 className="font-bold text-xs text-foreground group-hover:text-amber-600 transition-colors">
+              Contracts & Renewals
+            </h3>
+            <p className="text-[11px] text-muted line-clamp-1 mt-0.5">
+              Tenure countdowns & extensions
+            </p>
+          </div>
+          <div className="mt-3 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveTab("contracts");
+              }}
+              className="flex-1 rounded-xl border border-border-color bg-surface px-2 py-1.5 text-center text-[11px] font-bold text-foreground hover:border-blue-500 transition"
+            >
+              All ({contracts.length})
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveTab("expiring");
+              }}
+              className={`flex-1 rounded-xl px-2 py-1.5 text-center text-[11px] font-bold transition ${
+                expiringContractsList.length > 0
+                  ? "bg-red-500 text-white hover:bg-red-600"
+                  : "border border-border-color text-muted hover:text-foreground"
+              }`}
+            >
+              Expiring ({expiringContractsList.length})
+            </button>
+          </div>
+        </div>
+
+        {/* Tile 5: Leave Tracking */}
+        <div
+          onClick={() => setActiveTab("leave")}
+          className={`cursor-pointer rounded-2xl border p-4 transition-all duration-200 flex flex-col justify-between shadow-sm relative group ${
+            activeTab === "leave"
+              ? "border-cyan-600 bg-cyan-600/5 ring-2 ring-cyan-500/20"
+              : "border-border-color bg-surface hover:border-cyan-400 hover:bg-surface-elevated"
+          }`}
+        >
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-600/10 text-cyan-600 font-bold">
+                <Clock size={18} />
+              </div>
+              <span className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-[11px] font-bold text-cyan-600">
+                {leaveRecords.length} Requests
+              </span>
+            </div>
+            <h3 className="font-bold text-xs text-foreground group-hover:text-cyan-600 transition-colors">
+              Leave Tracking
+            </h3>
+            <p className="text-[11px] text-muted line-clamp-1 mt-0.5">
+              Annual, sick & study days
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setLeaveModalOpen(true);
+            }}
+            className="mt-3 flex w-full items-center justify-center gap-1 rounded-xl bg-cyan-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-cyan-700 transition shadow-sm"
+            title="Submit a staff leave request"
+          >
+            <Calendar size={12} />
+            <span>+ Request Leave</span>
+          </button>
+        </div>
+
+        {/* Tile 6: Roles & Organogram */}
+        <div
+          className="rounded-2xl border border-border-color bg-surface hover:border-indigo-400 hover:bg-surface-elevated p-4 transition-all duration-200 flex flex-col justify-between shadow-sm relative group"
+        >
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600/10 text-indigo-600 font-bold">
+                <Network size={18} />
+              </div>
+              <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[11px] font-bold text-indigo-600">
+                Hierarchy
+              </span>
+            </div>
+            <h3 className="font-bold text-xs text-foreground group-hover:text-indigo-600 transition-colors">
+              Roles & Organogram
+            </h3>
+            <p className="text-[11px] text-muted line-clamp-1 mt-0.5">
+              Reporting hierarchy & titles
+            </p>
+          </div>
+          <Link
+            to="/organogram"
+            className="mt-3 flex w-full items-center justify-center gap-1 rounded-xl border border-border-color bg-surface-elevated px-2.5 py-1.5 text-[11px] font-bold text-foreground hover:border-indigo-500 hover:text-indigo-600 transition shadow-sm"
+            title="Open organogram tree and job titles"
+          >
+            <Network size={12} />
+            <span>Open Organogram</span>
+          </Link>
+        </div>
       </div>
 
       {/* TAB 1: EMPLOYEE DIRECTORY (WITH DEACTIVATION & STATUS FILTER) */}
@@ -1118,6 +1502,7 @@ export default function HRPage() {
                 <tr>
                   <th className="px-5 py-4">Employee</th>
                   <th className="px-5 py-4">Department & Role</th>
+                  <th className="px-5 py-4">Assigned Job Grade</th>
                   <th className="px-5 py-4">Contract / Tenure</th>
                   <th className="px-5 py-4">Status & Reason</th>
                   <th className="px-5 py-4 text-right">Actions</th>
@@ -1126,7 +1511,7 @@ export default function HRPage() {
               <tbody className="divide-y divide-border-color text-foreground">
                 {filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-12 text-center text-muted">
+                    <td colSpan={6} className="py-12 text-center text-muted">
                       No employees match your search criteria.
                     </td>
                   </tr>
@@ -1135,6 +1520,12 @@ export default function HRPage() {
                     const isActive = u.isActive !== false;
                     const contract = contracts.find((c) => c.userId === u.userId || c.userId === u.id);
                     const countdown = contract ? getContractCountdown(contract) : null;
+                    const assignedScale = salaryScales.find(
+                      (s) =>
+                        (u.jobGradeId && s.id === u.jobGradeId) ||
+                        (u.jobGradeLevel && s.gradeLevel.toLowerCase() === u.jobGradeLevel.toLowerCase()) ||
+                        s.jobTitle.toLowerCase() === u.jobTitle.toLowerCase()
+                    );
 
                     return (
                       <tr
@@ -1178,6 +1569,54 @@ export default function HRPage() {
                           <span className="text-[11px] text-muted capitalize">
                             {u.department.replace(/_/g, " ")} · {u.roleLevel.replace(/_/g, " ")}
                           </span>
+                        </td>
+
+                        <td className="px-5 py-4 text-xs" onClick={(e) => e.stopPropagation()}>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="inline-flex items-center gap-1 rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[11px] font-bold text-purple-700 dark:text-purple-300">
+                                <Award size={12} />
+                                <span>{u.jobGradeLevel || assignedScale?.gradeLevel || "Unassigned"}</span>
+                              </span>
+                              {(isAdmin || isManager) && isActive && (
+                                <button
+                                  type="button"
+                                  onClick={() => openStaffGradeModal(u)}
+                                  className="text-[10px] text-blue-600 hover:underline font-semibold"
+                                  title="Change assigned Job Grade"
+                                >
+                                  Change
+                                </button>
+                              )}
+                            </div>
+                            {assignedScale && (
+                              <p className="text-[10px] text-muted">
+                                {currency} {assignedScale.minSalary.toLocaleString()} - {assignedScale.maxSalary.toLocaleString()}
+                              </p>
+                            )}
+                            {(isAdmin || isManager) && isActive && (
+                              <div className="flex items-center gap-1 pt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleShiftStaffGrade(u, "up")}
+                                  className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-bold border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white transition"
+                                  title="Promote staff member to next grade scale"
+                                >
+                                  <ArrowUp size={10} />
+                                  <span>Promote</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleShiftStaffGrade(u, "down")}
+                                  className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-bold border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-600 hover:text-white transition"
+                                  title="Demote staff member to previous grade scale"
+                                >
+                                  <ArrowDown size={10} />
+                                  <span>Demote</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </td>
 
                         <td className="px-5 py-4 text-xs">
@@ -1954,43 +2393,163 @@ export default function HRPage() {
         </div>
       )}
 
-      {/* TAB 6: SALARY SCALES */}
+      {/* TAB 6: JOB GRADES & SALARY SCALES */}
       {activeTab === "salaries" && (
-        <div className="rounded-2xl border border-border-color bg-surface overflow-hidden shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-border-color bg-surface-elevated/70 text-[11px] font-bold uppercase tracking-wider text-muted">
-              <tr>
-                <th className="px-5 py-4">Department & Title</th>
-                <th className="px-5 py-4">Grade</th>
-                <th className="px-5 py-4">Base Salary Range ({currency})</th>
-                <th className="px-5 py-4">Monthly Allowances</th>
-                <th className="px-5 py-4">Statutory Deductions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-color text-foreground">
-              {salaryScales.map((s) => (
-                <tr key={s.id} className="hover:bg-surface-elevated/30">
-                  <td className="px-5 py-4">
-                    <p className="font-bold text-foreground">{s.jobTitle}</p>
-                    <p className="text-xs text-muted capitalize">{s.department.replace(/_/g, " ")}</p>
-                  </td>
-                  <td className="px-5 py-4 font-mono text-xs text-muted">{s.gradeLevel}</td>
-                  <td className="px-5 py-4">
-                    <p className="font-extrabold text-foreground">
-                      R{s.minSalary.toLocaleString()} - R{s.maxSalary.toLocaleString()}
-                    </p>
-                    <p className="text-[11px] text-muted">Mid: R{s.midSalary.toLocaleString()}</p>
-                  </td>
-                  <td className="px-5 py-4 text-xs text-muted">
-                    House: R{s.housingAllowance} · Trans: R{s.transportAllowance} · Med: R{s.medicalAllowance}
-                  </td>
-                  <td className="px-5 py-4 text-xs text-muted">
-                    PAYE: {s.taxDeductionPct}% · Pension: {s.pensionDeductionPct}%
-                  </td>
+        <div className="space-y-4">
+          {/* Top Controls Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-surface p-4 rounded-2xl border border-border-color shadow-sm">
+            <div>
+              <h3 className="text-base font-black text-foreground flex items-center gap-2">
+                <Award className="text-purple-600" size={18} />
+                <span>Job Grades & Salary Scales</span>
+                <span className="rounded-full bg-purple-500/10 px-2.5 py-0.5 text-xs font-bold text-purple-600">
+                  {salaryScales.length} Defined Grades
+                </span>
+              </h3>
+              <p className="text-xs text-muted">
+                Define organizational salary brackets, base compensation bounds, and dynamic benefits/allowances assigned to staff.
+              </p>
+            </div>
+
+            {(isAdmin || isManager) && (
+              <button
+                type="button"
+                onClick={openCreateGradeModal}
+                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:from-purple-700 hover:to-indigo-700 transition"
+              >
+                <Plus size={15} />
+                <span>+ Create Job Grade</span>
+              </button>
+            )}
+          </div>
+
+          {/* Grades Table */}
+          <div className="rounded-2xl border border-border-color bg-surface overflow-hidden shadow-sm">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-border-color bg-surface-elevated/70 text-[11px] font-bold uppercase tracking-wider text-muted">
+                <tr>
+                  <th className="px-5 py-4">Grade Code & Rank</th>
+                  <th className="px-5 py-4">Job Title & Dept</th>
+                  <th className="px-5 py-4">Assigned Personnel</th>
+                  <th className="px-5 py-4">Base Salary Range ({currency})</th>
+                  <th className="px-5 py-4">Configured Benefits & Allowances</th>
+                  <th className="px-5 py-4">Deductions</th>
+                  <th className="px-5 py-4 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-border-color text-foreground">
+                {salaryScales.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-muted">
+                      No job grades or salary scales configured yet. Click "+ Create Job Grade" above to get started.
+                    </td>
+                  </tr>
+                ) : (
+                  salaryScales.map((s) => {
+                    const assignedUsers = users.filter(
+                      (u) =>
+                        (u.jobGradeId && u.jobGradeId === s.id) ||
+                        (u.jobGradeLevel && u.jobGradeLevel.toLowerCase() === s.gradeLevel.toLowerCase()) ||
+                        s.jobTitle.toLowerCase() === u.jobTitle.toLowerCase()
+                    );
+                    const benefitsList = s.benefits && s.benefits.length > 0 ? s.benefits : [
+                      { id: "b1", name: "Housing", amount: s.housingAllowance || 1500, type: "allowance" as const },
+                      { id: "b2", name: "Transport", amount: s.transportAllowance || 1000, type: "allowance" as const },
+                      { id: "b3", name: "Medical Aid", amount: s.medicalAllowance || 800, type: "allowance" as const },
+                    ];
+
+                    return (
+                      <tr key={s.id} className="hover:bg-surface-elevated/30 transition-colors">
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 rounded-md border border-purple-500/30 bg-purple-500/10 px-2.5 py-1 text-xs font-black text-purple-700 dark:text-purple-300">
+                              <Award size={13} />
+                              <span>{s.gradeLevel}</span>
+                            </span>
+                            {s.gradeRank !== undefined && (
+                              <span className="text-[10px] font-bold text-muted bg-surface-elevated px-1.5 py-0.5 rounded border border-border-color">
+                                Rank {s.gradeRank}
+                              </span>
+                            )}
+                          </div>
+                          {s.description && (
+                            <p className="text-[11px] text-muted mt-1 italic max-w-xs truncate" title={s.description}>
+                              {s.description}
+                            </p>
+                          )}
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <p className="font-bold text-foreground text-xs">{s.jobTitle}</p>
+                          <p className="text-[11px] text-muted capitalize">{s.department.replace(/_/g, " ")}</p>
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-xs font-bold text-blue-600">
+                            <Users size={12} />
+                            <span>{assignedUsers.length} Staff</span>
+                          </span>
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <p className="font-extrabold text-foreground text-xs">
+                            {currency} {s.minSalary.toLocaleString()} - {s.maxSalary.toLocaleString()}
+                          </p>
+                          <p className="text-[10px] text-muted">Midpoint: {currency} {s.midSalary.toLocaleString()}</p>
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <div className="flex flex-wrap gap-1 max-w-xs">
+                            {benefitsList.map((b) => (
+                              <span
+                                key={b.id}
+                                className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${
+                                  b.type === "allowance"
+                                    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20"
+                                    : "bg-red-500/10 text-red-600 border-red-500/20"
+                                }`}
+                              >
+                                {b.name}: {b.type === "deduction" ? "-" : "+"}{currency} {b.amount.toLocaleString()}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+
+                        <td className="px-5 py-4 text-xs text-muted">
+                          <p>PAYE: <b className="text-foreground">{s.taxDeductionPct}%</b></p>
+                          <p>Pension: <b className="text-foreground">{s.pensionDeductionPct}%</b></p>
+                        </td>
+
+                        <td className="px-5 py-4 text-right">
+                          {(isAdmin || isManager) && (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openEditGradeModal(s)}
+                                className="flex items-center gap-1 rounded-lg border border-border-color bg-surface-elevated px-2.5 py-1 text-xs font-semibold text-foreground hover:border-blue-500 hover:text-blue-600 transition"
+                                title="Edit salary scale & benefits"
+                              >
+                                <Edit size={12} />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteGrade(s)}
+                                className="flex items-center gap-1 rounded-lg border border-red-500/20 bg-red-500/5 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-600 hover:text-white transition"
+                                title="Delete job grade"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -3555,6 +4114,416 @@ export default function HRPage() {
           </div>
         </div>
       )}
+
+      {/* CREATE / EDIT JOB GRADE & SALARY SCALE MODAL */}
+      {gradeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl border border-border-color bg-surface shadow-2xl overflow-hidden text-xs">
+            <div className="flex items-center justify-between border-b border-border-color p-5 shrink-0 bg-surface-elevated/40">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-600/10 text-purple-600 font-bold">
+                  <Award size={22} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-foreground">
+                    {editingGrade ? `Edit Job Grade: ${editingGrade.gradeLevel}` : "Create New Job Grade & Salary Scale"}
+                  </h3>
+                  <p className="text-[11px] text-muted">
+                    Configure base salary thresholds, hierarchical rank, and dynamic allowances/deductions for this pay band.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGradeModalOpen(false)}
+                className="text-muted hover:text-foreground text-sm p-1 rounded-lg hover:bg-surface-elevated"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveGradeSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
+              {/* Basic Grade Info */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="mb-1 block font-bold text-foreground">Grade Level Code *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Band B1, Level 3, Exec-1"
+                    value={gradeLevelCode}
+                    onChange={(e) => setGradeLevelCode(e.target.value)}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-purple-600 focus:outline-none font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block font-bold text-foreground">Job Title *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Receptionist, Operations Lead"
+                    value={gradeJobTitle}
+                    onChange={(e) => setGradeJobTitle(e.target.value)}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-purple-600 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block font-bold text-foreground">Department *</label>
+                  <select
+                    value={gradeDepartment}
+                    onChange={(e) => setGradeDepartment(e.target.value as DepartmentType)}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-purple-600 focus:outline-none capitalize"
+                  >
+                    <option value="front_desk">Front Desk</option>
+                    <option value="maintenance">Maintenance</option>
+                    <option value="accountant">Finance & Accounting</option>
+                    <option value="human_resources">Human Resources</option>
+                    <option value="it">Information Technology</option>
+                    <option value="procurement">Procurement</option>
+                    <option value="stores">Stores</option>
+                    <option value="audit">Audit</option>
+                    <option value="manager">Management</option>
+                    <option value="admin">Administration</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Salary Bounds */}
+              <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-foreground text-xs uppercase tracking-wider text-muted">
+                    Base Salary Scale Range ({currency})
+                  </h4>
+                  <span className="text-[10px] text-muted">Defines monthly gross minimum and maximum</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="mb-1 block font-semibold text-muted text-[11px]">Minimum Salary *</label>
+                    <input
+                      type="number"
+                      required
+                      min={0}
+                      value={gradeMinSalary}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setGradeMinSalary(val);
+                        setGradeMidSalary((val + gradeMaxSalary) / 2);
+                      }}
+                      className="w-full rounded-xl border border-border-color bg-surface px-3 py-2 font-bold text-foreground focus:border-purple-600 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block font-semibold text-muted text-[11px]">Midpoint Salary</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={gradeMidSalary}
+                      onChange={(e) => setGradeMidSalary(Number(e.target.value))}
+                      className="w-full rounded-xl border border-border-color bg-surface px-3 py-2 font-bold text-blue-600 focus:border-purple-600 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block font-semibold text-muted text-[11px]">Maximum Salary *</label>
+                    <input
+                      type="number"
+                      required
+                      min={0}
+                      value={gradeMaxSalary}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setGradeMaxSalary(val);
+                        setGradeMidSalary((gradeMinSalary + val) / 2);
+                      }}
+                      className="w-full rounded-xl border border-border-color bg-surface px-3 py-2 font-bold text-foreground focus:border-purple-600 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic Benefits & Allowances Manager */}
+              <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold text-foreground text-xs uppercase tracking-wider text-muted flex items-center gap-1.5">
+                      <Sliders size={13} className="text-purple-600" />
+                      <span>Configured Benefits, Allowances & Deductions</span>
+                    </h4>
+                    <p className="text-[10px] text-muted">
+                      Add, adjust, or remove custom benefits for this job grade (housing, transport, medical, data, etc.)
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold text-purple-600">
+                    {gradeBenefits.length} Custom Items
+                  </span>
+                </div>
+
+                {/* Existing Benefits List */}
+                <div className="space-y-1.5">
+                  {gradeBenefits.length === 0 ? (
+                    <p className="p-3 text-center text-muted italic text-[11px] border border-dashed border-border-color rounded-xl">
+                      No benefits added yet. Add an allowance or deduction below.
+                    </p>
+                  ) : (
+                    gradeBenefits.map((b) => (
+                      <div
+                        key={b.id}
+                        className="flex items-center justify-between rounded-xl border border-border-color bg-surface p-2.5 transition"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${
+                              b.type === "allowance"
+                                ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                                : "bg-red-500/10 text-red-600 border border-red-500/20"
+                            }`}
+                          >
+                            {b.type}
+                          </span>
+                          <span className="font-bold text-foreground text-xs">{b.name}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={`font-black text-xs ${
+                              b.type === "allowance" ? "text-emerald-600" : "text-red-600"
+                            }`}
+                          >
+                            {b.type === "allowance" ? "+" : "-"}{currency} {b.amount.toLocaleString()}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveBenefit(b.id)}
+                            className="rounded-lg p-1 text-muted hover:bg-red-500/10 hover:text-red-600 transition"
+                            title="Remove benefit"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Add New Benefit Sub-Form */}
+                <div className="rounded-xl border border-dashed border-border-color bg-surface/50 p-2.5">
+                  <div className="flex flex-col sm:flex-row items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Benefit Name (e.g. Housing, Data Allowance, Meal)"
+                      value={newBenefitName}
+                      onChange={(e) => setNewBenefitName(e.target.value)}
+                      className="flex-1 w-full rounded-lg border border-border-color bg-surface px-2.5 py-1.5 text-xs text-foreground focus:border-purple-600 focus:outline-none"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="Amount"
+                      value={newBenefitAmount}
+                      onChange={(e) => setNewBenefitAmount(Number(e.target.value))}
+                      className="w-full sm:w-28 rounded-lg border border-border-color bg-surface px-2.5 py-1.5 text-xs text-foreground focus:border-purple-600 focus:outline-none font-bold"
+                    />
+                    <select
+                      value={newBenefitType}
+                      onChange={(e) => setNewBenefitType(e.target.value as "allowance" | "deduction")}
+                      className="w-full sm:w-28 rounded-lg border border-border-color bg-surface px-2 py-1.5 text-xs text-foreground focus:border-purple-600 focus:outline-none"
+                    >
+                      <option value="allowance">Allowance (+)</option>
+                      <option value="deduction">Deduction (-)</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleAddBenefit}
+                      disabled={!newBenefitName.trim()}
+                      className="w-full sm:w-auto rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-700 transition disabled:opacity-50 shrink-0"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Statutory Taxes & Pension */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block font-semibold text-muted text-[11px]">PAYE / Tax Deduction (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.5"
+                    value={gradeTaxPct}
+                    onChange={(e) => setGradeTaxPct(Number(e.target.value))}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-purple-600 focus:outline-none font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block font-semibold text-muted text-[11px]">Pension Deduction (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.5"
+                    value={gradePensionPct}
+                    onChange={(e) => setGradePensionPct(Number(e.target.value))}
+                    className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-purple-600 focus:outline-none font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Notes / Description */}
+              <div>
+                <label className="mb-1 block font-semibold text-muted text-[11px]">Description & Eligibility Criteria</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Senior leadership tier with executive housing and company car allowance"
+                  value={gradeDescription}
+                  onChange={(e) => setGradeDescription(e.target.value)}
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-purple-600 focus:outline-none"
+                />
+              </div>
+
+              {/* Actions Footer */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border-color">
+                <button
+                  type="button"
+                  onClick={() => setGradeModalOpen(false)}
+                  className="rounded-xl border border-border-color px-4 py-2 font-semibold text-muted hover:bg-surface-elevated transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingGrade}
+                  className="flex items-center gap-1.5 rounded-xl bg-purple-600 px-5 py-2 font-bold text-white shadow-md hover:bg-purple-700 transition disabled:opacity-50"
+                >
+                  {savingGrade ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={13} />
+                      <span>{editingGrade ? "Update Job Grade" : "Create Job Grade"}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* STAFF JOB GRADE ADJUSTMENT MODAL (ASSIGN / PROMOTE / DEMOTE) */}
+      {gradeAdjustmentEmployee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-border-color pb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-600/10 text-purple-600 font-bold">
+                  <Award size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-foreground">
+                    Assign / Change Staff Job Grade
+                  </h3>
+                  <p className="text-[11px] text-muted">
+                    Shift {gradeAdjustmentEmployee.fullName}'s salary scale and benefits
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setGradeAdjustmentEmployee(null)} className="text-muted hover:text-foreground">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStaffGrade} className="space-y-4">
+              <div className="rounded-xl border border-border-color bg-surface-elevated p-3 space-y-1">
+                <p className="font-bold text-foreground text-xs">{gradeAdjustmentEmployee.fullName}</p>
+                <p className="text-[11px] text-muted">
+                  Current Title: <b>{gradeAdjustmentEmployee.jobTitle}</b> · Current Grade:{" "}
+                  <b className="text-purple-600">{gradeAdjustmentEmployee.jobGradeLevel || "Unassigned"}</b>
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1 block font-bold text-foreground">Select New Job Grade & Salary Scale *</label>
+                <select
+                  value={targetGradeId}
+                  onChange={(e) => setTargetGradeId(e.target.value)}
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2.5 font-bold text-foreground focus:border-purple-600 focus:outline-none"
+                >
+                  {salaryScales.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.gradeLevel} - {s.jobTitle} ({currency} {s.minSalary.toLocaleString()} - {s.maxSalary.toLocaleString()})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {(() => {
+                const previewScale = salaryScales.find((s) => s.id === targetGradeId);
+                if (!previewScale) return null;
+                const isPromo = previewScale.minSalary > (salaryScales.find((s) => s.gradeLevel === gradeAdjustmentEmployee.jobGradeLevel)?.minSalary || 0);
+
+                return (
+                  <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                        {isPromo ? <TrendingUp size={14} className="text-emerald-600" /> : <TrendingDown size={14} className="text-amber-600" />}
+                        <span>Preview: {previewScale.gradeLevel} ({previewScale.jobTitle})</span>
+                      </span>
+                      <span className="text-[10px] font-bold text-purple-600 uppercase">
+                        {isPromo ? "Promotion" : "Grade Shift"}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                      <div>
+                        <span className="text-muted">Salary Bounds:</span>
+                        <p className="font-bold text-foreground">{currency} {previewScale.minSalary.toLocaleString()} - {previewScale.maxSalary.toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted">Configured Benefits:</span>
+                        <p className="font-bold text-emerald-600">{previewScale.benefits?.length || 3} Allowances Active</p>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted italic">
+                      ✓ Monthly payroll generated for {gradeAdjustmentEmployee.fullName} will immediately reflect this new basic pay and benefits structure.
+                    </p>
+                  </div>
+                );
+              })()}
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border-color">
+                <button
+                  type="button"
+                  onClick={() => setGradeAdjustmentEmployee(null)}
+                  className="rounded-xl border border-border-color px-4 py-2 font-semibold text-muted hover:bg-surface-elevated transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingStaffGrade || !targetGradeId}
+                  className="flex items-center gap-1.5 rounded-xl bg-purple-600 px-5 py-2 font-bold text-white shadow-md hover:bg-purple-700 transition disabled:opacity-50"
+                >
+                  {savingStaffGrade ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={13} />
+                      <span>Confirm Grade Assignment</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
