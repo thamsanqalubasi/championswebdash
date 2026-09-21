@@ -3786,12 +3786,17 @@ export async function fetchInvoices(companyId?: string): Promise<InvoiceRow[]> {
       return data.map((inv) => ({
         id: inv.id,
         companyId: inv.company_id || companyId || "",
+        tenantId: inv.tenant_id,
         tenantName: inv.tenants?.full_name || "Unknown Tenant",
         propertyName: inv.properties?.name || "Unknown Property",
         month: inv.month,
         dueDate: inv.due_date,
         totalAmount: toNumber(inv.total_amount),
         status: inv.status,
+        isSuppressed: Boolean(inv.is_suppressed || inv.status === "suppressed"),
+        suppressedAt: inv.suppressed_at,
+        suppressedBy: inv.suppressed_by,
+        suppressedReason: inv.suppressed_reason,
       }));
     }
   } catch (err) {
@@ -4134,6 +4139,8 @@ export async function fetchContracts(companyId?: string): Promise<ContractRow[]>
       return data.map((c) => ({
         id: c.id,
         companyId: c.company_id || companyId,
+        tenantId: c.tenant_id,
+        propertyId: c.property_id,
         title: c.title,
         tenantName: c.tenants?.full_name || "Unknown Tenant",
         propertyName: c.properties?.name || "Unknown Property",
@@ -4143,6 +4150,10 @@ export async function fetchContracts(companyId?: string): Promise<ContractRow[]>
         depositAmount: toNumber(c.deposit_amount),
         notes: c.notes || "",
         status: c.status,
+        isSuppressed: Boolean(c.is_suppressed || c.status === "suppressed"),
+        suppressedAt: c.suppressed_at,
+        suppressedBy: c.suppressed_by,
+        suppressedReason: c.suppressed_reason,
       }));
     }
   } catch (err) {
@@ -5366,6 +5377,13 @@ export function canUserManageRoles(user?: CompanyUser | null, isSuperAdmin?: boo
   if (user.permissions && (user.permissions["manage_roles_organogram"] || user.permissions["all"])) return true;
   if (user.department === "human_resources" && (user.roleLevel === "manager" || user.permissions?.["manage_hr"])) return true;
   return false;
+}
+
+export function canDeleteSuppressedRecords(user?: CompanyUser | null, isSuperAdmin?: boolean): boolean {
+  if (isSuperAdmin) return true;
+  if (!user) return false;
+  if (user.roleLevel === "super_admin") return true;
+  return Boolean(user.permissions && user.permissions["delete_suppressed_records"]);
 }
 
 /**

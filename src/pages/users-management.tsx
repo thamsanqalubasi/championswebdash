@@ -1584,6 +1584,26 @@ export default function UsersManagementPage() {
                       <span className="text-[11px] text-muted block">Inspect security and operational audit records</span>
                     </div>
                   </label>
+
+                  {isSuperAdmin && (
+                    <label className="flex items-start gap-2.5 rounded-xl border border-red-500/30 bg-red-500/5 p-3 hover:bg-red-500/10 cursor-pointer transition sm:col-span-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editPermissions.delete_suppressed_records)}
+                        onChange={() => togglePermission("delete_suppressed_records")}
+                        className="mt-0.5 rounded border-red-400 text-red-600 focus:ring-red-500"
+                      />
+                      <div>
+                        <span className="font-bold text-red-600 dark:text-red-400 block flex items-center gap-1.5">
+                          <Trash2 size={13} />
+                          Permanent Deletion of Suppressed Records (Delegated Power)
+                        </span>
+                        <span className="text-[11px] text-muted block mt-0.5">
+                          Allows this user to permanently purge voided payments, invoices, and lease contracts from the database using their Security PIN. Disabled by default.
+                        </span>
+                      </div>
+                    </label>
+                  )}
                 </div>
               </div>
 

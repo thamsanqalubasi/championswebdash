@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
-import { fetchContractsData, verifyAdminPin, isValidUuid } from "@/lib/data";
+import { fetchContractsData, verifyAdminPin, isValidUuid, canDeleteSuppressedRecords } from "@/lib/data";
+import { PinPromptDialog } from "@/components/pin-dialog";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
@@ -37,7 +38,9 @@ import {
   Briefcase,
   AlertCircle,
   Info,
-  MessageSquare
+  MessageSquare,
+  Ban,
+  RotateCcw
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 
@@ -368,7 +371,9 @@ function RichTextEditor({
 /* ── component ── */
 
 export default function ContractsPage() {
-  const { user, currentCompany } = useAuth();
+  const { user, currentCompany, currentCompanyUser, isSuperAdmin } = useAuth();
+  const canDeletePermanently = canDeleteSuppressedRecords(currentCompanyUser, isSuperAdmin);
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<ContractRow | null>(null);
   const { format: formatCurrency } = useCurrency();
   const templateSeedWarningShownRef = useRef(false);
 
@@ -611,15 +616,22 @@ export default function ContractsPage() {
 
   /* ── contracts filters ── */
   const counts = useMemo(() => ({
-    all: contracts.length,
-    pending: contracts.filter((c) => c.status === "pending").length,
-    active: contracts.filter((c) => c.status === "active").length,
-    expired: contracts.filter((c) => c.status === "expired").length,
-    terminated: contracts.filter((c) => c.status === "terminated").length,
+    all: contracts.filter((c) => !c.isSuppressed && c.status !== "suppressed").length,
+    pending: contracts.filter((c) => c.status === "pending" && !c.isSuppressed).length,
+    active: contracts.filter((c) => c.status === "active" && !c.isSuppressed).length,
+    expired: contracts.filter((c) => c.status === "expired" && !c.isSuppressed).length,
+    terminated: contracts.filter((c) => c.status === "terminated" && !c.isSuppressed).length,
+    suppressed: contracts.filter((c) => c.isSuppressed || c.status === "suppressed").length,
   }), [contracts]);
 
   const filtered = useMemo(() => {
-    let result = activeFilter === "all" ? contracts : contracts.filter((c) => c.status === activeFilter);
+    let result =
+      activeFilter === "all"
+        ? contracts.filter((c) => !c.isSuppressed && c.status !== "suppressed")
+        : activeFilter === "suppressed"
+        ? contracts.filter((c) => c.isSuppressed || c.status === "suppressed")
+        : contracts.filter((c) => c.status === activeFilter && !c.isSuppressed);
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(c => 
@@ -853,6 +865,56 @@ export default function ContractsPage() {
       setDeleteTarget(null); reload();
     } catch (e) { alert(e instanceof Error ? e.message : "Delete failed"); }
     finally { setDeleting(false); }
+  };
+
+  const onSuppressContract = async (row: ContractRow) => {
+    const reason = window.prompt(`Please enter reason for voiding/suppressing contract "${row.title}" for ${row.tenantName}:`)?.trim();
+    if (reason === null) return;
+    try {
+      const admin = await fetchAdminInfo(user?.email ?? undefined);
+      const staffName = admin.fullName || user?.email || "Staff";
+      const { error: err } = await supabase.from("contracts").update({
+        status: "suppressed",
+        is_suppressed: true,
+        suppressed_at: new Date().toISOString(),
+        suppressed_by: staffName,
+        suppressed_reason: reason || "Suppressed by staff for archive/voiding",
+      }).eq("id", row.id);
+      if (err) throw err;
+      reload();
+    } catch (e: any) {
+      alert(e?.message || "Failed to suppress contract.");
+    }
+  };
+
+  const onRestoreContract = async (row: ContractRow) => {
+    try {
+      const { error: err } = await supabase.from("contracts").update({
+        status: "active",
+        is_suppressed: false,
+        suppressed_at: null,
+        suppressed_by: null,
+        suppressed_reason: null,
+      }).eq("id", row.id);
+      if (err) throw err;
+      reload();
+    } catch (e: any) {
+      alert(e?.message || "Failed to restore contract.");
+    }
+  };
+
+  const handlePermanentDeleteContract = async () => {
+    if (!permanentDeleteTarget) return;
+    try {
+      await supabase.from("contract_sections").delete().eq("contract_id", permanentDeleteTarget.id);
+      const { error: err } = await supabase.from("contracts").delete().eq("id", permanentDeleteTarget.id);
+      if (err) throw err;
+      setPermanentDeleteTarget(null);
+      reload();
+      alert("Suppressed contract permanently deleted.");
+    } catch (e: any) {
+      alert(e?.message || "Failed to permanently delete contract.");
+    }
   };
 
   /* ── document generation ── */
@@ -1258,6 +1320,7 @@ export default function ContractsPage() {
                     { key: "active", label: "Active", count: counts.active },
                     { key: "expired", label: "Expired", count: counts.expired },
                     { key: "terminated", label: "Terminated", count: counts.terminated },
+                    { key: "suppressed", label: "Suppressed", count: counts.suppressed },
                   ]}
                   activeFilter={activeFilter}
                   onFilterChange={setActiveFilter}
@@ -1292,8 +1355,10 @@ export default function ContractsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border-color/40">
-                      {filtered.map((row) => (
-                        <tr key={row.id} className="group hover:bg-surface-elevated/40 transition-colors">
+                      {filtered.map((row) => {
+                        const isSuppressed = Boolean(row.isSuppressed || row.status === "suppressed");
+                        return (
+                        <tr key={row.id} className={`group hover:bg-surface-elevated/40 transition-colors ${isSuppressed ? "opacity-80 bg-amber-500/[0.03]" : ""}`}>
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
                               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted/5 group-hover:bg-foreground group-hover:text-surface transition-all">
@@ -1325,7 +1390,13 @@ export default function ContractsPage() {
                           <td className="px-6 py-4 text-right font-bold text-foreground">{formatCurrency(row.monthlyRent)}</td>
                           <td className="px-6 py-4 text-right font-medium text-muted">{formatCurrency(row.depositAmount)}</td>
                           <td className="px-6 py-4">
-                            <StatusBadge status={row.status} />
+                            {isSuppressed ? (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+                                <Ban size={10} /> Suppressed
+                              </span>
+                            ) : (
+                              <StatusBadge status={row.status} />
+                            )}
                           </td>
                           <td className="px-6 py-4 text-right">
                             <TableRowActions>
@@ -1347,22 +1418,26 @@ export default function ContractsPage() {
                                 onClick={(e) => { e.stopPropagation(); void onDownload(row); }}
                                 disabled={printingId === row.id}
                               />
-                              <TableActionButton
-                                icon={Mail}
-                                label="Send Email"
-                                onClick={(e) => { e.stopPropagation(); void onSendEmail(row); }}
-                              />
-                              <TableActionButton
-                                icon={MessageSquare}
-                                label="Send WhatsApp"
-                                onClick={(e) => { e.stopPropagation(); void onSendWhatsApp(row); }}
-                              />
-                              <TableActionButton
-                                icon={Pencil}
-                                label="Edit Data"
-                                onClick={(e) => { e.stopPropagation(); openEdit(row); }}
-                              />
-                              {row.status === "pending" && (
+                              {!isSuppressed && (
+                                <>
+                                  <TableActionButton
+                                    icon={Mail}
+                                    label="Send Email"
+                                    onClick={(e) => { e.stopPropagation(); void onSendEmail(row); }}
+                                  />
+                                  <TableActionButton
+                                    icon={MessageSquare}
+                                    label="Send WhatsApp"
+                                    onClick={(e) => { e.stopPropagation(); void onSendWhatsApp(row); }}
+                                  />
+                                  <TableActionButton
+                                    icon={Pencil}
+                                    label="Edit Data"
+                                    onClick={(e) => { e.stopPropagation(); openEdit(row); }}
+                                  />
+                                </>
+                              )}
+                              {!isSuppressed && row.status === "pending" && (
                                 <TableActionButton
                                   icon={Play}
                                   label="Activate Lease"
@@ -1370,19 +1445,47 @@ export default function ContractsPage() {
                                   variant="success"
                                 />
                               )}
-                              <TableActionButton
-                                icon={Trash}
-                                label="Delete"
-                                variant="danger"
-                                onClick={(e) => { e.stopPropagation(); setDeleteTarget(row); }}
-                              />
+                              {isSuppressed ? (
+                                <>
+                                  <TableActionButton
+                                    icon={RotateCcw}
+                                    label="Restore Contract"
+                                    onClick={(e) => { e.stopPropagation(); void onRestoreContract(row); }}
+                                    variant="success"
+                                  />
+                                  {canDeletePermanently && (
+                                    <TableActionButton
+                                      icon={Trash}
+                                      label="Delete Permanently"
+                                      variant="danger"
+                                      onClick={(e) => { e.stopPropagation(); setPermanentDeleteTarget(row); }}
+                                    />
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  <TableActionButton
+                                    icon={Ban}
+                                    label="Suppress Contract"
+                                    variant="danger"
+                                    onClick={(e) => { e.stopPropagation(); void onSuppressContract(row); }}
+                                  />
+                                  <TableActionButton
+                                    icon={Trash}
+                                    label="Delete"
+                                    variant="danger"
+                                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(row); }}
+                                  />
+                                </>
+                              )}
                               <div className="ml-2 pl-2 border-l border-border-color/40">
                                 <ChevronRight size={18} className="text-muted/40 group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
                               </div>
                             </TableRowActions>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1789,6 +1892,15 @@ export default function ContractsPage() {
       {/* ═══════════ DELETE DIALOGS ═══════════ */}
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Contract" message={`Delete contract for ${deleteTarget?.tenantName}?`} confirmLabel="Delete" loading={deleting} />
       <ConfirmDialog open={!!deleteTemplateTarget} onClose={() => setDeleteTemplateTarget(null)} onConfirm={onDeleteTemplate} title="Delete Template" message={`Delete template "${deleteTemplateTarget?.title}"? This cannot be undone.`} confirmLabel="Delete" loading={deletingTemplate} />
+
+      <PinPromptDialog
+        isOpen={Boolean(permanentDeleteTarget)}
+        onClose={() => setPermanentDeleteTarget(null)}
+        onSuccess={handlePermanentDeleteContract}
+        title="Permanently Delete Suppressed Contract"
+        description={`Security PIN verification required. Please enter your PIN to permanently purge contract "${permanentDeleteTarget?.title}" for ${permanentDeleteTarget?.tenantName} from the database. This action is irreversible.`}
+        actionLabel="Verify PIN & Delete Permanently"
+      />
 
       <DocumentShareModal
         isOpen={shareModalDoc.isOpen}

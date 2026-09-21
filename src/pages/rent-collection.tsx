@@ -3,7 +3,8 @@ import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
 import { supabase } from "@/lib/supabase";
-import { isValidUuid } from "@/lib/data";
+import { isValidUuid, canDeleteSuppressedRecords } from "@/lib/data";
+import { PinPromptDialog } from "@/components/pin-dialog";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
 import { fetchCompanyInfo, fetchAdminInfo, downloadHtmlDocument, downloadPdfDocument, downloadPdfFromUrl, uploadPdfFromHtml, createPdfAttachmentFromUrl, uploadFileToBucket } from "@/lib/storage";
@@ -56,7 +57,8 @@ import {
   Ban,
   RotateCcw,
   Calendar,
-  Info
+  Info,
+  Trash2,
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 
@@ -154,7 +156,13 @@ function StatCard({ label, value, detail, icon: Icon, colorClass = "text-foregro
 }
 
 export default function RentCollectionPage() {
-  const { user, currentCompany } = useAuth();
+  const { user, currentCompany, currentCompanyUser, isSuperAdmin } = useAuth();
+  const canDeletePermanently = canDeleteSuppressedRecords(currentCompanyUser, isSuperAdmin);
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<{
+    type: "payment" | "invoice";
+    id: string;
+    title: string;
+  } | null>(null);
   const { format: formatCurrency } = useCurrency();
   const [tenants, setTenants] = useState<RentTenantRow[]>([]);
   const [paymentsByTenant, setPaymentsByTenant] = useState<Record<string, TenantPaymentHistoryRow[]>>({});
@@ -561,6 +569,49 @@ export default function RentCollectionPage() {
       reload();
     } catch (err: any) {
       alert("Error restoring payment: " + err.message);
+    }
+  };
+
+  const suppressInvoice = async (invoiceId: string) => {
+    if (!window.confirm("Suppress this invoice? Suppressed invoices remain archived in audit records but are excluded from active totals and allow re-issuing a corrected invoice.")) return;
+    try {
+      const { error } = await supabase.from("invoices").update({ status: "suppressed", is_suppressed: true }).eq("id", invoiceId);
+      if (error) throw error;
+      reload();
+      alert("Invoice suppressed successfully.");
+    } catch (err: any) {
+      alert("Failed to suppress invoice: " + (err?.message || String(err)));
+    }
+  };
+
+  const unsuppressInvoice = async (invoiceId: string) => {
+    try {
+      const { error } = await supabase.from("invoices").update({ status: "paid", is_suppressed: false }).eq("id", invoiceId);
+      if (error) throw error;
+      reload();
+      alert("Invoice restored to active status.");
+    } catch (err: any) {
+      alert("Failed to restore invoice: " + (err?.message || String(err)));
+    }
+  };
+
+  const handlePermanentDeleteTarget = async () => {
+    if (!permanentDeleteTarget) return;
+    const { type, id, title } = permanentDeleteTarget;
+    try {
+      if (type === "payment") {
+        const { error } = await supabase.from("tenant_rent_payments").delete().eq("id", id);
+        if (error) throw error;
+      } else if (type === "invoice") {
+        await supabase.from("invoice_items").delete().eq("invoice_id", id);
+        const { error } = await supabase.from("invoices").delete().eq("id", id);
+        if (error) throw error;
+      }
+      setPermanentDeleteTarget(null);
+      reload();
+      alert(`Suppressed ${type} ("${title}") was permanently deleted from the database.`);
+    } catch (err: any) {
+      alert(`Failed to permanently delete ${type}: ` + (err?.message || String(err)));
     }
   };
 
@@ -988,6 +1039,32 @@ export default function RentCollectionPage() {
       const isSupp = isPaymentSuppressed(payment);
       const pMonths = getPaymentMonths(payment);
       const monthLabel = pMonths.length > 1 ? `${pMonths[0]}_to_${pMonths[pMonths.length - 1]}` : (pMonths[0] || payment.paymentDate.slice(0, 7));
+
+      // Check if an active (non-suppressed) invoice already exists for this payment
+      if (payment.invoiceId && invoiceById[payment.invoiceId] && invoiceById[payment.invoiceId].status !== "suppressed") {
+        alert(`An active invoice (#${payment.invoiceId.slice(0, 8)}) already exists for this payment. If you need to re-issue it, please suppress the existing invoice first.`);
+        return;
+      }
+
+      // Check database to prevent duplicate active invoice for exact tenant, month, due_date and total_amount
+      const { data: existingActiveInvoices } = await supabase
+        .from("invoices")
+        .select("id, total_amount, due_date, month, status")
+        .eq("tenant_id", tenant.id)
+        .eq("month", monthLabel)
+        .eq("due_date", payment.paymentDate)
+        .neq("status", "suppressed");
+
+      const exactDuplicate = (existingActiveInvoices || []).find(
+        (inv) => Number(inv.total_amount) === Number(payment.amountPaid)
+      );
+
+      if (exactDuplicate) {
+        alert(
+          `Duplicate Invoice Prevented!\n\nAn active invoice (#${exactDuplicate.id.slice(0, 8)}) already exists for this exact payment (Amount: ${formatCurrency(payment.amountPaid)}, Month: ${monthLabel}).\n\nTo generate a new invoice, please suppress the existing invoice first.`
+        );
+        return;
+      }
 
       const { data: createdInvoice, error: createInvoiceError } = await supabase.from("invoices").insert({
         tenant_id: tenant.id,
@@ -1538,14 +1615,32 @@ export default function RentCollectionPage() {
                               </a>
                             )}
                             {isSupp ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleUnsuppressPayment(p)}
-                                className="rounded border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-500/20 transition flex items-center gap-1"
-                                title="Restore this entry to active accounting totals"
-                              >
-                                <RotateCcw size={10} /> Restore
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleUnsuppressPayment(p)}
+                                  className="rounded border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-500/20 transition flex items-center gap-1"
+                                  title="Restore this entry to active accounting totals"
+                                >
+                                  <RotateCcw size={10} /> Restore
+                                </button>
+                                {canDeletePermanently && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setPermanentDeleteTarget({
+                                        type: "payment",
+                                        id: p.id,
+                                        title: `Payment of ${formatCurrency(p.amountPaid)} (${p.paymentDate})`,
+                                      })
+                                    }
+                                    className="rounded border border-red-500/30 bg-red-500/10 p-1 text-red-600 hover:bg-red-500/20 transition"
+                                    title="Permanently purge suppressed payment from database with PIN"
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                )}
+                              </div>
                             ) : (
                               <button
                                 type="button"
@@ -2150,83 +2245,181 @@ export default function RentCollectionPage() {
               </div>
             ) : (
               <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
-                {paymentsByTenant[auditTimelineTenant.id].map((pay) => (
-                  <div
-                    key={pay.id}
-                    className="rounded-xl border border-border-color bg-surface p-3.5 space-y-2 hover:border-foreground/30 transition-all"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-black text-foreground">{formatCurrency(pay.amountPaid)}</span>
-                        <span className="rounded-full bg-surface-elevated border border-border-color px-2 py-0.5 text-[10px] font-bold text-muted">
-                          {pay.paymentMethod || "EFT / Bank"}
-                        </span>
-                        {pay.popUrl ? (
-                          <a
-                            href={pay.popUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full hover:underline"
-                          >
-                            <FileText size={11} /> View POP <ExternalLink size={9} />
-                          </a>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
-                            <AlertCircle size={11} /> No POP
+                {paymentsByTenant[auditTimelineTenant.id].map((pay) => {
+                  const isSupp = isPaymentSuppressed(pay);
+                  const linkedInvoice = pay.invoiceId ? invoiceById[pay.invoiceId] : null;
+                  const isInvSupp = linkedInvoice?.status === "suppressed";
+                  return (
+                    <div
+                      key={pay.id}
+                      className={`rounded-xl border p-3.5 space-y-2 transition-all ${
+                        isSupp
+                          ? "border-red-500/20 bg-red-500/[0.03] opacity-80"
+                          : "border-border-color bg-surface hover:border-foreground/30"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-sm font-black ${isSupp ? "line-through text-muted" : "text-foreground"}`}>
+                            {formatCurrency(pay.amountPaid)}
                           </span>
+                          {isSupp && (
+                            <span className="rounded bg-red-500/10 border border-red-500/20 px-1.5 py-0.5 text-[9px] font-bold text-red-600">
+                              Suppressed
+                            </span>
+                          )}
+                          <span className="rounded-full bg-surface-elevated border border-border-color px-2 py-0.5 text-[10px] font-bold text-muted">
+                            {pay.paymentMethod || "EFT / Bank"}
+                          </span>
+                          {pay.popUrl ? (
+                            <a
+                              href={pay.popUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full hover:underline"
+                            >
+                              <FileText size={11} /> View POP <ExternalLink size={9} />
+                            </a>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                              <AlertCircle size={11} /> No POP
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] font-bold text-muted">{pay.paymentDate}</span>
+                      </div>
+
+                      <p className="text-xs text-muted">
+                        Recorded by: <span className="font-semibold text-foreground">{pay.executedByName || "Staff"}</span>
+                        {pay.notes && <span className="block text-[11px] text-muted/80 mt-0.5 italic">{pay.notes}</span>}
+                      </p>
+
+                      <div className="flex items-center justify-between pt-2 border-t border-border-color/50 text-xs flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const t = auditTimelineTenant;
+                              setSelectedPaymentDetail({ payment: pay, tenant: t });
+                            }}
+                            className="text-[11px] font-bold text-foreground hover:underline flex items-center gap-1"
+                          >
+                            <Eye size={12} /> Inspection Details
+                          </button>
+                          {isSupp ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => void handleUnsuppressPayment(pay)}
+                                className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-0.5"
+                                title="Restore suppressed payment to active status"
+                              >
+                                <RotateCcw size={10} /> Restore Payment
+                              </button>
+                              {canDeletePermanently && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPermanentDeleteTarget({
+                                      type: "payment",
+                                      id: pay.id,
+                                      title: `Payment of ${formatCurrency(pay.amountPaid)} (${pay.paymentDate})`,
+                                    })
+                                  }
+                                  className="text-[10px] font-bold text-red-600 hover:underline flex items-center gap-0.5"
+                                  title="Permanently delete suppressed payment with PIN"
+                                >
+                                  <Trash2 size={10} /> Purge
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setSuppressPrompt({ isOpen: true, payment: pay, reason: "", submitting: false })}
+                              className="text-[10px] font-bold text-red-600 hover:underline flex items-center gap-0.5"
+                              title="Suppress payment"
+                            >
+                              <Ban size={10} /> Suppress
+                            </button>
+                          )}
+                        </div>
+
+                        {pay.invoiceId && linkedInvoice ? (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {isInvSupp ? (
+                              <>
+                                <span className="text-[10px] font-bold text-red-600 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
+                                  Invoice Suppressed
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => void unsuppressInvoice(pay.invoiceId!)}
+                                  className="text-[10px] font-bold uppercase text-emerald-600 hover:underline flex items-center gap-0.5"
+                                  title="Restore invoice back to active"
+                                >
+                                  <RotateCcw size={10} /> Restore Inv
+                                </button>
+                                {canDeletePermanently && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setPermanentDeleteTarget({
+                                        type: "invoice",
+                                        id: pay.invoiceId!,
+                                        title: `Invoice #${pay.invoiceId!.slice(0, 8)}`,
+                                      })
+                                    }
+                                    className="text-[10px] font-bold uppercase text-red-600 hover:underline flex items-center gap-0.5"
+                                    title="Permanently delete suppressed invoice with PIN"
+                                  >
+                                    <Trash2 size={10} /> Purge
+                                  </button>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => void viewInvoiceForPayment(pay, auditTimelineTenant.fullName, auditTimelineTenant.propertyName)}
+                                  className="text-[10px] font-bold uppercase text-blue-600 hover:underline flex items-center gap-1"
+                                >
+                                  <Eye size={11} /> View Invoice
+                                </button>
+                                <span className="text-muted/40">•</span>
+                                <button
+                                  type="button"
+                                  onClick={() => void downloadInvoiceForPayment(pay, auditTimelineTenant.fullName, auditTimelineTenant.propertyName)}
+                                  className="text-[10px] font-bold uppercase text-muted hover:text-foreground flex items-center gap-1"
+                                >
+                                  <Download size={11} /> Download
+                                </button>
+                                <span className="text-muted/40">•</span>
+                                <button
+                                  type="button"
+                                  onClick={() => void suppressInvoice(pay.invoiceId!)}
+                                  className="text-[10px] font-bold uppercase text-red-600 hover:underline flex items-center gap-0.5"
+                                  title="Suppress/void invoice"
+                                >
+                                  <Ban size={10} /> Suppress Inv
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => void generateInvoiceForPayment(auditTimelineTenant, pay)}
+                            disabled={invoiceActionPaymentId === pay.id}
+                            className="rounded-lg bg-surface-elevated border border-border-color px-2.5 py-1 text-[10px] font-black uppercase text-foreground hover:bg-surface transition"
+                          >
+                            {invoiceActionPaymentId === pay.id ? "Generating..." : "Generate Invoice"}
+                          </button>
                         )}
                       </div>
-                      <span className="text-[11px] font-bold text-muted">{pay.paymentDate}</span>
                     </div>
-
-                    <p className="text-xs text-muted">
-                      Recorded by: <span className="font-semibold text-foreground">{pay.executedByName || "Staff"}</span>
-                      {pay.notes && <span className="block text-[11px] text-muted/80 mt-0.5 italic">{pay.notes}</span>}
-                    </p>
-
-                    <div className="flex items-center justify-between pt-2 border-t border-border-color/50 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const t = auditTimelineTenant;
-                          setSelectedPaymentDetail({ payment: pay, tenant: t });
-                        }}
-                        className="text-[11px] font-bold text-foreground hover:underline flex items-center gap-1"
-                      >
-                        <Eye size={12} /> Inspection Details
-                      </button>
-
-                      {pay.invoiceId ? (
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => void viewInvoiceForPayment(pay, auditTimelineTenant.fullName, auditTimelineTenant.propertyName)}
-                            className="text-[10px] font-bold uppercase text-blue-600 hover:underline flex items-center gap-1"
-                          >
-                            <Eye size={11} /> View Invoice
-                          </button>
-                          <span className="text-muted/40">•</span>
-                          <button
-                            type="button"
-                            onClick={() => void downloadInvoiceForPayment(pay, auditTimelineTenant.fullName, auditTimelineTenant.propertyName)}
-                            className="text-[10px] font-bold uppercase text-muted hover:text-foreground flex items-center gap-1"
-                          >
-                            <Download size={11} /> Download
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => void generateInvoiceForPayment(auditTimelineTenant, pay)}
-                          disabled={invoiceActionPaymentId === pay.id}
-                          className="rounded-lg bg-surface-elevated border border-border-color px-2.5 py-1 text-[10px] font-black uppercase text-foreground hover:bg-surface transition"
-                        >
-                          {invoiceActionPaymentId === pay.id ? "Generating..." : "Generate Invoice"}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -2391,6 +2584,17 @@ export default function RentCollectionPage() {
         ownerEmail={shareModalDoc.ownerEmail}
         defaultSubject={shareModalDoc.defaultSubject}
         defaultMessage={shareModalDoc.defaultMessage}
+      />
+
+      {/* PIN Prompt for Permanent Deletion of Suppressed Record */}
+      <PinPromptDialog
+        isOpen={Boolean(permanentDeleteTarget)}
+        onClose={() => setPermanentDeleteTarget(null)}
+        onSuccess={handlePermanentDeleteTarget}
+        title={`Authorize Permanent Deletion of Suppressed ${permanentDeleteTarget?.type ? permanentDeleteTarget.type.toUpperCase() : "RECORD"}`}
+        description={`Super Admin / Delegated Authority: Enter your 4-digit security PIN to permanently purge "${permanentDeleteTarget?.title}" from the database. This action CANNOT be undone.`}
+        actionLabel="Permanently Delete"
+        actionVariant="danger"
       />
     </ModulePage>
   );

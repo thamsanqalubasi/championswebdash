@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
-import { fetchTenantsData, isValidUuid, fetchCompanyUsers } from "@/lib/data";
+import { fetchTenantsData, isValidUuid, fetchCompanyUsers, canDeleteSuppressedRecords } from "@/lib/data";
+import { PinPromptDialog } from "@/components/pin-dialog";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
@@ -26,6 +27,7 @@ import {
   Mail,
   Pencil,
   Trash,
+  Trash2,
   UserX,
   UserCheck,
   ChevronRight,
@@ -47,6 +49,7 @@ import {
   FileText,
   ArrowLeft,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   ExternalLink,
   Users,
@@ -56,6 +59,7 @@ import {
   Ban,
   RotateCcw,
   AlertCircle,
+  Bell,
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 import {
@@ -143,6 +147,7 @@ type TenantContractRow = {
   notes: string;
   documentUrl: string;
   sections: ContractSection[];
+  isSuppressed?: boolean;
 };
 
 const emptyForm = {
@@ -234,7 +239,16 @@ async function buildInvoiceHtmlProfessional(
 }
 
 export default function TenantsPage() {
-  const { user, currentCompany, currentCompanyUser } = useAuth();
+  const { user, currentCompany, currentCompanyUser, isSuperAdmin } = useAuth();
+  const canDeletePermanently = canDeleteSuppressedRecords(currentCompanyUser, isSuperAdmin);
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<{
+    type: "payment" | "invoice" | "contract";
+    id: string;
+    title: string;
+  } | null>(null);
+  const [reminderPinOpen, setReminderPinOpen] = useState(false);
+  const [sendingReminder, setSendingReminder] = useState(false);
+  const [reminderSuccessMessage, setReminderSuccessMessage] = useState<string | null>(null);
   const { format: formatCurrency } = useCurrency();
 
   const [tenants, setTenants] = useState<TenantRow[]>([]);
@@ -721,6 +735,7 @@ export default function TenantsPage() {
           monthlyRent: Number(c.monthly_rent ?? 0),
           depositAmount: Number(c.deposit_amount ?? 0),
           status: String(c.status ?? "pending"),
+          isSuppressed: Boolean(c.is_suppressed || c.status === "suppressed"),
           notes: String(c.notes ?? ""),
           documentUrl: String(c.document_url ?? ""),
           sections: contractSectionsMap[String(c.id)] ?? [],
@@ -776,7 +791,8 @@ export default function TenantsPage() {
 
       // Determine required rent from contract or assigned property
       let reqRent = 0;
-      const activeContract = rawContracts.find((c: any) => c.status === "active") || rawContracts[0];
+      const activeContract = rawContracts.find((c: any) => c.status === "active" && !c.is_suppressed) ||
+        rawContracts.find((c: any) => c.status !== "suppressed" && !c.is_suppressed);
       if (activeContract && Number(activeContract.monthly_rent) > 0) {
         reqRent = Number(activeContract.monthly_rent);
       } else {
@@ -1568,6 +1584,8 @@ export default function TenantsPage() {
     setGeneratingInvoice(true);
 
     try {
+      const totalAmount = selectedPayments.reduce((sum, payment) => sum + payment.amountPaid, 0);
+
       const sortedMonthKeys = Array.from(
         new Set(selectedPayments.map((payment) => toMonthKey(payment.paymentDate)).filter(Boolean)),
       ).sort((a, b) => b.localeCompare(a));
@@ -1577,21 +1595,43 @@ export default function TenantsPage() {
           ? sortedMonthKeys[0] || toMonthKey(new Date().toISOString())
           : `${sortedMonthKeys.at(-1)}_to_${sortedMonthKeys[0]}`;
 
-      const { data: existingInvoices, error: existingError } = await supabase
+      // Check for exact duplicate invoice: same tenant, property, total amount, and not suppressed
+      const { data: existingActiveInvoices, error: existingError } = await supabase
         .from("invoices")
-        .select("id, month")
+        .select("id, month, total_amount, invoice_items(description, amount)")
         .eq("tenant_id", detailsRow.id)
         .eq("property_id", detailsPropertyId)
-        .ilike("month", `${invoiceMonthLabel}%`)
         .neq("status", "suppressed");
 
       if (existingError) throw existingError;
 
-      if (existingInvoices && existingInvoices.length > 0) {
-        invoiceMonthLabel = `${invoiceMonthLabel} (Part ${existingInvoices.length + 1})`;
+      if (existingActiveInvoices && existingActiveInvoices.length > 0) {
+        const exactDuplicate = existingActiveInvoices.find((inv: any) => {
+          if (Math.abs(Number(inv.total_amount) - totalAmount) > 0.01) return false;
+          const items = inv.invoice_items || [];
+          const paymentsRepresented = selectedPayments.every((p) =>
+            items.some((item: any) =>
+              (item.description && item.description.includes(p.paymentDate)) ||
+              Math.abs(Number(item.amount) - p.amountPaid) < 0.01
+            )
+          );
+          return paymentsRepresented;
+        });
+
+        if (exactDuplicate) {
+          alert(
+            `Duplicate Invoice Blocked: An active invoice (#${exactDuplicate.id.slice(0, 8)} for ${formatCurrency(totalAmount)}) already exists covering the exact same payment transactions.\n\nTo regenerate or re-issue this invoice, please suppress the existing invoice first.`
+          );
+          return;
+        }
       }
 
-      const totalAmount = selectedPayments.reduce((sum, payment) => sum + payment.amountPaid, 0);
+      const existingForMonth = (existingActiveInvoices || []).filter((inv: any) =>
+        inv.month && inv.month.startsWith(invoiceMonthLabel)
+      );
+      if (existingForMonth.length > 0) {
+        invoiceMonthLabel = `${invoiceMonthLabel} (Part ${existingForMonth.length + 1})`;
+      }
       const dueDate = new Date().toISOString().slice(0, 10);
       const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
 
@@ -1897,6 +1937,188 @@ export default function TenantsPage() {
       }
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to suppress invoice.");
+    }
+  };
+
+  const unsuppressTenantInvoice = async (invoice: { id: string; month: string }) => {
+    try {
+      const { error: updateError } = await supabase
+        .from("invoices")
+        .update({ status: "paid", is_suppressed: false })
+        .eq("id", invoice.id);
+
+      if (updateError) throw updateError;
+
+      if (detailsRow) {
+        await loadTenantDetails(detailsRow.id);
+        reload();
+      }
+      alert("Invoice restored to active status.");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to restore invoice.");
+    }
+  };
+
+  const suppressTenantContract = async (contract: { id: string; title: string }) => {
+    const reason = window.prompt(`Please enter reason for suppressing/voiding contract "${contract.title}":`)?.trim();
+    if (reason === null) return;
+    try {
+      const admin = await fetchAdminInfo(user?.email ?? undefined);
+      const staffName = admin.fullName || user?.email || "Staff";
+      const { error } = await supabase.from("contracts").update({
+        status: "suppressed",
+        is_suppressed: true,
+        suppressed_at: new Date().toISOString(),
+        suppressed_by: staffName,
+        suppressed_reason: reason || "Suppressed by staff for archive/voiding",
+      }).eq("id", contract.id);
+      if (error) throw error;
+      if (detailsRow) {
+        await loadTenantDetails(detailsRow.id);
+        reload();
+      }
+      alert("Contract suppressed successfully.");
+    } catch (err: any) {
+      alert(err?.message || "Failed to suppress contract.");
+    }
+  };
+
+  const unsuppressTenantContract = async (contract: { id: string; title: string }) => {
+    try {
+      const { error } = await supabase.from("contracts").update({
+        status: "active",
+        is_suppressed: false,
+        suppressed_at: null,
+        suppressed_by: null,
+        suppressed_reason: null,
+      }).eq("id", contract.id);
+      if (error) throw error;
+      if (detailsRow) {
+        await loadTenantDetails(detailsRow.id);
+        reload();
+      }
+      alert("Contract restored to active status.");
+    } catch (err: any) {
+      alert(err?.message || "Failed to restore contract.");
+    }
+  };
+
+  const handlePermanentDelete = async () => {
+    if (!permanentDeleteTarget || !detailsRow) return;
+    const { type, id, title } = permanentDeleteTarget;
+    try {
+      if (type === "payment") {
+        const { error } = await supabase.from("tenant_rent_payments").delete().eq("id", id);
+        if (error) throw error;
+      } else if (type === "invoice") {
+        await supabase.from("invoice_items").delete().eq("invoice_id", id);
+        const { error } = await supabase.from("invoices").delete().eq("id", id);
+        if (error) throw error;
+      } else if (type === "contract") {
+        await supabase.from("contract_sections").delete().eq("contract_id", id);
+        const { error } = await supabase.from("contracts").delete().eq("id", id);
+        if (error) throw error;
+      }
+      await loadTenantDetails(detailsRow.id);
+      reload();
+      setPermanentDeleteTarget(null);
+      alert(`Suppressed ${type} ("${title}") was permanently deleted from the database.`);
+    } catch (err: any) {
+      alert(err?.message || `Failed to permanently delete ${type}.`);
+    }
+  };
+
+  const handleSendPaymentReminder = async () => {
+    if (!detailsRow || !detailsRow.email) {
+      alert("Tenant email is missing.");
+      return;
+    }
+    setSendingReminder(true);
+    setReminderSuccessMessage(null);
+    try {
+      const origin = typeof window !== "undefined" ? window.location.origin : "https://paimbabook.com";
+      const portalUrl = `${origin}/portal-login`;
+      const currMonth = toMonthKey(new Date().toISOString());
+      const monthState = calculateMonthRentState({
+        monthlyRent: detailsRequiredRent,
+        payments,
+        targetMonth: currMonth,
+      });
+
+      const emailHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+          <h2 style="color: #0f172a; margin-top: 0;">Monthly Rent Payment Notice</h2>
+          <p style="color: #475569; font-size: 15px;">Dear <strong>${detailsRow.fullName}</strong>,</p>
+          <p style="color: #475569; font-size: 14px; line-height: 1.6;">
+            This is an official payment notice regarding your monthly rental for <strong>${detailsPropertyName || "your leased premises"}</strong> with <strong>${currentCompany?.name || "Paimbabook"}</strong>.
+          </p>
+          
+          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 20px 0;">
+            <table style="width: 100%; font-size: 14px; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;">Billing Month:</td>
+                <td style="padding: 6px 0; font-weight: bold; text-align: right; color: #0f172a;">${formatMonthLabel(currMonth)}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;">Monthly Rent Due:</td>
+                <td style="padding: 6px 0; font-weight: bold; text-align: right; color: #0f172a;">${formatCurrency(detailsRequiredRent)}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;">Recorded Payments:</td>
+                <td style="padding: 6px 0; font-weight: bold; text-align: right; color: #059669;">${formatCurrency(monthState.totalPaid)}</td>
+              </tr>
+              <tr style="border-top: 1px solid #cbd5e1;">
+                <td style="padding: 8px 0; font-weight: bold; color: #0f172a;">Outstanding Balance:</td>
+                <td style="padding: 8px 0; font-weight: 900; font-size: 16px; text-align: right; color: ${monthState.remainingDue > 0 ? "#dc2626" : "#059669"};">
+                  ${formatCurrency(monthState.remainingDue)}
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <p style="color: #475569; font-size: 13px; line-height: 1.5;">
+            Please ensure your payment is settled or proof of payment uploaded through your resident portal.
+          </p>
+
+          <div style="text-align: center; margin: 24px 0;">
+            <a href="${portalUrl}" style="background-color: #0f172a; color: #ffffff; padding: 12px 28px; border-radius: 10px; font-weight: bold; text-decoration: none; display: inline-block; font-size: 14px;">
+              Access Resident Portal
+            </a>
+          </div>
+
+          <div style="border-top: 1px solid #f1f5f9; padding-top: 16px; font-size: 12px; color: #94a3b8; text-align: center;">
+            ${currentCompany?.name || "Paimbabook Property Management"} • ${currentCompany?.email || ""} • ${currentCompany?.phone || ""}
+          </div>
+        </div>
+      `;
+
+      await sendCustomHtmlEmail({
+        to: detailsRow.email,
+        subject: `Rent Payment Notice: ${formatMonthLabel(currMonth)} - ${detailsPropertyName || "Residence"} | ${currentCompany?.name || "Paimbabook"}`,
+        html: emailHtml,
+        bodyFallback: `Dear ${detailsRow.fullName},\n\nThis is a rent notice for ${detailsPropertyName || "your unit"}.\nMonthly Rent: ${detailsRequiredRent}\nPaid: ${monthState.totalPaid}\nOutstanding: ${monthState.remainingDue}\n\nPlease visit the resident portal: ${portalUrl}`,
+      });
+
+      await supabase.from("audit_log").insert({
+        user_email: user?.email || "admin@paimbabook.com",
+        user_name: (user as any)?.fullName || user?.email || "Staff",
+        action: "tenant_payment_reminder_sent",
+        entity_type: "tenant",
+        entity_id: detailsRow.id,
+        company_id: currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null,
+        details: {
+          tenant_name: detailsRow.fullName,
+          month: currMonth,
+          remaining: monthState.remainingDue,
+        },
+      });
+
+      setReminderSuccessMessage(`Payment reminder sent successfully to ${detailsRow.fullName} (${detailsRow.email})!`);
+    } catch (err: any) {
+      alert(err?.message || "Failed to send payment reminder.");
+    } finally {
+      setSendingReminder(false);
+      setReminderPinOpen(false);
     }
   };
 
@@ -2433,6 +2655,40 @@ export default function TenantsPage() {
                   <span>{invitationSuccessMessage}</span>
                 </div>
               )}
+
+              {/* Payment Reminder Notice with PIN */}
+              <div className="pt-3 border-t border-border-color/50">
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <Bell size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold">Rent Payment Notice & Reminder</p>
+                      <p className="text-[11px] text-amber-800 dark:text-amber-300/90 mt-0.5">
+                        Send an official rent statement reminder to {detailsRow.fullName} via email with billing details & EFT instructions. Requires Security PIN authorization.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setReminderPinOpen(true)}
+                      disabled={sendingReminder || !detailsRow.email}
+                      className="flex items-center gap-1.5 rounded-lg bg-amber-600 dark:bg-amber-500 px-3.5 py-1.5 text-xs font-bold text-white hover:opacity-90 transition shadow-xs disabled:opacity-50"
+                      title={!detailsRow.email ? "Tenant email missing" : "Authorize reminder with PIN"}
+                    >
+                      <Send size={12} />
+                      <span>{sendingReminder ? "Sending..." : "Send Payment Reminder"}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {reminderSuccessMessage && (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
+                  <CheckCircle2 size={14} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <span>{reminderSuccessMessage}</span>
+                </div>
+              )}
             </div>
 
             {/* Quick Actions / Assignment */}
@@ -2633,15 +2889,32 @@ export default function TenantsPage() {
                               {/* Action Buttons for Suppression & Restoration */}
                               {item.paymentId && (
                                 item.isSuppressed ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => void handleUnsuppressPayment(item.paymentId!, item.amount)}
-                                    className="flex items-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition"
-                                    title="Restore payment to active status"
-                                  >
-                                    <RotateCcw size={11} />
-                                    <span>Restore</span>
-                                  </button>
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleUnsuppressPayment(item.paymentId!, item.amount)}
+                                      className="flex items-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition"
+                                      title="Restore payment to active status"
+                                    >
+                                      <RotateCcw size={11} />
+                                      <span>Restore</span>
+                                    </button>
+                                    {canDeletePermanently && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setPermanentDeleteTarget({
+                                          type: "payment",
+                                          id: item.paymentId!,
+                                          title: `${formatCurrency(item.amount)} on ${formatDate(item.date)}`
+                                        })}
+                                        className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-1 text-[11px] font-bold text-red-600 dark:text-red-400 hover:bg-red-500/20 transition"
+                                        title="Permanently purge suppressed payment from database with PIN"
+                                      >
+                                        <Trash2 size={11} />
+                                        <span>Delete</span>
+                                      </button>
+                                    )}
+                                  </div>
                                 ) : (
                                   <button
                                     type="button"
@@ -2742,9 +3015,31 @@ export default function TenantsPage() {
                                   Suppress
                                 </button>
                               ) : (
-                                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold italic px-1">
-                                  Archived
-                                </span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => void unsuppressTenantInvoice(invoice)}
+                                    className="p-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 transition-all text-xs font-semibold"
+                                    title="Restore invoice back to active"
+                                  >
+                                    <RotateCcw size={11} className="inline mr-1" />
+                                    Restore
+                                  </button>
+                                  {canDeletePermanently && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setPermanentDeleteTarget({
+                                        type: "invoice",
+                                        id: invoice.id,
+                                        title: `Invoice #${invoice.id.slice(0, 8)} (${invoice.month})`
+                                      })}
+                                      className="p-1.5 rounded-lg border border-red-500/40 bg-red-500/10 text-red-600 hover:bg-red-500/20 transition-all text-xs font-semibold"
+                                      title="Permanently purge suppressed invoice from database with PIN"
+                                    >
+                                      <Trash2 size={11} />
+                                    </button>
+                                  )}
+                                </div>
                               )}
                             </div>
                             <div className="flex items-center gap-1.5 relative">
@@ -2833,30 +3128,92 @@ export default function TenantsPage() {
                   <div className="py-10 border border-dashed border-border-color rounded-xl"><EmptyState title="No active contracts" description="" /></div>
                 ) : (
                   <div className="space-y-4">
-                    {tenantContracts.map((contract) => (
-                      <div key={contract.id} className="p-5 rounded-2xl border-2 border-border-color bg-surface group relative overflow-hidden">
-                        <div className="flex items-center justify-between mb-4">
-                          <p className="text-sm font-black tracking-tight text-foreground uppercase">{contract.title}</p>
-                          <StatusBadge status={contract.status} />
-                        </div>
-                        <div className="grid grid-cols-2 gap-y-4 text-xs">
-                          <div>
-                            <p className="text-[9px] font-bold text-muted/50 uppercase mb-1">Rental Period</p>
-                            <p className="font-bold">{formatDate(contract.startDate)} - {formatDate(contract.endDate)}</p>
+                    {tenantContracts.map((contract) => {
+                      const isSupp = Boolean(contract.isSuppressed || contract.status === "suppressed");
+                      return (
+                        <div
+                          key={contract.id}
+                          className={`p-5 rounded-2xl border-2 transition-all relative overflow-hidden ${
+                            isSupp
+                              ? "border-red-300/60 dark:border-red-900/60 bg-red-500/5 dark:bg-red-950/20 opacity-85"
+                              : "border-border-color bg-surface group"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-black tracking-tight text-foreground uppercase">{contract.title}</p>
+                              {isSupp && (
+                                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-800">
+                                  <Ban size={10} /> Suppressed (Voided)
+                                </span>
+                              )}
+                            </div>
+                            <StatusBadge status={isSupp ? "suppressed" : contract.status} />
                           </div>
-                          <div className="text-right">
-                            <p className="text-[9px] font-bold text-muted/50 uppercase mb-1">Monthly Cost</p>
-                            <p className="font-bold text-foreground text-sm">{formatCurrency(contract.monthlyRent)}</p>
+                          <div className="grid grid-cols-2 gap-y-4 text-xs">
+                            <div>
+                              <p className="text-[9px] font-bold text-muted/50 uppercase mb-1">Rental Period</p>
+                              <p className="font-bold">{formatDate(contract.startDate)} - {formatDate(contract.endDate)}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[9px] font-bold text-muted/50 uppercase mb-1">Monthly Cost</p>
+                              <p className="font-bold text-foreground text-sm">{formatCurrency(contract.monthlyRent)}</p>
+                            </div>
                           </div>
+                          <div className="flex items-center justify-between gap-1.5 mt-6 pt-3 border-t border-border-color/40">
+                            <div>
+                              {!isSupp ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void suppressTenantContract(contract)}
+                                  className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/5 px-2 py-1 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-500/15 transition-all"
+                                  title="Suppress/void this contract so it does not affect active rent"
+                                >
+                                  <Ban size={12} />
+                                  <span>Suppress</span>
+                                </button>
+                              ) : (
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => void unsuppressTenantContract(contract)}
+                                    className="flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs font-semibold text-emerald-600 hover:bg-emerald-500/20 transition-all"
+                                    title="Restore contract back to active"
+                                  >
+                                    <RotateCcw size={12} />
+                                    <span>Restore</span>
+                                  </button>
+                                  {canDeletePermanently && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setPermanentDeleteTarget({
+                                          type: "contract",
+                                          id: contract.id,
+                                          title: contract.title,
+                                        })
+                                      }
+                                      className="p-1.5 rounded-lg border border-red-500/40 bg-red-500/10 text-red-600 hover:bg-red-500/20 transition-all text-xs font-semibold"
+                                      title="Permanently purge suppressed contract from database with PIN"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <button onClick={() => void openContractPreview(contract)} className="p-2 rounded-xl bg-surface-elevated border border-border-color hover:border-foreground/20 transition-all shadow-sm" title="Preview Contract"><Eye size={16} className="text-muted" /></button>
+                              <button onClick={() => void downloadContract(contract)} className="p-2 rounded-xl bg-surface-elevated border border-border-color hover:border-foreground/20 transition-all shadow-sm" title="Download Contract PDF"><Download size={16} className="text-muted" /></button>
+                              {!isSupp && (
+                                <button onClick={() => void shareContract(contract, "whatsapp")} className="p-2 rounded-xl bg-green-50 text-green-600 border border-green-100 hover:bg-green-600 hover:text-white transition-all shadow-sm" title="Share via WhatsApp"><Send size={16} /></button>
+                              )}
+                            </div>
+                          </div>
+                          <div className={`absolute bottom-0 left-0 h-1.5 w-full bg-current opacity-5 ${isSupp ? "text-red-500" : contract.status === "active" ? "text-green-500" : "text-amber-500"}`} />
                         </div>
-                        <div className="flex items-center justify-end gap-1.5 mt-6">
-                          <button onClick={() => void openContractPreview(contract)} className="p-2 rounded-xl bg-surface-elevated border border-border-color hover:border-foreground/20 transition-all shadow-sm"><Eye size={16} className="text-muted" /></button>
-                          <button onClick={() => void downloadContract(contract)} className="p-2 rounded-xl bg-surface-elevated border border-border-color hover:border-foreground/20 transition-all shadow-sm"><Download size={16} className="text-muted" /></button>
-                          <button onClick={() => void shareContract(contract, "whatsapp")} className="p-2 rounded-xl bg-green-50 text-green-600 border border-green-100 hover:bg-green-600 hover:text-white transition-all shadow-sm"><Send size={16} /></button>
-                        </div>
-                        <div className={`absolute bottom-0 left-0 h-1.5 w-full bg-current opacity-5 ${contract.status === "active" ? "text-green-500" : "text-amber-500"}`} />
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </section>
@@ -3784,6 +4141,28 @@ export default function TenantsPage() {
           </div>
         )}
       </Modal>
+
+      {/* PIN Prompt for Permanent Deletion of Suppressed Records */}
+      <PinPromptDialog
+        isOpen={Boolean(permanentDeleteTarget)}
+        onClose={() => setPermanentDeleteTarget(null)}
+        onSuccess={handlePermanentDelete}
+        title={`Authorize Permanent Deletion of Suppressed ${permanentDeleteTarget?.type ? permanentDeleteTarget.type.toUpperCase() : "RECORD"}`}
+        description={`Super Admin / Delegated Authority: Enter your 4-digit security PIN to permanently delete "${permanentDeleteTarget?.title}". This purge is irreversible.`}
+        actionLabel="Permanently Delete"
+        actionVariant="danger"
+      />
+
+      {/* PIN Prompt for Rent Payment Reminder Notice */}
+      <PinPromptDialog
+        isOpen={reminderPinOpen}
+        onClose={() => setReminderPinOpen(false)}
+        onSuccess={handleSendPaymentReminder}
+        title="Authorize Rent Payment Reminder"
+        description="Enter your 4-digit security PIN to authorize and dispatch the official monthly rent payment notice and statement to the tenant."
+        actionLabel="Send Payment Reminder"
+        actionVariant="primary"
+      />
     </ModulePage>
   );
 }

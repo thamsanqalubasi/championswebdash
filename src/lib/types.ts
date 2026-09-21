@@ -446,6 +446,10 @@ export type InvoiceRow = {
   dueDate: string;
   totalAmount: number;
   status: InvoiceStatus;
+  isSuppressed?: boolean;
+  suppressedAt?: string;
+  suppressedBy?: string;
+  suppressedReason?: string;
 };
 
 export type ReportsSummary = {
@@ -549,6 +553,8 @@ export type MaintenanceOverviewData = {
 export type ContractRow = {
   id: string;
   companyId?: string;
+  tenantId?: string;
+  propertyId?: string;
   title: string;
   tenantName: string;
   propertyName: string;
@@ -558,6 +564,10 @@ export type ContractRow = {
   depositAmount: number;
   notes: string;
   status: string;
+  isSuppressed?: boolean;
+  suppressedAt?: string;
+  suppressedBy?: string;
+  suppressedReason?: string;
 };
 
 export type AuditEventRow = {
