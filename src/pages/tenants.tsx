@@ -736,7 +736,7 @@ export default function TenantsPage() {
         try {
           const { data: fallbackPayments } = await supabase
             .from("tenant_rent_payments")
-            .select("id, payment_date, amount_paid")
+            .select("id, payment_date, amount_paid, paid_months, paid_month, notes, payment_method, pop_url")
             .eq("tenant_id", tenantId)
             .order("payment_date", { ascending: false });
           if (fallbackPayments) paymentRows = fallbackPayments;
