@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { uploadFileToBucket } from '@/lib/storage';
 import { useAuth } from '@/lib/auth';
 import { useCurrency } from '@/lib/currency';
 import { fetchProperties } from '@/lib/data';
+import { getAllCountries, getCitiesForCountry } from '@/lib/geo-data';
 import { 
   Plus, Edit, Trash, Eye, EyeOff, Upload, X, Save, User, Building2, 
   ChevronLeft, ChevronRight, MapPin, Phone, Mail, Camera, Home, 
@@ -103,15 +104,16 @@ export default function AgentPortalPage() {
   const defaultFormData = {
     name: '',
     type: 'house',
+    propertyLayout: '',
     listingType: 'sale' as 'rent' | 'sale',
-    price: 0,
+    price: '',
     address: '',
     city: '',
     country: '',
     description: '',
-    bedrooms: 0,
-    bathrooms: 0,
-    areaSqm: 0,
+    bedrooms: '',
+    bathrooms: '',
+    areaSqm: '',
     amenities: [] as string[],
     photos: [] as string[],
   };
@@ -121,6 +123,77 @@ export default function AgentPortalPage() {
   const [formSaving, setFormSaving] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [uploadingProfilePic, setUploadingProfilePic] = useState(false);
+  const [customCityActive, setCustomCityActive] = useState(false);
+  const [customCityText, setCustomCityText] = useState('');
+
+  // Country & City selector options with Southern African regional priority
+  const allCountryOptions = useMemo(() => {
+    const list = getAllCountries(listings);
+    const priority = ['Namibia', 'South Africa', 'Botswana', 'Zimbabwe', 'Zambia', 'Angola', 'Mozambique'];
+    const top = priority.filter(c => list.includes(c));
+    const others = list.filter(c => !priority.includes(c));
+    return [...top, '──────────', ...others];
+  }, [listings]);
+
+  const availableCities = useMemo(() => {
+    if (!formData.country) return [];
+    const list = getCitiesForCountry(formData.country, listings);
+    if (formData.city && formData.city !== '__other__' && !list.includes(formData.city)) {
+      return [formData.city, ...list];
+    }
+    return list;
+  }, [formData.country, formData.city, listings]);
+
+  const handleCountryChange = (country: string) => {
+    if (country === '──────────') return;
+    setFormData(prev => ({
+      ...prev,
+      country,
+      city: '',
+    }));
+    setCustomCityActive(false);
+    setCustomCityText('');
+  };
+
+  const handleCityChange = (city: string) => {
+    if (city === '__other__') {
+      setCustomCityActive(true);
+      setFormData(prev => ({ ...prev, city: customCityText }));
+    } else {
+      setCustomCityActive(false);
+      setFormData(prev => ({ ...prev, city }));
+    }
+  };
+
+  // Text inputs taking ONLY digits - completely eliminates stuck/unremovable 0
+  const handleNumericChange = (field: 'price' | 'bedrooms' | 'bathrooms' | 'areaSqm', rawValue: string) => {
+    const numericOnly = rawValue.replace(/\D/g, '');
+    setFormData(prev => ({ ...prev, [field]: numericOnly }));
+  };
+
+  // Optional Property Layout / Configuration change
+  const handleLayoutChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const layout = e.target.value;
+    setFormData(prev => {
+      let newBedrooms = prev.bedrooms;
+      if (layout === '1 Bedroom') newBedrooms = '1';
+      else if (layout === '2 Bedrooms') newBedrooms = '2';
+      else if (layout === '3 Bedrooms') newBedrooms = '3';
+      else if (layout === '4 Bedrooms') newBedrooms = '4';
+      else if (layout === '5+ Bedrooms') newBedrooms = '5';
+      else if (layout === 'Bachelor / Studio') newBedrooms = '1';
+
+      let newType = prev.type;
+      if (layout === 'Full House') newType = 'house';
+
+      return {
+        ...prev,
+        propertyLayout: layout,
+        bedrooms: newBedrooms,
+        type: newType,
+      };
+    });
+  };
 
   const [profile, setProfile] = useState({
     firstName: '',
@@ -346,15 +419,16 @@ export default function AgentPortalPage() {
     setFormData({
       name: prop.name,
       type: prop.type || 'apartment',
+      propertyLayout: '',
       listingType: 'rent',
-      price: priceVal,
+      price: priceVal > 0 ? String(priceVal) : '',
       address: prop.address || '',
       city: prop.city || '',
       country: prop.country || '',
       description: prop.description || `${prop.name} — managed residential property available in ${prop.city || 'Windhoek'}.`,
-      bedrooms: prop.total_rooms || 1,
-      bathrooms: 1,
-      areaSqm: 0,
+      bedrooms: prop.total_rooms && prop.total_rooms > 1 ? String(prop.total_rooms) : '1',
+      bathrooms: '1',
+      areaSqm: '',
       amenities: ['wifi', 'parking', 'security'],
       photos: prop.photos || [],
     });
@@ -412,15 +486,16 @@ export default function AgentPortalPage() {
     setFormData({
       name: listing.name,
       type: listing.type,
+      propertyLayout: '',
       listingType: listing.listingType,
-      price: listing.price,
+      price: listing.price ? String(listing.price) : '',
       address: listing.address,
       city: listing.city,
       country: listing.country,
       description: listing.description,
-      bedrooms: listing.bedrooms,
-      bathrooms: listing.bathrooms,
-      areaSqm: listing.areaSqm,
+      bedrooms: listing.bedrooms ? String(listing.bedrooms) : '',
+      bathrooms: listing.bathrooms ? String(listing.bathrooms) : '',
+      areaSqm: listing.areaSqm ? String(listing.areaSqm) : '',
       amenities: listing.amenities,
       photos: listing.photos,
     });
@@ -515,27 +590,35 @@ export default function AgentPortalPage() {
   const saveListing = async () => {
     setFormSaving(true);
     try {
+      const finalType = formData.propertyLayout
+        ? (formData.propertyLayout === 'Full House'
+            ? 'Full House'
+            : `${formData.propertyLayout} ${formData.type.charAt(0).toUpperCase() + formData.type.slice(1)}`.trim())
+        : formData.type;
+
+      const finalCity = customCityActive ? customCityText.trim() : formData.city;
+
       const payload = {
         name: formData.name,
-        type: formData.type,
+        type: finalType,
         listing_type: formData.listingType,
-        price: formData.price,
+        price: Number(formData.price || 0),
         address: formData.address,
-        city: formData.city,
+        city: finalCity,
         country: formData.country,
         description: formData.description,
-        bedrooms: formData.bedrooms,
-        bathrooms: formData.bathrooms,
-        area_sqm: formData.areaSqm,
+        bedrooms: Number(formData.bedrooms || 0),
+        bathrooms: Number(formData.bathrooms || 0),
+        area_sqm: Number(formData.areaSqm || 0),
         amenities: formData.amenities,
         photos: formData.photos,
         is_published: editingId ? undefined : false, // Keep existing status if editing
-        agent_name: `${profile.firstName} ${profile.lastName}`.trim(),
-        agent_email: profile.email,
-        agent_phone: profile.phone,
-        agent_whatsapp: profile.whatsapp,
-        agent_photo_url: profile.photoUrl,
-        agent_gender: profile.gender,
+        agent_name: `${profile.firstName} ${profile.lastName}`.trim() || user?.user_metadata?.full_name || 'Verified Agent',
+        agent_email: profile.email || user?.email || '',
+        agent_phone: profile.phone || profile.whatsapp || '',
+        agent_whatsapp: profile.whatsapp || profile.phone || '',
+        agent_photo_url: profile.photoUrl || '',
+        agent_gender: profile.gender || 'other',
         agent_user_id: user?.id,
       };
 
@@ -547,6 +630,8 @@ export default function AgentPortalPage() {
       
       await fetchListings();
       setFormData(defaultFormData);
+      setCustomCityActive(false);
+      setCustomCityText('');
       setEditingId(null);
       setActiveTab(0);
     } catch (e) {
@@ -1055,12 +1140,16 @@ export default function AgentPortalPage() {
                         ...defaultFormData,
                         name: selectedProp.name || "",
                         type: selectedProp.type || "house",
+                        propertyLayout: '',
                         listingType: "rent",
-                        price: Number(selectedProp.monthly_rent || 0),
+                        price: selectedProp.monthly_rent ? String(selectedProp.monthly_rent) : "",
                         address: selectedProp.address || "",
                         city: selectedProp.city || "",
                         country: selectedProp.country || "",
                         description: selectedProp.description || `${selectedProp.name} - managed residential property ready for leasing.`,
+                        bedrooms: selectedProp.total_rooms && selectedProp.total_rooms > 1 ? String(selectedProp.total_rooms) : "1",
+                        bathrooms: "1",
+                        areaSqm: "",
                         photos: Array.isArray(selectedProp.photos) ? selectedProp.photos : [],
                         amenities: ["wifi", "parking", "security"],
                       });
@@ -1082,24 +1171,69 @@ export default function AgentPortalPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Property Name</label>
-                  <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" placeholder="e.g. Modern Apartment in Sandton" />
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={e => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500"
+                    placeholder="e.g. Modern Apartment in Sandton"
+                  />
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Type</label>
-                    <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500">
+                    <label className="block text-sm font-medium mb-1">Property Type</label>
+                    <select
+                      value={formData.type}
+                      onChange={e => setFormData({ ...formData, type: e.target.value })}
+                      className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500"
+                    >
                       <option value="house">House</option>
                       <option value="apartment">Apartment</option>
-                      <option value="lodge">Lodge</option>
+                      <option value="townhouse">Townhouse</option>
+                      <option value="flat">Flat</option>
+                      <option value="studio">Studio / Bachelor</option>
+                      <option value="villa">Villa</option>
                       <option value="room">Room</option>
-                      <option value="storage">Storage</option>
+                      <option value="duplex">Duplex</option>
+                      <option value="penthouse">Penthouse</option>
                       <option value="land">Land</option>
+                      <option value="commercial">Commercial</option>
                     </select>
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Layout / Sub-Type <span className="text-muted text-xs font-normal">(Optional)</span>
+                    </label>
+                    <select
+                      value={formData.propertyLayout}
+                      onChange={handleLayoutChange}
+                      className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500"
+                    >
+                      <option value="">-- Optional Layout --</option>
+                      <option value="Full House">Full House</option>
+                      <option value="Bachelor / Studio">Bachelor / Studio</option>
+                      <option value="1 Bedroom">1 Bedroom</option>
+                      <option value="2 Bedrooms">2 Bedrooms</option>
+                      <option value="3 Bedrooms">3 Bedrooms</option>
+                      <option value="4 Bedrooms">4 Bedrooms</option>
+                      <option value="5+ Bedrooms">5+ Bedrooms</option>
+                      <option value="Duplex">Duplex</option>
+                      <option value="Penthouse">Penthouse</option>
+                      <option value="Garden Flatlet">Garden Flatlet</option>
+                      <option value="Single Room">Single Room (Shared)</option>
+                      <option value="En-Suite Room">En-Suite Room</option>
+                    </select>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium mb-1">Listing Type</label>
-                    <select value={formData.listingType} onChange={e => setFormData({...formData, listingType: e.target.value as 'rent'|'sale'})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500">
+                    <select
+                      value={formData.listingType}
+                      onChange={e => setFormData({ ...formData, listingType: e.target.value as 'rent' | 'sale' })}
+                      className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500"
+                    >
                       <option value="rent">For Rent</option>
                       <option value="sale">For Sale</option>
                     </select>
@@ -1110,37 +1244,120 @@ export default function AgentPortalPage() {
                   <label className="block text-sm font-medium mb-1">
                     {formData.listingType === 'rent' ? `Monthly Rent (${currency})` : `Sale Price (${currency})`}
                   </label>
-                  <input type="number" min="0" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-muted text-sm font-bold">{symbol}</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={formData.price}
+                      onChange={e => handleNumericChange('price', e.target.value)}
+                      placeholder="e.g. 8500"
+                      className="w-full bg-surface-elevated rounded-xl pl-8 pr-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500"
+                    />
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium mb-1">Address</label>
-                  <input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+                  <input
+                    type="text"
+                    value={formData.address}
+                    onChange={e => setFormData({ ...formData, address: e.target.value })}
+                    className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500"
+                    placeholder="Street name, suburb, unit number..."
+                  />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">City</label>
-                    <input type="text" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">Country</label>
-                    <input type="text" value={formData.country} onChange={e => setFormData({...formData, country: e.target.value})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+                    <select
+                      value={formData.country}
+                      onChange={e => handleCountryChange(e.target.value)}
+                      className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500"
+                    >
+                      <option value="">Select country...</option>
+                      {allCountryOptions.map((c, idx) => (
+                        c === '──────────' ? (
+                          <option key={idx} disabled value="">──────────</option>
+                        ) : (
+                          <option key={c} value={c}>{c}</option>
+                        )
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">City</label>
+                    <select
+                      value={customCityActive ? '__other__' : formData.city}
+                      onChange={e => handleCityChange(e.target.value)}
+                      disabled={!formData.country}
+                      className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <option value="">
+                        {!formData.country ? 'Select country first' : 'Select city...'}
+                      </option>
+                      {availableCities.map((city) => (
+                        <option key={city} value={city}>
+                          {city}
+                        </option>
+                      ))}
+                      {formData.country && (
+                        <option value="__other__">+ Other / Custom city...</option>
+                      )}
+                    </select>
+                    {customCityActive && (
+                      <div className="mt-1.5">
+                        <input
+                          type="text"
+                          placeholder="Type custom city name..."
+                          value={customCityText}
+                          onChange={(e) => {
+                            setCustomCityText(e.target.value);
+                            setFormData(prev => ({ ...prev, city: e.target.value }));
+                          }}
+                          className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-xs border border-border-color outline-none focus:border-blue-500"
+                          autoFocus
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">Bedrooms</label>
-                    <input type="number" min="0" value={formData.bedrooms} onChange={e => setFormData({...formData, bedrooms: Number(e.target.value)})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={formData.bedrooms}
+                      onChange={e => handleNumericChange('bedrooms', e.target.value)}
+                      placeholder="e.g. 2"
+                      className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500"
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Bathrooms</label>
-                    <input type="number" min="0" value={formData.bathrooms} onChange={e => setFormData({...formData, bathrooms: Number(e.target.value)})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={formData.bathrooms}
+                      onChange={e => handleNumericChange('bathrooms', e.target.value)}
+                      placeholder="e.g. 1"
+                      className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500"
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Area (sqm)</label>
-                    <input type="number" min="0" value={formData.areaSqm} onChange={e => setFormData({...formData, areaSqm: Number(e.target.value)})} className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500" />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={formData.areaSqm}
+                      onChange={e => handleNumericChange('areaSqm', e.target.value)}
+                      placeholder="e.g. 75"
+                      className="w-full bg-surface-elevated rounded-xl px-3 py-2 text-sm border border-border-color outline-none focus:border-blue-500"
+                    />
                   </div>
                 </div>
               </div>
@@ -1191,7 +1408,7 @@ export default function AgentPortalPage() {
             </div>
 
             <div className="flex justify-end gap-3 pt-4 border-t border-border-color mt-6">
-              <button onClick={() => { setActiveTab(0); setEditingId(null); setFormData(defaultFormData); }} className="px-4 py-2 text-sm font-medium border border-border-color rounded-xl hover:bg-gray-50">
+              <button onClick={() => { setActiveTab(0); setEditingId(null); setFormData(defaultFormData); setCustomCityActive(false); setCustomCityText(''); }} className="px-4 py-2 text-sm font-medium border border-border-color rounded-xl hover:bg-gray-50">
                 Cancel
               </button>
               <button onClick={saveListing} disabled={!formData.name || formData.photos.length < 4 || formSaving} className="bg-blue-600 text-white rounded-xl px-6 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
