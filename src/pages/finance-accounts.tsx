@@ -65,7 +65,8 @@ import type { ProcurementRequest, ProcurementPipelineEvent } from "@/lib/types";
 
 export type ScopeMode = "system" | "property";
 export type PresentationMode = "summary" | "expanded";
-export type TimePreset = "this_month" | "last_3" | "last_6" | "last_12" | "last_24" | "last_60";
+export type TimePreset = "today" | "weekly" | "this_month" | "last_3" | "last_6" | "last_12" | "last_24" | "last_36" | "last_60";
+export type JournalTimeframe = "today" | "weekly" | "monthly" | "quarter" | "six_months" | "one_year" | "two_years" | "three_years" | "custom";
 
 export type BalanceSheetSummary = {
   rentCollected: number;
@@ -146,20 +147,26 @@ const TRANSACTION_CATEGORIES = [
 ];
 
 const presetLabels: Record<TimePreset, string> = {
-  this_month: "This month",
-  last_3: "Last 3 months",
-  last_6: "6 months",
-  last_12: "Last year",
-  last_24: "2 years",
-  last_60: "5 years",
+  today: "Today",
+  weekly: "Weekly (7D)",
+  this_month: "Monthly",
+  last_3: "Quarter (3M)",
+  last_6: "6 Months",
+  last_12: "1 Year",
+  last_24: "2 Years",
+  last_36: "3 Years",
+  last_60: "5 Years",
 };
 
 const presetMonthOffsets: Record<TimePreset, number> = {
+  today: 0,
+  weekly: 0,
   this_month: 0,
   last_3: 2,
   last_6: 5,
   last_12: 11,
   last_24: 23,
+  last_36: 35,
   last_60: 59,
 };
 
@@ -505,6 +512,12 @@ export default function FinanceAccountsPage() {
   const [txSearch, setTxSearch] = useState("");
   const [txTypeFilter, setTxTypeFilter] = useState("all");
   const [txStatusFilter, setTxStatusFilter] = useState("all");
+  const [journalTimeframe, setJournalTimeframe] = useState<JournalTimeframe>("monthly");
+  const [journalStartDate, setJournalStartDate] = useState<string>(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+  });
+  const [journalEndDate, setJournalEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [selectedTxForAudit, setSelectedTxForAudit] = useState<FinanceTransaction | null>(null);
   const [retroProofUploading, setRetroProofUploading] = useState(false);
 
@@ -700,10 +713,22 @@ export default function FinanceAccountsPage() {
 
   const applyPreset = (key: TimePreset) => {
     setPreset(key);
-    setDailyMode(false);
     const now = new Date();
     const end = toIsoDate(now);
-    const monthsBack = presetMonthOffsets[key];
+    if (key === "today") {
+      setDailyMode(true);
+      setStartDate(end);
+      setEndDate(end);
+      return;
+    }
+    setDailyMode(false);
+    if (key === "weekly") {
+      const start = toIsoDate(new Date(Date.now() - 7 * 86400000));
+      setStartDate(start);
+      setEndDate(end);
+      return;
+    }
+    const monthsBack = presetMonthOffsets[key] ?? 0;
     const start = toIsoDate(firstDayOfMonth(addMonths(now, -monthsBack)));
     setStartDate(start);
     setEndDate(end);
@@ -1393,6 +1418,61 @@ export default function FinanceAccountsPage() {
     }
   };
 
+  const activeJournalDateRange = useMemo(() => {
+    const now = new Date();
+    const endIso = now.toISOString().slice(0, 10);
+
+    switch (journalTimeframe) {
+      case "today":
+        return { start: endIso, end: endIso, label: "Today" };
+      case "weekly": {
+        const d = new Date(Date.now() - 7 * 86400000);
+        return { start: d.toISOString().slice(0, 10), end: endIso, label: "Weekly" };
+      }
+      case "monthly": {
+        const d = new Date(now.getFullYear(), now.getMonth(), 1);
+        return { start: d.toISOString().slice(0, 10), end: endIso, label: "Monthly" };
+      }
+      case "quarter": {
+        const d = new Date(now);
+        d.setMonth(d.getMonth() - 3);
+        return { start: d.toISOString().slice(0, 10), end: endIso, label: "Quarter" };
+      }
+      case "six_months": {
+        const d = new Date(now);
+        d.setMonth(d.getMonth() - 6);
+        return { start: d.toISOString().slice(0, 10), end: endIso, label: "6 Months" };
+      }
+      case "one_year": {
+        const d = new Date(now);
+        d.setFullYear(d.getFullYear() - 1);
+        return { start: d.toISOString().slice(0, 10), end: endIso, label: "1 Year" };
+      }
+      case "two_years": {
+        const d = new Date(now);
+        d.setFullYear(d.getFullYear() - 2);
+        return { start: d.toISOString().slice(0, 10), end: endIso, label: "2 Years" };
+      }
+      case "three_years": {
+        const d = new Date(now);
+        d.setFullYear(d.getFullYear() - 3);
+        return { start: d.toISOString().slice(0, 10), end: endIso, label: "3 Years" };
+      }
+      case "custom":
+        return {
+          start: journalStartDate || endIso,
+          end: journalEndDate || endIso,
+          label: "Custom Range",
+        };
+    }
+  }, [journalTimeframe, journalStartDate, journalEndDate]);
+
+  const isTransactionInJournalRange = (t: FinanceTransaction) => {
+    const txDate = String(t.transactionDate || t.createdAt || "").slice(0, 10);
+    if (!txDate) return false;
+    return txDate >= activeJournalDateRange.start && txDate <= activeJournalDateRange.end;
+  };
+
   // Filtered Journal Transactions
   const filteredJournalTransactions = useMemo(() => {
     return financeTransactions.filter((tx) => {
@@ -1406,39 +1486,18 @@ export default function FinanceAccountsPage() {
 
       const matchesType = txTypeFilter === "all" || tx.type === txTypeFilter;
       const matchesStatus = txStatusFilter === "all" || tx.status === txStatusFilter;
+      const matchesRange = isTransactionInJournalRange(tx);
 
-      return matchesSearch && matchesType && matchesStatus;
+      return matchesSearch && matchesType && matchesStatus && matchesRange;
     });
-  }, [financeTransactions, txSearch, txTypeFilter, txStatusFilter]);
+  }, [financeTransactions, txSearch, txTypeFilter, txStatusFilter, activeJournalDateRange]);
 
-  // KPI calculations for Today's operations (timezone-resilient across local & UTC boundaries)
-  const isTransactionToday = (t: FinanceTransaction) => {
-    const now = new Date();
-    const localToday = toLocalDateString(now);
-    const utcToday = now.toISOString().slice(0, 10);
-    const txDate = String(t.transactionDate || "").slice(0, 10);
-
-    if (txDate === localToday || txDate === utcToday) return true;
-
-    if (t.createdAt) {
-      const createdLocal = toLocalDateString(new Date(t.createdAt));
-      const createdUtc = String(t.createdAt).slice(0, 10);
-      if (createdLocal === localToday || createdUtc === utcToday) return true;
-      try {
-        const diffMs = Math.abs(now.getTime() - new Date(t.createdAt).getTime());
-        if (diffMs <= 24 * 60 * 60 * 1000) return true;
-      } catch {}
-    }
-
-    return false;
-  };
-
-  const todayInflow = financeTransactions
-    .filter((t) => isTransactionToday(t) && t.status === "approved" && t.type === "income")
+  const periodInflow = financeTransactions
+    .filter((t) => isTransactionInJournalRange(t) && t.status === "approved" && t.type === "income")
     .reduce((sum, t) => sum + t.amount, 0);
 
-  const todayOutflow = financeTransactions
-    .filter((t) => isTransactionToday(t) && t.status === "approved" && (t.type === "expense" || t.type === "payment"))
+  const periodOutflow = financeTransactions
+    .filter((t) => isTransactionInJournalRange(t) && t.status === "approved" && (t.type === "expense" || t.type === "payment"))
     .reduce((sum, t) => sum + t.amount, 0);
 
   const pendingApprovalsCount =
@@ -1618,13 +1677,72 @@ export default function FinanceAccountsPage() {
       {/* TAB 1: DAILY JOURNAL & OPERATIONS TRANSACTIONS                           */}
       {/* ========================================================================= */}
       {activeTab === "journal" && (
-        <div className="space-y-6">
-          {/* Daily Operations KPI Bar */}
+        <div className="space-y-4">
+          {/* Timeframe Selector Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-surface p-3.5 rounded-2xl border border-border-color shadow-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <Calendar size={16} className="text-blue-600 shrink-0" />
+              <span className="text-xs font-bold text-foreground">Timeframe:</span>
+              <div className="flex flex-wrap gap-1">
+                {(
+                  [
+                    { key: "today", label: "Today" },
+                    { key: "weekly", label: "Weekly" },
+                    { key: "monthly", label: "Monthly" },
+                    { key: "quarter", label: "Quarter" },
+                    { key: "six_months", label: "6 Months" },
+                    { key: "one_year", label: "1 Year" },
+                    { key: "two_years", label: "2 Years" },
+                    { key: "three_years", label: "3 Years" },
+                    { key: "custom", label: "Custom Range" },
+                  ] as const
+                ).map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setJournalTimeframe(t.key)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
+                      journalTimeframe === t.key
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "bg-surface-elevated text-muted hover:text-foreground border border-border-color/60"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {journalTimeframe === "custom" && (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted font-medium">From:</span>
+                <input
+                  type="date"
+                  value={journalStartDate}
+                  onChange={(e) => setJournalStartDate(e.target.value)}
+                  className="rounded-lg border border-border-color bg-surface-elevated px-2 py-1 text-xs outline-none"
+                />
+                <span className="text-muted font-medium">To:</span>
+                <input
+                  type="date"
+                  value={journalEndDate}
+                  onChange={(e) => setJournalEndDate(e.target.value)}
+                  className="rounded-lg border border-border-color bg-surface-elevated px-2 py-1 text-xs outline-none"
+                />
+              </div>
+            )}
+
+            <div className="text-xs text-muted font-medium ml-auto">
+              <span>Active: {activeJournalDateRange.label} ({activeJournalDateRange.start} ~ {activeJournalDateRange.end})</span>
+            </div>
+          </div>
+
+          {/* Operations KPI Bar */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-xs flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted">Today's Inflow (Revenue)</p>
-                <p className="text-xl font-black text-emerald-600 mt-1">+{formatCurrency(todayInflow)}</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted">{activeJournalDateRange.label} Inflow</p>
+                <p className="text-xl font-black text-emerald-600 mt-1">+{formatCurrency(periodInflow)}</p>
                 <span className="text-[10px] text-muted">Rent &amp; operating receipts</span>
               </div>
               <div className="h-10 w-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
@@ -1634,8 +1752,8 @@ export default function FinanceAccountsPage() {
 
             <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-xs flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted">Today's Outflow (Expenses)</p>
-                <p className="text-xl font-black text-red-600 mt-1">-{formatCurrency(todayOutflow)}</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted">{activeJournalDateRange.label} Outflow</p>
+                <p className="text-xl font-black text-red-600 mt-1">-{formatCurrency(periodOutflow)}</p>
                 <span className="text-[10px] text-muted">Disbursements &amp; utilities</span>
               </div>
               <div className="h-10 w-10 rounded-xl bg-red-500/10 text-red-600 flex items-center justify-center">
@@ -1645,11 +1763,11 @@ export default function FinanceAccountsPage() {
 
             <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-xs flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted">Today's Net Cashflow</p>
-                <p className={`text-xl font-black mt-1 ${todayInflow - todayOutflow >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                  {todayInflow - todayOutflow >= 0 ? "+" : ""}{formatCurrency(todayInflow - todayOutflow)}
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted">{activeJournalDateRange.label} Net Cashflow</p>
+                <p className={`text-xl font-black mt-1 ${periodInflow - periodOutflow >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                  {periodInflow - periodOutflow >= 0 ? "+" : ""}{formatCurrency(periodInflow - periodOutflow)}
                 </p>
-                <span className="text-[10px] text-muted">Operating balance today</span>
+                <span className="text-[10px] text-muted">Operating balance for period</span>
               </div>
               <div className="h-10 w-10 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center">
                 <DollarSign size={20} />

@@ -23,17 +23,18 @@ import {
   Play,
   RotateCcw,
   CheckCircle2,
-  XCircle
+  XCircle,
+  DoorOpen
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 import { ImageGallery } from "@/components/image-gallery";
-import { fetchInspectionsData, isValidUuid } from "@/lib/data";
+import { fetchInspectionsData, fetchCompanyUsers, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { uploadFileToBucket } from "@/lib/storage";
 import type { InspectionRow } from "@/lib/types";
 
-const emptyForm = { property_id: "", tenant_id: "", type: "routine", inspector_name: "", scheduled_date: "", status: "scheduled" };
+const emptyForm = { property_id: "", tenant_id: "", type: "routine", inspector_name: "", scheduled_date: "", status: "scheduled", notes: "" };
 
 type InspectionDetail = {
   id: string;
@@ -91,7 +92,15 @@ export default function InspectionsPage() {
   const [deleteTarget, setDeleteTarget] = useState<InspectionRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
-  const [tenantsList, setTenantsList] = useState<Array<{ id: string; name: string }>>([]);
+  const [tenantsList, setTenantsList] = useState<Array<{ id: string; name: string; propertyId?: string }>>([]);
+  const [roomsList, setRoomsList] = useState<Array<{ id: string; roomNumber: string; floorNumber: string; propertyId: string; propertyName: string }>>([]);
+  const [staffList, setStaffList] = useState<Array<{ id: string; fullName: string; email: string }>>([]);
+
+  // Target scope and inspector mode
+  const [targetScope, setTargetScope] = useState<"property" | "tenant" | "room">("property");
+  const [selectedRoomId, setSelectedRoomId] = useState("");
+  const [inspectorMode, setInspectorMode] = useState<"staff" | "manual">("staff");
+
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
@@ -111,18 +120,34 @@ export default function InspectionsPage() {
         const result = await fetchInspectionsData(compId);
         if (!cancelled) setInspections(result);
         let propsQuery = supabase.from("properties").select("id, name").order("name");
-        let tensQuery = supabase.from("tenants").select("id, full_name").order("full_name");
+        let tensQuery = supabase.from("tenants").select("id, full_name, property_id").order("full_name");
+        let roomsQuery = supabase.from("commercial_rooms").select("id, room_number, floor_number, property_id, properties(name)");
         if (isValidUuid(compId)) {
           propsQuery = propsQuery.eq("company_id", compId);
           tensQuery = tensQuery.eq("company_id", compId);
+          roomsQuery = roomsQuery.eq("company_id", compId);
         }
-        const [{ data: props }, { data: tens }] = await Promise.all([
+        const [{ data: props }, { data: tens }, { data: rms }, staff] = await Promise.all([
           propsQuery,
           tensQuery,
+          roomsQuery,
+          fetchCompanyUsers(compId),
         ]);
         if (!cancelled) {
           if (props) setProperties(props.map((p) => ({ id: String(p.id), name: String(p.name) })));
-          if (tens) setTenantsList(tens.map((t) => ({ id: String(t.id), name: String(t.full_name) })));
+          if (tens) setTenantsList(tens.map((t) => ({ id: String(t.id), name: String(t.full_name), propertyId: t.property_id })));
+          if (rms) {
+            setRoomsList(rms.map((r) => ({
+              id: String(r.id),
+              roomNumber: String(r.room_number || ""),
+              floorNumber: String(r.floor_number || "G"),
+              propertyId: String(r.property_id || ""),
+              propertyName: String((r.properties as { name?: string } | null)?.name || "Property"),
+            })));
+          }
+          if (staff) {
+            setStaffList(staff.map((s) => ({ id: s.id, fullName: s.fullName, email: s.email })));
+          }
         }
       } catch (e) { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load inspections."); }
       finally { if (!cancelled) setLoading(false); }
@@ -150,24 +175,60 @@ export default function InspectionsPage() {
     return result;
   }, [inspections, activeFilter, searchQuery]);
 
-  const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
+  const openAdd = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setTargetScope("property");
+    setSelectedRoomId("");
+    setInspectorMode("staff");
+    setModalOpen(true);
+  };
 
   const onSave = async () => {
-    if (!form.inspector_name.trim()) { alert("Please enter inspector name."); return; }
+    if (!form.inspector_name.trim()) { alert("Please enter or select an inspector name."); return; }
     if (!form.scheduled_date) { alert("Please select scheduled date."); return; }
-    if (!editingId && !form.property_id) { alert("Please select a property."); return; }
+
+    let targetPropertyId = form.property_id;
+    let targetTenantId = form.tenant_id;
+
+    if (targetScope === "tenant") {
+      if (!targetTenantId) { alert("Please select a tenant."); return; }
+      const matchedTenant = tenantsList.find((t) => t.id === targetTenantId);
+      if (matchedTenant?.propertyId) targetPropertyId = matchedTenant.propertyId;
+      else if (!targetPropertyId && properties.length > 0) targetPropertyId = properties[0].id;
+    } else if (targetScope === "room") {
+      if (!selectedRoomId) { alert("Please select a room."); return; }
+      const matchedRoom = roomsList.find((r) => r.id === selectedRoomId);
+      if (matchedRoom) targetPropertyId = matchedRoom.propertyId;
+    } else {
+      if (!targetPropertyId) { alert("Please select a property."); return; }
+    }
+
     setSaving(true);
     try {
       const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      let inspectionNotes = form.notes || "";
+      if (targetScope === "room" && selectedRoomId) {
+        const matchedRoom = roomsList.find((r) => r.id === selectedRoomId);
+        if (matchedRoom) {
+          const roomTag = `[Room ${matchedRoom.roomNumber}, Floor ${matchedRoom.floorNumber}]`;
+          if (!inspectionNotes.includes(roomTag)) {
+            inspectionNotes = `${roomTag} ${inspectionNotes}`.trim();
+          }
+        }
+      }
+
       const payload: Record<string, unknown> = {
         type: form.type,
-        inspector_name: form.inspector_name,
+        inspector_name: form.inspector_name.trim(),
         scheduled_date: form.scheduled_date || null,
         status: form.status,
         company_id: compId,
       };
-      if (form.property_id && isValidUuid(form.property_id)) payload.property_id = form.property_id;
-      if (form.tenant_id && isValidUuid(form.tenant_id)) payload.tenant_id = form.tenant_id;
+      if (targetPropertyId && isValidUuid(targetPropertyId)) payload.property_id = targetPropertyId;
+      if (targetTenantId && isValidUuid(targetTenantId)) payload.tenant_id = targetTenantId;
+      if (inspectionNotes) payload.notes = inspectionNotes;
+
       if (editingId) {
         const { error: err } = await supabase.from("inspections").update(payload).eq("id", editingId);
         if (err) throw err;
@@ -493,21 +554,191 @@ export default function InspectionsPage() {
     )}
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? "Edit Inspection" : "Schedule Inspection"}>
-        <div className="space-y-3">
-          <div><label className="mb-1 block text-sm text-muted">Property</label><select value={form.property_id} onChange={(e) => setForm({ ...form, property_id: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
-            <option value="">Select property...</option>{properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select></div>
-          <div><label className="mb-1 block text-sm text-muted">Tenant</label><select value={form.tenant_id} onChange={(e) => setForm({ ...form, tenant_id: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
-            <option value="">Select tenant...</option>{tenantsList.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select></div>
-          <div><label className="mb-1 block text-sm text-muted">Type</label><select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
-            <option value="move_in">Move In</option><option value="move_out">Move Out</option><option value="routine">Routine</option><option value="annual">Annual</option><option value="emergency">Emergency</option>
-          </select></div>
-          <div><label className="mb-1 block text-sm text-muted">Inspector Name</label><input value={form.inspector_name} onChange={(e) => setForm({ ...form, inspector_name: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
-          <div><label className="mb-1 block text-sm text-muted">Scheduled Date</label><input type="date" value={form.scheduled_date} onChange={(e) => setForm({ ...form, scheduled_date: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+        <div className="space-y-4">
+          {/* Target Scope Selection */}
+          <div>
+            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-muted">
+              Inspect By (Target Scope)
+            </label>
+            <div className="flex rounded-lg border border-border-color p-0.5 bg-surface-elevated/40">
+              <button
+                type="button"
+                onClick={() => setTargetScope("property")}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                  targetScope === "property"
+                    ? "bg-foreground text-surface shadow"
+                    : "text-muted hover:text-foreground"
+                }`}
+              >
+                Property
+              </button>
+              <button
+                type="button"
+                onClick={() => setTargetScope("tenant")}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                  targetScope === "tenant"
+                    ? "bg-foreground text-surface shadow"
+                    : "text-muted hover:text-foreground"
+                }`}
+              >
+                Tenant
+              </button>
+              <button
+                type="button"
+                onClick={() => setTargetScope("room")}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                  targetScope === "room"
+                    ? "bg-foreground text-surface shadow"
+                    : "text-muted hover:text-foreground"
+                }`}
+              >
+                Room
+              </button>
+            </div>
+          </div>
+
+          {/* Conditional Target Inputs */}
+          {targetScope === "property" && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted">Select Property</label>
+              <select
+                value={form.property_id}
+                onChange={(e) => setForm({ ...form, property_id: e.target.value })}
+                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
+              >
+                <option value="">Select property...</option>
+                {properties.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {targetScope === "tenant" && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted">Select Tenant</label>
+              <select
+                value={form.tenant_id}
+                onChange={(e) => {
+                  const tid = e.target.value;
+                  const t = tenantsList.find((item) => item.id === tid);
+                  setForm({
+                    ...form,
+                    tenant_id: tid,
+                    property_id: t?.propertyId || form.property_id,
+                  });
+                }}
+                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
+              >
+                <option value="">Select tenant...</option>
+                {tenantsList.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {targetScope === "room" && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted">Select Room / Unit</label>
+              <select
+                value={selectedRoomId}
+                onChange={(e) => {
+                  const rid = e.target.value;
+                  setSelectedRoomId(rid);
+                  const r = roomsList.find((item) => item.id === rid);
+                  if (r) setForm({ ...form, property_id: r.propertyId });
+                }}
+                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
+              >
+                <option value="">Select room...</option>
+                {roomsList.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    Room {r.roomNumber} - {r.propertyName} (Floor {r.floorNumber})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted">Inspection Type</label>
+            <select
+              value={form.type}
+              onChange={(e) => setForm({ ...form, type: e.target.value })}
+              className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
+            >
+              <option value="move_in">Move In</option>
+              <option value="move_out">Move Out</option>
+              <option value="routine">Routine</option>
+              <option value="annual">Annual</option>
+              <option value="emergency">Emergency</option>
+            </select>
+          </div>
+
+          {/* Inspector Selection: Staff vs Manual */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-muted">Inspector Name</label>
+              <button
+                type="button"
+                onClick={() => setInspectorMode((m) => (m === "staff" ? "manual" : "staff"))}
+                className="text-[10px] font-bold text-sky-600 hover:underline"
+              >
+                {inspectorMode === "staff" ? "Switch to Manual Name Entry" : "← Pick from Staff Members"}
+              </button>
+            </div>
+
+            {inspectorMode === "staff" ? (
+              <select
+                value={form.inspector_name}
+                onChange={(e) => setForm({ ...form, inspector_name: e.target.value })}
+                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
+              >
+                <option value="">Select staff inspector...</option>
+                {staffList.map((s) => (
+                  <option key={s.id} value={s.fullName}>
+                    {s.fullName} ({s.email})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                placeholder="Enter inspector full name..."
+                value={form.inspector_name}
+                onChange={(e) => setForm({ ...form, inspector_name: e.target.value })}
+                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
+              >
+              </input>
+            )}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted">Scheduled Date</label>
+            <input
+              type="date"
+              value={form.scheduled_date}
+              onChange={(e) => setForm({ ...form, scheduled_date: e.target.value })}
+              className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
+            />
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setModalOpen(false)} className="rounded-md border border-border-color px-3 py-2 text-sm">Cancel</button>
-            <button type="button" onClick={onSave} disabled={saving} className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              className="rounded-md border border-border-color px-3 py-2 text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving}
+              className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
           </div>
         </div>
       </Modal>

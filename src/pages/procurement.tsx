@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { 
   Plus, CheckCircle, Clock, AlertTriangle, FileText, 
   Upload, Search, Mail, Download, ArrowRight, Package,
-  AlertCircle, DollarSign, Activity, FileCheck
+  AlertCircle, DollarSign, Activity, FileCheck, Phone, MapPin, Building, User, X
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useCurrency } from '@/lib/currency';
+import { COUNTRY_DIAL_CODES } from './providers';
 import type {
   ProcurementRequest, ProcurementPipelineEvent, ProcurementQuotation,
   ProcurementStage, ProcurementUrgency, SupplierContact, QuoteContactProfile
@@ -147,6 +148,23 @@ export default function ProcurementPage() {
   const [reminderThreshold, setReminderThreshold] = useState(24);
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
   
+  // Suppliers Directory state
+  const [suppliers, setSuppliers] = useState<SupplierContact[]>([]);
+  const [supplierSearch, setSupplierSearch] = useState('');
+  const [isAddSupplierModalOpen, setIsAddSupplierModalOpen] = useState(false);
+  const [supplierForm, setSupplierForm] = useState({
+    supplierName: '',
+    companyName: '',
+    contactPerson: '',
+    phone: '',
+    phoneCode: '+264',
+    email: '',
+    address: '',
+  });
+  const [suppliedItems, setSuppliedItems] = useState<string[]>([]);
+  const [itemInput, setItemInput] = useState('');
+  const [savingSupplier, setSavingSupplier] = useState(false);
+
   // Pipeline Modal
   const [selectedPipelineRequest, setSelectedPipelineRequest] = useState<ProcurementRequest | null>(null);
   const [pipelineTab, setPipelineTab] = useState<'map' | 'specs' | 'quotes' | 'funds' | 'audit'>('map');
@@ -157,8 +175,12 @@ export default function ProcurementPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const reqs = await fetchProcurementRequests(currentCompany?.id);
+        const [reqs, sups] = await Promise.all([
+          fetchProcurementRequests(currentCompany?.id),
+          fetchSupplierContacts(currentCompany?.id),
+        ]);
         setRequests(reqs || []);
+        setSuppliers(sups || []);
         const threshold = await fetchReminderThreshold();
         if (threshold) setReminderThreshold(threshold);
       } catch (e) {
@@ -167,6 +189,61 @@ export default function ProcurementPage() {
     }
     loadData();
   }, [currentCompany?.id]);
+
+  const addSuppliedItem = () => {
+    const trimmed = itemInput.trim();
+    if (!trimmed) return;
+    if (suppliedItems.length >= 10) {
+      alert("Maximum 10 supplied items allowed.");
+      return;
+    }
+    const words = trimmed.split(/\s+/).length;
+    if (words > 30) {
+      alert(`Item cannot exceed 30 words (currently ${words} words). Please shorten.`);
+      return;
+    }
+    setSuppliedItems([...suppliedItems, trimmed]);
+    setItemInput('');
+  };
+
+  const handleSaveSupplier = async () => {
+    if (!supplierForm.supplierName.trim()) {
+      alert("Please enter a supplier or business name.");
+      return;
+    }
+    const fullPhone = `${supplierForm.phoneCode} ${supplierForm.phone.trim()}`.trim();
+    setSavingSupplier(true);
+    try {
+      const saved = await saveSupplierContact({
+        companyId: currentCompany?.id || '',
+        supplierName: supplierForm.supplierName.trim(),
+        companyName: supplierForm.companyName.trim() || supplierForm.supplierName.trim(),
+        contactPerson: supplierForm.contactPerson.trim(),
+        phone: fullPhone,
+        email: supplierForm.email.trim(),
+        address: supplierForm.address.trim(),
+        suppliedItems: suppliedItems,
+      });
+
+      setSuppliers((prev) => [...prev, saved]);
+      setIsAddSupplierModalOpen(false);
+      setSupplierForm({
+        supplierName: '',
+        companyName: '',
+        contactPerson: '',
+        phone: '',
+        phoneCode: '+264',
+        email: '',
+        address: '',
+      });
+      setSuppliedItems([]);
+      setItemInput('');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to save supplier.");
+    } finally {
+      setSavingSupplier(false);
+    }
+  };
 
   const getHoursElapsed = (stageEnteredAt: string) => {
     return (Date.now() - new Date(stageEnteredAt).getTime()) / 3600000;
@@ -324,7 +401,8 @@ export default function ProcurementPage() {
           { id: 'all', label: 'All Requests' },
           { id: 'quotations', label: 'Quotations' },
           { id: 'funds', label: 'Fund Requests' },
-          { id: 'completed', label: 'Completed' }
+          { id: 'completed', label: 'Completed' },
+          { id: 'suppliers', label: `Suppliers Directory (${suppliers.length})` }
         ].map(tab => (
           <button
             key={tab.id}
@@ -475,6 +553,130 @@ export default function ProcurementPage() {
         {activeTab === 'completed' && (
           renderTable(requests.filter(r => r.status === 'completed' || r.pipelineStage === 'completed'))
         )}
+
+        {activeTab === 'suppliers' && (() => {
+          const filteredSuppliers = suppliers.filter(s => {
+            if (!supplierSearch.trim()) return true;
+            const q = supplierSearch.toLowerCase();
+            return (
+              s.supplierName.toLowerCase().includes(q) ||
+              (s.companyName && s.companyName.toLowerCase().includes(q)) ||
+              (s.contactPerson && s.contactPerson.toLowerCase().includes(q)) ||
+              (s.suppliedItems && s.suppliedItems.some(item => item.toLowerCase().includes(q)))
+            );
+          });
+
+          return (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={supplierSearch}
+                    onChange={(e) => setSupplierSearch(e.target.value)}
+                    placeholder="Search suppliers by name, person, or items supplied..."
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAddSupplierModalOpen(true)}
+                  className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition-colors shadow-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Supplier</span>
+                </button>
+              </div>
+
+              {filteredSuppliers.length === 0 ? (
+                <div className="p-12 text-center border-2 border-dashed border-border-color rounded-2xl">
+                  <Building className="w-10 h-10 text-gray-400 mx-auto mb-2 opacity-50" />
+                  <p className="font-semibold text-gray-800 dark:text-gray-200">No suppliers registered yet</p>
+                  <p className="text-xs text-gray-500 mt-1">Add suppliers to streamline procurement quotes and inventory restocking.</p>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddSupplierModalOpen(true)}
+                    className="mt-4 px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700"
+                  >
+                    + Register First Supplier
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredSuppliers.map((sup) => (
+                    <div
+                      key={sup.id}
+                      className="p-5 rounded-2xl border border-border-color bg-gray-50/40 dark:bg-gray-800/30 hover:border-blue-500/50 transition-all flex flex-col justify-between"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h4 className="font-bold text-gray-900 dark:text-white text-sm">{sup.supplierName}</h4>
+                            {sup.companyName && sup.companyName !== sup.supplierName && (
+                              <p className="text-xs text-gray-500">{sup.companyName}</p>
+                            )}
+                          </div>
+                          <span className="p-2 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600">
+                            <Building className="w-4 h-4" />
+                          </span>
+                        </div>
+
+                        <div className="space-y-1.5 text-xs text-gray-600 dark:text-gray-400 pt-2 border-t border-border-color/60">
+                          {sup.contactPerson && (
+                            <div className="flex items-center gap-2">
+                              <User className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                              <span className="truncate">{sup.contactPerson}</span>
+                            </div>
+                          )}
+                          {sup.phone && (
+                            <div className="flex items-center gap-2">
+                              <Phone className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                              <span>{sup.phone}</span>
+                            </div>
+                          )}
+                          {sup.email && (
+                            <div className="flex items-center gap-2">
+                              <Mail className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                              <span className="truncate">{sup.email}</span>
+                            </div>
+                          )}
+                          {sup.address && (
+                            <div className="flex items-center gap-2">
+                              <MapPin className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                              <span className="truncate">{sup.address}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* What they supply */}
+                        <div className="pt-2 border-t border-border-color/60">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+                            Supplies {sup.suppliedItems?.length ? `(${sup.suppliedItems.length})` : ''}
+                          </p>
+                          {sup.suppliedItems && sup.suppliedItems.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {sup.suppliedItems.map((item, i) => (
+                                <span
+                                  key={i}
+                                  className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-[11px] font-medium border border-blue-100 dark:border-blue-800"
+                                >
+                                  {item}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-gray-400 italic">No specific item catalog registered</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Full Pipeline Progress Map & Data Inspector */}
@@ -924,6 +1126,186 @@ export default function ProcurementPage() {
               </button>
               <button className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700">
                 Submit Request
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Register New Supplier Modal */}
+      {isAddSupplierModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-surface w-full max-w-xl rounded-2xl shadow-xl border border-border-color overflow-hidden">
+            <div className="p-5 border-b border-border-color flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+              <div>
+                <h3 className="text-base font-bold text-gray-900 dark:text-white">Register New Supplier</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Add partner supplier profile and catalog of supplies</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddSupplierModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3.5 max-h-[75vh] overflow-y-auto text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Supplier / Trade Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={supplierForm.supplierName}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, supplierName: e.target.value })}
+                    placeholder="e.g. Apex Electrical Supplies"
+                    className="w-full text-xs p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Registered Company Name
+                  </label>
+                  <input
+                    type="text"
+                    value={supplierForm.companyName}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, companyName: e.target.value })}
+                    placeholder="e.g. Apex Holdings Ltd"
+                    className="w-full text-xs p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Contact Person
+                  </label>
+                  <input
+                    type="text"
+                    value={supplierForm.contactPerson}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, contactPerson: e.target.value })}
+                    placeholder="e.g. Sipho Ndlovu"
+                    className="w-full text-xs p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Phone Number
+                  </label>
+                  <div className="flex gap-1.5">
+                    <select
+                      value={supplierForm.phoneCode}
+                      onChange={(e) => setSupplierForm({ ...supplierForm, phoneCode: e.target.value })}
+                      className="text-xs p-2.5 rounded-xl border border-border-color bg-surface font-semibold focus:outline-none"
+                    >
+                      {COUNTRY_DIAL_CODES.map((c) => (
+                        <option key={c.code} value={c.code}>{c.code}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={supplierForm.phone}
+                      onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
+                      placeholder="81 234 5678"
+                      className="flex-1 text-xs p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={supplierForm.email}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })}
+                    placeholder="sales@supplier.com"
+                    className="w-full text-xs p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Physical / Delivery Address
+                  </label>
+                  <input
+                    type="text"
+                    value={supplierForm.address}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })}
+                    placeholder="Plot 45, Light Industrial Area, Windhoek"
+                    className="w-full text-xs p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* What they supply */}
+              <div className="pt-2 border-t border-border-color">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+                    What They Supply ({suppliedItems.length}/10 items)
+                  </label>
+                  <span className="text-[10px] text-gray-400">Max 30 words per item</span>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={itemInput}
+                    onChange={(e) => setItemInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addSuppliedItem();
+                      }
+                    }}
+                    placeholder="e.g. Copper wiring, circuit breakers, conduit pipes"
+                    className="flex-1 text-xs p-2.5 rounded-xl border border-border-color bg-surface focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={addSuppliedItem}
+                    disabled={suppliedItems.length >= 10 || !itemInput.trim()}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                </div>
+
+                {suppliedItems.length > 0 && (
+                  <div className="mt-2.5 flex flex-wrap gap-1.5">
+                    {suppliedItems.map((item, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-3 py-1 text-xs font-medium border border-blue-200 dark:border-blue-800"
+                      >
+                        <span>{item}</span>
+                        <button
+                          type="button"
+                          onClick={() => setSuppliedItems(suppliedItems.filter((_, i) => i !== idx))}
+                          className="hover:text-red-600"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-border-color bg-gray-50/50 dark:bg-gray-800/50 flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsAddSupplierModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveSupplier}
+                disabled={savingSupplier}
+                className="px-5 py-2 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 disabled:opacity-50 shadow-sm"
+              >
+                {savingSupplier ? 'Saving...' : 'Register Supplier'}
               </button>
             </div>
           </div>

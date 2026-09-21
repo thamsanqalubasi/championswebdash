@@ -3,11 +3,12 @@ import { Link } from "react-router-dom";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
-import { fetchInventoryData, isValidUuid } from "@/lib/data";
+import { fetchInventoryData, fetchSupplierContacts, saveSupplierContact, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
-import type { InventoryItemRow } from "@/lib/types";
+import { COUNTRY_DIAL_CODES } from "./providers";
+import type { InventoryItemRow, SupplierContact } from "@/lib/types";
 import { uploadInventoryMedia } from "@/lib/storage";
 
 import { 
@@ -19,16 +20,17 @@ import {
   PlusCircle, 
   Pencil, 
   Trash, 
-  Download,
-  Boxes,
-  MapPin,
-  Truck,
-  ChevronRight,
-  RefreshCw,
-  Tag,
-  Upload,
-  Image,
-  FileText
+  Download, 
+  Boxes, 
+  MapPin, 
+  Truck, 
+  ChevronRight, 
+  RefreshCw, 
+  Tag, 
+  Upload, 
+  Image, 
+  FileText,
+  X
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 
@@ -77,19 +79,41 @@ export default function InventoryPage() {
   const [receiptPreview, setReceiptPreview] = useState<string>('');
   const [uploading, setUploading] = useState(false);
 
+  // Suppliers state and quick-add
+  const [suppliers, setSuppliers] = useState<SupplierContact[]>([]);
+  const [isNewSupplierModalOpen, setIsNewSupplierModalOpen] = useState(false);
+  const [newSupplierForm, setNewSupplierForm] = useState({
+    supplierName: "",
+    companyName: "",
+    contactPerson: "",
+    phone: "",
+    phoneCode: "+264",
+    email: "",
+    address: "",
+  });
+  const [newSuppliedItems, setNewSuppliedItems] = useState<string[]>([]);
+  const [newSuppliedItemInput, setNewSuppliedItemInput] = useState("");
+  const [savingNewSupplier, setSavingNewSupplier] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true); setError(null);
       try {
-        const result = await fetchInventoryData();
-        if (!cancelled) setItems(result);
+        const [result, supList] = await Promise.all([
+          fetchInventoryData(currentCompany?.id),
+          fetchSupplierContacts(currentCompany?.id),
+        ]);
+        if (!cancelled) {
+          setItems(result);
+          setSuppliers(supList);
+        }
       } catch (e) { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load inventory."); }
       finally { if (!cancelled) setLoading(false); }
     }
     void load();
     return () => { cancelled = true; };
-  }, [reloadKey]);
+  }, [reloadKey, currentCompany?.id]);
 
   const reload = () => setReloadKey((v) => v + 1);
 
@@ -203,6 +227,69 @@ export default function InventoryPage() {
     }
   };
 
+  const addSuppliedItemToQuickAdd = () => {
+    const trimmed = newSuppliedItemInput.trim();
+    if (!trimmed) return;
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    if (words.length > 30) {
+      alert("Supplied item description cannot exceed 30 words.");
+      return;
+    }
+    if (newSuppliedItems.length >= 10) {
+      alert("A supplier can have a maximum of 10 supplied items.");
+      return;
+    }
+    setNewSuppliedItems((prev) => [...prev, trimmed]);
+    setNewSuppliedItemInput("");
+  };
+
+  const handleQuickAddSupplier = async () => {
+    if (!newSupplierForm.supplierName.trim()) {
+      alert("Supplier name is required.");
+      return;
+    }
+    setSavingNewSupplier(true);
+    try {
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      const fullPhone = newSupplierForm.phone.trim()
+        ? `${newSupplierForm.phoneCode} ${newSupplierForm.phone.trim()}`
+        : "";
+      const saved = await saveSupplierContact({
+        companyId: compId || "",
+        supplierName: newSupplierForm.supplierName.trim(),
+        companyName: newSupplierForm.companyName.trim() || newSupplierForm.supplierName.trim(),
+        contactPerson: newSupplierForm.contactPerson.trim(),
+        phone: fullPhone,
+        email: newSupplierForm.email.trim(),
+        address: newSupplierForm.address.trim(),
+        suppliedItems: newSuppliedItems,
+      });
+
+      setSuppliers((prev) => {
+        const filtered = prev.filter((s) => s.id !== saved.id);
+        return [saved, ...filtered];
+      });
+
+      setForm((prev) => ({ ...prev, supplier: saved.supplierName }));
+      setIsNewSupplierModalOpen(false);
+      setNewSupplierForm({
+        supplierName: "",
+        companyName: "",
+        contactPerson: "",
+        phone: "",
+        phoneCode: "+264",
+        email: "",
+        address: "",
+      });
+      setNewSuppliedItems([]);
+      setNewSuppliedItemInput("");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to register supplier");
+    } finally {
+      setSavingNewSupplier(false);
+    }
+  };
+
   const exportCsv = () => {
     const header = "Name,Category,Quantity,Unit,Min Stock,Unit Cost,Supplier,Location\n";
     const rows = filtered.map((r) => `"${r.name}","${r.category}",${r.quantity},"${r.unit}",${r.minStockLevel},${r.unitCost},"${r.supplier}","${r.location}"`).join("\n");
@@ -241,10 +328,11 @@ export default function InventoryPage() {
             </Link>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
-            <StatCard label="Total Catalog" value={String(items.length)} detail="Unique items listed" icon={Boxes} />
-            <StatCard label="Critical Alerts" value={String(totals.low)} detail="Items below min level" icon={AlertTriangle} colorClass={totals.low > 0 ? "text-red-600" : "text-foreground"} />
-            <StatCard label="Asset Valuation" value={formatCurrency(totals.totalValue)} detail="Total market value" icon={DollarSign} colorClass="text-green-600" />
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <StatCard label="Total Items" value={String(totals.all)} detail="Catalog Items" icon={Package} />
+            <StatCard label="In Stock" value={String(totals.inStock)} detail="Healthy Stock" icon={Boxes} colorClass="text-green-600" />
+            <StatCard label="Low Stock" value={String(totals.low)} detail="Needs Restock" icon={AlertTriangle} colorClass={totals.low > 0 ? "text-amber-500" : "text-foreground"} />
+            <StatCard label="Inventory Value" value={formatCurrency(totals.totalValue)} detail="Total Asset Value" icon={DollarSign} />
           </div>
 
           <section className="rounded-xl border border-border-color bg-surface p-1">
@@ -252,7 +340,7 @@ export default function InventoryPage() {
               <DataTableHeader
                 searchValue={searchQuery}
                 onSearchChange={setSearchQuery}
-                searchPlaceholder="Search inventory by name, category or supplier..."
+                searchPlaceholder="Search by item name, category, or supplier..."
                 filters={[
                   { key: "all", label: "All Items", count: totals.all },
                   { key: "low", label: "Low Stock", count: totals.low },
@@ -261,14 +349,7 @@ export default function InventoryPage() {
                 activeFilter={activeFilter}
                 onFilterChange={setActiveFilter}
                 actions={
-                  <>
-                    <Link
-                      to="/stores"
-                      className="flex items-center gap-2 rounded-lg border border-border-color bg-surface-elevated px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-foreground transition-all"
-                    >
-                      <Package size={16} />
-                      <span>Stores & Inventory</span>
-                    </Link>
+                  <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={exportCsv}
@@ -285,117 +366,96 @@ export default function InventoryPage() {
                       <Plus size={16} />
                       <span>Add Item</span>
                     </button>
-                  </>
+                  </div>
                 }
               />
             </div>
 
             {filtered.length === 0 ? (
               <div className="p-12">
-                <EmptyState title="No items found" description={searchQuery ? "Try a different search term or filter." : "Add maintenance items to start tracking stock."} />
+                <EmptyState title="No items found" description={searchQuery ? "Try a different search term or filter." : "Add your first inventory item to get started."} />
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-border-color text-left text-muted/60 uppercase text-[10px] font-bold tracking-wider">
-                      <th className="px-6 py-4 font-bold">Item Description</th>
+                      <th className="px-6 py-4 font-bold">Item Name</th>
                       <th className="px-6 py-4 font-bold">Category</th>
-                      <th className="px-6 py-4 font-bold text-center">Availability</th>
+                      <th className="px-6 py-4 font-bold text-center">In Stock</th>
                       <th className="px-6 py-4 font-bold text-right">Unit Cost</th>
                       <th className="px-6 py-4 font-bold text-right">Total Value</th>
-                      <th className="px-6 py-4 font-bold">Supplier / Location</th>
+                      <th className="px-6 py-4 font-bold">Supplier</th>
                       <th className="px-6 py-4 font-bold text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border-color/40">
-                    {filtered.map((row) => {
-                      const isLow = row.quantity <= row.minStockLevel;
-                      return (
-                        <tr
-                          key={row.id}
-                          onClick={() => setDetailsRow(row)}
-                          className="group cursor-pointer hover:bg-surface-elevated/40 transition-colors"
-                        >
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-10 w-10 shrink-0 overflow-hidden items-center justify-center rounded-lg bg-muted/5 group-hover:bg-foreground group-hover:text-surface transition-all">
-                                {row.photoUrl ? (
-                                  <img src={row.photoUrl} alt="" className="h-full w-full object-cover" />
-                                ) : (
-                                  <Package size={20} className="text-muted/60 group-hover:text-current" />
-                                )}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <p className="font-bold tracking-tight text-foreground truncate">{row.name}</p>
-                                  {row.receiptUrl && (
-                                    <a href={row.receiptUrl} target="_blank" rel="noreferrer" className="text-blue-500 hover:text-blue-700" onClick={(e) => e.stopPropagation()}>
-                                      <FileText size={14} />
-                                    </a>
-                                  )}
-                                </div>
-                                <p className="text-xs text-muted">Min Level: {row.minStockLevel} {row.unit}</p>
-                              </div>
+                    {filtered.map((row) => (
+                      <tr
+                        key={row.id}
+                        onClick={() => setDetailsRow(row)}
+                        className="group cursor-pointer hover:bg-surface-elevated/40 transition-colors"
+                      >
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted/5 group-hover:bg-foreground group-hover:text-surface transition-all">
+                              <Package size={18} className="text-muted/60 group-hover:text-current" />
                             </div>
-                          </td>
-                          <td className="px-6 py-4 capitalize text-muted/80">{row.category}</td>
-                          <td className="px-6 py-4">
-                            <div className="flex flex-col items-center gap-1">
-                              <span className={`text-sm font-black ${isLow ? "text-red-600" : "text-foreground"}`}>
-                                {row.quantity} {row.unit}
-                              </span>
-                              <StatusBadge status={isLow ? "low_stock" : "in_stock"} className="scale-90" />
+                            <div className="min-w-0">
+                              <p className="font-bold tracking-tight text-foreground truncate">{row.name}</p>
+                              <p className="text-[10px] font-bold text-muted/60 uppercase tracking-wider">{row.unit}</p>
                             </div>
-                          </td>
-                          <td className="px-6 py-4 text-right font-medium text-foreground">{formatCurrency(row.unitCost)}</td>
-                          <td className="px-6 py-4 text-right font-bold text-foreground">{formatCurrency(row.quantity * row.unitCost)}</td>
-                          <td className="px-6 py-4">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-                                <Truck size={12} className="text-muted" />
-                                <span>{row.supplier || "Internal Store"}</span>
-                              </div>
-                              <div className="flex items-center gap-1.5 text-[10px] text-muted font-bold uppercase">
-                                <MapPin size={10} />
-                                <span>{row.location || "Main Depot"}</span>
-                              </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 capitalize text-muted font-medium">{row.category.replace(/_/g, " ")}</td>
+                        <td className="px-6 py-4 text-center">
+                          <div className="inline-flex items-center gap-1.5">
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${
+                              row.quantity <= row.minStockLevel ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400" : "bg-muted/5 text-foreground"
+                            }`}>
+                              {row.quantity}
+                            </span>
+                            {row.quantity <= row.minStockLevel && (
+                              <AlertTriangle size={14} className="text-amber-500 animate-pulse" />
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-right font-medium text-foreground">{formatCurrency(row.unitCost)}</td>
+                        <td className="px-6 py-4 text-right font-bold text-foreground">{formatCurrency(row.quantity * row.unitCost)}</td>
+                        <td className="px-6 py-4 text-muted truncate max-w-[150px]">{row.supplier || "—"}</td>
+                        <td className="px-6 py-4 text-right">
+                          <TableRowActions>
+                            <TableActionButton
+                              icon={PlusCircle}
+                              label="Restock"
+                              onClick={(e) => { e.stopPropagation(); setRestockTarget(row); setRestockQty(1); }}
+                              variant="success"
+                            />
+                            <TableActionButton
+                              icon={Pencil}
+                              label="Edit"
+                              onClick={(e) => { e.stopPropagation(); openEdit(row); }}
+                            />
+                            <TableActionButton
+                              icon={Trash}
+                              label="Delete"
+                              variant="danger"
+                              onClick={(e) => { e.stopPropagation(); setDeleteTarget(row); }}
+                            />
+                            <div className="ml-2 pl-2 border-l border-border-color/40">
+                              <ChevronRight size={18} className="text-muted/40 group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
                             </div>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <TableRowActions>
-                              <TableActionButton
-                                icon={RefreshCw}
-                                label="Restock"
-                                onClick={(e) => { e.stopPropagation(); setRestockTarget(row); setRestockQty(0); }}
-                                variant="success"
-                              />
-                              <TableActionButton
-                                icon={Pencil}
-                                label="Edit"
-                                onClick={(e) => { e.stopPropagation(); openEdit(row); }}
-                              />
-                              <TableActionButton
-                                icon={Trash}
-                                label="Delete"
-                                variant="danger"
-                                onClick={(e) => { e.stopPropagation(); setDeleteTarget(row); }}
-                              />
-                              <div className="ml-2 pl-2 border-l border-border-color/40">
-                                <ChevronRight size={18} className="text-muted/40 group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
-                              </div>
-                            </TableRowActions>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                          </TableRowActions>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             )}
             <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20">
               <p className="text-[11px] font-bold uppercase tracking-wider text-muted/40">
-                Showing {filtered.length} of {items.length} unique catalog items
+                Showing {filtered.length} of {items.length} items
               </p>
             </div>
           </section>
@@ -417,7 +477,28 @@ export default function InventoryPage() {
             <div><label className="mb-1 block text-sm text-muted">Unit Cost</label><input type="number" value={form.unit_cost} onChange={(e) => setForm({ ...form, unit_cost: Number(e.target.value) })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-sm text-muted">Supplier</label><input value={form.supplier} onChange={(e) => setForm({ ...form, supplier: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
+            <div>
+              <label className="mb-1 block text-sm text-muted">Supplier</label>
+              <select
+                value={form.supplier}
+                onChange={(e) => {
+                  if (e.target.value === "__NEW__") {
+                    setIsNewSupplierModalOpen(true);
+                  } else {
+                    setForm({ ...form, supplier: e.target.value });
+                  }
+                }}
+                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
+              >
+                <option value="">Select supplier...</option>
+                <option value="__NEW__" className="font-bold text-sky-600">+ Add New Supplier (Not in system)</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.supplierName}>
+                    {s.supplierName} {s.companyName && s.companyName !== s.supplierName ? `(${s.companyName})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div><label className="mb-1 block text-sm text-muted">Location</label><input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           </div>
           
@@ -533,6 +614,149 @@ export default function InventoryPage() {
           </div>
         )}
       </SideDrawer>
+
+      <Modal open={isNewSupplierModalOpen} onClose={() => setIsNewSupplierModalOpen(false)} title="Register New Supplier">
+        <div className="space-y-3 max-h-[80vh] overflow-y-auto pr-1 text-sm">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="mb-1 block text-xs font-semibold text-muted">Supplier / Business Name *</label>
+              <input
+                value={newSupplierForm.supplierName}
+                onChange={(e) => setNewSupplierForm({ ...newSupplierForm, supplierName: e.target.value })}
+                placeholder="e.g. Apex Industrial Supplies"
+                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-muted">Registered Company Name</label>
+              <input
+                value={newSupplierForm.companyName}
+                onChange={(e) => setNewSupplierForm({ ...newSupplierForm, companyName: e.target.value })}
+                placeholder="e.g. Apex Holdings Ltd"
+                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-muted">Contact Person</label>
+              <input
+                value={newSupplierForm.contactPerson}
+                onChange={(e) => setNewSupplierForm({ ...newSupplierForm, contactPerson: e.target.value })}
+                placeholder="e.g. John Doe"
+                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-muted">Phone Number</label>
+              <div className="flex gap-1.5">
+                <select
+                  value={newSupplierForm.phoneCode}
+                  onChange={(e) => setNewSupplierForm({ ...newSupplierForm, phoneCode: e.target.value })}
+                  className="rounded-md border border-border-color bg-surface-elevated px-2 py-2 text-xs font-semibold outline-none"
+                >
+                  {COUNTRY_DIAL_CODES.map((c) => (
+                    <option key={c.code} value={c.code}>{c.code}</option>
+                  ))}
+                </select>
+                <input
+                  value={newSupplierForm.phone}
+                  onChange={(e) => setNewSupplierForm({ ...newSupplierForm, phone: e.target.value })}
+                  placeholder="81 234 5678"
+                  className="flex-1 rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-muted">Email</label>
+              <input
+                type="email"
+                value={newSupplierForm.email}
+                onChange={(e) => setNewSupplierForm({ ...newSupplierForm, email: e.target.value })}
+                placeholder="orders@supplier.com"
+                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="mb-1 block text-xs font-semibold text-muted">Physical / Delivery Address</label>
+              <input
+                value={newSupplierForm.address}
+                onChange={(e) => setNewSupplierForm({ ...newSupplierForm, address: e.target.value })}
+                placeholder="123 Industrial Way, Warehouse 4"
+                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
+              />
+            </div>
+          </div>
+
+          {/* Interactive Supplied Items List */}
+          <div className="pt-2 border-t border-border-color">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-muted">
+                What They Supply ({newSuppliedItems.length}/10 items)
+              </label>
+              <span className="text-[10px] text-muted">Max 30 words per item</span>
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={newSuppliedItemInput}
+                onChange={(e) => setNewSuppliedItemInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addSuppliedItemToQuickAdd();
+                  }
+                }}
+                placeholder="e.g. Copper pipes, valves, fittings"
+                className="flex-1 rounded-md border border-border-color bg-surface-elevated px-3 py-1.5 text-xs outline-none"
+              />
+              <button
+                type="button"
+                onClick={addSuppliedItemToQuickAdd}
+                disabled={newSuppliedItems.length >= 10 || !newSuppliedItemInput.trim()}
+                className="rounded-md bg-foreground px-3 py-1.5 text-xs font-bold text-surface hover:opacity-90 disabled:opacity-50"
+              >
+                Add
+              </button>
+            </div>
+
+            {newSuppliedItems.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {newSuppliedItems.map((item, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2.5 py-1 text-xs font-medium border border-blue-200 dark:border-blue-800"
+                  >
+                    <span>{item}</span>
+                    <button
+                      type="button"
+                      onClick={() => setNewSuppliedItems(newSuppliedItems.filter((_, i) => i !== idx))}
+                      className="hover:text-red-600 ml-0.5"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-border-color">
+            <button
+              type="button"
+              onClick={() => setIsNewSupplierModalOpen(false)}
+              className="rounded-md border border-border-color px-3 py-2 text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleQuickAddSupplier}
+              disabled={savingNewSupplier}
+              className="rounded-md bg-foreground px-4 py-2 text-sm font-bold text-surface hover:opacity-90 disabled:opacity-50"
+            >
+              {savingNewSupplier ? "Saving..." : "Save & Select Supplier"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </ModulePage>
   );
 }

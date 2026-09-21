@@ -8,13 +8,11 @@ import { fetchWorkOrdersData, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { fetchAdminInfo, uploadFileToBucket } from "@/lib/storage";
 import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
+import { COUNTRY_DIAL_CODES } from "./providers";
 import type { WorkOrderRow } from "@/lib/types";
-import { Plus, Wrench, ClipboardList, Clock, Play, CheckCircle2, XCircle, RotateCcw, Trash, ChevronRight, AlertTriangle, User, Building, Calendar, DollarSign, Image as ImageIcon, Save, Upload, Eye, Pencil } from "lucide-react";
+import { Plus, Wrench, ClipboardList, Clock, Play, CheckCircle2, XCircle, RotateCcw, Trash, ChevronRight, AlertTriangle, User, Building, Calendar, DollarSign, Image as ImageIcon, Save, Upload, Eye, Pencil, UserCheck } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
-
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "NAD", maximumFractionDigits: 0 }).format(amount);
-}
 
 const emptyForm = { property_id: "", maintainer_id: "", description: "", category: "general", priority: "medium", status: "open", scheduled_date: "", estimated_cost: 0, actual_cost: 0 };
 
@@ -22,6 +20,7 @@ type WorkOrderDetail = {
   id: string;
   propertyName: string;
   providerName: string;
+  maintainerId?: string;
   description: string;
   category: string;
   priority: string;
@@ -42,6 +41,7 @@ function formatDate(value: string) {
 
 export default function WorkOrdersPage() {
   const { user, currentCompany } = useAuth();
+  const { format: formatCurrency, currency, symbol } = useCurrency();
   const [searchParams, setSearchParams] = useSearchParams();
   const [prefillHandled, setPrefillHandled] = useState(false);
   const [workOrders, setWorkOrders] = useState<WorkOrderRow[]>([]);
@@ -68,6 +68,15 @@ export default function WorkOrdersPage() {
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
 
+  // Completion provider states
+  const [completionProviderMode, setCompletionProviderMode] = useState<"existing" | "new">("existing");
+  const [selectedMaintainerId, setSelectedMaintainerId] = useState<string>("");
+  const [newProviderName, setNewProviderName] = useState("");
+  const [newProviderPhone, setNewProviderPhone] = useState("");
+  const [newProviderCode, setNewProviderCode] = useState("+264");
+  const [newProviderSpec, setNewProviderSpec] = useState("");
+  const [completionActualCost, setCompletionActualCost] = useState<number>(0);
+
   useEffect(() => {
     let cancelled = false;
     async function loadData() {
@@ -80,7 +89,7 @@ export default function WorkOrdersPage() {
         let provsQuery = supabase.from("maintainers").select("id, name").order("name");
         if (isValidUuid(compId)) {
           propsQuery = propsQuery.eq("company_id", compId);
-          provsQuery = provsQuery.eq("company_id", compId);
+          provsQuery = provsQuery.or(`company_id.eq.${compId},company_id.is.null`);
         }
         const [{ data: props }, { data: provs }] = await Promise.all([
           propsQuery,
@@ -228,7 +237,7 @@ export default function WorkOrdersPage() {
       const { data, error: detailError } = await supabase
         .from("maintenance")
         .select(
-          "id, description, category, priority, status, scheduled_date, estimated_cost, actual_cost, photos, created_at, properties(name), maintainers(name)",
+          "id, maintainer_id, description, category, priority, status, scheduled_date, estimated_cost, actual_cost, photos, created_at, properties(name), maintainers(name)",
         )
         .eq("id", workOrderId)
         .single();
@@ -239,6 +248,7 @@ export default function WorkOrdersPage() {
         id: String(data.id ?? ""),
         propertyName: String((data.properties as { name?: string } | null)?.name ?? "Unassigned"),
         providerName: String((data.maintainers as { name?: string } | null)?.name ?? "Unassigned"),
+        maintainerId: data.maintainer_id ? String(data.maintainer_id) : undefined,
         description: String(data.description ?? ""),
         category: String(data.category ?? "general"),
         priority: String(data.priority ?? "medium"),
@@ -252,6 +262,13 @@ export default function WorkOrdersPage() {
 
       setDetails(detail);
       setDetailsStatus(detail.status);
+      setSelectedMaintainerId(data.maintainer_id ? String(data.maintainer_id) : "");
+      setCompletionActualCost(Number(data.actual_cost ?? 0));
+      setCompletionProviderMode("existing");
+      setNewProviderName("");
+      setNewProviderPhone("");
+      setNewProviderCode("+264");
+      setNewProviderSpec(data.category || "General");
     } catch (loadError) {
       setDetailsError(loadError instanceof Error ? loadError.message : "Could not load work order details.");
     } finally {
@@ -263,10 +280,47 @@ export default function WorkOrdersPage() {
     if (!details) return;
     setStatusSaving(true);
     try {
+      let finalMaintainerId: string | null = selectedMaintainerId || details.maintainerId || null;
+
+      // If user provided a new provider who did the job
+      if (completionProviderMode === "new" && newProviderName.trim()) {
+        const fullPhone = `${newProviderCode} ${newProviderPhone.trim()}`.trim();
+        const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+        const { data: newP, error: pErr } = await supabase
+          .from("maintainers")
+          .insert({
+            name: newProviderName.trim(),
+            phone: fullPhone,
+            specialization: newProviderSpec.trim() || details.category,
+            company_id: compId,
+          })
+          .select("id, name")
+          .single();
+
+        if (pErr) throw pErr;
+        if (newP) {
+          finalMaintainerId = newP.id;
+          setProviders((prev) => [...prev, { id: String(newP.id), name: String(newP.name) }]);
+        }
+      }
+
+      const admin = await fetchAdminInfo(user?.email ?? undefined);
+      const executorName = admin.fullName || user?.email || "Admin";
+
+      const updatePayload: Record<string, unknown> = {
+        status: detailsStatus,
+        actual_cost: completionActualCost,
+        executed_by_name: executorName,
+      };
+      if (finalMaintainerId) {
+        updatePayload.maintainer_id = finalMaintainerId;
+      }
+
       const { error: updateError } = await supabase
         .from("maintenance")
-        .update({ status: detailsStatus })
+        .update(updatePayload)
         .eq("id", details.id);
+
       if (updateError) throw updateError;
 
       await openWorkOrderDetails(details.id);
@@ -449,7 +503,12 @@ export default function WorkOrdersPage() {
                             <TableActionButton
                               icon={CheckCircle2}
                               label="Complete"
-                              onClick={(e) => { e.stopPropagation(); onStatusChange(row.id, "completed"); }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void openWorkOrderDetails(row.id).then(() => {
+                                  setDetailsStatus("completed");
+                                });
+                              }}
                               variant="success"
                             />
                           )}
@@ -499,7 +558,7 @@ export default function WorkOrdersPage() {
             <option value="">Select property...</option>{properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select></div>
           <div><label className="mb-1 block text-sm text-muted">Provider</label><select value={form.maintainer_id} onChange={(e) => setForm({ ...form, maintainer_id: e.target.value })} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none">
-            <option value="">Select provider...</option>{providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <option value="">No specific provider</option>{providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select></div>
           <div><label className="mb-1 block text-sm text-muted">Description</label><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" /></div>
           <div className="grid grid-cols-2 gap-3">
@@ -631,30 +690,113 @@ export default function WorkOrdersPage() {
                 </section>
 
                 <section className="space-y-4">
-                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Ticket Workflow</h5>
-                  <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 space-y-3">
-                    <label className="text-[10px] font-bold text-muted/60 uppercase">Current Status</label>
-                    <div className="flex gap-2">
+                  <h5 className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/40 px-1">Ticket Workflow & Provider</h5>
+                  <div className="p-4 rounded-xl border border-border-color bg-surface-elevated/30 space-y-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-muted/60 uppercase block mb-1">Current Status</label>
                       <select
                         value={detailsStatus}
                         onChange={(event) => setDetailsStatus(event.target.value)}
-                        className="flex-1 rounded-lg border border-border-color bg-surface px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-foreground/5"
+                        className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-foreground/5"
                       >
                         <option value="open">Open</option>
                         <option value="in_progress">In progress</option>
                         <option value="completed">Completed</option>
                         <option value="cancelled">Cancelled</option>
                       </select>
-                      <button
-                        type="button"
-                        onClick={saveDetailsStatus}
-                        disabled={statusSaving}
-                        className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50 shadow-md"
-                      >
-                        <Save size={16} />
-                        <span>Update</span>
-                      </button>
                     </div>
+
+                    {/* Service Provider who did the job */}
+                    <div className="pt-2 border-t border-border-color/50">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-[10px] font-bold text-muted/60 uppercase">
+                          Service Provider Who Did The Job
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setCompletionProviderMode((m) => (m === "existing" ? "new" : "existing"))}
+                          className="text-[10px] font-bold text-sky-600 hover:underline"
+                        >
+                          {completionProviderMode === "existing" ? "+ New Provider (Not in system)" : "← Choose from existing"}
+                        </button>
+                      </div>
+
+                      {completionProviderMode === "existing" ? (
+                        <select
+                          value={selectedMaintainerId}
+                          onChange={(e) => setSelectedMaintainerId(e.target.value)}
+                          className="w-full rounded-lg border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
+                        >
+                          <option value="">No specific provider</option>
+                          {providers.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="space-y-2 p-3 bg-surface rounded-lg border border-border-color/60 text-xs">
+                          <p className="font-semibold text-foreground text-xs">New Provider Details</p>
+                          <div>
+                            <input
+                              placeholder="Full Name / Business Name"
+                              value={newProviderName}
+                              onChange={(e) => setNewProviderName(e.target.value)}
+                              className="w-full rounded border border-border-color bg-surface-elevated px-2.5 py-1.5 outline-none"
+                            />
+                          </div>
+                          <div className="flex gap-1.5">
+                            <select
+                              value={newProviderCode}
+                              onChange={(e) => setNewProviderCode(e.target.value)}
+                              className="rounded border border-border-color bg-surface-elevated px-1.5 py-1.5 text-xs outline-none"
+                            >
+                              {COUNTRY_DIAL_CODES.map((c) => (
+                                <option key={c.code} value={c.code}>{c.code}</option>
+                              ))}
+                            </select>
+                            <input
+                              placeholder="Phone Number"
+                              value={newProviderPhone}
+                              onChange={(e) => setNewProviderPhone(e.target.value)}
+                              className="flex-1 rounded border border-border-color bg-surface-elevated px-2.5 py-1.5 outline-none"
+                            />
+                          </div>
+                          <div>
+                            <input
+                              placeholder="Trade Specialization (e.g. Plumbing)"
+                              value={newProviderSpec}
+                              onChange={(e) => setNewProviderSpec(e.target.value)}
+                              className="w-full rounded border border-border-color bg-surface-elevated px-2.5 py-1.5 outline-none"
+                            />
+                          </div>
+                          <p className="text-[10px] text-muted italic">Will be saved to database for future selection.</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-muted/60 uppercase block mb-1">
+                        Final Actual Cost ({currency})
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted">{symbol || currency}</span>
+                        <input
+                          type="number"
+                          value={completionActualCost}
+                          onChange={(e) => setCompletionActualCost(Number(e.target.value))}
+                          className="w-full rounded-lg border border-border-color bg-surface pl-10 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={saveDetailsStatus}
+                      disabled={statusSaving}
+                      className="w-full flex items-center justify-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50 shadow-md"
+                    >
+                      <Save size={16} />
+                      <span>{statusSaving ? "Saving..." : "Update Ticket & Provider"}</span>
+                    </button>
                   </div>
                 </section>
               </div>

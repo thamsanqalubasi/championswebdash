@@ -5,6 +5,7 @@ import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { fetchProvidersData, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
 import type { ProviderRow } from "@/lib/types";
 import { 
   Plus, 
@@ -23,8 +24,46 @@ import {
 } from "lucide-react";
 import { DataTableHeader, TableRowActions, TableActionButton } from "@/components/data-table";
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "NAD", maximumFractionDigits: 0 }).format(amount);
+export const COUNTRY_DIAL_CODES = [
+  { code: "+264", label: "Namibia (+264)" },
+  { code: "+27", label: "South Africa (+27)" },
+  { code: "+260", label: "Zambia (+260)" },
+  { code: "+263", label: "Zimbabwe (+263)" },
+  { code: "+267", label: "Botswana (+267)" },
+  { code: "+254", label: "Kenya (+254)" },
+  { code: "+255", label: "Tanzania (+255)" },
+  { code: "+256", label: "Uganda (+256)" },
+  { code: "+234", label: "Nigeria (+234)" },
+  { code: "+233", label: "Ghana (+233)" },
+  { code: "+250", label: "Rwanda (+250)" },
+  { code: "+258", label: "Mozambique (+258)" },
+  { code: "+244", label: "Angola (+244)" },
+  { code: "+44", label: "United Kingdom (+44)" },
+  { code: "+1", label: "USA / Canada (+1)" },
+  { code: "+971", label: "UAE (+971)" },
+  { code: "+49", label: "Germany (+49)" },
+  { code: "+61", label: "Australia (+61)" },
+  { code: "+91", label: "India (+91)" },
+  { code: "+86", label: "China (+86)" },
+];
+
+function parsePhoneNumber(rawPhone: string): { countryCode: string; localNumber: string } {
+  if (!rawPhone) return { countryCode: "+264", localNumber: "" };
+  const trimmed = rawPhone.trim();
+  const matched = COUNTRY_DIAL_CODES.find((c) => trimmed.startsWith(c.code));
+  if (matched) {
+    return {
+      countryCode: matched.code,
+      localNumber: trimmed.slice(matched.code.length).trim(),
+    };
+  }
+  if (trimmed.startsWith("+")) {
+    const parts = trimmed.split(" ");
+    if (parts.length > 1) {
+      return { countryCode: parts[0], localNumber: parts.slice(1).join(" ") };
+    }
+  }
+  return { countryCode: "+264", localNumber: trimmed };
 }
 
 const emptyForm = { name: "", phone: "", specialization: "General", rate: 0 };
@@ -48,6 +87,7 @@ function StatCard({ label, value, detail, icon: Icon, colorClass = "text-foregro
 
 export default function ProvidersPage() {
   const { currentCompany } = useAuth();
+  const { format: formatCurrency, currency, symbol } = useCurrency();
   const [providers, setProviders] = useState<ProviderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +96,8 @@ export default function ProvidersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [phoneCountryCode, setPhoneCountryCode] = useState("+264");
+  const [phoneLocal, setPhoneLocal] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ProviderRow | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -68,7 +110,7 @@ export default function ProvidersPage() {
     async function loadData() {
       setLoading(true); setError(null);
       try {
-        const result = await fetchProvidersData();
+        const result = await fetchProvidersData(currentCompany?.id);
         if (!cancelled) setProviders(result);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Could not load maintainers.");
@@ -78,7 +120,7 @@ export default function ProvidersPage() {
     }
     void loadData();
     return () => { cancelled = true; };
-  }, [reloadKey]);
+  }, [reloadKey, currentCompany?.id]);
 
   const reload = () => setReloadKey(k => k + 1);
 
@@ -93,17 +135,27 @@ export default function ProvidersPage() {
     paid: providers.reduce((sum, p) => sum + p.totalPaid, 0),
   }), [providers]);
 
-  const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
+  const openAdd = () => { 
+    setEditingId(null); 
+    setForm(emptyForm); 
+    setPhoneCountryCode("+264");
+    setPhoneLocal("");
+    setModalOpen(true); 
+  };
   const openEdit = (p: ProviderRow) => {
     setEditingId(p.id);
     setForm({ name: p.name, phone: p.phone, specialization: p.specialization, rate: p.rate });
+    const parsed = parsePhoneNumber(p.phone);
+    setPhoneCountryCode(parsed.countryCode);
+    setPhoneLocal(parsed.localNumber);
     setModalOpen(true);
   };
   const openDetail = (p: ProviderRow) => { setSelectedProvider(p); setDrawerOpen(true); };
 
   const onSave = async () => {
-    if (!form.name.trim() || !form.phone.trim() || !form.specialization.trim()) {
-      alert("Please enter name, phone, and specialization.");
+    const fullPhone = `${phoneCountryCode} ${phoneLocal.trim()}`.trim();
+    if (!form.name.trim() || !phoneLocal.trim() || !form.specialization.trim()) {
+      alert("Please enter name, phone number, and specialization.");
       return;
     }
     setSaving(true);
@@ -111,7 +163,7 @@ export default function ProvidersPage() {
       const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
       const payload: Record<string, unknown> = {
         name: form.name.trim(),
-        phone: form.phone.trim(),
+        phone: fullPhone,
         specialization: form.specialization.trim(),
         rate: form.rate,
         company_id: compId,
@@ -286,17 +338,42 @@ export default function ProvidersPage() {
             </div>
             <div>
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Phone Number</label>
-              <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5" />
+              <div className="flex gap-2">
+                <select
+                  value={phoneCountryCode}
+                  onChange={(e) => setPhoneCountryCode(e.target.value)}
+                  className="rounded-lg border border-border-color bg-surface-elevated px-2 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-foreground/5 max-w-[120px]"
+                >
+                  {COUNTRY_DIAL_CODES.map((item) => (
+                    <option key={item.code} value={item.code}>
+                      {item.code} ({item.label.split(" ")[0]})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  value={phoneLocal}
+                  onChange={(e) => setPhoneLocal(e.target.value)}
+                  placeholder="81 234 5678"
+                  className="flex-1 rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
+                />
+              </div>
             </div>
             <div>
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Trade Specialization</label>
               <input value={form.specialization} onChange={(e) => setForm({ ...form, specialization: e.target.value })} className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5" placeholder="e.g. Plumbing, Electrical" />
             </div>
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Standard Hourly/Job Rate (NAD)</label>
+              <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">
+                Standard Hourly/Job Rate ({currency})
+              </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted">NAD</span>
-                <input type="number" value={form.rate} onChange={(e) => setForm({ ...form, rate: Number(e.target.value) })} className="w-full rounded-lg border border-border-color bg-surface-elevated pl-12 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5" />
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted">{symbol || currency}</span>
+                <input
+                  type="number"
+                  value={form.rate}
+                  onChange={(e) => setForm({ ...form, rate: Number(e.target.value) })}
+                  className="w-full rounded-lg border border-border-color bg-surface-elevated pl-12 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
+                />
               </div>
             </div>
           </div>

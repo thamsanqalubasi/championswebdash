@@ -3783,21 +3783,66 @@ export async function fetchInvoices(companyId?: string): Promise<InvoiceRow[]> {
     }
     const { data, error } = await query.order("created_at", { ascending: false });
     if (!error && data) {
-      return data.map((inv) => ({
-        id: inv.id,
-        companyId: inv.company_id || companyId || "",
-        tenantId: inv.tenant_id,
-        tenantName: inv.tenants?.full_name || "Unknown Tenant",
-        propertyName: inv.properties?.name || "Unknown Property",
-        month: inv.month,
-        dueDate: inv.due_date,
-        totalAmount: toNumber(inv.total_amount),
-        status: inv.status,
-        isSuppressed: Boolean(inv.is_suppressed || inv.status === "suppressed"),
-        suppressedAt: inv.suppressed_at,
-        suppressedBy: inv.suppressed_by,
-        suppressedReason: inv.suppressed_reason,
-      }));
+      const invoiceIds = data.map((inv) => String(inv.id || "")).filter(Boolean);
+
+      let auditByInvoice = new Map<string, any[]>();
+      if (invoiceIds.length > 0) {
+        try {
+          const { data: auditRows } = await supabase
+            .from("audit_log")
+            .select("entity_id, action, user_name, user_email, created_at, details")
+            .eq("entity_type", "invoice")
+            .in("entity_id", invoiceIds.slice(0, 100))
+            .order("created_at", { ascending: false });
+
+          (auditRows ?? []).forEach((row) => {
+            const eid = String(row.entity_id || "");
+            const list = auditByInvoice.get(eid) || [];
+            list.push(row);
+            auditByInvoice.set(eid, list);
+          });
+        } catch {
+          // fallback gracefully if audit_log table cannot be queried
+        }
+      }
+
+      return data.map((inv) => {
+        const invAudit = auditByInvoice.get(String(inv.id || "")) || [];
+        const genLog = invAudit.find((a) => a.action === "invoice_generated" || a.action === "unified_invoice_generated");
+        const supLog = invAudit.find((a) => a.action === "invoice_suppressed");
+
+        const suppressedBy = inv.suppressed_by || supLog?.user_name || supLog?.user_email || (inv.status === "suppressed" ? "Staff / Admin" : undefined);
+        const suppressedAt = inv.suppressed_at || supLog?.created_at || (inv.status === "suppressed" ? inv.updated_at || inv.created_at : undefined);
+        const suppressedReason = inv.suppressed_reason || supLog?.details?.reason || (inv.status === "suppressed" ? "Suppressed by staff for correction/regeneration" : undefined);
+
+        const generatedByName = inv.generated_by || inv.created_by_name || genLog?.user_name || genLog?.user_email || "System Admin";
+        const generatedAt = inv.created_at || genLog?.created_at;
+
+        const paymentRecordedByName = genLog?.details?.collector_name || inv.payment_recorded_by || "Finance Admin";
+        const paymentRecordedAt = genLog?.details?.payment_date || inv.due_date || inv.created_at;
+
+        return {
+          id: inv.id,
+          companyId: inv.company_id || companyId || "",
+          tenantId: inv.tenant_id,
+          tenantName: inv.tenants?.full_name || "Unknown Tenant",
+          propertyName: inv.properties?.name || "Unknown Property",
+          month: inv.month,
+          dueDate: inv.due_date,
+          totalAmount: toNumber(inv.total_amount),
+          status: inv.status,
+          isSuppressed: Boolean(inv.is_suppressed || inv.status === "suppressed"),
+          suppressedAt,
+          suppressedBy,
+          suppressedReason,
+          createdAt: inv.created_at,
+          createdBy: inv.created_by,
+          generatedByName,
+          generatedAt,
+          paymentRecordedByName,
+          paymentRecordedAt,
+        };
+      });
     }
   } catch (err) {
     console.warn("Error fetching invoices", err);
@@ -3805,7 +3850,12 @@ export async function fetchInvoices(companyId?: string): Promise<InvoiceRow[]> {
   return [];
 }
 
-export async function fetchReportsData(companyId?: string): Promise<ReportsData> {
+export async function fetchReportsData(
+  companyId?: string,
+  timeframe: string = "six_months",
+  customStart?: string,
+  customEnd?: string,
+): Promise<ReportsData> {
   try {
     const validCompId = companyId && isValidUuid(companyId) ? companyId : null;
 
@@ -3882,63 +3932,117 @@ export async function fetchReportsData(companyId?: string): Promise<ReportsData>
       Overdue: invList.filter((i) => i.status === "overdue").length,
     };
 
-    // Generate 6-month cashflow timeline
+    // Generate timeline based on timeframe parameter
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const monthly: CashflowPoint[] = [];
     const now = new Date();
 
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const year = d.getFullYear();
-      const monthNum = String(d.getMonth() + 1).padStart(2, "0");
-      const monthKey = `${year}-${monthNum}`;
-      const label = `${monthNames[d.getMonth()]} ${year}`;
+    if (timeframe === "weekly") {
+      // 7 daily points
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(Date.now() - i * 86400000);
+        const dayIso = d.toISOString().slice(0, 10);
+        const label = `${dayNames[d.getDay()]} ${d.getDate()} ${monthNames[d.getMonth()]}`;
 
-      // Invoices paid in monthKey
-      const invoicePaidInMonth = invList
-        .filter((inv) => inv.status === "paid" && (String(inv.created_at || "").startsWith(monthKey) || String(inv.month || "") === monthKey))
-        .reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0);
+        const invoicePaidInDay = invList
+          .filter((inv) => inv.status === "paid" && String(inv.created_at || inv.due_date || "").slice(0, 10) === dayIso)
+          .reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0);
 
-      // Rent collections in monthKey (excluding those already accounted for in invoicePaidInMonth)
-      const rentInMonth = rentList
-        .filter((r) => {
-          const m = Array.isArray(r.paid_months) && r.paid_months[0]
-            ? String(r.paid_months[0]).slice(0, 7)
-            : String(r.payment_date || "").slice(0, 7);
-          return m === monthKey;
-        })
-        .filter((r) => {
-          const m = Array.isArray(r.paid_months) && r.paid_months[0]
-            ? String(r.paid_months[0]).slice(0, 7)
-            : String(r.payment_date || "").slice(0, 7);
-          return !paidInvoiceKeys.has(`${r.tenant_id || ""}_${m}`);
-        })
-        .reduce((sum, r) => sum + Number(r.amount_paid || 0), 0);
+        const rentInDay = rentList
+          .filter((r) => String(r.payment_date || "").slice(0, 10) === dayIso)
+          .reduce((sum, r) => sum + Number(r.amount_paid || 0), 0);
 
-      // Sum booking income in monthKey
-      const bookInMonth = bookList
-        .filter((b) => String(b.check_in_date || b.created_at || "").startsWith(monthKey))
-        .reduce((sum, b) => sum + Number(b.paid_amount || (b.payment_status === "paid" ? b.total_amount : 0) || 0), 0);
+        const bookInDay = bookList
+          .filter((b) => String(b.check_in_date || b.created_at || "").slice(0, 10) === dayIso)
+          .reduce((sum, b) => sum + Number(b.paid_amount || (b.payment_status === "paid" ? b.total_amount : 0) || 0), 0);
 
-      // Sum finance transactions in monthKey
-      const finIncomeInMonth = finList
-        .filter((f) => f.type === "income" && !String(f.category || "").toLowerCase().includes("rent") && String(f.transaction_date || f.date || f.created_at || "").startsWith(monthKey))
-        .reduce((sum, f) => sum + Number(f.amount || 0), 0);
+        const finIncomeInDay = finList
+          .filter((f) => f.type === "income" && !String(f.category || "").toLowerCase().includes("rent") && String(f.transaction_date || f.date || f.created_at || "").slice(0, 10) === dayIso)
+          .reduce((sum, f) => sum + Number(f.amount || 0), 0);
 
-      const finExpensesInMonth = finList
-        .filter((f) => f.type === "expense" && String(f.transaction_date || f.date || f.created_at || "").startsWith(monthKey))
-        .reduce((sum, f) => sum + Number(f.amount || 0), 0);
+        const finExpensesInDay = finList
+          .filter((f) => f.type === "expense" && String(f.transaction_date || f.date || f.created_at || "").slice(0, 10) === dayIso)
+          .reduce((sum, f) => sum + Number(f.amount || 0), 0);
 
-      const monthIncome = invoicePaidInMonth + rentInMonth + bookInMonth + finIncomeInMonth;
-      const monthExpenses = finExpensesInMonth;
+        const dayIncome = invoicePaidInDay + rentInDay + bookInDay + finIncomeInDay;
+        const dayExpenses = finExpensesInDay;
 
-      monthly.push({
-        month: monthKey,
-        label,
-        income: monthIncome,
-        expenses: monthExpenses,
-        profit: monthIncome - monthExpenses,
-      });
+        monthly.push({
+          month: dayIso,
+          label,
+          income: dayIncome,
+          expenses: dayExpenses,
+          profit: dayIncome - dayExpenses,
+        });
+      }
+    } else {
+      let monthsCount = 6;
+      if (timeframe === "monthly") monthsCount = 1;
+      else if (timeframe === "quarter") monthsCount = 3;
+      else if (timeframe === "six_months") monthsCount = 6;
+      else if (timeframe === "one_year") monthsCount = 12;
+      else if (timeframe === "two_years") monthsCount = 24;
+      else if (timeframe === "three_years") monthsCount = 36;
+      else if (timeframe === "custom" && customStart && customEnd) {
+        const s = new Date(customStart);
+        const e = new Date(customEnd);
+        monthsCount = Math.max(1, Math.min(36, (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth()) + 1));
+      }
+
+      for (let i = monthsCount - 1; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const year = d.getFullYear();
+        const monthNum = String(d.getMonth() + 1).padStart(2, "0");
+        const monthKey = `${year}-${monthNum}`;
+        const label = `${monthNames[d.getMonth()]} ${year}`;
+
+        // Invoices paid in monthKey
+        const invoicePaidInMonth = invList
+          .filter((inv) => inv.status === "paid" && (String(inv.created_at || "").startsWith(monthKey) || String(inv.month || "") === monthKey))
+          .reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0);
+
+        // Rent collections in monthKey (excluding those already accounted for in invoicePaidInMonth)
+        const rentInMonth = rentList
+          .filter((r) => {
+            const m = Array.isArray(r.paid_months) && r.paid_months[0]
+              ? String(r.paid_months[0]).slice(0, 7)
+              : String(r.payment_date || "").slice(0, 7);
+            return m === monthKey;
+          })
+          .filter((r) => {
+            const m = Array.isArray(r.paid_months) && r.paid_months[0]
+              ? String(r.paid_months[0]).slice(0, 7)
+              : String(r.payment_date || "").slice(0, 7);
+            return !paidInvoiceKeys.has(`${r.tenant_id || ""}_${m}`);
+          })
+          .reduce((sum, r) => sum + Number(r.amount_paid || 0), 0);
+
+        // Sum booking income in monthKey
+        const bookInMonth = bookList
+          .filter((b) => String(b.check_in_date || b.created_at || "").startsWith(monthKey))
+          .reduce((sum, b) => sum + Number(b.paid_amount || (b.payment_status === "paid" ? b.total_amount : 0) || 0), 0);
+
+        // Sum finance transactions in monthKey
+        const finIncomeInMonth = finList
+          .filter((f) => f.type === "income" && !String(f.category || "").toLowerCase().includes("rent") && String(f.transaction_date || f.date || f.created_at || "").startsWith(monthKey))
+          .reduce((sum, f) => sum + Number(f.amount || 0), 0);
+
+        const finExpensesInMonth = finList
+          .filter((f) => f.type === "expense" && String(f.transaction_date || f.date || f.created_at || "").startsWith(monthKey))
+          .reduce((sum, f) => sum + Number(f.amount || 0), 0);
+
+        const monthIncome = invoicePaidInMonth + rentInMonth + bookInMonth + finIncomeInMonth;
+        const monthExpenses = finExpensesInMonth;
+
+        monthly.push({
+          month: monthKey,
+          label,
+          income: monthIncome,
+          expenses: monthExpenses,
+          profit: monthIncome - monthExpenses,
+        });
+      }
     }
 
     return {
@@ -4029,15 +4133,16 @@ export async function fetchWorkOrders(companyId?: string): Promise<WorkOrderRow[
 }
 
 export async function fetchProviders(companyId?: string): Promise<ProviderRow[]> {
-  if (!companyId) return [];
   try {
     let query = supabase.from("maintainers").select("*");
-    query = query.eq("company_id", companyId);
+    if (companyId) {
+      query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+    }
     const { data, error } = await query.order("name");
     if (!error && data) {
       return data.map((p) => ({
         id: p.id,
-        companyId: p.company_id || companyId,
+        companyId: p.company_id || companyId || "",
         name: p.name,
         phone: p.phone,
         specialization: p.specialization,
@@ -4053,15 +4158,16 @@ export async function fetchProviders(companyId?: string): Promise<ProviderRow[]>
 }
 
 export async function fetchInspections(companyId?: string): Promise<InspectionRow[]> {
-  if (!companyId) return [];
   try {
     let query = supabase.from("inspections").select("*, properties(name), tenants(full_name)");
-    query = query.eq("company_id", companyId);
+    if (companyId) {
+      query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+    }
     const { data, error } = await query.order("scheduled_date", { ascending: false });
     if (!error && data) {
       return data.map((insp) => ({
         id: insp.id,
-        companyId: insp.company_id || companyId,
+        companyId: insp.company_id || companyId || "",
         propertyName: insp.properties?.name || "Unassigned Property",
         tenantName: insp.tenants?.full_name || "Commercial Operations",
         type: insp.type || "routine",
@@ -4078,15 +4184,16 @@ export async function fetchInspections(companyId?: string): Promise<InspectionRo
 }
 
 export async function fetchPreventiveTasks(companyId?: string): Promise<PreventiveTaskRow[]> {
-  if (!companyId) return [];
   try {
     let query = supabase.from("preventive_maintenance").select("*, properties(name), maintainers(name)");
-    query = query.eq("company_id", companyId);
+    if (companyId) {
+      query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+    }
     const { data, error } = await query.order("next_due");
     if (!error && data) {
       return data.map((t) => ({
         id: t.id,
-        companyId: t.company_id || companyId,
+        companyId: t.company_id || companyId || "",
         propertyName: t.properties?.name || "Unassigned Property",
         providerName: t.maintainers?.name || "Maintenance Staff",
         title: t.title,
@@ -4104,15 +4211,16 @@ export async function fetchPreventiveTasks(companyId?: string): Promise<Preventi
 }
 
 export async function fetchInventoryItems(companyId?: string): Promise<InventoryItemRow[]> {
-  if (!companyId) return [];
   try {
     let query = supabase.from("maintenance_inventory").select("*");
-    query = query.eq("company_id", companyId);
+    if (companyId) {
+      query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+    }
     const { data, error } = await query.order("name");
     if (!error && data) {
       return data.map((item) => ({
         id: item.id,
-        companyId: item.company_id || companyId,
+        companyId: item.company_id || companyId || "",
         name: item.name,
         category: item.category,
         quantity: item.quantity,
@@ -5066,19 +5174,27 @@ export async function updateStoresInventoryItem(id: string, updates: Partial<Sto
 
 // ─── SUPPLIER CONTACT FUNCTIONS ───────────────────────────────────────────────
 
-export async function fetchSupplierContacts(companyId: string = MOCK_COMPANIES[0].id): Promise<SupplierContact[]> {
+export async function fetchSupplierContacts(companyId?: string): Promise<SupplierContact[]> {
   try {
-    const { data, error } = await supabase.from("supplier_contacts").select("*").eq("company_id", companyId).order("supplier_name");
-    if (!error && data && data.length > 0) {
+    let query = supabase.from("supplier_contacts").select("*");
+    if (companyId && isValidUuid(companyId)) {
+      query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+    }
+    const { data, error } = await query.order("supplier_name");
+    if (!error && data) {
       return data.map((s) => ({
         id: s.id,
-        companyId: s.company_id,
+        companyId: s.company_id || companyId || "",
         supplierName: s.supplier_name,
-        email: s.email,
-        phone: s.phone,
-        address: s.address,
-        contactPerson: s.contact_person,
-        contactPersonPhone: s.contact_person_phone,
+        companyName: s.company_name || s.supplier_name,
+        email: s.email || "",
+        phone: s.phone || "",
+        address: s.address || "",
+        contactPerson: s.contact_person || "",
+        contactPersonPhone: s.contact_person_phone || "",
+        suppliedItems: Array.isArray(s.supplied_items)
+          ? s.supplied_items
+          : (typeof s.supplied_items === "string" ? JSON.parse(s.supplied_items) : []),
         createdAt: s.created_at,
         updatedAt: s.updated_at,
       }));
@@ -5086,31 +5202,67 @@ export async function fetchSupplierContacts(companyId: string = MOCK_COMPANIES[0
   } catch (err) {
     console.warn("Falling back to mock supplier contacts", err);
   }
-  return MOCK_SUPPLIER_CONTACTS.filter((s) => s.companyId === companyId);
+  return MOCK_SUPPLIER_CONTACTS.filter((s) => !companyId || s.companyId === companyId);
 }
 
 export async function saveSupplierContact(
   contact: Omit<SupplierContact, "id" | "createdAt" | "updatedAt">
 ): Promise<SupplierContact> {
   const now = new Date().toISOString();
-  const newContact: SupplierContact = { ...contact, id: `sup-${Date.now()}`, createdAt: now, updatedAt: now };
+  let insertedId = `sup-${Date.now()}`;
 
   try {
-    if (isValidUuid(contact.companyId)) {
-      await supabase.from("supplier_contacts").insert({
-        company_id: contact.companyId,
+    const payload: Record<string, unknown> = {
+      supplier_name: contact.supplierName,
+      email: contact.email || null,
+      phone: contact.phone || null,
+      address: contact.address || null,
+      contact_person: contact.contactPerson || null,
+      contact_person_phone: contact.contactPersonPhone || null,
+    };
+    if (contact.companyId && isValidUuid(contact.companyId)) {
+      payload.company_id = contact.companyId;
+    }
+    if (contact.companyName) {
+      payload.company_name = contact.companyName;
+    }
+    if (contact.suppliedItems) {
+      payload.supplied_items = contact.suppliedItems;
+    }
+
+    const { data, error } = await supabase.from("supplier_contacts").insert(payload).select("id").single();
+    if (!error && data) {
+      insertedId = data.id;
+    } else if (error) {
+      // Fallback if extra columns don't exist yet
+      const basePayload: Record<string, unknown> = {
         supplier_name: contact.supplierName,
-        email: contact.email,
-        phone: contact.phone,
-        address: contact.address,
-        contact_person: contact.contactPerson,
-        contact_person_phone: contact.contactPersonPhone,
-      });
+        email: contact.email || null,
+        phone: contact.phone || null,
+        address: [
+          contact.address,
+          contact.companyName ? `Company: ${contact.companyName}` : "",
+          contact.suppliedItems?.length ? `Supplies: ${contact.suppliedItems.join(", ")}` : "",
+        ].filter(Boolean).join(" | "),
+        contact_person: contact.contactPerson || null,
+        contact_person_phone: contact.contactPersonPhone || null,
+      };
+      if (contact.companyId && isValidUuid(contact.companyId)) {
+        basePayload.company_id = contact.companyId;
+      }
+      const { data: fbData } = await supabase.from("supplier_contacts").insert(basePayload).select("id").single();
+      if (fbData) insertedId = fbData.id;
     }
   } catch (err) {
     console.warn("Could not save supplier contact", err);
   }
 
+  const newContact: SupplierContact = {
+    ...contact,
+    id: insertedId,
+    createdAt: now,
+    updatedAt: now,
+  };
   MOCK_SUPPLIER_CONTACTS.push(newContact);
   return newContact;
 }

@@ -450,6 +450,12 @@ export type InvoiceRow = {
   suppressedAt?: string;
   suppressedBy?: string;
   suppressedReason?: string;
+  createdAt?: string;
+  createdBy?: string;
+  generatedByName?: string;
+  generatedAt?: string;
+  paymentRecordedByName?: string;
+  paymentRecordedAt?: string;
 };
 
 export type ReportsSummary = {
@@ -764,11 +770,13 @@ export type SupplierContact = {
   id: string;
   companyId: string;
   supplierName: string;
+  companyName?: string;
   email?: string;
   phone?: string;
   address?: string;
   contactPerson?: string;
   contactPersonPhone?: string;
+  suppliedItems?: string[];
   createdAt: string;
   updatedAt: string;
 };

@@ -7,8 +7,9 @@ import { supabase } from "@/lib/supabase";
 import { verifyAdminPin, isValidUuid } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
-import { fetchAdminInfo } from "@/lib/storage";
+import { fetchAdminInfo, uploadFileToBucket } from "@/lib/storage";
 import { billStatusMeta, frequencyLabel, type BillFrequency, type BillRow, type BillStatus } from "@/lib/bills";
+import { Eye, Paperclip, Upload, CheckCircle, Clock, ExternalLink } from "lucide-react";
 
 type BillForm = {
   name: string;
@@ -29,17 +30,22 @@ type ScheduleBaseRow = {
   amount: number;
   due_day: number;
   created_at: string;
+  created_by_name?: string;
   properties: { name?: string } | null;
   frequency?: BillFrequency;
 };
 
 type MonthlyBillRow = {
+  id?: string;
   schedule_id: string;
   month: string;
   due_date: string;
   amount: number;
   status: string;
   paid_at: string | null;
+  pop_url?: string | null;
+  executed_by_name?: string | null;
+  confirmed_by_name?: string | null;
 };
 
 const emptyForm: BillForm = {
@@ -86,7 +92,7 @@ function isFrequencyColumnMissing(error: unknown) {
 
 export default function BillsPage() {
   const { user, currentCompany } = useAuth();
-  const { format: formatCurrency } = useCurrency();
+  const { format: formatCurrency, currency: currencyCode } = useCurrency();
   const [searchParams, setSearchParams] = useSearchParams();
   const [bills, setBills] = useState<BillRow[]>([]);
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
@@ -98,6 +104,16 @@ export default function BillsPage() {
   const [editingBill, setEditingBill] = useState<BillRow | null>(null);
   const [form, setForm] = useState<BillForm>(emptyForm);
   const [saving, setSaving] = useState(false);
+
+  // Dedicated Bill Payment Details & POP Modal
+  const [paymentModalBill, setPaymentModalBill] = useState<BillRow | null>(null);
+  const [popFile, setPopFile] = useState<File | null>(null);
+  const [popPreview, setPopPreview] = useState<string>("");
+  const [popStatus, setPopStatus] = useState<BillStatus>("pending");
+  const [popPaidDate, setPopPaidDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [popPaidAmount, setPopPaidAmount] = useState<number>(0);
+  const [popAdminPin, setPopAdminPin] = useState<string>("");
+  const [updatingPayment, setUpdatingPayment] = useState<boolean>(false);
 
   const [deleteTarget, setDeleteTarget] = useState<BillRow | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -153,7 +169,7 @@ export default function BillsPage() {
         const compId = currentCompany?.id;
         let monthlyQ = supabase
           .from("property_monthly_bills")
-          .select("schedule_id, month, due_date, amount, status, paid_at")
+          .select("id, schedule_id, month, due_date, amount, status, paid_at, pop_url, executed_by_name, confirmed_by_name")
           .order("month", { ascending: false });
         let propsQ = supabase.from("properties").select("id, name, type").order("name");
         if (compId && isValidUuid(compId)) {
@@ -161,23 +177,61 @@ export default function BillsPage() {
           propsQ = propsQ.or(`company_id.eq.${compId},company_id.is.null`);
         }
 
-        const [scheduleRows, monthlyResult, propsResult] = await Promise.all([
+        let [scheduleRows, monthlyResult, propsResult] = await Promise.all([
           fetchSchedules(),
           monthlyQ,
           propsQ,
         ]);
 
+        if (monthlyResult.error) {
+          let fbMonthlyQ = supabase
+            .from("property_monthly_bills")
+            .select("id, schedule_id, month, due_date, amount, status, paid_at, pop_url, executed_by_name, confirmed_by_name")
+            .order("month", { ascending: false });
+          if (compId && isValidUuid(compId)) {
+            fbMonthlyQ = fbMonthlyQ.or(`company_id.eq.${compId},company_id.is.null`);
+          }
+          monthlyResult = (await fbMonthlyQ) as any;
+        }
+
         if (monthlyResult.error) throw monthlyResult.error;
         if (propsResult.error) throw propsResult.error;
 
+        const scheduleIds = (scheduleRows ?? []).map((s: any) => String(s.id || "")).filter(Boolean);
+        const creatorMap = new Map<string, { creatorName: string; createdAt: string }>();
+
+        if (scheduleIds.length > 0) {
+          try {
+            const { data: auditRows } = await supabase
+              .from("audit_log")
+              .select("entity_id, user_name, user_email, created_at")
+              .eq("entity_type", "property_bill_schedule")
+              .in("entity_id", scheduleIds.slice(0, 100));
+
+            (auditRows ?? []).forEach((row) => {
+              const eid = String(row.entity_id || "");
+              if (eid && !creatorMap.has(eid)) {
+                creatorMap.set(eid, {
+                  creatorName: String(row.user_name || row.user_email || "Admin"),
+                  createdAt: String(row.created_at || ""),
+                });
+              }
+            });
+          } catch {}
+        }
+
         if (!cancelled) {
-          const monthlyRows = (monthlyResult.data ?? []).map((row) => ({
+          const monthlyRows = (monthlyResult.data ?? []).map((row: any) => ({
+            id: row.id ? String(row.id) : undefined,
             schedule_id: String(row.schedule_id ?? ""),
             month: String(row.month ?? ""),
             due_date: String(row.due_date ?? ""),
             amount: Number(row.amount ?? 0),
             status: String(row.status ?? "pending"),
             paid_at: row.paid_at ? String(row.paid_at) : null,
+            pop_url: row.pop_url ? String(row.pop_url) : null,
+            executed_by_name: row.executed_by_name ? String(row.executed_by_name) : null,
+            confirmed_by_name: row.confirmed_by_name ? String(row.confirmed_by_name) : null,
           })) as MonthlyBillRow[];
 
           const monthlyBySchedule = new Map<string, MonthlyBillRow[]>();
@@ -198,6 +252,12 @@ export default function BillsPage() {
               const currentPaid = currentCycle?.status === "paid";
               const frequency = (row.frequency ?? "monthly") as BillFrequency;
 
+              const creatorInfo = creatorMap.get(scheduleId);
+              const createdByName = String(row.created_by_name || creatorInfo?.creatorName || "Staff Admin");
+              const createdAt = String(row.created_at || creatorInfo?.createdAt || "");
+              const confirmedByName = String(currentCycle?.confirmed_by_name || currentCycle?.executed_by_name || latestPaid?.confirmed_by_name || latestPaid?.executed_by_name || (currentPaid ? "Admin" : ""));
+              const popUrl = String(currentCycle?.pop_url || latestPaid?.pop_url || "");
+
               return {
                 id: scheduleId,
                 name: String(row.title ?? "Unnamed Bill"),
@@ -214,6 +274,11 @@ export default function BillsPage() {
                 lastPaidAmount: currentPaid
                   ? Number(currentCycle?.amount ?? 0)
                   : Number(latestPaid?.amount ?? 0),
+                createdByName,
+                createdAt,
+                confirmedByName,
+                popUrl,
+                currentMonthlyId: currentCycle?.id || latestPaid?.id,
               } satisfies BillRow;
             }),
           );
@@ -415,12 +480,127 @@ export default function BillsPage() {
 
       await upsertCurrentMonthStatus(scheduleId);
 
+      await supabase.from("audit_log").insert({
+        user_email: user?.email || "admin@paimbabook.com",
+        user_name: user?.user_metadata?.full_name || user?.email || "Admin",
+        action: currentEditingBill ? "bill_schedule_updated" : "bill_schedule_created",
+        entity_type: "property_bill_schedule",
+        entity_id: scheduleId,
+        company_id: currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null,
+        details: {
+          title: form.name,
+          property_id: form.propertyId,
+          amount: form.amount,
+          frequency: form.frequency,
+        },
+      });
+
       setModalOpen(false);
       reload();
     } catch (saveError) {
       alert(saveError instanceof Error ? saveError.message : "Could not save bill.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openPaymentModal = (bill: BillRow) => {
+    setPaymentModalBill(bill);
+    setPopStatus(bill.status);
+    setPopPaidDate(bill.lastPaidDate || new Date().toISOString().slice(0, 10));
+    setPopPaidAmount(bill.lastPaidAmount || bill.amount);
+    setPopPreview(bill.popUrl || "");
+    setPopFile(null);
+    setPopAdminPin("");
+  };
+
+  const handleSavePaymentDetails = async () => {
+    if (!paymentModalBill) return;
+
+    if (popStatus === "paid" && popPaidAmount <= 0) {
+      alert("Please enter a valid paid amount.");
+      return;
+    }
+
+    const pinOk = await verifyAdminPin(popAdminPin);
+    if (!pinOk) {
+      alert("Invalid admin PIN. Verification failed.");
+      return;
+    }
+
+    setUpdatingPayment(true);
+    try {
+      let finalPopUrl = popPreview;
+      if (popFile) {
+        finalPopUrl = await uploadFileToBucket("property-photos", "bills/pop", popFile);
+      }
+
+      const monthKey = currentMonthKey();
+      const admin = await fetchAdminInfo(user?.email ?? undefined);
+      const executorName = admin.fullName || user?.user_metadata?.full_name || user?.email || "Admin";
+      const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+
+      const { data: existingMonthly } = await supabase
+        .from("property_monthly_bills")
+        .select("id")
+        .eq("schedule_id", paymentModalBill.id)
+        .eq("month", monthKey)
+        .maybeSingle();
+
+      const monthlyPayload: Record<string, unknown> = {
+        schedule_id: paymentModalBill.id,
+        property_id: paymentModalBill.propertyId,
+        month: monthKey,
+        due_date: buildDueDate(monthKey, paymentModalBill.dueDay),
+        amount: popStatus === "paid" ? popPaidAmount : paymentModalBill.amount,
+        status: popStatus,
+        paid_at: popStatus === "paid" ? (popPaidDate ? new Date(popPaidDate).toISOString() : new Date().toISOString()) : null,
+        pop_url: finalPopUrl || null,
+        executed_by_name: executorName,
+        confirmed_by_name: executorName,
+        company_id: compId,
+      };
+
+      if (existingMonthly?.id) {
+        try {
+          await supabase.from("property_monthly_bills").update(monthlyPayload).eq("id", existingMonthly.id);
+        } catch {
+          delete monthlyPayload.pop_url;
+          delete monthlyPayload.confirmed_by_name;
+          await supabase.from("property_monthly_bills").update(monthlyPayload).eq("id", existingMonthly.id);
+        }
+      } else {
+        try {
+          await supabase.from("property_monthly_bills").insert(monthlyPayload);
+        } catch {
+          delete monthlyPayload.pop_url;
+          delete monthlyPayload.confirmed_by_name;
+          await supabase.from("property_monthly_bills").insert(monthlyPayload);
+        }
+      }
+
+      await supabase.from("audit_log").insert({
+        user_email: user?.email || "admin@paimbabook.com",
+        user_name: executorName,
+        action: "bill_payment_confirmed",
+        entity_type: "property_monthly_bill",
+        company_id: compId,
+        details: {
+          bill_name: paymentModalBill.name,
+          property_id: paymentModalBill.propertyId,
+          month: monthKey,
+          amount: popStatus === "paid" ? popPaidAmount : paymentModalBill.amount,
+          status: popStatus,
+          pop_url: finalPopUrl || null,
+        },
+      });
+
+      setPaymentModalBill(null);
+      reload();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to update payment status and POP.");
+    } finally {
+      setUpdatingPayment(false);
     }
   };
 
@@ -498,6 +678,8 @@ export default function BillsPage() {
                     <th className="px-3 py-2 font-medium">Frequency</th>
                     <th className="px-3 py-2 font-medium">Amount</th>
                     <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 font-medium">Created By</th>
+                    <th className="px-3 py-2 font-medium">Payment & POP</th>
                     <th className="px-3 py-2 font-medium">Actions</th>
                   </tr>
                 </thead>
@@ -505,14 +687,67 @@ export default function BillsPage() {
                   {bills.map((bill) => {
                     const meta = billStatusMeta(bill);
                     return (
-                      <tr key={bill.id} className="border-b border-border-color/60">
-                        <td className="px-3 py-3 font-medium">{bill.name}</td>
+                      <tr
+                        key={bill.id}
+                        onClick={() => openPaymentModal(bill)}
+                        className="border-b border-border-color/60 hover:bg-surface-elevated/40 cursor-pointer transition"
+                      >
+                        <td className="px-3 py-3 font-medium text-foreground">{bill.name}</td>
                         <td className="px-3 py-3 text-muted">{bill.propertyName}</td>
                         <td className="px-3 py-3 text-muted">{frequencyLabel(bill.frequency)} (day {String(bill.dueDay).padStart(2, "0")})</td>
-                        <td className="px-3 py-3 text-muted">{formatCurrency(bill.amount)}</td>
+                        <td className="px-3 py-3 text-muted font-medium">{formatCurrency(bill.amount)}</td>
                         <td className={`px-3 py-3 font-medium ${statusToneClass(meta.tone)}`}>{meta.text}</td>
+                        <td className="px-3 py-3 text-muted text-xs">
+                          <span className="font-semibold text-foreground block">{bill.createdByName || "Staff Admin"}</span>
+                          {bill.createdAt && <span className="text-[10px] text-muted">{new Date(bill.createdAt).toLocaleDateString()}</span>}
+                        </td>
+                        <td className="px-3 py-3 text-xs">
+                          {bill.status === "paid" ? (
+                            <div className="space-y-1">
+                              <span className="inline-flex items-center gap-1 font-semibold text-emerald-600">
+                                <CheckCircle size={12} />
+                                <span>Confirmed by {bill.confirmedByName || "Admin"}</span>
+                              </span>
+                              {bill.popUrl ? (
+                                <a
+                                  href={bill.popUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:underline bg-blue-500/10 px-2 py-0.5 rounded-md w-fit"
+                                >
+                                  <Paperclip size={11} />
+                                  <span>View POP</span>
+                                  <ExternalLink size={10} />
+                                </a>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); openPaymentModal(bill); }}
+                                  className="flex items-center gap-1 text-[10px] font-semibold text-muted hover:text-blue-500 bg-surface-elevated px-2 py-0.5 rounded-md border border-border-color/60 w-fit"
+                                >
+                                  <Upload size={10} />
+                                  <span>Upload POP</span>
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-muted text-xs font-medium">
+                              <Clock size={12} className="text-amber-500" />
+                              <span>Pending confirmation</span>
+                            </span>
+                          )}
+                        </td>
                         <td className="px-3 py-3">
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => openPaymentModal(bill)}
+                              className="rounded-md border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-500/20 transition"
+                              title="View or update payment status and upload Proof of Payment"
+                            >
+                              Payment / POP
+                            </button>
                             <button type="button" onClick={() => openEdit(bill)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Edit</button>
                             <button type="button" onClick={() => setDeleteTarget(bill)} className="rounded-md border border-border-color px-2 py-1 text-xs text-muted hover:bg-surface-elevated">Delete</button>
                           </div>
@@ -527,6 +762,7 @@ export default function BillsPage() {
         </section>
       )}
 
+      {/* CREATE / EDIT BILL SCHEDULE MODAL */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingBill ? "Edit Bill" : "Create Bill"}>
         <div className="space-y-3">
           <div>
@@ -565,7 +801,7 @@ export default function BillsPage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-sm text-muted">Default amount (NAD)</label>
+            <label className="mb-1 block text-sm text-muted">Default amount ({currencyCode})</label>
             <input type="number" min={0} value={form.amount} onChange={(event) => setForm((previous) => ({ ...previous, amount: Number(event.target.value), paidAmount: previous.paidAmount || Number(event.target.value) }))} className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none" />
           </div>
 
@@ -604,6 +840,165 @@ export default function BillsPage() {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* BILL PAYMENT STATUS & PROOF OF PAYMENT (POP) MODAL */}
+      <Modal
+        open={Boolean(paymentModalBill)}
+        onClose={() => setPaymentModalBill(null)}
+        title={paymentModalBill ? `Payment Status & POP - ${paymentModalBill.name}` : "Bill Payment Details"}
+      >
+        {paymentModalBill && (
+          <div className="space-y-4 text-sm">
+            <div className="rounded-xl border border-border-color bg-surface-elevated p-3.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-foreground text-base">{paymentModalBill.name}</span>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${paymentModalBill.status === "paid" ? "bg-emerald-500/15 text-emerald-600 border border-emerald-500/30" : "bg-amber-500/15 text-amber-600 border border-amber-500/30"}`}>
+                  {paymentModalBill.status === "paid" ? "Paid" : "Pending"}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs text-muted">
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider block font-medium">Property</span>
+                  <span className="font-semibold text-foreground">{paymentModalBill.propertyName}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider block font-medium">Cycle Amount</span>
+                  <span className="font-semibold text-foreground">{formatCurrency(paymentModalBill.amount)}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider block font-medium">Created By</span>
+                  <span className="font-semibold text-foreground">{paymentModalBill.createdByName || "Staff Admin"}</span>
+                  {paymentModalBill.createdAt && <span className="block text-[10px] text-muted">{new Date(paymentModalBill.createdAt).toLocaleDateString()}</span>}
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider block font-medium">Frequency</span>
+                  <span className="font-semibold text-foreground">{frequencyLabel(paymentModalBill.frequency)} (day {String(paymentModalBill.dueDay).padStart(2, "0")})</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment Update Form */}
+            <div className="space-y-3 pt-1">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-muted">Update Current Cycle Payment</h3>
+
+              <div>
+                <label className="mb-1 block text-xs text-muted font-medium">Payment Status</label>
+                <select
+                  value={popStatus}
+                  onChange={(e) => setPopStatus(e.target.value as BillStatus)}
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none font-medium"
+                >
+                  <option value="pending">Pending Payment</option>
+                  <option value="paid">Paid &amp; Confirmed</option>
+                </select>
+              </div>
+
+              {popStatus === "paid" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs text-muted font-medium">Paid Date</label>
+                    <input
+                      type="date"
+                      value={popPaidDate}
+                      onChange={(e) => setPopPaidDate(e.target.value)}
+                      className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-muted font-medium">Amount Paid ({currencyCode})</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={popPaidAmount}
+                      onChange={(e) => setPopPaidAmount(Number(e.target.value))}
+                      className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Proof of Payment (POP) Upload / Preview */}
+              <div>
+                <label className="mb-1 block text-xs text-muted font-medium">Proof of Payment (POP)</label>
+                {popPreview && (
+                  <div className="mb-2 p-2.5 rounded-xl border border-border-color bg-surface-elevated flex items-center justify-between">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      <Paperclip size={15} className="text-blue-500 shrink-0" />
+                      <span className="text-xs font-medium truncate max-w-[220px]">
+                        {popFile ? popFile.name : "Current Proof of Payment"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={popPreview}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline font-bold"
+                      >
+                        <Eye size={13} />
+                        <span>View</span>
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    id="bill-pop-file"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setPopFile(file);
+                        setPopPreview(URL.createObjectURL(file));
+                      }
+                    }}
+                    className="hidden"
+                  />
+                  <label
+                    htmlFor="bill-pop-file"
+                    className="flex items-center justify-center gap-2 w-full cursor-pointer rounded-xl border border-dashed border-border-color p-3 text-xs text-muted hover:border-blue-500 hover:text-blue-500 hover:bg-surface-elevated transition"
+                  >
+                    <Upload size={14} />
+                    <span>{popPreview ? "Change Proof of Payment File" : "Upload POP Document or Screenshot (PDF / Image)"}</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* PIN requirement when updating status */}
+              <div>
+                <label className="mb-1 block text-xs text-muted font-medium">Admin PIN (Required to confirm changes)</label>
+                <input
+                  type="password"
+                  placeholder="Enter Admin PIN"
+                  value={popAdminPin}
+                  onChange={(e) => setPopAdminPin(e.target.value)}
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-border-color">
+                <button
+                  type="button"
+                  onClick={() => setPaymentModalBill(null)}
+                  className="rounded-xl border border-border-color px-4 py-2 text-xs font-semibold text-muted hover:text-foreground"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={updatingPayment}
+                  onClick={() => void handleSavePaymentDetails()}
+                  className="rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-bold text-white transition disabled:opacity-50"
+                >
+                  {updatingPayment ? "Saving Payment..." : "Save Payment & POP"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <ConfirmDialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Bill" message={`Delete bill \"${deleteTarget?.name}\"?`} confirmLabel="Delete" loading={deleting} />

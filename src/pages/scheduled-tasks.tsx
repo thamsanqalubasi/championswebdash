@@ -20,17 +20,16 @@ import {
   ChevronRight,
   Truck,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  Layers,
+  DoorOpen
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 import { fetchPreventiveTasksData, isValidUuid } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
+import { useCurrency } from "@/lib/currency";
 import type { PreventiveTaskRow } from "@/lib/types";
-
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "NAD", maximumFractionDigits: 0 }).format(amount);
-}
 
 const emptyForm = { title: "", property_id: "", maintainer_id: "", category: "general", frequency: "monthly", next_due: "", estimated_cost: 0, status: "active" };
 
@@ -53,6 +52,7 @@ function StatCard({ label, value, detail, icon: Icon, colorClass = "text-foregro
 
 export default function ScheduledTasksPage() {
   const { currentCompany } = useAuth();
+  const { format: formatCurrency, currency, symbol } = useCurrency();
   const [tasks, setTasks] = useState<PreventiveTaskRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +67,12 @@ export default function ScheduledTasksPage() {
   const [deleting, setDeleting] = useState(false);
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
   const [providers, setProviders] = useState<Array<{ id: string; name: string }>>([]);
+  const [rooms, setRooms] = useState<Array<{ id: string; roomNumber: string; floorNumber: string; propertyId: string }>>([]);
+
+  // Narrowing scope states
+  const [scopeMode, setScopeMode] = useState<"full" | "sub">("full");
+  const [selectedFloor, setSelectedFloor] = useState("");
+  const [selectedRoom, setSelectedRoom] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -78,17 +84,28 @@ export default function ScheduledTasksPage() {
         if (!cancelled) setTasks(result);
         let propsQuery = supabase.from("properties").select("id, name").order("name");
         let provsQuery = supabase.from("maintainers").select("id, name").order("name");
+        let roomsQuery = supabase.from("commercial_rooms").select("id, room_number, floor_number, property_id");
         if (isValidUuid(compId)) {
           propsQuery = propsQuery.eq("company_id", compId);
-          provsQuery = provsQuery.eq("company_id", compId);
+          provsQuery = provsQuery.or(`company_id.eq.${compId},company_id.is.null`);
+          roomsQuery = roomsQuery.eq("company_id", compId);
         }
-        const [{ data: props }, { data: provs }] = await Promise.all([
+        const [{ data: props }, { data: provs }, { data: rms }] = await Promise.all([
           propsQuery,
           provsQuery,
+          roomsQuery,
         ]);
         if (!cancelled) {
           if (props) setProperties(props.map((p) => ({ id: String(p.id), name: String(p.name) })));
           if (provs) setProviders(provs.map((p) => ({ id: String(p.id), name: String(p.name) })));
+          if (rms) {
+            setRooms(rms.map((r) => ({
+              id: String(r.id),
+              roomNumber: String(r.room_number || ""),
+              floorNumber: String(r.floor_number || "G"),
+              propertyId: String(r.property_id || ""),
+            })));
+          }
         }
       } catch (e) { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load scheduled tasks."); }
       finally { if (!cancelled) setLoading(false); }
@@ -98,6 +115,21 @@ export default function ScheduledTasksPage() {
   }, [reloadKey, currentCompany?.id]);
 
   const reload = () => setReloadKey((v) => v + 1);
+
+  const availableRoomsForProperty = useMemo(() => {
+    if (!form.property_id) return [];
+    return rooms.filter((r) => r.propertyId === form.property_id);
+  }, [rooms, form.property_id]);
+
+  const availableFloorsForProperty = useMemo(() => {
+    const floors = new Set(availableRoomsForProperty.map((r) => r.floorNumber).filter(Boolean));
+    return Array.from(floors);
+  }, [availableRoomsForProperty]);
+
+  const filteredRoomsForFloor = useMemo(() => {
+    if (!selectedFloor) return availableRoomsForProperty;
+    return availableRoomsForProperty.filter((r) => r.floorNumber === selectedFloor);
+  }, [availableRoomsForProperty, selectedFloor]);
 
   const counts = useMemo(() => ({
     all: tasks.length,
@@ -116,7 +148,14 @@ export default function ScheduledTasksPage() {
     return result;
   }, [tasks, activeFilter, searchQuery]);
 
-  const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
+  const openAdd = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setScopeMode("full");
+    setSelectedFloor("");
+    setSelectedRoom("");
+    setModalOpen(true);
+  };
 
   const openEdit = async (taskId: string) => {
     try {
@@ -137,6 +176,9 @@ export default function ScheduledTasksPage() {
         estimated_cost: Number(data.estimated_cost ?? 0),
         status: String(data.status ?? "active"),
       });
+      setScopeMode("full");
+      setSelectedFloor("");
+      setSelectedRoom("");
       setModalOpen(true);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Could not load task for editing.");
@@ -148,9 +190,22 @@ export default function ScheduledTasksPage() {
     if (!form.next_due) { alert("Please select a next due date."); return; }
     setSaving(true);
     try {
+      let finalTitle = form.title.trim();
+      if (scopeMode === "sub") {
+        const scopeParts: string[] = [];
+        if (selectedFloor) scopeParts.push(`Floor ${selectedFloor}`);
+        if (selectedRoom) scopeParts.push(`Room ${selectedRoom}`);
+        if (scopeParts.length > 0) {
+          const tag = `[${scopeParts.join(", ")}]`;
+          if (!finalTitle.includes(tag)) {
+            finalTitle = `${finalTitle} ${tag}`.trim();
+          }
+        }
+      }
+
       const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
       const payload: Record<string, unknown> = {
-        title: form.title,
+        title: finalTitle,
         category: form.category,
         frequency: form.frequency,
         next_due: form.next_due || null,
@@ -158,8 +213,11 @@ export default function ScheduledTasksPage() {
         status: form.status,
         company_id: compId,
       };
-      if (form.property_id && isValidUuid(form.property_id)) payload.property_id = form.property_id;
-      if (form.maintainer_id && isValidUuid(form.maintainer_id)) payload.maintainer_id = form.maintainer_id;
+      if (form.property_id && isValidUuid(form.property_id)) {
+        payload.property_id = form.property_id;
+      }
+      payload.maintainer_id = form.maintainer_id && isValidUuid(form.maintainer_id) ? form.maintainer_id : null;
+
       if (editingId) {
         const { error: err } = await supabase.from("preventive_maintenance").update(payload).eq("id", editingId);
         if (err) throw err;
@@ -305,10 +363,7 @@ export default function ScheduledTasksPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1 font-bold text-foreground">
-                          <span className="text-[10px] text-muted">NAD</span>
-                          <span>{row.estimatedCost.toLocaleString()}</span>
-                        </div>
+                        <span className="font-bold text-foreground">{formatCurrency(row.estimatedCost)}</span>
                       </td>
                       <td className="px-6 py-4">
                         <StatusBadge status={row.status} />
@@ -375,16 +430,97 @@ export default function ScheduledTasksPage() {
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Protocol Title</label>
               <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5" placeholder="e.g. Annual AC Service" />
             </div>
-            <div>
-              <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Target Unit</label>
-              <select value={form.property_id} onChange={(e) => setForm({ ...form, property_id: e.target.value })} className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5">
-                <option value="">Select property...</option>{properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Target Unit / Property</label>
+              <select
+                value={form.property_id}
+                onChange={(e) => {
+                  setForm({ ...form, property_id: e.target.value });
+                  setSelectedFloor("");
+                  setSelectedRoom("");
+                  setScopeMode("full");
+                }}
+                className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
+              >
+                <option value="">Select property...</option>
+                {properties.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
               </select>
             </div>
+
+            {/* Scope Narrowing if Property has rooms / floors */}
+            {availableRoomsForProperty.length > 0 && (
+              <div className="sm:col-span-2 p-3 rounded-lg border border-border-color bg-surface-elevated/20 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
+                    <Layers size={12} />
+                    <span>Property Scope</span>
+                  </label>
+                  <div className="flex rounded-md border border-border-color bg-surface p-0.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setScopeMode("full")}
+                      className={`px-2.5 py-1 rounded font-medium transition-all ${
+                        scopeMode === "full" ? "bg-foreground text-surface" : "text-muted hover:text-foreground"
+                      }`}
+                    >
+                      Full Property
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScopeMode("sub")}
+                      className={`px-2.5 py-1 rounded font-medium transition-all ${
+                        scopeMode === "sub" ? "bg-foreground text-surface" : "text-muted hover:text-foreground"
+                      }`}
+                    >
+                      Specific Floor & Room
+                    </button>
+                  </div>
+                </div>
+
+                {scopeMode === "sub" && (
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="mb-1 block text-[10px] font-semibold text-muted">Floor</label>
+                      <select
+                        value={selectedFloor}
+                        onChange={(e) => {
+                          setSelectedFloor(e.target.value);
+                          setSelectedRoom("");
+                        }}
+                        className="w-full rounded border border-border-color bg-surface px-2 py-1.5 text-xs outline-none"
+                      >
+                        <option value="">All Floors</option>
+                        {availableFloorsForProperty.map((fl) => (
+                          <option key={fl} value={fl}>Floor {fl}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[10px] font-semibold text-muted">Room / Space</label>
+                      <select
+                        value={selectedRoom}
+                        onChange={(e) => setSelectedRoom(e.target.value)}
+                        className="w-full rounded border border-border-color bg-surface px-2 py-1.5 text-xs outline-none"
+                      >
+                        <option value="">All Rooms on Floor</option>
+                        {filteredRoomsForFloor.map((rm) => (
+                          <option key={rm.id} value={rm.roomNumber}>Room {rm.roomNumber}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div>
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Service Partner</label>
               <select value={form.maintainer_id} onChange={(e) => setForm({ ...form, maintainer_id: e.target.value })} className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5">
-                <option value="">Select provider...</option>{providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                <option value="">No specific provider</option>
+                {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
             <div>
@@ -396,7 +532,14 @@ export default function ScheduledTasksPage() {
             <div>
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Frequency</label>
               <select value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value })} className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5">
-                <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="biannual">Biannual</option><option value="annual">Annual</option>
+                <option value="one_time">One-time</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="bi_weekly">Bi-weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="semi_annually">Semi-annually</option>
+                <option value="annually">Annually</option>
               </select>
             </div>
             <div>
@@ -404,8 +547,16 @@ export default function ScheduledTasksPage() {
               <input type="date" value={form.next_due} onChange={(e) => setForm({ ...form, next_due: e.target.value })} className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5" />
             </div>
             <div>
-              <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Estimated Cost (NAD)</label>
-              <input type="number" value={form.estimated_cost} onChange={(e) => setForm({ ...form, estimated_cost: Number(e.target.value) })} className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5" />
+              <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Estimated Cost ({currency})</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted">{symbol || currency}</span>
+                <input
+                  type="number"
+                  value={form.estimated_cost}
+                  onChange={(e) => setForm({ ...form, estimated_cost: Number(e.target.value) })}
+                  className="w-full rounded-lg border border-border-color bg-surface-elevated pl-10 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
+                />
+              </div>
             </div>
           </div>
           {editingId && (

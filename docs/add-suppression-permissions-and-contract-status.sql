@@ -58,3 +58,4 @@ ALTER TABLE IF EXISTS public.contract_sections ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "contract_sections_all" ON public.contract_sections;
 CREATE POLICY "contract_sections_all" ON public.contract_sections
   FOR ALL TO public USING (true) WITH CHECK (true);
+

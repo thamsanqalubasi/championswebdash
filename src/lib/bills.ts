@@ -14,6 +14,11 @@ export type BillRow = {
   startDate: string;
   lastPaidDate: string;
   lastPaidAmount: number;
+  createdByName?: string;
+  createdAt?: string;
+  confirmedByName?: string;
+  popUrl?: string;
+  currentMonthlyId?: string;
 };
 
 const frequencyMonths: Record<BillFrequency, number> = {

@@ -10,7 +10,7 @@ import { fetchCompanyInfo, fetchAdminInfo, downloadPdfDocument, downloadPdfFromU
 import { buildProfessionalInvoiceHtml, buildUnifiedInvoiceHtml } from "@/lib/document-templates";
 import type { InvoiceRow } from "@/lib/types";
 import { DocumentShareModal } from "@/components/document-share-modal";
-import { Mail, Download, FileText, Send } from "lucide-react";
+import { Mail, Download, FileText, Send, Info, X } from "lucide-react";
 
 type PeriodFilter = "this_month" | "last_2_months" | "last_3_months";
 
@@ -90,6 +90,7 @@ export default function InvoicesPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   const [activeFilter, setActiveFilter] = useState("all");
+  const [activeInfoId, setActiveInfoId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<InvoiceRow | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -258,17 +259,17 @@ export default function InvoicesPage() {
 
   const counts = useMemo(
     () => ({
-      all: invoices.length,
-      paid: invoices.filter((item) => item.status === "paid").length,
-      sent: invoices.filter((item) => item.status === "sent").length,
-      overdue: invoices.filter((item) => item.status === "overdue").length,
-      draft: invoices.filter((item) => item.status === "draft").length,
-      suppressed: invoices.filter((item) => item.status === "suppressed").length,
+      all: invoices.filter((item) => item.status !== "suppressed" && !item.isSuppressed).length,
+      paid: invoices.filter((item) => item.status === "paid" && !item.isSuppressed).length,
+      sent: invoices.filter((item) => item.status === "sent" && !item.isSuppressed).length,
+      overdue: invoices.filter((item) => item.status === "overdue" && !item.isSuppressed).length,
+      draft: invoices.filter((item) => item.status === "draft" && !item.isSuppressed).length,
+      suppressed: invoices.filter((item) => item.status === "suppressed" || Boolean(item.isSuppressed)).length,
     }),
     [invoices],
   );
 
-  const activeInvoices = useMemo(() => invoices.filter((item) => item.status !== "suppressed"), [invoices]);
+  const activeInvoices = useMemo(() => invoices.filter((item) => item.status !== "suppressed" && !item.isSuppressed), [invoices]);
   const totalAmount = useMemo(() => activeInvoices.reduce((sum, item) => sum + item.totalAmount, 0), [activeInvoices]);
   const totalPaid = useMemo(
     () => activeInvoices.filter((item) => item.status === "paid").reduce((sum, item) => sum + item.totalAmount, 0),
@@ -277,7 +278,15 @@ export default function InvoicesPage() {
   const totalOutstanding = totalAmount - totalPaid;
 
   const filtered = useMemo(
-    () => (activeFilter === "all" ? invoices : invoices.filter((item) => item.status === activeFilter)),
+    () => {
+      if (activeFilter === "all") {
+        return invoices.filter((item) => item.status !== "suppressed" && !item.isSuppressed);
+      }
+      if (activeFilter === "suppressed") {
+        return invoices.filter((item) => item.status === "suppressed" || Boolean(item.isSuppressed));
+      }
+      return invoices.filter((item) => item.status === activeFilter && !item.isSuppressed);
+    },
     [invoices, activeFilter],
   );
 
@@ -338,17 +347,40 @@ export default function InvoicesPage() {
         }
 
         const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
-        const { error: createError } = await supabase.from("invoices").insert({
-          tenant_id: transaction.tenantId,
-          property_id: transaction.propertyId,
-          month,
-          due_date: transaction.paymentDate,
-          total_amount: transaction.amountPaid,
-          status: "paid",
-          company_id: compId,
-        });
+        const actorName = user?.user_metadata?.full_name || user?.email || "Admin";
+
+        const { data: createdInv, error: createError } = await supabase
+          .from("invoices")
+          .insert({
+            tenant_id: transaction.tenantId,
+            property_id: transaction.propertyId,
+            month,
+            due_date: transaction.paymentDate,
+            total_amount: transaction.amountPaid,
+            status: "paid",
+            company_id: compId,
+          })
+          .select("id")
+          .maybeSingle();
 
         if (createError) throw createError;
+
+        await supabase.from("audit_log").insert({
+          user_email: user?.email || "admin@paimbabook.com",
+          user_name: actorName,
+          action: "invoice_generated",
+          entity_type: "invoice",
+          entity_id: createdInv?.id,
+          company_id: compId,
+          details: {
+            tenant_name: transaction.tenantName,
+            property_name: transaction.propertyName,
+            month,
+            amount: transaction.amountPaid,
+            collector_name: transaction.collectorName,
+            payment_date: transaction.paymentDate,
+          },
+        });
 
         setModalOpen(false);
         reload();
@@ -359,10 +391,11 @@ export default function InvoicesPage() {
 
       const totalAmountPaid = selectedTransactions.reduce((sum, row) => sum + row.amountPaid, 0);
       const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+      const actorName = user?.user_metadata?.full_name || user?.email || "Admin";
 
       const { error: auditError } = await supabase.from("audit_log").insert({
         user_email: user?.email || "admin@paimbabook.com",
-        user_name: user?.email ?? "Admin",
+        user_name: actorName,
         action: "unified_invoice_generated",
         entity_type: "tenant_rent_payment",
         company_id: compId,
@@ -392,35 +425,51 @@ export default function InvoicesPage() {
   };
 
   const handleSuppressInvoice = async (row: InvoiceRow) => {
-    const confirmSuppress = window.confirm(
-      `Suppress this invoice for ${row.tenantName} (${row.month})?\n\n` +
+    const reason = window.prompt(
+      `Suppress invoice for ${row.tenantName} (${row.month})?\n\n` +
       `• Suppressed invoices remain in system audit logs and records.\n` +
       `• The invoice will no longer be shareable or active.\n` +
-      `• This allows generating a new, corrected invoice for ${row.month}.`
+      `• This allows generating a new, corrected invoice for ${row.month}.\n\n` +
+      `Enter suppression reason:`,
+      "Suppressed by staff for correction/regeneration"
     );
-    if (!confirmSuppress) return;
+    if (reason === null) return;
 
     try {
-      const { error: updateError } = await supabase
-        .from("invoices")
-        .update({ status: "suppressed" })
-        .eq("id", row.id);
-
-      if (updateError) throw updateError;
-
+      const actorName = user?.user_metadata?.full_name || user?.email || "Admin";
       const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+
+      try {
+        await supabase
+          .from("invoices")
+          .update({
+            status: "suppressed",
+            is_suppressed: true,
+            suppressed_at: new Date().toISOString(),
+            suppressed_by: actorName,
+            suppressed_reason: reason,
+          })
+          .eq("id", row.id);
+      } catch {
+        await supabase
+          .from("invoices")
+          .update({ status: "suppressed" })
+          .eq("id", row.id);
+      }
+
       await supabase.from("audit_log").insert({
         user_email: user?.email || "admin@paimbabook.com",
-        user_name: user?.email ?? "Admin",
+        user_name: actorName,
         action: "invoice_suppressed",
         entity_type: "invoice",
+        entity_id: row.id,
         company_id: compId,
         details: {
           invoice_id: row.id,
           tenant_name: row.tenantName,
           month: row.month,
           amount: row.totalAmount,
-          reason: "Suppressed by staff for correction/regeneration",
+          reason,
         },
       });
 
@@ -743,7 +792,68 @@ export default function InvoicesPage() {
                       const isSuppressed = row.status === "suppressed";
                       return (
                         <tr key={row.id} className={`border-b border-border-color/60 ${isSuppressed ? "opacity-75 bg-amber-500/[0.02]" : ""}`}>
-                          <td className="px-3 py-3 font-medium">{row.tenantName}</td>
+                          <td className="px-3 py-3 font-medium">
+                            <div className="flex items-center gap-1.5">
+                              <span>{row.tenantName}</span>
+                              <div className="relative inline-block">
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveInfoId(activeInfoId === row.id ? null : row.id)}
+                                  className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-surface-elevated text-muted hover:text-foreground hover:bg-surface border border-border-color transition"
+                                  title="View tracking & audit details"
+                                >
+                                  <Info size={11} />
+                                </button>
+                                {activeInfoId === row.id && (
+                                  <div className="absolute left-0 top-6 z-50 w-72 rounded-xl border border-border-color bg-surface p-3.5 shadow-2xl text-left text-xs font-normal">
+                                    <div className="flex items-center justify-between border-b border-border-color pb-1.5 mb-2">
+                                      <span className="font-bold text-foreground">Invoice Audit & Tracking</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveInfoId(null)}
+                                        className="text-muted hover:text-foreground p-0.5 rounded"
+                                      >
+                                        <X size={13} />
+                                      </button>
+                                    </div>
+
+                                    <div className="space-y-2.5">
+                                      <div>
+                                        <span className="text-[10px] uppercase font-bold tracking-wider text-muted block">Generated By</span>
+                                        <p className="font-semibold text-foreground">{row.generatedByName || "System Admin"}</p>
+                                        <p className="text-[11px] text-muted">
+                                          {row.generatedAt ? new Date(row.generatedAt).toLocaleString() : (row.createdAt ? new Date(row.createdAt).toLocaleString() : "N/A")}
+                                        </p>
+                                      </div>
+
+                                      <div>
+                                        <span className="text-[10px] uppercase font-bold tracking-wider text-muted block">Payment Recorded By</span>
+                                        <p className="font-semibold text-foreground">{row.paymentRecordedByName || "Finance Admin"}</p>
+                                        <p className="text-[11px] text-muted">
+                                          {row.paymentRecordedAt ? new Date(row.paymentRecordedAt).toLocaleDateString() : (row.dueDate || "N/A")}
+                                        </p>
+                                      </div>
+
+                                      {(isSuppressed || row.isSuppressed) && (
+                                        <div className="pt-2 border-t border-amber-500/20 bg-amber-500/10 p-2.5 rounded-lg">
+                                          <span className="text-[10px] uppercase font-bold tracking-wider text-amber-600 dark:text-amber-400 block">
+                                            Suppression Details
+                                          </span>
+                                          <p className="font-semibold text-foreground mt-0.5">By: {row.suppressedBy || "Staff Admin"}</p>
+                                          <p className="text-[11px] text-muted">
+                                            {row.suppressedAt ? new Date(row.suppressedAt).toLocaleString() : "Date N/A"}
+                                          </p>
+                                          <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-1 italic font-medium">
+                                            "{row.suppressedReason || "Suppressed by staff for correction/regeneration"}"
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
                           <td className="px-3 py-3 text-muted">{row.propertyName}</td>
                           <td className="px-3 py-3 text-muted">{row.month}</td>
                           <td className="px-3 py-3 text-muted">{row.dueDate}</td>
