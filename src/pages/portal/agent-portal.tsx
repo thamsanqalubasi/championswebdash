@@ -57,19 +57,27 @@ type OrgResidentialProperty = {
   company_id?: string;
 };
 
-const HOSPITALITY_TYPES = [
-  'hotel', 'guesthouse', 'lodge', 'bed_and_breakfast', 'resort', 
-  'motel', 'hostel', 'inn', 'boutique_hotel', 'safari_camp'
+const NON_RESIDENTIAL_TYPES = [
+  'hotel', 'lodge', 'guesthouse', 'guest_house', 'motel', 'resort', 
+  'bed_and_breakfast', 'inn', 'boutique_hotel', 'safari_camp', 'commercial', 'office', 'warehouse'
 ];
 
-const isHospitality = (type?: string) => HOSPITALITY_TYPES.includes((type || '').toLowerCase());
+const RESIDENTIAL_TYPES = [
+  'apartment', 'house', 'flat', 'residential', 'townhouse', 'duplex', 'studio', 'room', 'villa'
+];
+
+const isResidential = (type?: string) => {
+  const t = (type || '').toLowerCase().trim();
+  if (NON_RESIDENTIAL_TYPES.includes(t)) return false;
+  return RESIDENTIAL_TYPES.includes(t) || t.includes('apartment') || t.includes('house') || t.includes('flat') || t.includes('room') || t.includes('residential') || t.includes('villa');
+};
 
 const AMENITIES_OPTIONS = [
   'wifi', 'parking', 'pool', 'garden', 'security', 
   'ac', 'gym', 'balcony', 'furnished', 'pet_friendly'
 ];
 
-const TABS = ['Published Properties & Lodges', 'My Custom Listings', 'Add / Edit Listing', 'My Profile'];
+const TABS = ['Published Residential Properties', 'My Custom Listings', 'Add / Edit Listing', 'My Profile'];
 
 export default function AgentPortalPage() {
   const { user, currentCompany } = useAuth();
@@ -90,7 +98,7 @@ export default function AgentPortalPage() {
   // Select from System Properties Modal State
   const [openSystemPropsModal, setOpenSystemPropsModal] = useState(false);
   const [systemModalSearch, setSystemModalSearch] = useState('');
-  const [systemModalCategoryFilter, setSystemModalCategoryFilter] = useState<'all' | 'hospitality' | 'rental' | 'published' | 'hidden'>('all');
+  const [systemModalCategoryFilter, setSystemModalCategoryFilter] = useState<'all' | 'apartment' | 'house' | 'published' | 'hidden'>('all');
 
   const defaultFormData = {
     name: '',
@@ -217,7 +225,10 @@ export default function AgentPortalPage() {
         }
       }
 
-      setOrgProperties(propertiesList.map((p: any) => ({
+      // ONLY residential properties must show on agent portal
+      const residentialList = propertiesList.filter((p: any) => isResidential(p.type));
+
+      setOrgProperties(residentialList.map((p: any) => ({
         id: p.id,
         name: p.name,
         type: p.type || 'residential',
@@ -290,21 +301,20 @@ export default function AgentPortalPage() {
       } else {
         // Publish new to Agent Index
         const propPhotos = prop.photos || [];
-        const isHosp = isHospitality(prop.type);
         const priceVal = prop.monthly_rent || prop.default_room_price || 0;
         const payload = {
           name: prop.name,
-          type: prop.type || (isHosp ? 'lodge' : 'house'),
+          type: prop.type || 'house',
           listing_type: 'rent' as const,
           price: priceVal,
           address: prop.address || '',
           city: prop.city || '',
           country: prop.country || '',
-          description: prop.description || `${prop.name} — managed ${isHosp ? 'hospitality lodge' : 'residential property'} available for lease or booking.`,
+          description: prop.description || `${prop.name} — managed residential property ready for lease.`,
           bedrooms: prop.total_rooms || 1,
           bathrooms: 1,
           area_sqm: 0,
-          amenities: isHosp ? ['wifi', 'parking', 'security', 'ac'] : ['wifi', 'parking', 'security'],
+          amenities: ['wifi', 'parking', 'security'],
           photos: propPhotos,
           is_published: true,
           agent_name: agentName,
@@ -332,21 +342,20 @@ export default function AgentPortalPage() {
   };
 
   const handleSelectAndEditSystemProperty = (prop: OrgResidentialProperty) => {
-    const isHosp = isHospitality(prop.type);
     const priceVal = prop.monthly_rent || prop.default_room_price || 0;
     setFormData({
       name: prop.name,
-      type: prop.type || (isHosp ? 'lodge' : 'apartment'),
+      type: prop.type || 'apartment',
       listingType: 'rent',
       price: priceVal,
       address: prop.address || '',
       city: prop.city || '',
       country: prop.country || '',
-      description: prop.description || `${prop.name} — managed ${isHosp ? 'hospitality lodge' : 'residential property'} available in ${prop.city || 'Windhoek'}.`,
+      description: prop.description || `${prop.name} — managed residential property available in ${prop.city || 'Windhoek'}.`,
       bedrooms: prop.total_rooms || 1,
       bathrooms: 1,
       areaSqm: 0,
-      amenities: isHosp ? ['wifi', 'parking', 'security', 'ac'] : ['wifi', 'parking', 'security'],
+      amenities: ['wifi', 'parking', 'security'],
       photos: prop.photos || [],
     });
     setEditingId(null);
@@ -621,10 +630,10 @@ export default function AgentPortalPage() {
               <div>
                 <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
                   <Building2 size={20} className="text-blue-600" />
-                  <span>Properties & Lodges — Front Page Visibility</span>
+                  <span>Published Residential Properties — Front Page Visibility</span>
                 </h2>
                 <p className="text-xs text-muted mt-1">
-                  Control which properties and lodges appear on the public front page index for prospective customers. Click "Show" or "Hide" to toggle visibility, or select from system properties to import and customize.
+                  Control which residential properties appear on the public front page index for prospective customers. Click "Show" or "Hide" to toggle visibility, or select from system properties to import and customize.
                 </p>
               </div>
               <div className="flex items-center gap-2 self-start md:self-auto">
@@ -746,15 +755,13 @@ export default function AgentPortalPage() {
                   onChange={(e) => setOrgTypeFilter(e.target.value)}
                   className="rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none focus:border-blue-600"
                 >
-                  <option value="all">All Properties</option>
-                  <option value="hospitality">🏨 Hospitality & Lodges</option>
-                  <option value="rental">🏠 Residential Rentals</option>
-                  <option value="hotel">Hotels</option>
-                  <option value="lodge">Lodges</option>
-                  <option value="apartment">Apartments</option>
-                  <option value="house">Houses</option>
-                  <option value="room">Rooms</option>
-                  <option value="storage">Storage</option>
+                  <option value="all">All Residential</option>
+                  <option value="apartment">🏢 Apartments</option>
+                  <option value="house">🏡 Houses</option>
+                  <option value="flat">🏠 Flats</option>
+                  <option value="townhouse">🏘️ Townhouses</option>
+                  <option value="studio">🛋️ Studios</option>
+                  <option value="room">🚪 Rooms</option>
                 </select>
               </div>
             </div>
@@ -765,19 +772,17 @@ export default function AgentPortalPage() {
                 <p className="text-sm">Loading portfolio properties...</p>
               </div>
             ) : orgProperties.length === 0 ? (
-              <div className="text-center py-16 text-muted bg-surface-elevated/40 rounded-2xl border border-dashed border-border-color">
-                <Building2 size={44} className="mx-auto mb-3 opacity-30" />
-                <p className="text-sm font-semibold text-foreground">No properties or lodges found in system</p>
-                <p className="text-xs text-muted mt-1 max-w-sm mx-auto">
-                  Add properties and lodges in Property Management or click "Select from system properties" to browse available listings.
-                </p>
+              <div className="text-center py-16 text-muted">
+                <Building2 size={40} className="mx-auto mb-2 opacity-30" />
+                <p className="text-sm font-semibold text-foreground">No residential portfolio properties found</p>
+                <p className="text-xs text-muted mt-1">Properties added in your organisation's portfolio will appear here.</p>
                 <button
                   type="button"
-                  onClick={() => setOpenSystemPropsModal(true)}
-                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition"
+                  onClick={() => setActiveTab(2)}
+                  className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition shadow-xs"
                 >
-                  <Building2 size={14} />
-                  <span>Select from system properties</span>
+                  <Plus size={14} />
+                  <span>Create Agent Listing Instead</span>
                 </button>
               </div>
             ) : (
@@ -789,11 +794,8 @@ export default function AgentPortalPage() {
                       prop.name.toLowerCase().includes(q) ||
                       (prop.address || "").toLowerCase().includes(q) ||
                       (prop.city || "").toLowerCase().includes(q);
-                    const isHosp = isHospitality(prop.type);
                     const matchesType = orgTypeFilter === "all" || 
-                      (orgTypeFilter === "hospitality" ? isHosp : 
-                       orgTypeFilter === "rental" ? !isHosp : 
-                       prop.type === orgTypeFilter);
+                      (prop.type || "").toLowerCase().includes(orgTypeFilter.toLowerCase());
                     
                     const matchedListing = listings.find(
                       (l) => l.name.trim().toLowerCase() === prop.name.trim().toLowerCase()
@@ -813,7 +815,6 @@ export default function AgentPortalPage() {
                     );
                     const isLive = Boolean(matchedListing && matchedListing.isPublished) || Boolean(prop.is_published);
                     const isToggling = togglingPropId === prop.id;
-                    const isHosp = isHospitality(prop.type);
                     const primaryPhoto = prop.photos?.[0];
 
                     return (
@@ -842,7 +843,7 @@ export default function AgentPortalPage() {
                             {/* Top Badges */}
                             <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 pointer-events-none">
                               <span className="capitalize px-2.5 py-1 rounded-full text-[11px] font-bold bg-black/70 text-white backdrop-blur-xs flex items-center gap-1">
-                                <span>{isHosp ? "🏨" : "🏠"}</span>
+                                <span>🏠</span>
                                 <span>{prop.type}</span>
                               </span>
 
@@ -889,9 +890,7 @@ export default function AgentPortalPage() {
                             <div className="pt-2 flex items-baseline justify-between border-t border-border-color/60">
                               <span className="text-xs text-muted">Pricing:</span>
                               <span className="text-sm font-black text-emerald-600">
-                                {isHosp
-                                  ? `From ${symbol} ${formatWhole(prop.default_room_price || prop.monthly_rent || 0)}/night`
-                                  : `${symbol} ${formatWhole(prop.monthly_rent || 0)}/mo`}
+                                {symbol} {formatWhole(prop.monthly_rent || prop.default_room_price || 0)}/mo
                               </span>
                             </div>
                           </div>
@@ -1342,11 +1341,11 @@ export default function AgentPortalPage() {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-foreground flex items-center gap-2">
-                    <span>Select from System Properties</span>
+                    <span>Select from System Properties (Residential)</span>
                     <span className="text-xs font-normal text-muted">({currentCompany?.name || 'Miola Real Estate'})</span>
                   </h3>
                   <p className="text-xs text-muted">
-                    Browse and select rental units or hospitality lodges to show on the public front page index or customize.
+                    Browse and select residential rental properties to show on the public front page index or customize.
                   </p>
                 </div>
               </div>
@@ -1362,19 +1361,22 @@ export default function AgentPortalPage() {
             {/* Summary KPI Tiles */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-4 border-b border-border-color bg-surface/60">
               <div className="bg-surface-elevated rounded-xl p-3 border border-border-color">
-                <p className="text-[11px] font-semibold text-muted uppercase">All Properties</p>
+                <p className="text-[11px] font-semibold text-muted uppercase">All Residential</p>
                 <p className="text-xl font-extrabold text-foreground mt-0.5">{orgProperties.length}</p>
               </div>
               <div className="bg-surface-elevated rounded-xl p-3 border border-border-color">
-                <p className="text-[11px] font-semibold text-muted uppercase">🏨 Hospitality</p>
-                <p className="text-xl font-extrabold text-amber-600 dark:text-amber-400 mt-0.5">
-                  {orgProperties.filter(p => isHospitality(p.type)).length}
+                <p className="text-[11px] font-semibold text-muted uppercase">🏢 Apartments</p>
+                <p className="text-xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-0.5">
+                  {orgProperties.filter(p => (p.type || '').toLowerCase().includes('apartment')).length}
                 </p>
               </div>
               <div className="bg-surface-elevated rounded-xl p-3 border border-border-color">
-                <p className="text-[11px] font-semibold text-muted uppercase">🏠 Rental</p>
+                <p className="text-[11px] font-semibold text-muted uppercase">🏡 Houses / Flats</p>
                 <p className="text-xl font-extrabold text-blue-600 dark:text-blue-400 mt-0.5">
-                  {orgProperties.filter(p => !isHospitality(p.type)).length}
+                  {orgProperties.filter(p => {
+                    const t = (p.type || '').toLowerCase();
+                    return t.includes('house') || t.includes('flat') || t.includes('townhouse') || t.includes('villa');
+                  }).length}
                 </p>
               </div>
               <div className="bg-surface-elevated rounded-xl p-3 border border-border-color">
@@ -1384,7 +1386,7 @@ export default function AgentPortalPage() {
                 </p>
               </div>
               <div className="bg-surface-elevated rounded-xl p-3 border border-border-color col-span-2 sm:col-span-1">
-                <p className="text-[11px] font-semibold text-muted uppercase">Live on Index</p>
+                <p className="text-[11px] font-semibold text-muted uppercase">Showing on Index</p>
                 <p className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">
                   {livePropsCount}
                 </p>
@@ -1412,25 +1414,28 @@ export default function AgentPortalPage() {
                     systemModalCategoryFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-surface-elevated text-muted hover:text-foreground'
                   }`}
                 >
-                  All ({orgProperties.length})
+                  All Residential ({orgProperties.length})
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSystemModalCategoryFilter('hospitality')}
+                  onClick={() => setSystemModalCategoryFilter('apartment')}
                   className={`px-3 py-1.5 rounded-xl font-bold transition ${
-                    systemModalCategoryFilter === 'hospitality' ? 'bg-indigo-600 text-white' : 'bg-surface-elevated text-muted hover:text-foreground'
+                    systemModalCategoryFilter === 'apartment' ? 'bg-indigo-600 text-white' : 'bg-surface-elevated text-muted hover:text-foreground'
                   }`}
                 >
-                  🏨 Hospitality ({orgProperties.filter(p => isHospitality(p.type)).length})
+                  🏢 Apartments ({orgProperties.filter(p => (p.type || '').toLowerCase().includes('apartment')).length})
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSystemModalCategoryFilter('rental')}
+                  onClick={() => setSystemModalCategoryFilter('house')}
                   className={`px-3 py-1.5 rounded-xl font-bold transition ${
-                    systemModalCategoryFilter === 'rental' ? 'bg-indigo-600 text-white' : 'bg-surface-elevated text-muted hover:text-foreground'
+                    systemModalCategoryFilter === 'house' ? 'bg-indigo-600 text-white' : 'bg-surface-elevated text-muted hover:text-foreground'
                   }`}
                 >
-                  🏠 Rental ({orgProperties.filter(p => !isHospitality(p.type)).length})
+                  🏡 Houses & Flats ({orgProperties.filter(p => {
+                    const t = (p.type || '').toLowerCase();
+                    return t.includes('house') || t.includes('flat') || t.includes('townhouse') || t.includes('villa');
+                  }).length})
                 </button>
                 <button
                   type="button"
@@ -1461,7 +1466,7 @@ export default function AgentPortalPage() {
                   prop.name.toLowerCase().includes(q) ||
                   (prop.address || "").toLowerCase().includes(q) ||
                   (prop.city || "").toLowerCase().includes(q);
-                const isHosp = isHospitality(prop.type);
+                const t = (prop.type || '').toLowerCase();
                 
                 const matchedListing = listings.find(
                   (l) => l.name.trim().toLowerCase() === prop.name.trim().toLowerCase()
@@ -1470,8 +1475,8 @@ export default function AgentPortalPage() {
 
                 const matchesCategory = 
                   systemModalCategoryFilter === 'all' ||
-                  (systemModalCategoryFilter === 'hospitality' && isHosp) ||
-                  (systemModalCategoryFilter === 'rental' && !isHosp) ||
+                  (systemModalCategoryFilter === 'apartment' && t.includes('apartment')) ||
+                  (systemModalCategoryFilter === 'house' && (t.includes('house') || t.includes('flat') || t.includes('townhouse') || t.includes('villa'))) ||
                   (systemModalCategoryFilter === 'published' && isLive) ||
                   (systemModalCategoryFilter === 'hidden' && !isLive);
 
@@ -1502,7 +1507,7 @@ export default function AgentPortalPage() {
                           prop.name.toLowerCase().includes(q) ||
                           (prop.address || "").toLowerCase().includes(q) ||
                           (prop.city || "").toLowerCase().includes(q);
-                        const isHosp = isHospitality(prop.type);
+                        const t = (prop.type || '').toLowerCase();
                         
                         const matchedListing = listings.find(
                           (l) => l.name.trim().toLowerCase() === prop.name.trim().toLowerCase()
@@ -1511,8 +1516,8 @@ export default function AgentPortalPage() {
 
                         const matchesCategory = 
                           systemModalCategoryFilter === 'all' ||
-                          (systemModalCategoryFilter === 'hospitality' && isHosp) ||
-                          (systemModalCategoryFilter === 'rental' && !isHosp) ||
+                          (systemModalCategoryFilter === 'apartment' && t.includes('apartment')) ||
+                          (systemModalCategoryFilter === 'house' && (t.includes('house') || t.includes('flat') || t.includes('townhouse') || t.includes('villa'))) ||
                           (systemModalCategoryFilter === 'published' && isLive) ||
                           (systemModalCategoryFilter === 'hidden' && !isLive);
 
@@ -1523,7 +1528,6 @@ export default function AgentPortalPage() {
                         );
                         const isLive = Boolean(matchedListing && matchedListing.isPublished) || Boolean(prop.is_published);
                         const isToggling = togglingPropId === prop.id;
-                        const isHosp = isHospitality(prop.type);
                         const primaryPhoto = prop.photos?.[0];
 
                         return (
@@ -1559,12 +1563,8 @@ export default function AgentPortalPage() {
 
                             <td className="py-3 px-3">
                               <span className="capitalize font-semibold text-foreground block">{prop.type}</span>
-                              <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold mt-1 ${
-                                isHosp
-                                  ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
-                                  : 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300'
-                              }`}>
-                                {isHosp ? '🏨 Hospitality' : '🏠 Rental'}
+                              <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold mt-1 bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300">
+                                🏠 Residential
                               </span>
                             </td>
 
@@ -1589,9 +1589,7 @@ export default function AgentPortalPage() {
 
                             <td className="py-3 px-3">
                               <span className="font-bold text-foreground">
-                                {isHosp
-                                  ? `From ${symbol} ${formatWhole(prop.default_room_price || prop.monthly_rent || 0)}/night`
-                                  : `${symbol} ${formatWhole(prop.monthly_rent || 0)}/mo`}
+                                {symbol} {formatWhole(prop.monthly_rent || prop.default_room_price || 0)}/mo
                               </span>
                             </td>
 

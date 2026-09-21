@@ -9,7 +9,7 @@ import { fetchCompanyInfo, fetchAdminInfo, uploadFileToBucket, uploadPdfFromHtml
 import { buildProfessionalInvoiceHtml, buildProfessionalContractHtml } from "@/lib/document-templates";
 import { useAuth } from "@/lib/auth";
 import { sendEmailViaApi, sendWhatsAppViaApi, wrapDocumentInEmailHtml } from "@/lib/notifications";
-import { verifyAdminPin, verifyUserPin, isValidUuid } from "@/lib/data";
+import { verifyAdminPin, verifyUserPin, isValidUuid, syncPropertyOccupancyStatus } from "@/lib/data";
 import { DocumentShareModal } from "@/components/document-share-modal";
 import { billStatusMeta, frequencyLabel, type BillFrequency, type BillRow } from "@/lib/bills";
 import {
@@ -41,6 +41,7 @@ import {
   ExternalLink,
   Sparkles,
   Edit3,
+  UserMinus,
 } from "lucide-react";
 import { StatusBadge } from "@/components/data-table";
 import { PropertyStatsModal } from "@/components/property-stats-modal";
@@ -562,6 +563,51 @@ export default function PropertyDetailsPage() {
 
   const reload = () => setReloadKey((value) => value + 1);
 
+  const [unassigningTenantId, setUnassigningTenantId] = useState<string | null>(null);
+
+  const handleUnassignTenant = async (tenant: AssignedTenant) => {
+    if (!propertyId) return;
+    const confirmUnassign = window.confirm(
+      `Are you sure you want to unassign ${tenant.fullName} from ${property?.name || "this property"}?\n\nIf this was the only tenant assigned, the property status will automatically change from occupied to vacant.`
+    );
+    if (!confirmUnassign) return;
+
+    setUnassigningTenantId(tenant.id);
+    try {
+      const compId = currentCompany?.id;
+      let unassignQuery = supabase
+        .from("tenants")
+        .update({ property_id: null })
+        .eq("id", tenant.id);
+      if (isValidUuid(compId)) {
+        unassignQuery = unassignQuery.eq("company_id", compId);
+      }
+      const { error: unassignError } = await unassignQuery;
+      if (unassignError) throw unassignError;
+
+      // Recalculate remaining active tenants and update property status
+      const { status: newOccupancyStatus, tenantCount } = await syncPropertyOccupancyStatus(propertyId);
+
+      // Update local state immediately
+      setAssignedTenants((prev) => prev.filter((t) => t.id !== tenant.id));
+      if (property) {
+        setProperty({ ...property, status: newOccupancyStatus });
+      }
+
+      alert(
+        tenantCount === 0
+          ? `${tenant.fullName} unassigned. No tenants remain assigned — property status changed to VACANT.`
+          : `${tenant.fullName} unassigned. Property remains OCCUPIED with ${tenantCount} active tenant${tenantCount === 1 ? "" : "s"}.`
+      );
+
+      reload();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to unassign tenant.");
+    } finally {
+      setUnassigningTenantId(null);
+    }
+  };
+
   const assignTenant = async () => {
     if (!propertyId || !selectedTenantId || !property) {
       return;
@@ -585,14 +631,9 @@ export default function PropertyDetailsPage() {
 
       if (assignError) throw assignError;
 
-      const { error: propertyStatusError } = await supabase
-        .from("properties")
-        .update({ status: "occupied" })
-        .eq("id", propertyId)
-        .eq("status", "vacant");
-
-      if (propertyStatusError) {
-        console.warn("Property status update:", propertyStatusError);
+      await syncPropertyOccupancyStatus(propertyId);
+      if (property) {
+        setProperty({ ...property, status: "occupied" });
       }
 
       // Generate Lease Agreement if opted-in
@@ -1400,15 +1441,28 @@ export default function PropertyDetailsPage() {
                                   </div>
                                 </td>
                                 <td className="px-4 py-4 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() => generateInvoiceForTenant(tenant)}
-                                    disabled={generatingTenantId === tenant.id}
-                                    className="inline-flex items-center gap-1.5 rounded-lg border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-bold text-muted hover:text-foreground transition-all disabled:opacity-50"
-                                  >
-                                    <FileText size={14} />
-                                    <span>{generatingTenantId === tenant.id ? "Processing..." : "Generate Invoice"}</span>
-                                  </button>
+                                  <div className="flex items-center justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUnassignTenant(tenant)}
+                                      disabled={unassigningTenantId === tenant.id}
+                                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-all disabled:opacity-50"
+                                      title="Unassign tenant from this property and update occupancy status"
+                                    >
+                                      <UserMinus size={14} />
+                                      <span>{unassigningTenantId === tenant.id ? "Unassigning..." : "Unassign Tenant"}</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => generateInvoiceForTenant(tenant)}
+                                      disabled={generatingTenantId === tenant.id}
+                                      className="inline-flex items-center gap-1.5 rounded-lg border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-bold text-muted hover:text-foreground transition-all disabled:opacity-50"
+                                    >
+                                      <FileText size={14} />
+                                      <span>{generatingTenantId === tenant.id ? "Processing..." : "Generate Invoice"}</span>
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             ))}

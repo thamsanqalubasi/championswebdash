@@ -614,12 +614,15 @@ export default function ContractsPage() {
 
   const reload = () => setReloadKey((v) => v + 1);
 
+  const isContractEnded = (c: ContractRow) =>
+    c.status === "contract_ended" || c.status === "expired" || Boolean(c.daysEnded && c.daysEnded > 0);
+
   /* ── contracts filters ── */
   const counts = useMemo(() => ({
     all: contracts.filter((c) => !c.isSuppressed && c.status !== "suppressed").length,
-    pending: contracts.filter((c) => c.status === "pending" && !c.isSuppressed).length,
-    active: contracts.filter((c) => c.status === "active" && !c.isSuppressed).length,
-    expired: contracts.filter((c) => c.status === "expired" && !c.isSuppressed).length,
+    pending: contracts.filter((c) => c.status === "pending" && !c.isSuppressed && !isContractEnded(c)).length,
+    active: contracts.filter((c) => c.status === "active" && !c.isSuppressed && !isContractEnded(c)).length,
+    contract_ended: contracts.filter((c) => isContractEnded(c) && !c.isSuppressed).length,
     terminated: contracts.filter((c) => c.status === "terminated" && !c.isSuppressed).length,
     suppressed: contracts.filter((c) => c.isSuppressed || c.status === "suppressed").length,
   }), [contracts]);
@@ -630,6 +633,10 @@ export default function ContractsPage() {
         ? contracts.filter((c) => !c.isSuppressed && c.status !== "suppressed")
         : activeFilter === "suppressed"
         ? contracts.filter((c) => c.isSuppressed || c.status === "suppressed")
+        : activeFilter === "contract_ended" || activeFilter === "expired"
+        ? contracts.filter((c) => isContractEnded(c) && !c.isSuppressed)
+        : activeFilter === "active"
+        ? contracts.filter((c) => c.status === "active" && !c.isSuppressed && !isContractEnded(c))
         : contracts.filter((c) => c.status === activeFilter && !c.isSuppressed);
 
     if (searchQuery.trim()) {
@@ -1318,7 +1325,7 @@ export default function ContractsPage() {
                     { key: "all", label: "All", count: counts.all },
                     { key: "pending", label: "Pending", count: counts.pending },
                     { key: "active", label: "Active", count: counts.active },
-                    { key: "expired", label: "Expired", count: counts.expired },
+                    { key: "contract_ended", label: "Contract Ended", count: counts.contract_ended },
                     { key: "terminated", label: "Terminated", count: counts.terminated },
                     { key: "suppressed", label: "Suppressed", count: counts.suppressed },
                   ]}
@@ -1357,6 +1364,7 @@ export default function ContractsPage() {
                     <tbody className="divide-y divide-border-color/40">
                       {filtered.map((row) => {
                         const isSuppressed = Boolean(row.isSuppressed || row.status === "suppressed");
+                        const isEnded = isContractEnded(row);
                         return (
                         <tr key={row.id} className={`group hover:bg-surface-elevated/40 transition-colors ${isSuppressed ? "opacity-80 bg-amber-500/[0.03]" : ""}`}>
                           <td className="px-6 py-4">
@@ -1394,6 +1402,15 @@ export default function ContractsPage() {
                               <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
                                 <Ban size={10} /> Suppressed
                               </span>
+                            ) : isEnded ? (
+                              <div className="flex flex-col gap-0.5">
+                                <span className="inline-flex items-center gap-1 rounded-full border border-red-500/30 bg-red-500/15 text-red-600 dark:text-red-400 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider w-fit">
+                                  <AlertCircle size={10} /> Contract Ended
+                                </span>
+                                <span className="text-[11px] font-bold text-red-600 dark:text-red-400">
+                                  Ended {row.daysEnded || 1} { (row.daysEnded || 1) === 1 ? "day" : "days" } ago
+                                </span>
+                              </div>
                             ) : (
                               <StatusBadge status={row.status} />
                             )}

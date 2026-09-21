@@ -93,7 +93,7 @@ export function StatusBadge({ status, className = "" }: { status: string; classN
     if (["maintenance", "in_progress", "notice", "partial", "suppressed"].includes(val)) {
       return "bg-amber-50 text-amber-700 border-amber-200/50 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/30";
     }
-    if (["cancelled", "overdue", "ended", "expired"].includes(val)) {
+    if (["cancelled", "overdue", "ended", "expired", "contract_ended"].includes(val)) {
       return "bg-red-50 text-red-700 border-red-200/50 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/30";
     }
     return "bg-muted/5 text-muted border-border-color";

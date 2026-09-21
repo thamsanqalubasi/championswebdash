@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
-import { fetchTenantsData, isValidUuid, fetchCompanyUsers, canDeleteSuppressedRecords } from "@/lib/data";
+import { fetchTenantsData, isValidUuid, fetchCompanyUsers, canDeleteSuppressedRecords, syncPropertyOccupancyStatus } from "@/lib/data";
 import { PinPromptDialog } from "@/components/pin-dialog";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
@@ -30,6 +30,7 @@ import {
   Trash2,
   UserX,
   UserCheck,
+  UserMinus,
   ChevronRight,
   MapPin,
   Calendar,
@@ -1104,7 +1105,7 @@ export default function TenantsPage() {
     }
   };
 
-  const assignTenantToProperty = async () => {
+  const assignTenantToProperty = async (targetPropertyId?: string | null) => {
     if (!detailsRow) {
       return;
     }
@@ -1112,11 +1113,14 @@ export default function TenantsPage() {
     setAssigningProperty(true);
 
     try {
+      const oldPropertyId = detailsRow.propertyId;
+      const effectivePropId = targetPropertyId !== undefined ? targetPropertyId : detailsPropertyId;
+      const newPropertyId = (effectivePropId && isValidUuid(effectivePropId)) ? effectivePropId : null;
       const payload: Record<string, unknown> = {
-        property_id: (detailsPropertyId && isValidUuid(detailsPropertyId)) ? detailsPropertyId : null,
+        property_id: newPropertyId,
       };
 
-      if (detailsPropertyId && isValidUuid(detailsPropertyId)) {
+      if (newPropertyId) {
         payload.tenure_start_date = new Date().toISOString().slice(0, 10);
       }
 
@@ -1126,6 +1130,19 @@ export default function TenantsPage() {
         .eq("id", detailsRow.id);
 
       if (assignError) throw assignError;
+
+      // Automatically sync occupancy status for old property if unassigned or changed
+      if (oldPropertyId && oldPropertyId !== newPropertyId) {
+        const { status: oldPropStatus, tenantCount: oldPropRemaining } = await syncPropertyOccupancyStatus(oldPropertyId);
+        if (oldPropRemaining === 0) {
+          console.info(`Property ${oldPropertyId} has no tenants remaining — status set to vacant.`);
+        }
+      }
+
+      // Automatically sync occupancy status for new property if assigned
+      if (newPropertyId) {
+        await syncPropertyOccupancyStatus(newPropertyId);
+      }
 
       reload();
       await loadTenantDetails(detailsRow.id);
@@ -2709,12 +2726,27 @@ export default function TenantsPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={assignTenantToProperty}
+                  onClick={() => assignTenantToProperty()}
                   disabled={assigningProperty}
                   className="rounded-lg bg-foreground px-6 py-2 text-sm font-bold text-surface hover:opacity-90 transition-all disabled:opacity-50"
                 >
                   {assigningProperty ? "Saving..." : "Update Unit"}
                 </button>
+                {Boolean(detailsRow.propertyId) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDetailsPropertyId("");
+                      void assignTenantToProperty(null);
+                    }}
+                    disabled={assigningProperty}
+                    className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-bold text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                    title="Unassign this tenant from their current property"
+                  >
+                    <UserMinus size={14} />
+                    <span>Unassign from Unit</span>
+                  </button>
+                )}
               </div>
             </section>
 
@@ -3130,12 +3162,21 @@ export default function TenantsPage() {
                   <div className="space-y-4">
                     {tenantContracts.map((contract) => {
                       const isSupp = Boolean(contract.isSuppressed || contract.status === "suppressed");
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const endDate = new Date(contract.endDate);
+                      endDate.setHours(0, 0, 0, 0);
+                      const isEnded = !isNaN(endDate.getTime()) && endDate < today;
+                      const daysEnded = isEnded ? Math.floor((today.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+
                       return (
                         <div
                           key={contract.id}
                           className={`p-5 rounded-2xl border-2 transition-all relative overflow-hidden ${
                             isSupp
                               ? "border-red-300/60 dark:border-red-900/60 bg-red-500/5 dark:bg-red-950/20 opacity-85"
+                              : isEnded
+                              ? "border-red-500/30 bg-red-500/[0.02]"
                               : "border-border-color bg-surface group"
                           }`}
                         >
@@ -3148,7 +3189,20 @@ export default function TenantsPage() {
                                 </span>
                               )}
                             </div>
-                            <StatusBadge status={isSupp ? "suppressed" : contract.status} />
+                            {isSupp ? (
+                              <StatusBadge status="suppressed" />
+                            ) : isEnded ? (
+                              <div className="flex flex-col items-end gap-0.5">
+                                <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-800">
+                                  <AlertCircle size={10} /> Contract Ended
+                                </span>
+                                <span className="text-[10px] font-bold text-red-600 dark:text-red-400">
+                                  Ended {daysEnded || 1} {(daysEnded || 1) === 1 ? "day" : "days"} ago
+                                </span>
+                              </div>
+                            ) : (
+                              <StatusBadge status={contract.status} />
+                            )}
                           </div>
                           <div className="grid grid-cols-2 gap-y-4 text-xs">
                             <div>

@@ -582,6 +582,7 @@ export type ContractRow = {
   depositAmount: number;
   notes: string;
   status: string;
+  daysEnded?: number;
   isSuppressed?: boolean;
   suppressedAt?: string;
   suppressedBy?: string;

@@ -4468,6 +4468,33 @@ export async function fetchInventoryItems(companyId?: string): Promise<Inventory
   return [];
 }
 
+export async function syncPropertyOccupancyStatus(propertyId: string): Promise<{ status: "occupied" | "vacant"; tenantCount: number }> {
+  if (!propertyId) return { status: "vacant", tenantCount: 0 };
+  try {
+    const { count, error } = await supabase
+      .from("tenants")
+      .select("id", { count: "exact", head: true })
+      .eq("property_id", propertyId);
+
+    if (error) {
+      console.warn("Could not query assigned tenants count:", error);
+    }
+
+    const tenantCount = count ?? 0;
+    const newStatus: "occupied" | "vacant" = tenantCount > 0 ? "occupied" : "vacant";
+
+    await supabase
+      .from("properties")
+      .update({ status: newStatus })
+      .eq("id", propertyId);
+
+    return { status: newStatus, tenantCount };
+  } catch (err) {
+    console.warn("Error in syncPropertyOccupancyStatus:", err);
+    return { status: "vacant", tenantCount: 0 };
+  }
+}
+
 export async function fetchContracts(companyId?: string): Promise<ContractRow[]> {
   if (!companyId) return [];
   try {
@@ -4475,25 +4502,51 @@ export async function fetchContracts(companyId?: string): Promise<ContractRow[]>
     query = query.eq("company_id", companyId);
     const { data, error } = await query.order("created_at", { ascending: false });
     if (!error && data) {
-      return data.map((c) => ({
-        id: c.id,
-        companyId: c.company_id || companyId,
-        tenantId: c.tenant_id,
-        propertyId: c.property_id,
-        title: c.title,
-        tenantName: c.tenants?.full_name || "Unknown Tenant",
-        propertyName: c.properties?.name || "Unknown Property",
-        startDate: c.start_date,
-        endDate: c.end_date,
-        monthlyRent: toNumber(c.monthly_rent),
-        depositAmount: toNumber(c.deposit_amount),
-        notes: c.notes || "",
-        status: c.status,
-        isSuppressed: Boolean(c.is_suppressed || c.status === "suppressed"),
-        suppressedAt: c.suppressed_at,
-        suppressedBy: c.suppressed_by,
-        suppressedReason: c.suppressed_reason,
-      }));
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      return data.map((c) => {
+        let status = c.status;
+        let daysEnded: number | undefined = undefined;
+
+        if (c.end_date) {
+          const endDate = new Date(c.end_date);
+          endDate.setHours(0, 0, 0, 0);
+          if (!isNaN(endDate.getTime()) && endDate < today) {
+            daysEnded = Math.floor((today.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24));
+            if (status === "active" || status === "pending" || status === "expired") {
+              status = "contract_ended";
+              // Async background update to persist in DB
+              void supabase
+                .from("contracts")
+                .update({ status: "contract_ended" })
+                .eq("id", c.id)
+                .neq("status", "contract_ended");
+            }
+          }
+        }
+
+        return {
+          id: c.id,
+          companyId: c.company_id || companyId,
+          tenantId: c.tenant_id,
+          propertyId: c.property_id,
+          title: c.title,
+          tenantName: c.tenants?.full_name || "Unknown Tenant",
+          propertyName: c.properties?.name || "Unknown Property",
+          startDate: c.start_date,
+          endDate: c.end_date,
+          monthlyRent: toNumber(c.monthly_rent),
+          depositAmount: toNumber(c.deposit_amount),
+          notes: c.notes || "",
+          status,
+          daysEnded,
+          isSuppressed: Boolean(c.is_suppressed || c.status === "suppressed"),
+          suppressedAt: c.suppressed_at,
+          suppressedBy: c.suppressed_by,
+          suppressedReason: c.suppressed_reason,
+        };
+      });
     }
   } catch (err) {
     console.warn("Error fetching contracts", err);
