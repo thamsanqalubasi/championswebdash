@@ -47,6 +47,30 @@ export const COUNTRY_DIAL_CODES = [
   { code: "+86", label: "China (+86)" },
 ];
 
+export const DEFAULT_TRADE_SPECIALIZATIONS = [
+  "General",
+  "Plumbing",
+  "Electrical",
+  "HVAC / Air Conditioning",
+  "Carpentry",
+  "Painting",
+  "Roofing & Waterproofing",
+  "Masonry / Tiling",
+  "Landscaping & Gardening",
+  "Pest Control",
+  "Locksmith & Security Doors",
+  "Cleaning & Janitorial",
+  "Appliance Repair",
+  "Security / CCTV / Intercom",
+  "Glass & Glazing",
+  "Welding & Metalwork",
+  "Elevator / Lift Maintenance",
+  "Swimming Pool Maintenance",
+  "Fire Safety Systems",
+  "Interior Decor & Flooring",
+  "Waste Management",
+];
+
 function parsePhoneNumber(rawPhone: string): { countryCode: string; localNumber: string } {
   if (!rawPhone) return { countryCode: "+264", localNumber: "" };
   const trimmed = rawPhone.trim();
@@ -105,6 +129,36 @@ export default function ProvidersPage() {
   const [selectedProvider, setSelectedProvider] = useState<ProviderRow | null>(null);
   const [detailsRow, setDetailsRow] = useState<ProviderRow | null>(null);
 
+  // Trade specialization dropdown and custom entry
+  const [customSpecializations, setCustomSpecializations] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem("paimba_custom_specializations");
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const availableSpecializations = useMemo(() => {
+    const list: string[] = [...DEFAULT_TRADE_SPECIALIZATIONS];
+    providers.forEach((p) => {
+      const spec = (p.specialization || "").trim();
+      if (spec && !list.includes(spec)) {
+        list.push(spec);
+      }
+    });
+    customSpecializations.forEach((s) => {
+      const spec = (s || "").trim();
+      if (spec && !list.includes(spec)) {
+        list.push(spec);
+      }
+    });
+    return list;
+  }, [providers, customSpecializations]);
+
+  const [specializationSelect, setSpecializationSelect] = useState("General");
+  const [customSpecializationInput, setCustomSpecializationInput] = useState("");
+
   useEffect(() => {
     let cancelled = false;
     async function loadData() {
@@ -140,6 +194,8 @@ export default function ProvidersPage() {
     setForm(emptyForm); 
     setPhoneCountryCode("+264");
     setPhoneLocal("");
+    setSpecializationSelect("General");
+    setCustomSpecializationInput("");
     setModalOpen(true); 
   };
   const openEdit = (p: ProviderRow) => {
@@ -148,14 +204,26 @@ export default function ProvidersPage() {
     const parsed = parsePhoneNumber(p.phone);
     setPhoneCountryCode(parsed.countryCode);
     setPhoneLocal(parsed.localNumber);
+    const spec = (p.specialization || "General").trim();
+    if (availableSpecializations.includes(spec)) {
+      setSpecializationSelect(spec);
+      setCustomSpecializationInput("");
+    } else {
+      setSpecializationSelect("other");
+      setCustomSpecializationInput(spec);
+    }
     setModalOpen(true);
   };
   const openDetail = (p: ProviderRow) => { setSelectedProvider(p); setDrawerOpen(true); };
 
   const onSave = async () => {
     const fullPhone = `${phoneCountryCode} ${phoneLocal.trim()}`.trim();
-    if (!form.name.trim() || !phoneLocal.trim() || !form.specialization.trim()) {
-      alert("Please enter name, phone number, and specialization.");
+    const resolvedSpec = specializationSelect === "other"
+      ? customSpecializationInput.trim()
+      : specializationSelect.trim();
+
+    if (!form.name.trim() || !phoneLocal.trim() || !resolvedSpec) {
+      alert("Please enter name, phone number, and trade specialization.");
       return;
     }
     setSaving(true);
@@ -164,7 +232,7 @@ export default function ProvidersPage() {
       const payload: Record<string, unknown> = {
         name: form.name.trim(),
         phone: fullPhone,
-        specialization: form.specialization.trim(),
+        specialization: resolvedSpec,
         rate: form.rate,
         company_id: compId,
       };
@@ -175,6 +243,18 @@ export default function ProvidersPage() {
         const { error: err } = await supabase.from("maintainers").insert(payload);
         if (err) throw err;
       }
+
+      if (specializationSelect === "other" && resolvedSpec) {
+        setCustomSpecializations((prev) => {
+          if (prev.includes(resolvedSpec)) return prev;
+          const updated = [...prev, resolvedSpec];
+          try {
+            localStorage.setItem("paimba_custom_specializations", JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
+      }
+
       setModalOpen(false); reload();
     } catch (e) { alert(e instanceof Error ? e.message : "Save failed"); }
     finally { setSaving(false); }
@@ -360,7 +440,41 @@ export default function ProvidersPage() {
             </div>
             <div>
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">Trade Specialization</label>
-              <input value={form.specialization} onChange={(e) => setForm({ ...form, specialization: e.target.value })} className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5" placeholder="e.g. Plumbing, Electrical" />
+              <select
+                value={specializationSelect}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSpecializationSelect(val);
+                  if (val !== "other") {
+                    setForm((prev) => ({ ...prev, specialization: val }));
+                  }
+                }}
+                className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5 font-medium"
+              >
+                {availableSpecializations.map((spec) => (
+                  <option key={spec} value={spec}>
+                    {spec}
+                  </option>
+                ))}
+                <option value="other">+ Other (Enter new specialization...)</option>
+              </select>
+              {specializationSelect === "other" && (
+                <div className="mt-2 space-y-1">
+                  <input
+                    value={customSpecializationInput}
+                    onChange={(e) => {
+                      setCustomSpecializationInput(e.target.value);
+                      setForm((prev) => ({ ...prev, specialization: e.target.value }));
+                    }}
+                    placeholder="Enter new specialization (e.g. Solar / Inverters)"
+                    className="w-full rounded-lg border border-blue-500/50 bg-surface px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
+                  />
+                  <p className="text-[10px] text-muted">
+                    Will be saved in the system for future partner selections.
+                  </p>
+                </div>
+              )}
             </div>
             <div className="sm:col-span-2">
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted">

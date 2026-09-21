@@ -98,6 +98,7 @@ export default function InspectionsPage() {
 
   // Target scope and inspector mode
   const [targetScope, setTargetScope] = useState<"property" | "tenant" | "room">("property");
+  const [selectedRoomPropertyId, setSelectedRoomPropertyId] = useState("");
   const [selectedRoomId, setSelectedRoomId] = useState("");
   const [inspectorMode, setInspectorMode] = useState<"staff" | "manual">("staff");
 
@@ -175,10 +176,17 @@ export default function InspectionsPage() {
     return result;
   }, [inspections, activeFilter, searchQuery]);
 
+  const availableRoomsForProperty = useMemo(() => {
+    const propId = selectedRoomPropertyId || form.property_id;
+    if (!propId) return [];
+    return roomsList.filter((r) => r.propertyId === propId);
+  }, [roomsList, selectedRoomPropertyId, form.property_id]);
+
   const openAdd = () => {
     setEditingId(null);
     setForm(emptyForm);
     setTargetScope("property");
+    setSelectedRoomPropertyId("");
     setSelectedRoomId("");
     setInspectorMode("staff");
     setModalOpen(true);
@@ -197,9 +205,12 @@ export default function InspectionsPage() {
       if (matchedTenant?.propertyId) targetPropertyId = matchedTenant.propertyId;
       else if (!targetPropertyId && properties.length > 0) targetPropertyId = properties[0].id;
     } else if (targetScope === "room") {
-      if (!selectedRoomId) { alert("Please select a room."); return; }
+      const activePropId = selectedRoomPropertyId || form.property_id;
+      if (!activePropId) { alert("Please select a property first."); return; }
+      if (!selectedRoomId) { alert("Please select a room / unit."); return; }
       const matchedRoom = roomsList.find((r) => r.id === selectedRoomId);
       if (matchedRoom) targetPropertyId = matchedRoom.propertyId;
+      else targetPropertyId = activePropId;
     } else {
       if (!targetPropertyId) { alert("Please select a property."); return; }
     }
@@ -639,25 +650,62 @@ export default function InspectionsPage() {
           )}
 
           {targetScope === "room" && (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted">Select Room / Unit</label>
-              <select
-                value={selectedRoomId}
-                onChange={(e) => {
-                  const rid = e.target.value;
-                  setSelectedRoomId(rid);
-                  const r = roomsList.find((item) => item.id === rid);
-                  if (r) setForm({ ...form, property_id: r.propertyId });
-                }}
-                className="w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm outline-none"
-              >
-                <option value="">Select room...</option>
-                {roomsList.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    Room {r.roomNumber} - {r.propertyName} (Floor {r.floorNumber})
+            <div className="space-y-3 p-3.5 rounded-xl border border-border-color bg-surface-elevated/30">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-foreground">
+                  1. Select Property First *
+                </label>
+                <select
+                  value={selectedRoomPropertyId || form.property_id}
+                  onChange={(e) => {
+                    const propId = e.target.value;
+                    setSelectedRoomPropertyId(propId);
+                    setForm((prev) => ({ ...prev, property_id: propId }));
+                    setSelectedRoomId("");
+                  }}
+                  className="w-full rounded-md border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5"
+                >
+                  <option value="">Select property...</option>
+                  {properties.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-foreground">
+                  2. Select Room / Unit *
+                </label>
+                <select
+                  value={selectedRoomId}
+                  disabled={!(selectedRoomPropertyId || form.property_id)}
+                  onChange={(e) => {
+                    const rid = e.target.value;
+                    setSelectedRoomId(rid);
+                    const r = roomsList.find((item) => item.id === rid);
+                    if (r) setForm((prev) => ({ ...prev, property_id: r.propertyId }));
+                  }}
+                  className="w-full rounded-md border border-border-color bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">
+                    {!(selectedRoomPropertyId || form.property_id)
+                      ? "← Please select a property first"
+                      : availableRoomsForProperty.length === 0
+                      ? "No rooms found for this property"
+                      : "Select room / unit..."}
                   </option>
-                ))}
-              </select>
+                  {availableRoomsForProperty.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      Room {r.roomNumber} {r.floorNumber ? `(Floor ${r.floorNumber})` : ""}
+                    </option>
+                  ))}
+                </select>
+                {(selectedRoomPropertyId || form.property_id) && availableRoomsForProperty.length === 0 && (
+                  <p className="text-[11px] text-amber-500 mt-1">
+                    No commercial or residential rooms configured for this property.
+                  </p>
+                )}
+              </div>
             </div>
           )}
 

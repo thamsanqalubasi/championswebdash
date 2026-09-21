@@ -9,7 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { fetchAdminInfo, uploadFileToBucket } from "@/lib/storage";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
-import { COUNTRY_DIAL_CODES } from "./providers";
+import { COUNTRY_DIAL_CODES, DEFAULT_TRADE_SPECIALIZATIONS } from "./providers";
 import type { WorkOrderRow } from "@/lib/types";
 import { Plus, Wrench, ClipboardList, Clock, Play, CheckCircle2, XCircle, RotateCcw, Trash, ChevronRight, AlertTriangle, User, Building, Calendar, DollarSign, Image as ImageIcon, Save, Upload, Eye, Pencil, UserCheck } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
@@ -75,6 +75,8 @@ export default function WorkOrdersPage() {
   const [newProviderPhone, setNewProviderPhone] = useState("");
   const [newProviderCode, setNewProviderCode] = useState("+264");
   const [newProviderSpec, setNewProviderSpec] = useState("");
+  const [newProviderSpecSelect, setNewProviderSpecSelect] = useState("General");
+  const [newProviderCustomSpec, setNewProviderCustomSpec] = useState("");
   const [completionActualCost, setCompletionActualCost] = useState<number>(0);
 
   useEffect(() => {
@@ -286,12 +288,16 @@ export default function WorkOrdersPage() {
       if (completionProviderMode === "new" && newProviderName.trim()) {
         const fullPhone = `${newProviderCode} ${newProviderPhone.trim()}`.trim();
         const compId = currentCompany?.id && isValidUuid(currentCompany.id) ? currentCompany.id : null;
+        const resolvedSpec = newProviderSpecSelect === "other"
+          ? newProviderCustomSpec.trim()
+          : (newProviderSpecSelect.trim() || newProviderSpec.trim() || details.category || "General");
+
         const { data: newP, error: pErr } = await supabase
           .from("maintainers")
           .insert({
             name: newProviderName.trim(),
             phone: fullPhone,
-            specialization: newProviderSpec.trim() || details.category,
+            specialization: resolvedSpec || "General",
             company_id: compId,
           })
           .select("id, name")
@@ -761,12 +767,33 @@ export default function WorkOrdersPage() {
                             />
                           </div>
                           <div>
-                            <input
-                              placeholder="Trade Specialization (e.g. Plumbing)"
-                              value={newProviderSpec}
-                              onChange={(e) => setNewProviderSpec(e.target.value)}
-                              className="w-full rounded border border-border-color bg-surface-elevated px-2.5 py-1.5 outline-none"
-                            />
+                            <select
+                              value={newProviderSpecSelect}
+                              onChange={(e) => {
+                                setNewProviderSpecSelect(e.target.value);
+                                if (e.target.value !== "other") {
+                                  setNewProviderSpec(e.target.value);
+                                }
+                              }}
+                              className="w-full rounded border border-border-color bg-surface-elevated px-2 py-1.5 outline-none text-xs"
+                            >
+                              {DEFAULT_TRADE_SPECIALIZATIONS.map((s) => (
+                                <option key={s} value={s}>{s}</option>
+                              ))}
+                              <option value="other">+ Other Specialization...</option>
+                            </select>
+                            {newProviderSpecSelect === "other" && (
+                              <input
+                                placeholder="Enter specialization (e.g. Solar / HVAC)"
+                                value={newProviderCustomSpec}
+                                onChange={(e) => {
+                                  setNewProviderCustomSpec(e.target.value);
+                                  setNewProviderSpec(e.target.value);
+                                }}
+                                className="w-full mt-1.5 rounded border border-blue-500/40 bg-surface px-2.5 py-1.5 outline-none text-xs"
+                                autoFocus
+                              />
+                            )}
                           </div>
                           <p className="text-[10px] text-muted italic">Will be saved to database for future selection.</p>
                         </div>
