@@ -951,22 +951,88 @@ export default function TenantsPage() {
     void loadTenantDetails(row.id);
   };
 
-  const selectedPayments = useMemo(
-    () => payments.filter((payment) => selectedPaymentIds.includes(payment.id) && !payment.isSuppressed),
-    [payments, selectedPaymentIds],
-  );
+  const cleanPaymentId = (id?: string) => (id || "").replace(/^(staff|proof)-/, "");
 
-  const togglePaymentSelection = (paymentId: string) => {
-    const p = payments.find((item) => item.id === paymentId);
-    if (p?.isSuppressed) {
+  const isPaymentSelected = (id?: string, paymentId?: string) => {
+    const targetId = cleanPaymentId(paymentId || id);
+    if (!targetId) return false;
+    return selectedPaymentIds.some((sel) => cleanPaymentId(sel) === targetId);
+  };
+
+  const selectedPayments = useMemo(() => {
+    const results: Array<{
+      id: string;
+      paymentDate: string;
+      amountPaid: number;
+      recordedBy: string;
+      paidMonth?: string;
+      paidMonths?: string[];
+      notes?: string;
+      popUrl?: string;
+      isSuppressed?: boolean;
+    }> = [];
+
+    const addedCleanIds = new Set<string>();
+
+    for (const selId of selectedPaymentIds) {
+      const cleanId = cleanPaymentId(selId);
+      if (!cleanId || addedCleanIds.has(cleanId)) continue;
+
+      // First check payments state
+      const p = payments.find((x) => cleanPaymentId(x.id) === cleanId);
+      if (p) {
+        if (!p.isSuppressed) {
+          results.push(p);
+          addedCleanIds.add(cleanId);
+        }
+        continue;
+      }
+
+      // Then check paymentTimeline state
+      const t = paymentTimeline.find(
+        (x) => cleanPaymentId(x.paymentId || x.id) === cleanId
+      );
+      if (t) {
+        if (!t.isSuppressed) {
+          results.push({
+            id: cleanPaymentId(t.paymentId || t.id),
+            paymentDate: t.date,
+            amountPaid: t.amount,
+            recordedBy: t.actorName || "Staff",
+            paidMonth: t.monthLabel || toMonthKey(t.date),
+            paidMonths: t.paidMonths || [],
+            notes: t.notes || "",
+            popUrl: t.receiptUrl || "",
+            isSuppressed: t.isSuppressed,
+          });
+          addedCleanIds.add(cleanId);
+        }
+      }
+    }
+
+    return results;
+  }, [payments, paymentTimeline, selectedPaymentIds]);
+
+  const togglePaymentSelection = (rawId: string) => {
+    const targetId = cleanPaymentId(rawId);
+    if (!targetId) return;
+
+    const isSupp =
+      payments.find((p) => cleanPaymentId(p.id) === targetId)?.isSuppressed ||
+      paymentTimeline.find((t) => cleanPaymentId(t.paymentId || t.id) === targetId)?.isSuppressed;
+
+    if (isSupp) {
       alert("Suppressed payment records are voided and cannot be included in invoices.");
       return;
     }
-    setSelectedPaymentIds((previous) =>
-      previous.includes(paymentId)
-        ? previous.filter((id) => id !== paymentId)
-        : [...previous, paymentId],
-    );
+
+    setSelectedPaymentIds((previous) => {
+      const exists = previous.some((id) => cleanPaymentId(id) === targetId);
+      if (exists) {
+        return previous.filter((id) => cleanPaymentId(id) !== targetId);
+      }
+      return [...previous, targetId];
+    });
   };
 
   const handleSuppressPayment = async () => {
@@ -1506,26 +1572,23 @@ export default function TenantsPage() {
         new Set(selectedPayments.map((payment) => toMonthKey(payment.paymentDate)).filter(Boolean)),
       ).sort((a, b) => b.localeCompare(a));
 
-      const invoiceMonthLabel =
+      let invoiceMonthLabel =
         sortedMonthKeys.length <= 1
-          ? sortedMonthKeys[0]
+          ? sortedMonthKeys[0] || toMonthKey(new Date().toISOString())
           : `${sortedMonthKeys.at(-1)}_to_${sortedMonthKeys[0]}`;
 
-      const { data: existingInvoice, error: existingError } = await supabase
+      const { data: existingInvoices, error: existingError } = await supabase
         .from("invoices")
-        .select("id")
+        .select("id, month")
         .eq("tenant_id", detailsRow.id)
         .eq("property_id", detailsPropertyId)
-        .eq("month", invoiceMonthLabel)
-        .neq("status", "suppressed")
-        .limit(1)
-        .maybeSingle();
+        .ilike("month", `${invoiceMonthLabel}%`)
+        .neq("status", "suppressed");
 
       if (existingError) throw existingError;
 
-      if (existingInvoice?.id) {
-        alert("Invoice already exists for selected transaction period. Duplicate generation blocked.");
-        return;
+      if (existingInvoices && existingInvoices.length > 0) {
+        invoiceMonthLabel = `${invoiceMonthLabel} (Part ${existingInvoices.length + 1})`;
       }
 
       const totalAmount = selectedPayments.reduce((sum, payment) => sum + payment.amountPaid, 0);
@@ -2440,7 +2503,7 @@ export default function TenantsPage() {
                 <div className="overflow-hidden rounded-2xl border border-border-color bg-surface shadow-xs">
                   <div className="divide-y divide-border-color/30">
                     {paymentTimeline.map((item) => {
-                      const isSelected = item.paymentId ? selectedPaymentIds.includes(item.paymentId) : false;
+                      const isSelected = isPaymentSelected(item.id, item.paymentId);
                       return (
                         <div
                           key={item.id}
@@ -2454,7 +2517,7 @@ export default function TenantsPage() {
                                 <input
                                   type="checkbox"
                                   checked={isSelected}
-                                  onChange={() => togglePaymentSelection(item.paymentId!)}
+                                  onChange={() => togglePaymentSelection(item.paymentId || item.id)}
                                   className="h-4 w-4 rounded border-border-color accent-foreground mt-1 cursor-pointer"
                                   title="Select to batch into invoice"
                                 />
@@ -2598,10 +2661,10 @@ export default function TenantsPage() {
                     })}
                   </div>
 
-                  {selectedPaymentIds.length > 0 && (
+                  {selectedPayments.length > 0 && (
                     <div className="p-4 border-t border-border-color/50 bg-surface-elevated/20 flex items-center justify-between gap-4">
                       <p className="text-xs font-medium text-muted">
-                        {selectedPaymentIds.length} payment transaction(s) selected
+                        {selectedPayments.length} payment transaction(s) selected
                       </p>
                       <button
                         type="button"
@@ -2610,7 +2673,7 @@ export default function TenantsPage() {
                         className="flex items-center gap-2 rounded-xl bg-foreground px-5 py-2.5 text-xs font-bold text-surface hover:opacity-90 transition disabled:opacity-50 shadow-md"
                       >
                         <Receipt size={16} />
-                        <span>{generatingInvoice ? "Generating..." : `Generate Invoice from ${selectedPaymentIds.length} Selected`}</span>
+                        <span>{generatingInvoice ? "Generating..." : `Generate Invoice from ${selectedPayments.length} Selected`}</span>
                       </button>
                     </div>
                   )}
@@ -3509,41 +3572,51 @@ export default function TenantsPage() {
             ) : (
               (paymentTimeline.length > 0 ? paymentTimeline : payments.map(p => ({
                 id: p.id,
+                paymentId: p.id,
                 date: p.paymentDate,
                 amount: p.amountPaid,
                 method: "Bank / EFT",
                 actorName: p.recordedBy || "Staff",
-                receiptUrl: undefined,
+                receiptUrl: p.popUrl,
+                isSuppressed: p.isSuppressed,
               }))).map((item) => {
-                const isSelected = selectedPaymentIds.includes(item.id);
+                const isSelected = isPaymentSelected(item.id, (item as any).paymentId);
+                const isSupp = item.isSuppressed;
                 return (
                   <label
                     key={item.id}
-                    className={`flex items-start justify-between gap-3 rounded-xl border p-3 cursor-pointer transition select-none ${
-                      isSelected
-                        ? "border-foreground bg-surface-elevated shadow-xs"
-                        : "border-border-color bg-surface hover:bg-surface-elevated/40"
+                    className={`flex items-start justify-between gap-3 rounded-xl border p-3 transition select-none ${
+                      isSupp
+                        ? "border-red-500/30 bg-red-500/5 opacity-70 cursor-not-allowed"
+                        : isSelected
+                        ? "border-foreground bg-surface-elevated shadow-xs cursor-pointer"
+                        : "border-border-color bg-surface hover:bg-surface-elevated/40 cursor-pointer"
                     }`}
                   >
                     <div className="flex items-start gap-3">
                       <input
                         type="checkbox"
                         checked={isSelected}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedPaymentIds((prev) => [...prev, item.id]);
-                          } else {
-                            setSelectedPaymentIds((prev) => prev.filter((id) => id !== item.id));
-                          }
+                        disabled={Boolean(isSupp)}
+                        onChange={() => {
+                          if (isSupp) return;
+                          togglePaymentSelection((item as any).paymentId || item.id);
                         }}
-                        className="mt-0.5 rounded border-border-color text-foreground h-4 w-4"
+                        className="mt-0.5 rounded border-border-color text-foreground h-4 w-4 disabled:opacity-30"
                       />
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-foreground">{formatCurrency(item.amount)}</span>
+                          <span className={`font-bold text-sm ${isSupp ? "line-through text-muted" : "text-foreground"}`}>
+                            {formatCurrency(item.amount)}
+                          </span>
                           <span className="text-[10px] font-bold text-muted rounded-full bg-surface-elevated border border-border-color px-2 py-0.5">
                             {item.method || "Payment"}
                           </span>
+                          {isSupp && (
+                            <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-black text-red-600 dark:text-red-400">
+                              Suppressed
+                            </span>
+                          )}
                         </div>
                         <p className="text-[11px] text-muted mt-0.5">
                           Paid on {formatDate(item.date)} • Recorded by {item.actorName || "Staff"}
@@ -3574,15 +3647,12 @@ export default function TenantsPage() {
           <div className="pt-2 border-t border-border-color flex items-center justify-between">
             <div>
               <span className="text-xs text-muted">
-                {selectedPaymentIds.length} payment{selectedPaymentIds.length !== 1 ? "s" : ""} selected
+                {selectedPayments.length} payment{selectedPayments.length !== 1 ? "s" : ""} selected
               </span>
-              {selectedPaymentIds.length > 0 && (
+              {selectedPayments.length > 0 && (
                 <p className="text-sm font-black text-foreground">
                   Total: {formatCurrency(
-                    (paymentTimeline.length > 0
-                      ? paymentTimeline.filter(p => selectedPaymentIds.includes(p.id))
-                      : payments.filter(p => selectedPaymentIds.includes(p.id))
-                    ).reduce((sum: number, p: any) => sum + Number(p.amount ?? p.amountPaid ?? 0), 0)
+                    selectedPayments.reduce((sum, p) => sum + p.amountPaid, 0)
                   )}
                 </p>
               )}
@@ -3602,11 +3672,11 @@ export default function TenantsPage() {
                   await generateInvoiceFromSelectedPayments();
                   setGenerateInvoiceModalOpen(false);
                 }}
-                disabled={generatingInvoice || selectedPaymentIds.length === 0}
+                disabled={generatingInvoice || selectedPayments.length === 0}
                 className="rounded-lg bg-foreground px-5 py-2 text-xs font-bold text-surface hover:opacity-90 disabled:opacity-50 transition shadow-xs flex items-center gap-1.5"
               >
                 <Receipt size={14} />
-                <span>{generatingInvoice ? "Generating..." : "Generate Invoice"}</span>
+                <span>{generatingInvoice ? "Generating..." : `Generate Invoice (${selectedPayments.length})`}</span>
               </button>
             </div>
           </div>
