@@ -22,10 +22,12 @@ import {
   Sparkles,
   Download,
   KeyRound,
+  LogOut,
 } from "lucide-react";
 import { DocumentShareModal } from "@/components/document-share-modal";
 import { downloadPdfDocument } from "@/lib/storage";
-import { updateCommercialBooking, checkinCommercialBooking } from "@/lib/data";
+import { updateCommercialBooking, checkinCommercialBooking, checkoutCommercialBooking } from "@/lib/data";
+import { CheckoutCountdown } from "@/components/checkout-countdown";
 import type {
   CommercialBooking,
   CommercialRoom,
@@ -219,6 +221,29 @@ export function CommercialBookingDetailModal({
     }
   };
 
+  const [checkingOut, setCheckingOut] = useState(false);
+  const handleCheckOutNow = async () => {
+    if (!booking) return;
+    const confirmMsg = `Are you sure you want to check out ${booking.guestName} from Room ${booking.roomNumber || "N/A"}? This will release the room and mark it as 'Cleaning Needed' for housekeeping.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setCheckingOut(true);
+    setErrorMsg("");
+    try {
+      const actor = currentCompanyUser?.fullName || user?.email || "Front Desk";
+      await checkoutCommercialBooking(booking.id, actor);
+      setSuccessMsg(`Guest ${booking.guestName} checked out successfully.`);
+      if (onSuccess) onSuccess();
+      setTimeout(() => {
+        onClose();
+      }, 1200);
+    } catch (err: any) {
+      setErrorMsg(err?.message || "Failed to check out guest.");
+    } finally {
+      setCheckingOut(false);
+    }
+  };
+
   if (!isOpen || !booking) return null;
 
   const currentRoom = rooms.find((r) => r.id === (isEditMode ? roomId : booking.roomId));
@@ -290,6 +315,19 @@ export function CommercialBookingDetailModal({
               </button>
             )}
 
+            {!isEditMode && (booking.bookingStatus === "checked_in" || booking.isExtended) && (
+              <button
+                type="button"
+                onClick={handleCheckOutNow}
+                disabled={checkingOut}
+                className="flex items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2 text-xs font-bold text-red-600 hover:bg-red-500/20 transition shadow-xs disabled:opacity-50"
+                title="Check Out Guest Now"
+              >
+                <LogOut size={14} />
+                <span>{checkingOut ? "Checking Out..." : "Check Out Guest"}</span>
+              </button>
+            )}
+
             {!isEditMode ? (
               <button
                 type="button"
@@ -336,6 +374,14 @@ export function CommercialBookingDetailModal({
         {/* VIEW MODE */}
         {!isEditMode ? (
           <div className="space-y-6">
+            {/* Live Checkout Countdown Hero Banner */}
+            {(booking.bookingStatus === "checked_in" || booking.isExtended) && (
+              <CheckoutCountdown
+                checkOutDate={booking.checkOutDate}
+                isStayActive={true}
+              />
+            )}
+
             {/* Grid 1: Guest & Room Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Guest Details Card */}
@@ -421,6 +467,15 @@ export function CommercialBookingDetailModal({
                       <span className="font-semibold text-foreground">
                         {new Date(booking.checkOutDate).toLocaleDateString()}
                       </span>
+                      {(booking.bookingStatus === "checked_in" || booking.isExtended) && (
+                        <div className="mt-1">
+                          <CheckoutCountdown
+                            checkOutDate={booking.checkOutDate}
+                            isStayActive={true}
+                            compact={true}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -596,6 +651,18 @@ export function CommercialBookingDetailModal({
                   >
                     <KeyRound size={14} />
                     <span>{checkingIn ? "Checking In..." : "Check In Guest"}</span>
+                  </button>
+                )}
+
+                {!isEditMode && (booking.bookingStatus === "checked_in" || booking.isExtended) && (
+                  <button
+                    type="button"
+                    onClick={handleCheckOutNow}
+                    disabled={checkingOut}
+                    className="flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-red-700 transition disabled:opacity-50"
+                  >
+                    <LogOut size={14} />
+                    <span>{checkingOut ? "Checking Out..." : "Check Out Guest"}</span>
                   </button>
                 )}
 

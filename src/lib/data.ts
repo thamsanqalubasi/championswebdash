@@ -12,6 +12,7 @@ import type {
   EmployeeContract,
   EmployeeContractTemplate,
   HousekeepingSchedule,
+  HousekeepingShift,
   InspectionRow,
   InventoryItemRow,
   InvoiceRow,
@@ -423,7 +424,7 @@ export const MOCK_COMMERCIAL_BOOKINGS: CommercialBooking[] = [
     guestEmail: "arthur.p@outlook.com",
     guestIdNumber: "8804125081084",
     checkInDate: "2026-08-30T14:00:00Z",
-    checkOutDate: "2026-09-03T11:00:00Z",
+    checkOutDate: new Date(Date.now() - 4 * 3600 * 1000).toISOString(), // 4 hours overstay
     actualCheckIn: "2026-08-30T14:22:00Z",
     mealPlan: "bed_breakfast",
     nights: 4,
@@ -440,6 +441,130 @@ export const MOCK_COMMERCIAL_BOOKINGS: CommercialBooking[] = [
     notes: "VIP guest, requested extra feather pillows.",
     createdAt: "2026-08-25T09:12:00Z",
   },
+  {
+    id: "e0000000-0000-0000-0000-000000000002",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
+    roomId: "d0000000-0000-0000-0000-000000000102",
+    roomNumber: "Room 102",
+    roomType: "suite",
+    bookingCode: "BK-2LFM-UDFYDS",
+    guestName: "njabulo mkhonto",
+    guestPhone: "+264 81 844 5625",
+    guestEmail: "njabulolawrence@gmail.com",
+    guestIdNumber: "95031200192",
+    checkInDate: new Date(Date.now() - 26 * 3600 * 1000).toISOString(),
+    checkOutDate: new Date(Date.now() - 2 * 3600 * 1000).toISOString(), // 2 hours overstay
+    actualCheckIn: new Date(Date.now() - 26 * 3600 * 1000).toISOString(),
+    mealPlan: "bed_breakfast",
+    nights: 1,
+    ratePerNight: 1250,
+    totalAmount: 1250,
+    depositAmount: 1250,
+    amountPaid: 1250,
+    paymentMethod: "cash",
+    paymentStatus: "paid",
+    bookingStatus: "checked_in",
+    isExtended: false,
+    extensionHistory: [],
+    checkedInByName: "Elooz Makalaz",
+    notes: "Standard guest reservation.",
+    createdAt: new Date(Date.now() - 28 * 3600 * 1000).toISOString(),
+  },
+  {
+    id: "e0000000-0000-0000-0000-000000000003",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
+    roomId: "d0000000-0000-0000-0000-000000000103",
+    roomNumber: "Room 103",
+    roomType: "deluxe",
+    bookingCode: "BK-SAFARI-2026-M4",
+    guestName: "Sarah Jenkins",
+    guestPhone: "+27 83 221 4409",
+    guestEmail: "sarah.j@travelworld.com",
+    guestIdNumber: "9109040081085",
+    checkInDate: new Date(Date.now() - 48 * 3600 * 1000).toISOString(),
+    checkOutDate: new Date(Date.now() + 3 * 3600 * 1000).toISOString(), // Due today in 3 hours
+    actualCheckIn: new Date(Date.now() - 48 * 3600 * 1000).toISOString(),
+    mealPlan: "bed_lunch",
+    nights: 2,
+    ratePerNight: 1850,
+    totalAmount: 3700,
+    depositAmount: 1850,
+    amountPaid: 3700,
+    paymentMethod: "card",
+    paymentStatus: "paid",
+    bookingStatus: "checked_in",
+    isExtended: false,
+    extensionHistory: [],
+    checkedInByName: "Nomsa Dlamini (Front Desk)",
+    notes: "Airport shuttle requested for 13:00.",
+    createdAt: new Date(Date.now() - 50 * 3600 * 1000).toISOString(),
+  },
+  {
+    id: "e0000000-0000-0000-0000-000000000004",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
+    roomId: "d0000000-0000-0000-0000-000000000202",
+    roomNumber: "Room 202",
+    roomType: "family",
+    bookingCode: "BK-SAFARI-7712-Q9",
+    guestName: "David Van Wyk",
+    guestPhone: "+27 71 559 8812",
+    guestEmail: "david.vanwyk@corptech.co.za",
+    guestIdNumber: "8401155092083",
+    checkInDate: new Date(Date.now() - 12 * 3600 * 1000).toISOString(),
+    checkOutDate: new Date(Date.now() + 72 * 3600 * 1000).toISOString(), // 3 days remaining
+    actualCheckIn: new Date(Date.now() - 12 * 3600 * 1000).toISOString(),
+    mealPlan: "full_board",
+    nights: 3,
+    ratePerNight: 3500,
+    totalAmount: 10500,
+    depositAmount: 3500,
+    amountPaid: 10500,
+    paymentMethod: "eft",
+    paymentStatus: "paid",
+    bookingStatus: "checked_in",
+    isExtended: false,
+    extensionHistory: [],
+    checkedInByName: "Nomsa Dlamini (Front Desk)",
+    notes: "Family stay with 2 children.",
+    createdAt: new Date(Date.now() - 20 * 3600 * 1000).toISOString(),
+  },
+];
+
+export const MOCK_HOUSEKEEPING_SHIFTS: HousekeepingShift[] = [
+  {
+    id: "shift-001",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
+    shiftName: "Morning Turnover & Deep Clean",
+    shiftDate: new Date().toISOString().slice(0, 10),
+    startTime: "07:00",
+    endTime: "15:30",
+    supervisorName: "Constance Moyo",
+    assignedCleaners: ["Maria Sithole", "Grace Mabena", "Kudzai Dube"],
+    notes: "Focus on checkout turnovers and Ground Floor East Corridor.",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "shift-002",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
+    shiftName: "Evening Turndown & Sanitization",
+    shiftDate: new Date().toISOString().slice(0, 10),
+    startTime: "16:00",
+    endTime: "22:00",
+    supervisorName: "Constance Moyo",
+    assignedCleaners: ["Grace Mabena", "Themba Ncube"],
+    notes: "Turndown service and hallway tray clearing.",
+    createdAt: new Date().toISOString(),
+  },
 ];
 
 export const MOCK_HOUSEKEEPING: HousekeepingSchedule[] = [
@@ -448,6 +573,7 @@ export const MOCK_HOUSEKEEPING: HousekeepingSchedule[] = [
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
     propertyName: "Paimba Grand Safari Lodge & Hotel",
+    scopeType: "room",
     roomId: "d0000000-0000-0000-0000-000000000103",
     roomNumber: "Room 103",
     cleanerName: "Maria Sithole",
@@ -455,7 +581,15 @@ export const MOCK_HOUSEKEEPING: HousekeepingSchedule[] = [
     status: "in_progress",
     scheduledDate: new Date().toISOString().slice(0, 10),
     shift: "morning",
+    customShiftName: "Morning Turnover & Deep Clean",
+    shiftId: "shift-001",
     priority: "high",
+    targetMinutes: 35,
+    startedAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+    beforePhotos: [
+      "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=600&q=80",
+    ],
+    afterPhotos: [],
     notes: "Replace all linen and restock toiletries for next guest arrival.",
     createdAt: new Date().toISOString(),
   },
@@ -464,15 +598,82 @@ export const MOCK_HOUSEKEEPING: HousekeepingSchedule[] = [
     companyId: "a0000000-0000-0000-0000-000000000001",
     propertyId: "b0000000-0000-0000-0000-000000000001",
     propertyName: "Paimba Grand Safari Lodge & Hotel",
+    scopeType: "room",
     roomId: "d0000000-0000-0000-0000-000000000101",
     roomNumber: "Room 101",
     cleanerName: "Grace Mabena",
     cleaningType: "daily_tidy",
-    status: "pending",
+    status: "completed",
     scheduledDate: new Date().toISOString().slice(0, 10),
     shift: "morning",
+    customShiftName: "Morning Turnover & Deep Clean",
+    shiftId: "shift-001",
     priority: "normal",
-    notes: "Daily stayover cleaning and towel refresh.",
+    targetMinutes: 25,
+    startedAt: new Date(Date.now() - 50 * 60 * 1000).toISOString(),
+    completedAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+    beforePhotos: [
+      "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=600&q=80",
+    ],
+    afterPhotos: [
+      "https://images.unsplash.com/photo-1591088398332-8a7791972843?auto=format&fit=crop&w=600&q=80",
+    ],
+    notes: "Daily stayover cleaning and towel refresh complete. Ready for inspection.",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "f0000000-0000-0000-0000-000000000003",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
+    scopeType: "corridor",
+    floor: "Ground Floor",
+    corridorName: "East Wing Corridor & Lobby Aisle",
+    cleanerName: "Kudzai Dube",
+    cleaningType: "sanitization",
+    status: "in_progress",
+    scheduledDate: new Date().toISOString().slice(0, 10),
+    shift: "morning",
+    customShiftName: "Morning Turnover & Deep Clean",
+    shiftId: "shift-001",
+    priority: "high",
+    targetMinutes: 40,
+    startedAt: new Date(Date.now() - 48 * 60 * 1000).toISOString(), // 48 min vs 40 min target => Overstay / Exceeded timer!
+    beforePhotos: [
+      "https://images.unsplash.com/photo-1590381105924-c72589b9ef3f?auto=format&fit=crop&w=600&q=80",
+    ],
+    afterPhotos: [],
+    notes: "Floor mopping, window polish, and sanitizing touchpoints along East Wing.",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "f0000000-0000-0000-0000-000000000004",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
+    scopeType: "corridor",
+    floor: "1st Floor",
+    corridorName: "1st Floor Executive Hallway",
+    cleanerName: "Themba Ncube",
+    cleaningType: "deep_clean",
+    status: "verified",
+    scheduledDate: new Date().toISOString().slice(0, 10),
+    shift: "morning",
+    customShiftName: "Morning Turnover & Deep Clean",
+    shiftId: "shift-001",
+    priority: "normal",
+    targetMinutes: 30,
+    startedAt: new Date(Date.now() - 120 * 60 * 1000).toISOString(),
+    completedAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
+    inspectedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    inspectedBy: "Constance Moyo",
+    beforePhotos: [
+      "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=600&q=80",
+    ],
+    afterPhotos: [
+      "https://images.unsplash.com/photo-1540518614846-7ede433c4550?auto=format&fit=crop&w=600&q=80",
+    ],
+    notes: "Inspected and verified. Pristine condition.",
     createdAt: new Date().toISOString(),
   },
 ];
@@ -487,14 +688,41 @@ export const MOCK_ROOM_SERVICE: RoomServiceSchedule[] = [
     roomNumber: "Room 101",
     guestName: "Arthur Pendelton",
     serviceType: "breakfast_delivery",
+    runnerName: "Tinashe Shumba",
     items: [
       { name: "Full English Breakfast Tray", quantity: 1, unitPrice: 180 },
       { name: "Fresh Squeezed Orange Juice", quantity: 2, unitPrice: 45 },
     ],
-    scheduledTime: new Date(Date.now() + 3600000).toISOString(),
-    status: "preparing",
+    scheduledTime: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    targetDeliveryTime: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
+    status: "out_for_delivery",
     cost: 270,
-    notes: "Deliver at 08:30 with hot espresso.",
+    trayRetrievalStatus: "none",
+    notes: "Deliver with hot espresso and newspaper.",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "f1000000-0000-0000-0000-000000000002",
+    companyId: "a0000000-0000-0000-0000-000000000001",
+    propertyId: "b0000000-0000-0000-0000-000000000001",
+    propertyName: "Paimba Grand Safari Lodge & Hotel",
+    roomId: "d0000000-0000-0000-0000-000000000102",
+    roomNumber: "Room 102",
+    guestName: "njabulo mkhonto",
+    serviceType: "lunch_delivery",
+    runnerName: "Tinashe Shumba",
+    items: [
+      { name: "Gourmet Angus Beef Burger & Truffle Fries", quantity: 1, unitPrice: 220 },
+      { name: "Iced Peach Tea", quantity: 1, unitPrice: 50 },
+    ],
+    scheduledTime: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
+    targetDeliveryTime: new Date(Date.now() - 75 * 60 * 1000).toISOString(),
+    status: "delivered",
+    cost: 270,
+    deliveredAt: new Date(Date.now() - 70 * 60 * 1000).toISOString(),
+    trayRetrievalStatus: "pending_retrieval",
+    trayRetrievalRequestedAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+    notes: "Guest finished meal; tray placed in hallway outside Room 102.",
     createdAt: new Date().toISOString(),
   },
 ];
@@ -2556,7 +2784,8 @@ export async function resetUserPinByPrivilege(
 }
 
 export async function fetchHousekeepingSchedules(
-  companyId: string = MOCK_COMPANIES[0].id
+  companyId: string = MOCK_COMPANIES[0].id,
+  propertyId?: string
 ): Promise<HousekeepingSchedule[]> {
   try {
     let query = supabase
@@ -2566,6 +2795,9 @@ export async function fetchHousekeepingSchedules(
     if (isValidUuid(companyId)) {
       query = query.eq("company_id", companyId);
     }
+    if (propertyId && propertyId !== "all" && isValidUuid(propertyId)) {
+      query = query.eq("property_id", propertyId);
+    }
 
     const { data, error } = await query.order("scheduled_date", { ascending: false });
     if (!error && data && data.length > 0) {
@@ -2574,14 +2806,26 @@ export async function fetchHousekeepingSchedules(
         companyId: h.company_id,
         propertyId: h.property_id,
         propertyName: h.properties?.name || "Paimba Grand Safari Lodge",
-        roomId: h.room_id,
-        roomNumber: h.commercial_rooms?.room_number || "Room",
-        cleanerName: "Housekeeping Team",
-        cleaningType: h.task_type === "turnover" ? "turnover_clean" : (h.task_type === "daily_clean" ? "daily_tidy" : "deep_clean"),
-        status: h.status === "completed" ? "completed" : (h.status === "inspected" ? "verified" : (h.status === "in_progress" ? "in_progress" : "pending")),
+        scopeType: h.scope_type || (h.room_id ? "room" : "corridor"),
+        floor: h.floor || "",
+        corridorName: h.corridor_name || "",
+        roomId: h.room_id || undefined,
+        roomNumber: h.commercial_rooms?.room_number || (h.room_id ? "Room" : undefined),
+        cleanerName: h.cleaner_name || "Housekeeping Team",
+        cleaningType: (h.cleaning_type || (h.task_type === "turnover" ? "turnover_clean" : "daily_tidy")) as any,
+        status: (h.status === "completed" ? "completed" : (h.status === "inspected" || h.status === "verified" ? "verified" : (h.status === "in_progress" ? "in_progress" : "pending"))) as any,
         scheduledDate: h.scheduled_date,
-        shift: "morning",
+        shift: h.shift || "morning",
+        customShiftName: h.custom_shift_name || "",
+        shiftId: h.shift_id || undefined,
         priority: h.priority === "urgent" || h.priority === "high" ? "high" : "normal",
+        targetMinutes: h.target_minutes ? Number(h.target_minutes) : 30,
+        startedAt: h.started_at,
+        completedAt: h.completed_at,
+        inspectedAt: h.inspected_at,
+        inspectedBy: h.inspected_by,
+        beforePhotos: Array.isArray(h.before_photos) ? h.before_photos : [],
+        afterPhotos: Array.isArray(h.after_photos) ? h.after_photos : [],
         notes: h.notes || "",
         createdAt: h.created_at,
       }));
@@ -2590,47 +2834,240 @@ export async function fetchHousekeepingSchedules(
     console.warn("Falling back to mock housekeeping", err);
   }
 
-  return MOCK_HOUSEKEEPING.filter((h) => h.companyId === companyId || !h.companyId);
+  let list = MOCK_HOUSEKEEPING.filter((h) => h.companyId === companyId || !h.companyId);
+  if (propertyId && propertyId !== "all") {
+    list = list.filter((h) => h.propertyId === propertyId);
+  }
+  return list;
 }
 
-export async function updateHousekeepingStatus(
-  id: string,
-  status: HousekeepingSchedule["status"],
-  actorName: string
-): Promise<boolean> {
+export async function fetchHousekeepingShifts(
+  companyId: string = MOCK_COMPANIES[0].id,
+  propertyId?: string
+): Promise<HousekeepingShift[]> {
   try {
-    if (isValidUuid(id)) {
-      const dbStatus = status === "verified" ? "inspected" : (status === "completed" ? "completed" : (status === "in_progress" ? "in_progress" : "pending"));
-      const updatePayload: Record<string, unknown> = {
-        status: dbStatus,
+    let query = supabase.from("housekeeping_shifts").select("*, properties(name)");
+    if (isValidUuid(companyId)) {
+      query = query.eq("company_id", companyId);
+    }
+    if (propertyId && propertyId !== "all" && isValidUuid(propertyId)) {
+      query = query.eq("property_id", propertyId);
+    }
+    const { data, error } = await query.order("shift_date", { ascending: false });
+    if (!error && data && data.length > 0) {
+      return data.map((s) => ({
+        id: s.id,
+        companyId: s.company_id,
+        propertyId: s.property_id,
+        propertyName: s.properties?.name || "",
+        shiftName: s.shift_name,
+        shiftDate: s.shift_date,
+        startTime: s.start_time,
+        endTime: s.end_time,
+        supervisorName: s.supervisor_name || "",
+        assignedCleaners: Array.isArray(s.assigned_cleaners) ? s.assigned_cleaners : [],
+        notes: s.notes || "",
+        createdAt: s.created_at,
+      }));
+    }
+  } catch (err) {
+    console.warn("Falling back to mock housekeeping shifts", err);
+  }
+
+  let list = MOCK_HOUSEKEEPING_SHIFTS.filter((s) => s.companyId === companyId || !s.companyId);
+  if (propertyId && propertyId !== "all") {
+    list = list.filter((s) => s.propertyId === propertyId);
+  }
+  return list;
+}
+
+export async function createHousekeepingShift(shift: Partial<HousekeepingShift>): Promise<HousekeepingShift> {
+  const companyId = shift.companyId || MOCK_COMPANIES[0].id;
+  const propertyId = shift.propertyId || MOCK_COMMERCIAL_ROOMS[0].propertyId;
+  const newId = generateUuid();
+
+  const newShift: HousekeepingShift = {
+    id: newId,
+    companyId,
+    propertyId,
+    propertyName: shift.propertyName || "Paimba Grand Safari Lodge & Hotel",
+    shiftName: shift.shiftName || "Morning Turnover & Deep Clean",
+    shiftDate: shift.shiftDate || new Date().toISOString().slice(0, 10),
+    startTime: shift.startTime || "07:00",
+    endTime: shift.endTime || "15:30",
+    supervisorName: shift.supervisorName || "",
+    assignedCleaners: shift.assignedCleaners || [],
+    notes: shift.notes || "",
+    createdAt: new Date().toISOString(),
+  };
+
+  try {
+    if (isValidUuid(companyId) && isValidUuid(propertyId)) {
+      const { data, error } = await supabase
+        .from("housekeeping_shifts")
+        .insert({
+          id: newId,
+          company_id: companyId,
+          property_id: propertyId,
+          shift_name: newShift.shiftName,
+          shift_date: newShift.shiftDate,
+          start_time: newShift.startTime,
+          end_time: newShift.endTime,
+          supervisor_name: newShift.supervisorName,
+          assigned_cleaners: newShift.assignedCleaners,
+          notes: newShift.notes,
+        })
+        .select()
+        .single();
+      if (!error && data) {
+        newShift.id = data.id;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not insert housekeeping shift in Supabase", err);
+  }
+
+  MOCK_HOUSEKEEPING_SHIFTS.unshift(newShift);
+  return newShift;
+}
+
+export async function createHousekeepingTask(task: Partial<HousekeepingSchedule>): Promise<HousekeepingSchedule> {
+  const companyId = task.companyId || MOCK_COMPANIES[0].id;
+  const propertyId = task.propertyId || MOCK_COMMERCIAL_ROOMS[0].propertyId;
+  const newId = generateUuid();
+
+  const newTask: HousekeepingSchedule = {
+    id: newId,
+    companyId,
+    propertyId,
+    propertyName: task.propertyName || "Paimba Grand Safari Lodge & Hotel",
+    scopeType: task.scopeType || "room",
+    roomId: task.roomId,
+    roomNumber: task.roomNumber,
+    floor: task.floor || "",
+    corridorName: task.corridorName || "",
+    cleanerName: task.cleanerName || "Housekeeping Team",
+    cleaningType: task.cleaningType || "daily_tidy",
+    status: "pending",
+    scheduledDate: task.scheduledDate || new Date().toISOString().slice(0, 10),
+    shift: task.shift || "morning",
+    customShiftName: task.customShiftName || "",
+    shiftId: task.shiftId,
+    priority: task.priority || "normal",
+    targetMinutes: task.targetMinutes || 30,
+    beforePhotos: task.beforePhotos || [],
+    afterPhotos: task.afterPhotos || [],
+    notes: task.notes || "",
+    createdAt: new Date().toISOString(),
+  };
+
+  try {
+    if (isValidUuid(companyId) && isValidUuid(propertyId)) {
+      const { data, error } = await supabase
+        .from("housekeeping_schedules")
+        .insert({
+          id: newId,
+          company_id: companyId,
+          property_id: propertyId,
+          room_id: newTask.roomId && isValidUuid(newTask.roomId) ? newTask.roomId : null,
+          scope_type: newTask.scopeType,
+          floor: newTask.floor,
+          corridor_name: newTask.corridorName,
+          cleaner_name: newTask.cleanerName,
+          cleaning_type: newTask.cleaningType,
+          status: "pending",
+          scheduled_date: newTask.scheduledDate,
+          shift: newTask.shift,
+          custom_shift_name: newTask.customShiftName,
+          shift_id: newTask.shiftId && isValidUuid(newTask.shiftId) ? newTask.shiftId : null,
+          priority: newTask.priority,
+          target_minutes: newTask.targetMinutes,
+          before_photos: newTask.beforePhotos,
+          notes: newTask.notes,
+        })
+        .select()
+        .single();
+      if (!error && data) {
+        newTask.id = data.id;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not insert housekeeping task in Supabase", err);
+  }
+
+  MOCK_HOUSEKEEPING.unshift(newTask);
+  return newTask;
+}
+
+export async function startHousekeepingTask(taskId: string): Promise<boolean> {
+  const now = new Date().toISOString();
+  try {
+    if (isValidUuid(taskId)) {
+      await supabase
+        .from("housekeeping_schedules")
+        .update({ status: "in_progress", started_at: now })
+        .eq("id", taskId);
+    }
+  } catch (err) {
+    console.warn("Could not start housekeeping task in Supabase", err);
+  }
+
+  const item = MOCK_HOUSEKEEPING.find((h) => h.id === taskId);
+  if (item) {
+    item.status = "in_progress";
+    item.startedAt = now;
+  }
+  return true;
+}
+
+export async function completeHousekeepingTask(
+  taskId: string,
+  afterPhotos?: string[],
+  notes?: string
+): Promise<boolean> {
+  const now = new Date().toISOString();
+  try {
+    if (isValidUuid(taskId)) {
+      const updateData: Record<string, unknown> = {
+        status: "completed",
+        completed_at: now,
       };
-      if (status === "completed" || status === "verified") {
-        updatePayload.completed_at = new Date().toISOString();
+      if (afterPhotos && afterPhotos.length > 0) {
+        updateData.after_photos = afterPhotos;
+      }
+      if (notes) {
+        updateData.notes = notes;
       }
 
       const { data: schedule } = await supabase
         .from("housekeeping_schedules")
-        .update(updatePayload)
-        .eq("id", id)
+        .update(updateData)
+        .eq("id", taskId)
         .select("room_id")
         .maybeSingle();
 
-      if ((status === "completed" || status === "verified") && schedule?.room_id) {
+      if (schedule?.room_id) {
         await supabase
           .from("commercial_rooms")
-          .update({ status: "available", updated_at: new Date().toISOString() })
+          .update({ status: "available", updated_at: now })
           .eq("id", schedule.room_id);
       }
     }
   } catch (err) {
-    console.warn("Could not update housekeeping in Supabase", err);
+    console.warn("Could not complete housekeeping task in Supabase", err);
   }
 
-  const item = MOCK_HOUSEKEEPING.find((h) => h.id === id);
+  const item = MOCK_HOUSEKEEPING.find((h) => h.id === taskId);
   if (item) {
-    item.status = status;
-    if (status === "completed" || status === "verified") {
-      item.completedAt = new Date().toISOString();
+    item.status = "completed";
+    item.completedAt = now;
+    if (afterPhotos && afterPhotos.length > 0) {
+      item.afterPhotos = afterPhotos;
+    }
+    if (notes) {
+      item.notes = notes;
+    }
+    if (item.roomId) {
       const room = MOCK_COMMERCIAL_ROOMS.find((r) => r.id === item.roomId);
       if (room && room.status === "cleaning_needed") {
         room.status = "available";
@@ -2640,8 +3077,74 @@ export async function updateHousekeepingStatus(
   return true;
 }
 
+export async function verifyHousekeepingTask(
+  taskId: string,
+  inspectorName: string,
+  notes?: string
+): Promise<boolean> {
+  const now = new Date().toISOString();
+  try {
+    if (isValidUuid(taskId)) {
+      await supabase
+        .from("housekeeping_schedules")
+        .update({
+          status: "verified",
+          inspected_at: now,
+          inspected_by: inspectorName,
+          ...(notes ? { notes } : {}),
+        })
+        .eq("id", taskId);
+    }
+  } catch (err) {
+    console.warn("Could not verify housekeeping task in Supabase", err);
+  }
+
+  const item = MOCK_HOUSEKEEPING.find((h) => h.id === taskId);
+  if (item) {
+    item.status = "verified";
+    item.inspectedAt = now;
+    item.inspectedBy = inspectorName;
+    if (notes) item.notes = notes;
+  }
+  return true;
+}
+
+export async function updateHousekeepingStatus(
+  id: string,
+  status: HousekeepingSchedule["status"],
+  actorName: string
+): Promise<boolean> {
+  if (status === "in_progress") {
+    return startHousekeepingTask(id);
+  }
+  if (status === "completed") {
+    return completeHousekeepingTask(id);
+  }
+  if (status === "verified") {
+    return verifyHousekeepingTask(id, actorName);
+  }
+
+  try {
+    if (isValidUuid(id)) {
+      await supabase
+        .from("housekeeping_schedules")
+        .update({ status: "pending" })
+        .eq("id", id);
+    }
+  } catch (err) {
+    console.warn("Could not update housekeeping in Supabase", err);
+  }
+
+  const item = MOCK_HOUSEKEEPING.find((h) => h.id === id);
+  if (item) {
+    item.status = "pending";
+  }
+  return true;
+}
+
 export async function fetchRoomServiceSchedules(
-  companyId: string = MOCK_COMPANIES[0].id
+  companyId: string = MOCK_COMPANIES[0].id,
+  propertyId?: string
 ): Promise<RoomServiceSchedule[]> {
   try {
     let query = supabase
@@ -2651,8 +3154,11 @@ export async function fetchRoomServiceSchedules(
     if (isValidUuid(companyId)) {
       query = query.eq("company_id", companyId);
     }
+    if (propertyId && propertyId !== "all" && isValidUuid(propertyId)) {
+      query = query.eq("property_id", propertyId);
+    }
 
-    const { data, error } = await query.order("scheduled_for", { ascending: false });
+    const { data, error } = await query.order("scheduled_time", { ascending: false });
     if (!error && data && data.length > 0) {
       return data.map((rs) => ({
         id: rs.id,
@@ -2661,14 +3167,18 @@ export async function fetchRoomServiceSchedules(
         propertyName: rs.properties?.name || "Paimba Grand Safari Lodge",
         roomId: rs.room_id,
         roomNumber: rs.commercial_rooms?.room_number || "Room",
-        guestName: "In-house Guest",
-        serviceType: rs.service_type === "meal_delivery" ? "breakfast_delivery" : "custom",
+        guestName: rs.guest_name || "In-house Guest",
+        serviceType: (rs.service_type || "breakfast_delivery") as any,
+        runnerName: rs.runner_name || "",
         items: Array.isArray(rs.items) ? rs.items : [],
-        scheduledTime: rs.scheduled_for,
+        scheduledTime: rs.scheduled_time || rs.scheduled_for || new Date().toISOString(),
+        targetDeliveryTime: rs.target_delivery_time,
         status: (["requested", "preparing", "out_for_delivery", "delivered", "cancelled"].includes(rs.status) ? rs.status : "requested") as RoomServiceSchedule["status"],
-        cost: toNumber(rs.total_charge),
+        cost: toNumber(rs.cost ?? rs.total_charge),
         deliveredAt: rs.delivered_at,
-        notes: rs.special_instructions || "",
+        trayRetrievalStatus: rs.tray_retrieval_status || "none",
+        trayRetrievalRequestedAt: rs.tray_retrieval_requested_at,
+        notes: rs.notes || rs.special_instructions || "",
         createdAt: rs.created_at,
       }));
     }
@@ -2676,7 +3186,11 @@ export async function fetchRoomServiceSchedules(
     console.warn("Falling back to mock room service", err);
   }
 
-  return MOCK_ROOM_SERVICE.filter((rs) => rs.companyId === companyId || !rs.companyId);
+  let list = MOCK_ROOM_SERVICE.filter((rs) => rs.companyId === companyId || !rs.companyId);
+  if (propertyId && propertyId !== "all") {
+    list = list.filter((rs) => rs.propertyId === propertyId);
+  }
+  return list;
 }
 
 export async function createRoomServiceOrder(order: Partial<RoomServiceSchedule>): Promise<RoomServiceSchedule> {
@@ -2694,10 +3208,13 @@ export async function createRoomServiceOrder(order: Partial<RoomServiceSchedule>
     roomNumber: order.roomNumber || "Room 101",
     guestName: order.guestName || "In-house Guest",
     serviceType: order.serviceType || "breakfast_delivery",
+    runnerName: order.runnerName || "",
     items: order.items || [{ name: "Standard Meal Tray", quantity: 1, unitPrice: 150 }],
     scheduledTime: order.scheduledTime || new Date().toISOString(),
+    targetDeliveryTime: order.targetDeliveryTime || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
     status: "requested",
     cost: order.cost ?? 150,
+    trayRetrievalStatus: "none",
     notes: order.notes || "",
     createdAt: new Date().toISOString(),
   };
@@ -2711,12 +3228,14 @@ export async function createRoomServiceOrder(order: Partial<RoomServiceSchedule>
           company_id: companyId,
           property_id: propertyId,
           room_id: roomId,
-          service_type: "meal_delivery",
+          service_type: newOrder.serviceType,
+          runner_name: newOrder.runnerName,
           items: newOrder.items,
-          status: "pending",
-          total_charge: newOrder.cost,
-          scheduled_for: newOrder.scheduledTime,
-          special_instructions: newOrder.notes || null,
+          status: "requested",
+          cost: newOrder.cost,
+          scheduled_time: newOrder.scheduledTime,
+          target_delivery_time: newOrder.targetDeliveryTime,
+          notes: newOrder.notes || null,
         })
         .select()
         .single();
@@ -2731,6 +3250,79 @@ export async function createRoomServiceOrder(order: Partial<RoomServiceSchedule>
 
   MOCK_ROOM_SERVICE.unshift(newOrder);
   return newOrder;
+}
+
+export async function updateRoomServiceOrderStatus(
+  orderId: string,
+  status: RoomServiceSchedule["status"],
+  runnerName?: string
+): Promise<boolean> {
+  const now = new Date().toISOString();
+  try {
+    if (isValidUuid(orderId)) {
+      const updateData: Record<string, unknown> = { status };
+      if (status === "delivered") {
+        updateData.delivered_at = now;
+      }
+      if (runnerName !== undefined) {
+        updateData.runner_name = runnerName;
+      }
+      await supabase.from("room_service_schedules").update(updateData).eq("id", orderId);
+    }
+  } catch (err) {
+    console.warn("Could not update room service order status in Supabase", err);
+  }
+
+  const order = MOCK_ROOM_SERVICE.find((o) => o.id === orderId);
+  if (order) {
+    order.status = status;
+    if (runnerName !== undefined) order.runnerName = runnerName;
+    if (status === "delivered") order.deliveredAt = now;
+  }
+  return true;
+}
+
+export async function requestRoomServiceTrayRetrieval(orderId: string): Promise<boolean> {
+  const now = new Date().toISOString();
+  try {
+    if (isValidUuid(orderId)) {
+      await supabase
+        .from("room_service_schedules")
+        .update({
+          tray_retrieval_status: "pending_retrieval",
+          tray_retrieval_requested_at: now,
+        })
+        .eq("id", orderId);
+    }
+  } catch (err) {
+    console.warn("Could not request tray retrieval in Supabase", err);
+  }
+
+  const order = MOCK_ROOM_SERVICE.find((o) => o.id === orderId);
+  if (order) {
+    order.trayRetrievalStatus = "pending_retrieval";
+    order.trayRetrievalRequestedAt = now;
+  }
+  return true;
+}
+
+export async function completeRoomServiceTrayRetrieval(orderId: string): Promise<boolean> {
+  try {
+    if (isValidUuid(orderId)) {
+      await supabase
+        .from("room_service_schedules")
+        .update({ tray_retrieval_status: "retrieved" })
+        .eq("id", orderId);
+    }
+  } catch (err) {
+    console.warn("Could not complete tray retrieval in Supabase", err);
+  }
+
+  const order = MOCK_ROOM_SERVICE.find((o) => o.id === orderId);
+  if (order) {
+    order.trayRetrievalStatus = "retrieved";
+  }
+  return true;
 }
 
 export async function fetchSalaryScales(companyId: string = MOCK_COMPANIES[0].id): Promise<SalaryScale[]> {

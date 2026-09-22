@@ -218,13 +218,32 @@ export type CommercialBooking = {
 
 export type HousekeepingStatus = "pending" | "in_progress" | "completed" | "verified";
 export type CleaningType = "daily_tidy" | "turnover_clean" | "deep_clean" | "inspection" | "sanitization";
+export type HousekeepingScope = "room" | "corridor" | "public_area";
+
+export type HousekeepingShift = {
+  id: string;
+  companyId: string;
+  propertyId: string;
+  propertyName?: string;
+  shiftName: string;
+  shiftDate: string;
+  startTime: string; // e.g. "07:00"
+  endTime: string;   // e.g. "15:30"
+  supervisorName?: string;
+  assignedCleaners?: string[];
+  notes?: string;
+  createdAt: string;
+};
 
 export type HousekeepingSchedule = {
   id: string;
   companyId: string;
   propertyId: string;
   propertyName?: string;
-  roomId: string;
+  scopeType?: HousekeepingScope; // "room" | "corridor" | "public_area"
+  floor?: string;
+  corridorName?: string;
+  roomId?: string;
   roomNumber?: string;
   cleanerId?: string;
   cleanerName: string;
@@ -232,8 +251,16 @@ export type HousekeepingSchedule = {
   status: HousekeepingStatus;
   scheduledDate: string;
   shift: "morning" | "afternoon" | "evening" | "turnover";
+  customShiftName?: string;
+  shiftId?: string;
   priority: "low" | "normal" | "high" | "urgent";
+  targetMinutes?: number;
+  startedAt?: string;
   completedAt?: string;
+  inspectedAt?: string;
+  inspectedBy?: string;
+  beforePhotos?: string[];
+  afterPhotos?: string[];
   notes?: string;
   createdAt: string;
 };
@@ -260,9 +287,13 @@ export type RoomServiceSchedule = {
   serviceType: RoomServiceType;
   items: Array<{ name: string; quantity: number; unitPrice: number }>;
   scheduledTime: string;
+  targetDeliveryTime?: string;
+  runnerName?: string;
   status: RoomServiceStatus;
   cost: number;
   deliveredAt?: string;
+  trayRetrievalStatus?: "none" | "pending_retrieval" | "retrieved";
+  trayRetrievalRequestedAt?: string;
   notes?: string;
   createdAt: string;
 };

@@ -38,6 +38,8 @@ import {
   buildFolioHtml,
   buildCheckinEmailTemplates,
 } from "@/lib/booking-folio";
+import { CheckoutCountdown, getCheckoutDelta } from "@/components/checkout-countdown";
+import { ExpressCheckoutModal } from "@/components/express-checkout-modal";
 
 export default function CommercialBookingsPage() {
   const { currentCompany, currentCompanyUser } = useAuth();
@@ -49,6 +51,7 @@ export default function CommercialBookingsPage() {
 
   // Modals state
   const [checkinOpen, setCheckinOpen] = useState(false);
+  const [expressCheckoutOpen, setExpressCheckoutOpen] = useState(false);
   const [extendModalBooking, setExtendModalBooking] = useState<CommercialBooking | null>(null);
   const [folioBooking, setFolioBooking] = useState<CommercialBooking | null>(null);
   const [detailModalBooking, setDetailModalBooking] = useState<CommercialBooking | null>(null);
@@ -129,6 +132,11 @@ export default function CommercialBookingsPage() {
   const occupiedRooms = rooms.filter((r) => r.status === "occupied").length;
   const cleaningNeededRooms = rooms.filter((r) => r.status === "cleaning_needed").length;
 
+  const overstayCount = bookings.filter((b) => {
+    if (b.bookingStatus !== "checked_in" && b.bookingStatus !== "extended") return false;
+    return getCheckoutDelta(b.checkOutDate).isOverstay;
+  }).length;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -138,46 +146,78 @@ export default function CommercialBookingsPage() {
             Front Desk & Hospitality Bookings
           </h1>
           <p className="text-sm text-muted">
-            Manage guest check-ins, extensions, departures, and instant booking codes for {currentCompany.name}.
+            Manage guest check-ins, departures, live checkout countdowns, and turnover queue for {currentCompany.name}.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setCheckinOpen(true)}
-          className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition"
-        >
-          <KeyRound size={18} />
-          <span>New Guest Check-In</span>
-        </button>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setExpressCheckoutOpen(true)}
+            className="flex items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-500/20 transition shadow-xs"
+            title="Express Checkout & Overstay Desk"
+          >
+            <LogOut size={18} />
+            <span>Check Out Guest</span>
+            {overstayCount > 0 && (
+              <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-black text-white animate-pulse">
+                {overstayCount} Overdue
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCheckinOpen(true)}
+            className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition"
+          >
+            <KeyRound size={18} />
+            <span>New Guest Check-In</span>
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase text-muted">Active In-House Guests</p>
+          <p className="text-xs font-semibold uppercase text-muted">Active In-House</p>
           <p className="mt-2 text-2xl font-black text-blue-600">{activeCheckedIn}</p>
-          <p className="mt-1 text-[11px] text-muted">Across all commercial rooms</p>
+          <p className="mt-1 text-[11px] text-muted">Checked-in guests</p>
+        </div>
+
+        <div
+          onClick={() => setExpressCheckoutOpen(true)}
+          className={`cursor-pointer rounded-2xl border p-4 shadow-sm transition hover:border-red-500/50 ${
+            overstayCount > 0
+              ? "border-red-500/40 bg-red-500/10 text-red-600"
+              : "border-border-color bg-surface"
+          }`}
+        >
+          <p className="text-xs font-semibold uppercase text-muted">Overstay / Past Time</p>
+          <p className={`mt-2 text-2xl font-black ${overstayCount > 0 ? "text-red-600 animate-pulse" : "text-foreground"}`}>
+            {overstayCount}
+          </p>
+          <p className="mt-1 text-[11px] text-muted">Click to open Express Desk</p>
         </div>
 
         <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase text-muted">Occupied Rooms</p>
           <p className="mt-2 text-2xl font-black text-foreground">{occupiedRooms} / {rooms.length}</p>
-          <p className="mt-1 text-[11px] text-muted">Current occupancy rate</p>
+          <p className="mt-1 text-[11px] text-muted">Current occupancy</p>
         </div>
 
         <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase text-muted">Cleaning / Turnover Needed</p>
+          <p className="text-xs font-semibold uppercase text-muted">Housekeeping Needed</p>
           <p className="mt-2 text-2xl font-black text-amber-600">{cleaningNeededRooms}</p>
-          <p className="mt-1 text-[11px] text-muted">Pending housekeeping</p>
+          <p className="mt-1 text-[11px] text-muted">Pending turnovers</p>
         </div>
 
-        <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase text-muted">Total Available Rooms</p>
+        <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-sm col-span-2 sm:col-span-1">
+          <p className="text-xs font-semibold uppercase text-muted">Available Rooms</p>
           <p className="mt-2 text-2xl font-black text-emerald-600">
             {rooms.filter((r) => r.status === "available").length}
           </p>
-          <p className="mt-1 text-[11px] text-muted">Ready for walk-in check-in</p>
+          <p className="mt-1 text-[11px] text-muted">Ready for walk-in</p>
         </div>
       </div>
 
@@ -288,6 +328,15 @@ export default function CommercialBookingsPage() {
                           <Utensils size={12} />
                           <span className="capitalize">{b.mealPlan.replace(/_/g, " ")} ({b.nights}n)</span>
                         </div>
+                        {isStayActive && (
+                          <div className="mt-1.5">
+                            <CheckoutCountdown
+                              checkOutDate={b.checkOutDate}
+                              isStayActive={true}
+                              compact={true}
+                            />
+                          </div>
+                        )}
                       </td>
 
                       <td className="px-4 py-3.5">
@@ -532,6 +581,17 @@ export default function CommercialBookingsPage() {
         defaultSubject={shareModalDoc.defaultSubject}
         defaultMessage={shareModalDoc.defaultMessage}
         emailTemplates={shareModalDoc.emailTemplates}
+      />
+
+      <ExpressCheckoutModal
+        isOpen={expressCheckoutOpen}
+        onClose={() => setExpressCheckoutOpen(false)}
+        bookings={bookings}
+        onCheckoutSuccess={loadData}
+        onSelectBooking={(b) => {
+          setDetailModalBooking(b);
+          setExpressCheckoutOpen(false);
+        }}
       />
     </div>
   );
