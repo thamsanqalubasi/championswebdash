@@ -20,6 +20,7 @@ import {
   FileText,
   Eye,
   Pencil,
+  History,
 } from "lucide-react";
 import {
   fetchCommercialBookings,
@@ -40,6 +41,8 @@ import {
 } from "@/lib/booking-folio";
 import { CheckoutCountdown, getCheckoutDelta } from "@/components/checkout-countdown";
 import { ExpressCheckoutModal } from "@/components/express-checkout-modal";
+import { CheckoutConfirmModal } from "@/components/checkout-confirm-modal";
+import { CheckoutHistoryModal } from "@/components/checkout-history-modal";
 
 export default function CommercialBookingsPage() {
   const { currentCompany, currentCompanyUser } = useAuth();
@@ -52,6 +55,9 @@ export default function CommercialBookingsPage() {
   // Modals state
   const [checkinOpen, setCheckinOpen] = useState(false);
   const [expressCheckoutOpen, setExpressCheckoutOpen] = useState(false);
+  const [checkoutHistoryOpen, setCheckoutHistoryOpen] = useState(false);
+  const [checkoutConfirmBooking, setCheckoutConfirmBooking] = useState<CommercialBooking | null>(null);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [extendModalBooking, setExtendModalBooking] = useState<CommercialBooking | null>(null);
   const [folioBooking, setFolioBooking] = useState<CommercialBooking | null>(null);
   const [detailModalBooking, setDetailModalBooking] = useState<CommercialBooking | null>(null);
@@ -104,14 +110,21 @@ export default function CommercialBookingsPage() {
     }
   };
 
-  const handleCheckout = async (booking: CommercialBooking) => {
-    if (
-      window.confirm(
-        `Are you sure you want to check out ${booking.guestName} from ${booking.roomNumber}? This will mark the room as 'Cleaning Needed' for housekeeping.`
-      )
-    ) {
-      await checkoutCommercialBooking(booking.id, currentCompanyUser.fullName);
+  const handleCheckout = (booking: CommercialBooking) => {
+    setCheckoutConfirmBooking(booking);
+  };
+
+  const handleConfirmCheckout = async (booking: CommercialBooking) => {
+    setIsCheckingOut(true);
+    try {
+      const actor = currentCompanyUser?.fullName || "Front Desk";
+      await checkoutCommercialBooking(booking.id, actor);
+      setCheckoutConfirmBooking(null);
       loadData();
+    } catch (err: any) {
+      alert("Checkout failed: " + (err.message || err));
+    } finally {
+      setIsCheckingOut(false);
     }
   };
 
@@ -164,6 +177,16 @@ export default function CommercialBookingsPage() {
                 {overstayCount} Overdue
               </span>
             )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCheckoutHistoryOpen(true)}
+            className="flex items-center justify-center gap-2 rounded-xl border border-border-color bg-surface px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-elevated transition shadow-xs"
+            title="View Guest Checkout History & Departures Log"
+          >
+            <History size={18} className="text-emerald-600" />
+            <span>Checkout History</span>
           </button>
 
           <button
@@ -592,6 +615,25 @@ export default function CommercialBookingsPage() {
           setDetailModalBooking(b);
           setExpressCheckoutOpen(false);
         }}
+      />
+
+      <CheckoutConfirmModal
+        isOpen={Boolean(checkoutConfirmBooking)}
+        booking={checkoutConfirmBooking}
+        onClose={() => setCheckoutConfirmBooking(null)}
+        onConfirm={handleConfirmCheckout}
+        isProcessing={isCheckingOut}
+      />
+
+      <CheckoutHistoryModal
+        isOpen={checkoutHistoryOpen}
+        onClose={() => setCheckoutHistoryOpen(false)}
+        bookings={bookings}
+        onSelectBooking={(b) => {
+          setDetailModalBooking(b);
+          setCheckoutHistoryOpen(false);
+        }}
+        currency={currentCompany.currency || "ZAR"}
       />
     </div>
   );

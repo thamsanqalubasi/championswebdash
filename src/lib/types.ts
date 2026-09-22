@@ -212,6 +212,7 @@ export type CommercialBooking = {
   }>;
   createdByName?: string;
   checkedInByName?: string;
+  checkedOutByName?: string;
   notes?: string;
   createdAt: string;
 };

@@ -61,3 +61,4 @@ ALTER TABLE public.room_service_schedules
 
 CREATE INDEX IF NOT EXISTS idx_room_service_tray_retrieval
   ON public.room_service_schedules (property_id, tray_retrieval_status);
+

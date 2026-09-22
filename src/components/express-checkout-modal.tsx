@@ -17,6 +17,7 @@ import {
 import type { CommercialBooking } from "@/lib/types";
 import { CheckoutCountdown, getCheckoutDelta } from "./checkout-countdown";
 import { checkoutCommercialBooking } from "@/lib/data";
+import { CheckoutConfirmModal } from "./checkout-confirm-modal";
 import { useAuth } from "@/lib/auth";
 
 interface ExpressCheckoutModalProps {
@@ -42,6 +43,7 @@ export function ExpressCheckoutModal({
   const [sortAscending, setSortAscending] = useState(true); // true = most urgent overstay / earliest checkout first
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [confirmBooking, setConfirmBooking] = useState<CommercialBooking | null>(null);
 
   // Filter only in-house active stays
   const inHouseBookings = useMemo(() => {
@@ -118,10 +120,11 @@ export function ExpressCheckoutModal({
 
   if (!isOpen) return null;
 
-  const handleExecuteCheckout = async (b: CommercialBooking) => {
-    const confirmMsg = `Confirm Check Out for guest ${b.guestName} (Room ${b.roomNumber})?\n\nThis will complete their stay, update the booking status to 'Checked Out', and schedule room turnover in Housekeeping.`;
-    if (!window.confirm(confirmMsg)) return;
+  const handleExecuteCheckout = (b: CommercialBooking) => {
+    setConfirmBooking(b);
+  };
 
+  const handleConfirmCheckout = async (b: CommercialBooking) => {
     setProcessingId(b.id);
     setActionMessage(null);
     try {
@@ -129,6 +132,7 @@ export function ExpressCheckoutModal({
       const ok = await checkoutCommercialBooking(b.id, actor);
       if (ok) {
         setActionMessage(`Guest ${b.guestName} was successfully checked out.`);
+        setConfirmBooking(null);
         onCheckoutSuccess();
       } else {
         setActionMessage(`Could not check out ${b.guestName}. Please try again.`);
@@ -462,6 +466,15 @@ export function ExpressCheckoutModal({
           </button>
         </div>
       </div>
+
+      <CheckoutConfirmModal
+        isOpen={Boolean(confirmBooking)}
+        booking={confirmBooking}
+        onClose={() => setConfirmBooking(null)}
+        onConfirm={handleConfirmCheckout}
+        isProcessing={Boolean(processingId)}
+      />
     </div>
   );
 }
+

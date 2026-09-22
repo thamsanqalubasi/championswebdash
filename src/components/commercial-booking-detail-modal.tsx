@@ -28,6 +28,7 @@ import { DocumentShareModal } from "@/components/document-share-modal";
 import { downloadPdfDocument } from "@/lib/storage";
 import { updateCommercialBooking, checkinCommercialBooking, checkoutCommercialBooking } from "@/lib/data";
 import { CheckoutCountdown } from "@/components/checkout-countdown";
+import { CheckoutConfirmModal } from "@/components/checkout-confirm-modal";
 import type {
   CommercialBooking,
   CommercialRoom,
@@ -222,17 +223,21 @@ export function CommercialBookingDetailModal({
   };
 
   const [checkingOut, setCheckingOut] = useState(false);
-  const handleCheckOutNow = async () => {
-    if (!booking) return;
-    const confirmMsg = `Are you sure you want to check out ${booking.guestName} from Room ${booking.roomNumber || "N/A"}? This will release the room and mark it as 'Cleaning Needed' for housekeeping.`;
-    if (!window.confirm(confirmMsg)) return;
+  const [confirmCheckoutOpen, setConfirmCheckoutOpen] = useState(false);
 
+  const handleCheckOutNow = () => {
+    if (!booking) return;
+    setConfirmCheckoutOpen(true);
+  };
+
+  const handleExecuteConfirmCheckout = async (b: CommercialBooking) => {
     setCheckingOut(true);
     setErrorMsg("");
     try {
       const actor = currentCompanyUser?.fullName || user?.email || "Front Desk";
-      await checkoutCommercialBooking(booking.id, actor);
-      setSuccessMsg(`Guest ${booking.guestName} checked out successfully.`);
+      await checkoutCommercialBooking(b.id, actor);
+      setSuccessMsg(`Guest ${b.guestName} checked out successfully.`);
+      setConfirmCheckoutOpen(false);
       if (onSuccess) onSuccess();
       setTimeout(() => {
         onClose();
@@ -995,6 +1000,14 @@ export function CommercialBookingDetailModal({
         defaultSubject={shareModalDoc.defaultSubject}
         defaultMessage={shareModalDoc.defaultMessage}
         emailTemplates={shareModalDoc.emailTemplates}
+      />
+
+      <CheckoutConfirmModal
+        isOpen={confirmCheckoutOpen}
+        booking={booking}
+        onClose={() => setConfirmCheckoutOpen(false)}
+        onConfirm={handleExecuteConfirmCheckout}
+        isProcessing={checkingOut}
       />
     </div>
   );
