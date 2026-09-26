@@ -44,8 +44,13 @@ export function TrialExpiredGatewayModal({
     return () => window.removeEventListener("paimba_package_changed", handleUpdate);
   }, [companyId]);
 
-  const handleRestart = () => {
-    restartCompanyTrial(companyId);
+  const [selectedMinutes, setSelectedMinutes] = useState<number>(() =>
+    Math.max(1, Math.round((sub.trialDurationSeconds || 60) / 60))
+  );
+
+  const handleRestart = (mins?: number) => {
+    const minutesToUse = mins || selectedMinutes;
+    restartCompanyTrial(companyId, minutesToUse * 60);
     if (onTrialRestarted) onTrialRestarted();
   };
 
@@ -61,7 +66,7 @@ export function TrialExpiredGatewayModal({
       <Modal
         open={open}
         onClose={() => {}} // Block dismissal while expired unless restarted, paid, or turned off
-        title="1-Minute Trial Expired — Payment Gateway"
+        title="Trial Expired — Payment Gateway"
       >
         <div className="py-2 text-center space-y-4">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400">
@@ -71,19 +76,19 @@ export function TrialExpiredGatewayModal({
           <div>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-[11px] font-bold uppercase tracking-wider mb-2">
               <AlertTriangle size={12} />
-              <span>Test Mode: 60s Trial Ended</span>
+              <span>Test Mode: Trial Ended</span>
             </div>
             <h3 className="text-lg font-bold text-foreground">
-              Your 1-Minute Trial Has Expired
+              Your {Math.round((sub.trialDurationSeconds || 60) / 60)}-Minute Trial Has Expired
             </h3>
             <p className="text-xs text-muted mt-1 leading-relaxed max-w-sm mx-auto">
               You were testing the <span className="font-semibold text-foreground">{currentPlan.name}</span>.
-              To test live payment verification, proceed with the <span className="font-semibold text-blue-400">$2 Test Package</span> via Stripe, or restart the 1-minute trial.
+              To test live payment verification, proceed with the <span className="font-semibold text-blue-400">$2 Test Package</span> via Stripe, or select new minutes and restart.
             </p>
           </div>
 
           {/* Action cards */}
-          <div className="space-y-2 text-left">
+          <div className="space-y-2.5 text-left">
             {/* Primary Action 1: Pay $2 Test Package via Stripe */}
             <div className="rounded-xl border border-blue-500/40 bg-blue-500/10 p-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
@@ -104,24 +109,47 @@ export function TrialExpiredGatewayModal({
               </button>
             </div>
 
-            {/* Action 2: Restart 1-Minute Trial */}
-            <div className="rounded-xl border border-border-color bg-surface-elevated p-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface border border-border-color text-amber-400">
-                  <RotateCcw size={18} />
+            {/* Action 2: Choose Duration & Restart Trial */}
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface border border-border-color text-amber-400">
+                    <RotateCcw size={18} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-foreground">Restart Test Trial</p>
+                    <p className="text-[11px] text-muted">Select duration before restarting countdown</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs font-bold text-foreground">Restart 1-Minute Trial</p>
-                  <p className="text-[11px] text-muted">Reset the countdown timer for another 60 seconds</p>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRestart()}
+                  className="shrink-0 rounded-xl border border-amber-500/60 bg-amber-500/20 px-3 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-500/30 transition shadow-xs"
+                >
+                  Restart ({selectedMinutes}m)
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={handleRestart}
-                className="shrink-0 rounded-xl border border-amber-500/40 bg-surface px-3 py-1.5 text-xs font-bold text-amber-400 hover:bg-amber-500/10 transition"
-              >
-                Restart Trial
-              </button>
+
+              {/* Minute selector chips */}
+              <div className="flex items-center gap-1.5 pt-1 border-t border-border-color/50 flex-wrap">
+                <span className="text-[11px] font-semibold text-muted mr-1">Choose Trial Length:</span>
+                {[1, 2, 3, 5, 10].map((mins) => (
+                  <button
+                    key={mins}
+                    type="button"
+                    onClick={() => {
+                      setSelectedMinutes(mins);
+                    }}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                      selectedMinutes === mins
+                        ? "bg-amber-500 text-black shadow-xs"
+                        : "border border-border-color bg-surface text-muted hover:text-foreground hover:bg-surface-elevated"
+                    }`}
+                  >
+                    {mins}m
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Action 3: Switch Package Plan */}

@@ -10,6 +10,16 @@ import { ALL_ROLE_CAPABILITIES, fetchReminderThreshold, saveReminderThreshold, f
 import { useLanguage, LANGUAGE_NAMES, LANGUAGE_FLAGS, LanguageAutoTranslator, type Language } from "@/lib/i18n";
 import { initActivityTracker } from "@/lib/activity-tracker";
 import {
+  SUBSCRIPTION_PACKAGES,
+  getCompanySubscription,
+  getRemainingTrialSeconds,
+  isTrialExpired,
+  formatTrialCountdown,
+  type CompanySubscription,
+} from "@/lib/packages";
+import { PackageSwitcherModal } from "./package-switcher-modal";
+import { TrialExpiredGatewayModal } from "./trial-expired-gateway-modal";
+import {
   LayoutDashboard, Building2, Users, DollarSign, Wrench, ClipboardList,
   Truck, SearchCheck, CalendarClock, Package, FileSignature, Settings,
   History, Landmark, BedDouble, KeyRound, Briefcase, Layers, ChevronDown,
@@ -237,6 +247,38 @@ export function AppShell({ children }: { children: ReactNode }) {
     setReminderThreshold(hours);
     await saveReminderThreshold(currentCompany.id, hours);
   };
+
+  // Subscription & Live Trial Countdown State
+  const [sub, setSub] = useState<CompanySubscription>(() =>
+    getCompanySubscription(currentCompany?.id || "default")
+  );
+  const [remainingTrialSec, setRemainingTrialSec] = useState<number>(() =>
+    getRemainingTrialSeconds(sub)
+  );
+  const [packageModalOpen, setPackageModalOpen] = useState(false);
+
+  useEffect(() => {
+    const handleSubChange = () => {
+      const updated = getCompanySubscription(currentCompany?.id || "default");
+      setSub(updated);
+      setRemainingTrialSec(getRemainingTrialSeconds(updated));
+    };
+    handleSubChange();
+    window.addEventListener("paimba_package_changed", handleSubChange);
+    return () => window.removeEventListener("paimba_package_changed", handleSubChange);
+  }, [currentCompany?.id]);
+
+  useEffect(() => {
+    if (!sub.packageModeEnabled || !sub.isTrial || sub.status === "active") return;
+    const timer = setInterval(() => {
+      const rem = getRemainingTrialSeconds(sub);
+      setRemainingTrialSec(rem);
+      if (rem <= 0) {
+        setSub((prev) => ({ ...prev, status: "expired" }));
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [sub]);
 
   const userEmail = user?.email || currentCompanyUser.email;
 
@@ -508,6 +550,46 @@ export function AppShell({ children }: { children: ReactNode }) {
                 )}
               </div>
 
+              {/* TEMPORARY TEST FEATURE: Remove before production launch */}
+              <button
+                type="button"
+                onClick={() => setPackageModalOpen(true)}
+                title="Switch Subscription Package / Test Stripe"
+                className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition shadow-xs ${
+                  !sub.packageModeEnabled
+                    ? "border-dashed border-border-color bg-surface-elevated/70 text-muted"
+                    : isTrialExpired(sub)
+                    ? "border-red-500/50 bg-red-500/15 text-red-400 animate-pulse"
+                    : sub.status === "active"
+                    ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
+                    : "border-blue-500/40 bg-blue-500/15 text-blue-400"
+                }`}
+              >
+                <Package size={14} className={isTrialExpired(sub) ? "text-red-400" : "text-blue-400"} />
+                <span>
+                  {SUBSCRIPTION_PACKAGES[sub.packageId]?.name || "Starter"} ($
+                  {SUBSCRIPTION_PACKAGES[sub.packageId]?.priceUsd || 5})
+                </span>
+                {sub.packageModeEnabled && sub.isTrial && sub.status !== "active" && (
+                  <span
+                    className={`ml-1 rounded-md px-1.5 py-0.5 text-[10px] font-mono font-black ${
+                      isTrialExpired(sub)
+                        ? "bg-red-500 text-white"
+                        : remainingTrialSec < 15
+                        ? "bg-amber-500 text-black animate-pulse"
+                        : "bg-blue-600 text-white"
+                    }`}
+                  >
+                    {isTrialExpired(sub) ? "EXPIRED" : formatTrialCountdown(remainingTrialSec)}
+                  </span>
+                )}
+                {!sub.packageModeEnabled && (
+                  <span className="ml-1 rounded-md bg-muted/20 px-1.5 py-0.5 text-[10px] font-bold text-muted">
+                    OFF
+                  </span>
+                )}
+              </button>
+
               <button
                 type="button"
                 onClick={() => setCheckinOpen(true)}
@@ -677,6 +759,25 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       )}
+
+      {/* Package Switcher Modal */}
+      <PackageSwitcherModal
+        open={packageModalOpen}
+        onClose={() => setPackageModalOpen(false)}
+        companyId={currentCompany?.id || "default"}
+      />
+
+      {/* Trial Expired Gateway Modal */}
+      <TrialExpiredGatewayModal
+        open={isTrialExpired(sub) && !packageModalOpen}
+        companyId={currentCompany?.id || "default"}
+        onOpenPackageSwitcher={() => setPackageModalOpen(true)}
+        onTrialRestarted={() => {
+          const updated = getCompanySubscription(currentCompany?.id || "default");
+          setSub(updated);
+          setRemainingTrialSec(getRemainingTrialSeconds(updated));
+        }}
+      />
     </div>
   );
 }

@@ -48,6 +48,7 @@ import {
   switchCompanyPackage,
   getRemainingTrialSeconds,
   isTrialExpired,
+  formatTrialCountdown,
   type CompanySubscription,
   type PackageId,
 } from "@/lib/packages";
@@ -161,16 +162,21 @@ export default function SettingsPage() {
   }, [sub]);
 
   const [pkgNotice, setPkgNotice] = useState<string | null>(null);
+  const [trialMinutesSetting, setTrialMinutesSetting] = useState<number>(() =>
+    Math.max(1, Math.round((sub.trialDurationSeconds || 60) / 60))
+  );
 
   const handleSelectPackageFromSettings = (pkgId: PackageId) => {
     if (pkgId === "test") {
       setStripeModalOpen(true);
       return;
     }
-    const updated = switchCompanyPackage(currentCompany.id, pkgId, true);
-    setSub(updated);
-    setRemSeconds(60);
-    setPkgNotice(`Switched to ${SUBSCRIPTION_PACKAGES[pkgId].name}! (1-minute trial active)`);
+    const durationSeconds = trialMinutesSetting * 60;
+    switchCompanyPackage(currentCompany.id, pkgId, true);
+    const refreshed = restartCompanyTrial(currentCompany.id, durationSeconds);
+    setSub(refreshed);
+    setRemSeconds(durationSeconds);
+    setPkgNotice(`Switched to ${SUBSCRIPTION_PACKAGES[pkgId].name}! (${trialMinutesSetting}-minute trial active)`);
     setTimeout(() => setPkgNotice(null), 3500);
   };
 
@@ -650,24 +656,54 @@ export default function SettingsPage() {
                             ? "Trial Expired"
                             : sub.status === "active"
                             ? "Active / Paid"
-                            : `Trial (${remSeconds}s remaining)`}
+                            : `Trial (${formatTrialCountdown(remSeconds)} remaining)`}
                         </span>
                       </div>
                       <p className="text-xs text-muted mt-1">{currentPlan.tagline}</p>
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-1 bg-surface-elevated/70 p-1 rounded-xl border border-border-color">
+                        <span className="text-[10px] font-bold text-muted px-1.5 uppercase">Minutes:</span>
+                        {[1, 2, 3, 5, 10].map((mins) => (
+                          <button
+                            key={mins}
+                            type="button"
+                            onClick={() => {
+                              setTrialMinutesSetting(mins);
+                              const durationSeconds = mins * 60;
+                              const updated = restartCompanyTrial(currentCompany.id, durationSeconds);
+                              setSub(updated);
+                              setRemSeconds(durationSeconds);
+                              setPkgNotice(`Trial restarted for ${mins} minute${mins > 1 ? "s" : ""}!`);
+                              setTimeout(() => setPkgNotice(null), 3000);
+                            }}
+                            className={`rounded-lg px-2 py-1 text-xs font-bold transition ${
+                              trialMinutesSetting === mins
+                                ? "bg-amber-500 text-black shadow-xs"
+                                : "text-muted hover:text-foreground hover:bg-surface"
+                            }`}
+                            title={`Set trial duration to ${mins} minutes and restart`}
+                          >
+                            {mins}m
+                          </button>
+                        ))}
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => {
-                          const updated = restartCompanyTrial(currentCompany.id);
+                          const durationSeconds = trialMinutesSetting * 60;
+                          const updated = restartCompanyTrial(currentCompany.id, durationSeconds);
                           setSub(updated);
-                          setRemSeconds(60);
+                          setRemSeconds(durationSeconds);
+                          setPkgNotice(`Trial restarted for ${trialMinutesSetting} minute${trialMinutesSetting > 1 ? "s" : ""}!`);
+                          setTimeout(() => setPkgNotice(null), 3000);
                         }}
                         className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition shadow-xs"
                       >
                         <RotateCcw size={13} className="text-amber-400" />
-                        <span>Restart 1-Min Trial</span>
+                        <span>Restart ({trialMinutesSetting}m)</span>
                       </button>
 
                       <button

@@ -393,16 +393,44 @@ export function switchCompanyPackage(
 }
 
 /**
- * Restart the 1-minute trial for testing.
+ * Format remaining seconds into a digital countdown: "01:00", "00:59", "03:15", etc.
  */
-export function restartCompanyTrial(companyId: string): CompanySubscription {
+export function formatTrialCountdown(seconds: number): string {
+  if (seconds <= 0) return "00:00";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+}
+
+/**
+ * Restart the trial for testing with customizable duration (e.g. 1 min, 2 min, 3 min, 5 min).
+ */
+export function restartCompanyTrial(companyId: string, durationSeconds?: number): CompanySubscription {
   const current = getCompanySubscription(companyId);
+  const duration = durationSeconds && durationSeconds > 0 ? durationSeconds : (current.trialDurationSeconds || DEFAULT_TRIAL_SECONDS);
   const updated: CompanySubscription = {
     ...current,
     isTrial: true,
     status: "trial",
     trialStartedAt: Date.now(),
-    trialDurationSeconds: DEFAULT_TRIAL_SECONDS,
+    trialDurationSeconds: duration,
+  };
+  saveCompanySubscription(companyId, updated);
+  return updated;
+}
+
+/**
+ * Set custom trial minutes (e.g. 2, 3, 5 minutes) and optionally restart immediately.
+ */
+export function setCompanyTrialMinutes(companyId: string, minutes: number, restartNow = true): CompanySubscription {
+  const durationSeconds = Math.max(10, Math.round(minutes * 60));
+  if (restartNow) {
+    return restartCompanyTrial(companyId, durationSeconds);
+  }
+  const current = getCompanySubscription(companyId);
+  const updated: CompanySubscription = {
+    ...current,
+    trialDurationSeconds: durationSeconds,
   };
   saveCompanySubscription(companyId, updated);
   return updated;

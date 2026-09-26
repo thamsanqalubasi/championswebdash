@@ -8,6 +8,7 @@ import {
   setPackageModeEnabled,
   getRemainingTrialSeconds,
   isTrialExpired,
+  formatTrialCountdown,
   type PackageId,
   type CompanySubscription,
 } from "@/lib/packages";
@@ -99,12 +100,18 @@ export function PackageSwitcherModal({
     setTimeout(() => setActionNotice(null), 3500);
   };
 
-  // Restart 1-minute trial
-  const handleRestartTrial = () => {
-    const updated = restartCompanyTrial(companyId);
+  const [selectedMinutes, setSelectedMinutes] = useState<number>(() =>
+    Math.max(1, Math.round((sub.trialDurationSeconds || 60) / 60))
+  );
+
+  // Restart trial with customizable duration (1, 2, 3, 5, 10 minutes)
+  const handleRestartTrial = (mins?: number) => {
+    const minutesToUse = mins || selectedMinutes;
+    const durationSeconds = minutesToUse * 60;
+    const updated = restartCompanyTrial(companyId, durationSeconds);
     setSub(updated);
-    setRemainingSeconds(60);
-    setActionNotice("1-Minute Trial restarted successfully!");
+    setRemainingSeconds(durationSeconds);
+    setActionNotice(`Test trial restarted for ${minutesToUse} minute${minutesToUse > 1 ? "s" : ""}!`);
     setTimeout(() => setActionNotice(null), 3000);
   };
 
@@ -197,13 +204,13 @@ export function PackageSwitcherModal({
                     <div className="flex items-center gap-2">
                       <h4 className="font-bold text-sm text-foreground">
                         {expired
-                          ? "Your 1-Minute Trial Has Expired"
+                          ? `Your ${Math.round((sub.trialDurationSeconds || 60) / 60)}-Minute Trial Has Expired`
                           : sub.status === "active"
                           ? `Active Plan: ${currentPlan.name} (Paid)`
                           : `Active Trial: ${currentPlan.name}`}
                       </h4>
                       <span
-                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full font-mono ${
                           expired
                             ? "bg-red-500/20 text-red-400 border border-red-500/30"
                             : sub.status === "active"
@@ -211,28 +218,54 @@ export function PackageSwitcherModal({
                             : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
                         }`}
                       >
-                        {expired ? "Expired" : sub.status === "active" ? "Active" : `${remainingSeconds}s Remaining`}
+                        {expired
+                          ? "Expired"
+                          : sub.status === "active"
+                          ? "Active"
+                          : `${formatTrialCountdown(remainingSeconds)} Remaining`}
                       </span>
                     </div>
                     <p className="text-xs text-muted mt-0.5">
                       {expired
-                        ? "The 1-minute trial period ended. Test Stripe payment ($2) or restart the trial below."
+                        ? "The trial period ended. Test Stripe payment ($2) or choose new minutes and restart below."
                         : sub.status === "active"
                         ? "Subscription is fully active and verified."
-                        : `Test trial lasts 60 seconds. Currently on ${currentPlan.name}.`}
+                        : `Test trial is counting down live. Change minutes or restart anytime.`}
                     </p>
                   </div>
                 </div>
 
-                {/* Expiration action buttons */}
-                <div className="flex items-center gap-2">
+                {/* Expiration action buttons & minute selector */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1 bg-surface-elevated/70 p-1 rounded-xl border border-border-color">
+                    <span className="text-[10px] font-bold text-muted px-1.5 uppercase">Minutes:</span>
+                    {[1, 2, 3, 5, 10].map((mins) => (
+                      <button
+                        key={mins}
+                        type="button"
+                        onClick={() => {
+                          setSelectedMinutes(mins);
+                          handleRestartTrial(mins);
+                        }}
+                        className={`rounded-lg px-2 py-1 text-xs font-bold transition ${
+                          selectedMinutes === mins
+                            ? "bg-amber-500 text-black shadow-xs"
+                            : "text-muted hover:text-foreground hover:bg-surface"
+                        }`}
+                        title={`Restart trial for ${mins} minutes`}
+                      >
+                        {mins}m
+                      </button>
+                    ))}
+                  </div>
+
                   <button
                     type="button"
-                    onClick={handleRestartTrial}
-                    className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface hover:border-foreground/30 transition shadow-xs"
+                    onClick={() => handleRestartTrial()}
+                    className="flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-surface px-3 py-2 text-xs font-bold text-amber-400 hover:bg-amber-500/10 transition shadow-xs"
                   >
                     <RotateCcw size={14} className="text-amber-400" />
-                    <span>Restart 1-Minute Trial</span>
+                    <span>Restart ({selectedMinutes}m)</span>
                   </button>
 
                   <button
@@ -253,15 +286,25 @@ export function PackageSwitcherModal({
               {sub.isTrial && sub.status !== "active" && (
                 <div className="mt-3">
                   <div className="flex justify-between text-[11px] text-muted mb-1 font-mono">
-                    <span>Trial Progress</span>
-                    <span>{remainingSeconds} seconds left</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                      Live Trial Countdown
+                    </span>
+                    <span className="font-bold text-foreground">
+                      {formatTrialCountdown(remainingSeconds)} ({remainingSeconds}s total)
+                    </span>
                   </div>
                   <div className="h-1.5 w-full rounded-full bg-surface overflow-hidden">
                     <div
                       className={`h-full transition-all duration-1000 ${
                         expired ? "bg-red-500" : remainingSeconds < 15 ? "bg-amber-500" : "bg-blue-500"
                       }`}
-                      style={{ width: `${Math.min(100, (remainingSeconds / 60) * 100)}%` }}
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          (remainingSeconds / (sub.trialDurationSeconds || 60)) * 100
+                        )}%`,
+                      }}
                     />
                   </div>
                 </div>
