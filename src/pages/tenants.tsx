@@ -4,6 +4,8 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { fetchTenantsData, isValidUuid, fetchCompanyUsers, canDeleteSuppressedRecords, syncPropertyOccupancyStatus } from "@/lib/data";
 import { PinPromptDialog } from "@/components/pin-dialog";
+import { PackageLimitModal } from "@/components/package-limit-modal";
+import { checkPackageCapacityLimit } from "@/lib/packages";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
@@ -547,7 +549,16 @@ export default function TenantsPage() {
     return filtered.slice(start, start + itemsPerPage);
   }, [filtered, currentPage]);
 
+  const [tenantLimitModal, setTenantLimitModal] = useState<{
+    currentCount?: number; maxLimit?: number; planName: string;
+  } | null>(null);
+
   const openAdd = () => {
+    const limitCheck = checkPackageCapacityLimit(currentCompany.id, "tenants", tenants.length);
+    if (!limitCheck.allowed) {
+      setTenantLimitModal({ currentCount: limitCheck.current, maxLimit: limitCheck.max, planName: limitCheck.planName });
+      return;
+    }
     setEditingId(null);
     setForm(emptyForm);
     setModalOpen(true);
@@ -4258,6 +4269,17 @@ export default function TenantsPage() {
         tenants={tenants}
         companyName={currentCompany.name}
       />
+      {tenantLimitModal && (
+        <PackageLimitModal
+          open={true}
+          onClose={() => setTenantLimitModal(null)}
+          companyId={currentCompany.id}
+          metric="tenants"
+          currentCount={tenantLimitModal.currentCount}
+          maxLimit={tenantLimitModal.maxLimit}
+          planName={tenantLimitModal.planName}
+        />
+      )}
     </ModulePage>
   );
 }

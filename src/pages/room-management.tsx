@@ -351,15 +351,13 @@ export default function RoomManagementPage() {
   const loadData = async () => {
     setLoading(true);
     const props = await fetchProperties(currentCompany.id);
+    setProperties(props);
 
-    // Strictly filter: only accommodation/hospitality properties, never residential/rental properties
-    const accomm = props.filter((p) => {
-      const t = (p.type || "").toLowerCase().trim();
-      return ["hotel", "motel", "lodge", "guest_house", "commercial", "resort", "inn", "b&b", "hospitality"].includes(t);
-    });
-    setProperties(accomm);
+    const accomm = props.filter((p) =>
+      ["hotel", "motel", "lodge", "guest_house", "commercial"].includes(p.type?.toLowerCase() || "")
+    );
 
-    if ((!selectedPropertyId || !accomm.some((p) => p.id === selectedPropertyId)) && accomm.length > 0) {
+    if (!selectedPropertyId && accomm.length > 0) {
       setSelectedPropertyId(accomm[0].id);
     }
 

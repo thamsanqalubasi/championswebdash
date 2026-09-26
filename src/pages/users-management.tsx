@@ -36,6 +36,8 @@ import {
 } from "@/lib/data";
 import type { CompanyUser, DepartmentType, RoleLevel, RoleProfileDefinition } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
+import { PackageLimitModal } from "@/components/package-limit-modal";
+import { checkPackageCapacityLimit } from "@/lib/packages";
 
 const JOB_TITLES_BY_DEPARTMENT: Record<DepartmentType, Array<{ title: string; defaultLevel: RoleLevel }>> = {
   admin: [
@@ -534,7 +536,16 @@ export default function UsersManagementPage() {
     }
   }, [availableTitles]);
 
+  const [staffLimitModal, setStaffLimitModal] = useState<{
+    currentCount?: number; maxLimit?: number; planName: string;
+  } | null>(null);
+
   const openAddUser = () => {
+    const limitCheck = checkPackageCapacityLimit(currentCompany.id, "staff", users.length);
+    if (!limitCheck.allowed) {
+      setStaffLimitModal({ currentCount: limitCheck.current, maxLimit: limitCheck.max, planName: limitCheck.planName });
+      return;
+    }
     setErrorMsg("");
     setSuccessMsg("");
     setFullName("");
@@ -1753,6 +1764,17 @@ export default function UsersManagementPage() {
         isManager={isManager}
         currentManagerDept={currentCompanyUser?.department}
       />
+      {staffLimitModal && (
+        <PackageLimitModal
+          open={true}
+          onClose={() => setStaffLimitModal(null)}
+          companyId={currentCompany.id}
+          metric="staff"
+          currentCount={staffLimitModal.currentCount}
+          maxLimit={staffLimitModal.maxLimit}
+          planName={staffLimitModal.planName}
+        />
+      )}
     </div>
   );
 }
