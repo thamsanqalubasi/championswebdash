@@ -434,7 +434,7 @@ export function PackageSwitcherModal({
 }
 
 // Plan Card Component
-function PlanCard({
+export function PlanCard({
   plan,
   isCurrent,
   onSelect,

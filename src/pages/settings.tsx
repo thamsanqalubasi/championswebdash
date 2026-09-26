@@ -45,11 +45,13 @@ import {
   getCompanySubscription,
   restartCompanyTrial,
   setPackageModeEnabled,
+  switchCompanyPackage,
   getRemainingTrialSeconds,
   isTrialExpired,
   type CompanySubscription,
+  type PackageId,
 } from "@/lib/packages";
-import { PackageSwitcherModal } from "@/components/package-switcher-modal";
+import { PackageSwitcherModal, PlanCard } from "@/components/package-switcher-modal";
 import { StripePaymentModal } from "@/components/stripe-payment-modal";
 
 export default function SettingsPage() {
@@ -157,6 +159,20 @@ export default function SettingsPage() {
     }, 1000);
     return () => clearInterval(interval);
   }, [sub]);
+
+  const [pkgNotice, setPkgNotice] = useState<string | null>(null);
+
+  const handleSelectPackageFromSettings = (pkgId: PackageId) => {
+    if (pkgId === "test") {
+      setStripeModalOpen(true);
+      return;
+    }
+    const updated = switchCompanyPackage(currentCompany.id, pkgId, true);
+    setSub(updated);
+    setRemSeconds(60);
+    setPkgNotice(`Switched to ${SUBSCRIPTION_PACKAGES[pkgId].name}! (1-minute trial active)`);
+    setTimeout(() => setPkgNotice(null), 3500);
+  };
 
   const reload = () => setReloadKey((v) => v + 1);
 
@@ -560,43 +576,47 @@ export default function SettingsPage() {
       title={`Settings & Security (${currentCompany.name})`}
       description="Manage user credentials, password security, company branding, and financial parameters."
     >
-      {loading && <LoadingState label="Synchronizing cloud settings..." />}
-      {!loading && error && <ErrorState message={error} onRetry={reload} />}
-      {!loading && !error && data && (
-        <div className="max-w-4xl space-y-6 pb-16">
-          {/* Subscription & Commercial Packages (Test Mode) */}
-          <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
-            <div className="mb-6 flex flex-col justify-between gap-4 border-b border-border-color pb-4 sm:flex-row sm:items-center">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600">
-                  <Package size={20} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold text-foreground">Subscription & Billing Packages</h2>
-                    <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
-                      Test Mode Active
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted">
-                    Tiered subscription management, 1-minute trial countdown, Stripe sandbox payment, and feature quota controls.
-                  </p>
-                </div>
+      <div className="max-w-4xl space-y-6 pb-16">
+        {/* Subscription & Commercial Packages (Always accessible at top of Settings) */}
+        <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
+          <div className="mb-6 flex flex-col justify-between gap-4 border-b border-border-color pb-4 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600">
+                <Package size={20} />
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPackageModalOpen(true)}
-                  className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition"
-                >
-                  <ArrowUpRight size={13} />
-                  <span>Switch / Upgrade Plan</span>
-                </button>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold text-foreground">Subscription & Billing Packages</h2>
+                  <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                    Test Mode Active
+                  </span>
+                </div>
+                <p className="text-xs text-muted">
+                  Tiered subscription management, 1-minute trial countdown, Stripe sandbox payment, and feature quota controls.
+                </p>
               </div>
             </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPackageModalOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3.5 py-1.5 text-xs font-semibold text-foreground hover:bg-surface transition shadow-xs"
+              >
+                <ArrowUpRight size={13} />
+                <span>Full Comparison Modal</span>
+              </button>
+            </div>
+          </div>
 
-            {/* Plan Overview & Controls */}
-            {(() => {
+          {pkgNotice && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl bg-blue-600/15 border border-blue-500/30 p-3 text-xs text-blue-300 font-medium animate-in fade-in">
+              <CheckCircle2 size={16} className="shrink-0 text-blue-400" />
+              <span>{pkgNotice}</span>
+            </div>
+          )}
+
+          {/* Plan Overview & Controls */}
+          {(() => {
               const currentPlan = SUBSCRIPTION_PACKAGES[sub.packageId] || SUBSCRIPTION_PACKAGES.starter;
               const expired = isTrialExpired(sub);
               return (
@@ -721,8 +741,57 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
+                  {/* Direct 5-Plan Selector Grid Right on Settings Page */}
+                  <div className="pt-2 border-t border-border-color">
+                    <div className="flex items-center justify-between mb-2.5">
+                      <div>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                          Change Package (Click Any Plan to Switch)
+                        </h4>
+                        <p className="text-[11px] text-muted">
+                          Select any tier below to test functionality. Non-test tiers switch instantly with no card needed.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                      <PlanCard
+                        plan={SUBSCRIPTION_PACKAGES.starter}
+                        isCurrent={sub.packageId === "starter"}
+                        onSelect={() => handleSelectPackageFromSettings("starter")}
+                        priceDisplay="$5"
+                      />
+                      <PlanCard
+                        plan={SUBSCRIPTION_PACKAGES.standard}
+                        isCurrent={sub.packageId === "standard"}
+                        onSelect={() => handleSelectPackageFromSettings("standard")}
+                        priceDisplay="$20"
+                        recommended
+                      />
+                      <PlanCard
+                        plan={SUBSCRIPTION_PACKAGES.pro}
+                        isCurrent={sub.packageId === "pro"}
+                        onSelect={() => handleSelectPackageFromSettings("pro")}
+                        priceDisplay="$50"
+                      />
+                      <PlanCard
+                        plan={SUBSCRIPTION_PACKAGES.enterprise}
+                        isCurrent={sub.packageId === "enterprise"}
+                        onSelect={() => handleSelectPackageFromSettings("enterprise")}
+                        priceDisplay="$200"
+                      />
+                      <PlanCard
+                        plan={SUBSCRIPTION_PACKAGES.test}
+                        isCurrent={sub.packageId === "test"}
+                        onSelect={() => handleSelectPackageFromSettings("test")}
+                        priceDisplay="$2"
+                        isTestBadge
+                      />
+                    </div>
+                  </div>
+
                   <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3 text-xs">
-                    <p className="font-semibold text-foreground mb-1">Commercial Placement Rationale:</p>
+                    <p className="font-semibold text-foreground mb-1">Active Tier Commercial Rationale:</p>
                     <p className="text-muted leading-relaxed">{currentPlan.commercialRationale.whyThisPrice}</p>
                   </div>
                 </div>
@@ -730,8 +799,12 @@ export default function SettingsPage() {
             })()}
           </section>
 
-          {/* Staff Personal Profile & Digital Signature */}
-          <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
+          {loading && <LoadingState label="Synchronizing cloud settings..." />}
+          {!loading && error && <ErrorState message={error} onRetry={reload} />}
+          {!loading && !error && data && (
+            <>
+              {/* Staff Personal Profile & Digital Signature */}
+              <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
             <SectionHeader
               icon={UserIcon}
               title="Staff Profile & Digital Signature"
@@ -1098,8 +1171,9 @@ export default function SettingsPage() {
               <p className="mt-1 text-foreground whitespace-pre-wrap">{currentCompany.paymentInstructions || "No instructions provided."}</p>
             </div>
           </section>
-        </div>
+        </>
       )}
+    </div>
 
       {/* Edit Company Modal */}
       <Modal open={editSection === "company"} onClose={() => setEditSection(null)} title="Edit Organization Details">
