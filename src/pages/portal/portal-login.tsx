@@ -106,16 +106,9 @@ export default function PortalLoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault(); setError(""); setLoading(true);
     try {
-      const normalizedEmail = email.trim().toLowerCase();
-      const { error: err } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+      const { error: err } = await supabase.auth.signInWithPassword({ email, password });
       if (err) throw err;
-      await bindTenantProperty(normalizedEmail);
-      localStorage.setItem("paimba_customer_session", JSON.stringify({
-        email: normalizedEmail,
-        role: "customer",
-        type: "customer",
-        loggedInAt: new Date().toISOString(),
-      }));
+      await bindTenantProperty(email);
       navigate("/portal/dashboard");
     } catch (err: any) { setError(err.message || "Login failed."); }
     setLoading(false);
@@ -132,17 +125,10 @@ export default function PortalLoginPage() {
       return;
     }
     try {
-      const normalizedEmail = email.trim().toLowerCase();
-      const { error: err } = await supabase.auth.signUp({ email: normalizedEmail, password, options: { data: { full_name: name } } });
+      const { error: err } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
       if (err) throw err;
 
-      await bindTenantProperty(normalizedEmail);
-      localStorage.setItem("paimba_customer_session", JSON.stringify({
-        email: normalizedEmail,
-        role: "customer",
-        type: "customer",
-        loggedInAt: new Date().toISOString(),
-      }));
+      await bindTenantProperty(email);
 
       try {
         const origin = typeof window !== "undefined" ? window.location.origin : "https://paimbabook.com";

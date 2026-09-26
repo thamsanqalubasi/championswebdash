@@ -6,7 +6,7 @@ import type { Company } from "@/lib/types";
 import { Lock, Mail, KeyRound, Building2, ShieldCheck, ArrowRight, Sparkles, Globe } from "lucide-react";
 
 export default function LoginPage() {
-  const { signIn, user, setCurrentCompany } = useAuth();
+  const { signIn, user, isStaffAuthenticated, setCurrentCompany } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { companySlug } = useParams<{ companySlug?: string }>();
@@ -42,8 +42,8 @@ export default function LoginPage() {
       });
   }, [companySlug, setCurrentCompany]);
 
-  // Redirect if already logged in
-  if (user) {
+  // Redirect only if staff is actually authenticated
+  if (user && isStaffAuthenticated) {
     const nextPath = searchParams.get("next") || "/dashboard";
     return <Navigate to={nextPath} replace />;
   }
@@ -221,6 +221,20 @@ export default function LoginPage() {
               </Link>
             </div>
           )}
+
+          {/* Customer / Resident Portal Link */}
+          <div className="rounded-xl border border-blue-500/20 bg-blue-50/50 dark:bg-blue-950/20 p-3 text-center text-xs">
+            <p className="text-muted text-[11px]">
+              Are you a tenant, resident, or lodging guest?
+            </p>
+            <Link
+              to="/portal/login"
+              className="mt-1 inline-flex items-center gap-1 font-bold text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              <Globe size={13} />
+              <span>Go to Resident &amp; Customer Portal Login &rarr;</span>
+            </Link>
+          </div>
         </div>
 
         <footer className="text-center text-[11px] text-muted">

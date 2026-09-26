@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { clearCustomerSession, getCustomerSession } from "@/lib/auth";
 import {
   MessageSquare,
   CheckCircle,
@@ -215,29 +216,28 @@ export default function CustomerDashboardPage() {
   }, [assignedTenant, tenantContracts]);
 
   useEffect(() => {
-    const customerSessionRaw = typeof window !== "undefined" ? localStorage.getItem("paimba_customer_session") : null;
-    if (!customerSessionRaw) {
-      navigate("/portal/login");
+    const custSession = getCustomerSession();
+    if (!custSession || !custSession.email) {
+      navigate("/portal/login", { replace: true });
       return;
     }
 
     supabase.auth.getSession().then(({ data }) => {
-      let activeEmail = "";
-      if (data.session?.user?.email) {
-        activeEmail = data.session.user.email;
+      const activeEmail = custSession.email;
+      if (data.session && data.session.user?.email?.toLowerCase() === activeEmail.toLowerCase()) {
         setSession(data.session);
+        void loadAllPortalData(activeEmail, data.session);
       } else {
-        try {
-          const parsed = JSON.parse(customerSessionRaw);
-          activeEmail = parsed.email;
-          setSession({ user: { email: parsed.email } });
-        } catch {}
+        const syntheticSession = {
+          user: {
+            id: custSession.userId || "customer",
+            email: activeEmail,
+            user_metadata: { full_name: custSession.name || activeEmail.split("@")[0] },
+          },
+        };
+        setSession(syntheticSession as any);
+        void loadAllPortalData(activeEmail, syntheticSession);
       }
-      if (!activeEmail) {
-        navigate("/portal/login");
-        return;
-      }
-      void loadAllPortalData(activeEmail, data.session);
     });
   }, [navigate]);
 
@@ -1039,7 +1039,7 @@ export default function CustomerDashboardPage() {
   };
 
   const handleSignOut = async () => {
-    localStorage.removeItem("paimba_customer_session");
+    clearCustomerSession();
     try {
       await supabase.auth.signOut();
     } catch {}

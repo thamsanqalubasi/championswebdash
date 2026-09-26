@@ -76,10 +76,85 @@ const DEFAULT_COMPANY_USER: CompanyUser = {
   createdAt: "2026-01-01T00:00:00Z",
 };
 
+export const STAFF_SESSION_KEY = "paimba_staff_session";
+export const CUSTOMER_SESSION_KEY = "paimba_customer_session";
+
+export type StaffSessionData = {
+  email: string;
+  userId?: string;
+  companyId?: string;
+  roleLevel?: string;
+  loginType: "staff";
+  timestamp: number;
+};
+
+export type CustomerSessionData = {
+  email: string;
+  userId?: string;
+  name?: string;
+  loginType: "customer";
+  timestamp: number;
+};
+
+export function getStaffSession(): StaffSessionData | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(STAFF_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.loginType === "staff" && parsed.email) {
+      return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+export function setStaffSession(data: StaffSessionData): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(STAFF_SESSION_KEY, JSON.stringify(data));
+  } catch {}
+}
+
+export function clearStaffSession(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(STAFF_SESSION_KEY);
+  } catch {}
+}
+
+export function getCustomerSession(): CustomerSessionData | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(CUSTOMER_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.loginType === "customer" && parsed.email) {
+      return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+export function setCustomerSession(data: CustomerSessionData): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(data));
+  } catch {}
+}
+
+export function clearCustomerSession(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(CUSTOMER_SESSION_KEY);
+  } catch {}
+}
+
 type AuthState = {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  isStaffAuthenticated: boolean;
   currentCompany: Company;
   companies: Company[];
   currentCompanyUser: CompanyUser;
@@ -105,6 +180,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isStaffAuthenticated, setIsStaffAuthenticated] = useState<boolean>(() => {
+    return !!getStaffSession();
+  });
   const [currentCompany, setCurrentCompanyState] = useState<Company>(() => {
     const saved = localStorage.getItem("cc_selected_company");
     if (saved) {
@@ -297,41 +375,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener("focus", handleFocus);
 
-    // Fetch initial session - strictly check for dedicated staff session
-    const staffSessionRaw = typeof window !== "undefined" ? localStorage.getItem("paimba_staff_session") : null;
-    if (!staffSessionRaw) {
-      setSession(null);
-      setUser(null);
-      setLoading(false);
-    } else {
-      supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+    const resolveStaffAuth = async (currentSession: Session | null) => {
+      const staffSession = getStaffSession();
+
+      if (staffSession && currentSession?.user?.email && staffSession.email.toLowerCase() === currentSession.user.email.toLowerCase()) {
         setSession(currentSession);
-        setUser(currentSession?.user ?? null);
-        if (currentSession?.user?.email) {
-          void syncUserProfile(currentSession.user.email);
+        setUser(currentSession.user);
+        setIsStaffAuthenticated(true);
+        await syncUserProfile(currentSession.user.email);
+      } else if (staffSession && (!currentSession || !currentSession.user)) {
+        // Fallback for mock / local demo staff session
+        const mockMatch = MOCK_COMPANY_USERS.find((u) => u.email.toLowerCase() === staffSession.email.toLowerCase());
+        if (mockMatch) {
+          const mockUser: User = {
+            id: mockMatch.userId,
+            app_metadata: {},
+            user_metadata: { full_name: mockMatch.fullName },
+            aud: "authenticated",
+            created_at: mockMatch.createdAt,
+            email: mockMatch.email,
+            phone: "",
+            role: "authenticated",
+            updated_at: new Date().toISOString(),
+          };
+          setUser(mockUser);
+          setIsStaffAuthenticated(true);
+          await syncUserProfile(mockMatch.email);
         } else {
-          try {
-            const parsed = JSON.parse(staffSessionRaw);
-            if (parsed.email) void syncUserProfile(parsed.email);
-          } catch {}
+          clearStaffSession();
+          setUser(null);
+          setSession(null);
+          setIsStaffAuthenticated(false);
         }
-        setLoading(false);
-      });
-    }
+      } else {
+        // No valid staff session! (e.g. logged into customer portal or logged out)
+        // Staff portal must NOT authenticate them as staff
+        setUser(null);
+        setSession(null);
+        setIsStaffAuthenticated(false);
+      }
+      setLoading(false);
+    };
+
+    // Fetch initial session
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      void resolveStaffAuth(currentSession);
+    });
 
     // Listen for auth changes (including recovery & invite tokens)
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      const activeStaff = typeof window !== "undefined" ? localStorage.getItem("paimba_staff_session") : null;
-      if (activeStaff) {
-        setSession(newSession);
-        setUser(newSession?.user ?? null);
-        if (newSession?.user?.email) {
-          void syncUserProfile(newSession.user.email);
-        }
-      }
-      setLoading(false);
+      void resolveStaffAuth(newSession);
     });
 
     return () => {
@@ -341,129 +436,135 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
-    if (error) {
-      // 1. Check if user is a registered company staff in Supabase
-      try {
-        const { data: cuList } = await supabase
-          .from("company_users")
-          .select("*, companies(*), users!inner(*)")
-          .ilike("users.email", normalizedEmail)
-          .limit(1);
+    const cleanEmail = email.trim().toLowerCase();
 
-        if (cuList && cuList.length > 0 && password.length >= 6) {
-          const cu = cuList[0];
+    // 1. Verify if user is registered staff / admin in Supabase or mock lists
+    let isAuthorizedStaff = false;
+    let matchedCompanyId: string | undefined;
+    let matchedRoleLevel: string | undefined;
+
+    try {
+      const { data: cuList } = await supabase
+        .from("company_users")
+        .select("*, companies(*), users!inner(*)")
+        .ilike("users.email", cleanEmail)
+        .limit(1);
+
+      if (cuList && cuList.length > 0) {
+        isAuthorizedStaff = true;
+        matchedCompanyId = cuList[0].company_id;
+        matchedRoleLevel = cuList[0].role_level;
+      }
+    } catch (e) {
+      console.warn("Could not verify staff role in company_users:", e);
+    }
+
+    if (!isAuthorizedStaff) {
+      try {
+        const allCompanies = await fetchCompanies();
+        for (const comp of allCompanies) {
+          const compUsers = await fetchCompanyUsers(comp.id);
+          const match = compUsers.find((u) => u.email?.toLowerCase() === cleanEmail);
+          if (match) {
+            isAuthorizedStaff = true;
+            matchedCompanyId = comp.id;
+            matchedRoleLevel = match.roleLevel;
+            break;
+          }
+        }
+      } catch (err) {
+        console.warn("Could not verify staff via companies lookup:", err);
+      }
+    }
+
+    if (!isAuthorizedStaff) {
+      const mockMatch = MOCK_COMPANY_USERS.find((u) => u.email.toLowerCase() === cleanEmail);
+      if (mockMatch) {
+        isAuthorizedStaff = true;
+        matchedCompanyId = mockMatch.companyId;
+        matchedRoleLevel = mockMatch.roleLevel;
+      }
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+
+    if (error) {
+      // Check if user is a registered company staff in Supabase (with fallback mock user)
+      if (isAuthorizedStaff && password.length >= 6) {
+        const mock = MOCK_COMPANY_USERS.find((u) => u.email.toLowerCase() === cleanEmail);
+        if (mock) {
           const mockUser: User = {
-            id: cu.user_id,
+            id: mock.userId,
             app_metadata: {},
-            user_metadata: { full_name: [cu.users?.first_name, cu.users?.last_name].filter(Boolean).join(" ") },
+            user_metadata: { full_name: mock.fullName },
             aud: "authenticated",
-            created_at: cu.created_at,
-            email: cu.users?.email || normalizedEmail,
+            created_at: mock.createdAt,
+            email: mock.email,
             phone: "",
             role: "authenticated",
             updated_at: new Date().toISOString(),
           };
+          clearCustomerSession();
+          setStaffSession({
+            email: cleanEmail,
+            userId: mock.userId,
+            companyId: mock.companyId,
+            roleLevel: mock.roleLevel,
+            loginType: "staff",
+            timestamp: Date.now(),
+          });
           setUser(mockUser);
-          if (cu.companies) {
-            const comp: Company = {
-              id: cu.companies.id,
-              name: cu.companies.name,
-              slug: cu.companies.slug,
-              logoUrl: cu.companies.logo_url,
-              logoBucketPath: cu.companies.logo_bucket_path,
-              address: cu.companies.address,
-              phone: cu.companies.phone,
-              email: cu.companies.email,
-              taxRate: Number(cu.companies.tax_rate ?? 0) || 0,
-              currency: cu.companies.currency || "ZAR",
-              defaultDueDay: cu.companies.default_due_day,
-              paymentInstructions: cu.companies.payment_instructions,
-              createdAt: cu.companies.created_at,
-            };
-            setCurrentCompany(comp);
-          }
-          const matchedUser: CompanyUser = {
-            id: cu.id,
-            companyId: cu.company_id,
-            userId: cu.user_id,
-            email: cu.users?.email || normalizedEmail,
-            fullName: [cu.users?.first_name, cu.users?.last_name].filter(Boolean).join(" ") || "Staff Member",
-            department: cu.department as DepartmentType,
-            jobTitle: cu.job_title,
-            roleLevel: cu.role_level as RoleLevel,
-            permissions: cu.permissions || {},
-            isActive: cu.is_active,
-            createdAt: cu.created_at,
-          };
-          setCurrentCompanyUser(matchedUser);
-          localStorage.setItem("paimba_staff_session", JSON.stringify({
-            email: normalizedEmail,
-            userId: cu.user_id,
-            companyId: cu.company_id,
-            role: cu.role_level,
-            type: "staff",
-            loggedInAt: new Date().toISOString(),
-          }));
+          setIsStaffAuthenticated(true);
+          const comp = MOCK_COMPANIES.find((c) => c.id === mock.companyId) || DEFAULT_COMPANY;
+          setCurrentCompany(comp);
+          setCurrentCompanyUser(mock);
           return { error: null };
         }
-      } catch (staffErr) {
-        console.warn("Could not check staff login fallback", staffErr);
-      }
-
-      // 2. Check if user exists in local mock list for demo / offline
-      const mock = MOCK_COMPANY_USERS.find((u) => u.email.toLowerCase() === normalizedEmail);
-      if (mock && password.length >= 6) {
-        const mockUser: User = {
-          id: mock.userId,
-          app_metadata: {},
-          user_metadata: { full_name: mock.fullName },
-          aud: "authenticated",
-          created_at: mock.createdAt,
-          email: mock.email,
-          phone: "",
-          role: "authenticated",
-          updated_at: new Date().toISOString(),
-        };
-        setUser(mockUser);
-        const comp = MOCK_COMPANIES.find((c) => c.id === mock.companyId) || DEFAULT_COMPANY;
-        setCurrentCompany(comp);
-        setCurrentCompanyUser(mock);
-        localStorage.setItem("paimba_staff_session", JSON.stringify({
-          email: normalizedEmail,
-          userId: mock.userId,
-          companyId: mock.companyId,
-          role: mock.roleLevel,
-          type: "staff",
-          loggedInAt: new Date().toISOString(),
-        }));
-        return { error: null };
       }
       return { error: error.message };
     }
 
+    // Supabase auth succeeded. Verify staff authorization:
+    if (!isAuthorizedStaff) {
+      // User is registered in Supabase (e.g. as a customer/tenant), but is NOT staff
+      await supabase.auth.signOut();
+      clearStaffSession();
+      setIsStaffAuthenticated(false);
+      return {
+        error: "This account does not have staff or management privileges. If you are a guest or resident, please sign in via the Customer Portal at /portal/login.",
+      };
+    }
+
+    // Establish staff session & clear customer session
+    clearCustomerSession();
+    setStaffSession({
+      email: cleanEmail,
+      userId: data.user?.id,
+      companyId: matchedCompanyId,
+      roleLevel: matchedRoleLevel,
+      loginType: "staff",
+      timestamp: Date.now(),
+    });
+    setIsStaffAuthenticated(true);
+    setUser(data.user);
+    setSession(data.session);
+
     if (data.user?.email) {
-      localStorage.setItem("paimba_staff_session", JSON.stringify({
-        email: normalizedEmail,
-        userId: data.user.id,
-        type: "staff",
-        loggedInAt: new Date().toISOString(),
-      }));
       await syncUserProfile(data.user.email);
     }
     return { error: null };
   };
 
   const signOut = async () => {
-    localStorage.removeItem("paimba_staff_session");
+    clearStaffSession();
+    setIsStaffAuthenticated(false);
+    setUser(null);
+    setSession(null);
     localStorage.removeItem("cc_selected_role");
     localStorage.removeItem("cc_selected_company");
     try {
       await supabase.auth.signOut();
     } catch {}
-    setUser(null);
-    setSession(null);
   };
 
   const changePassword = async (newPassword: string) => {
@@ -573,6 +674,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn("Could not dispatch password setup email", emailErr);
       }
 
+      clearCustomerSession();
+      setStaffSession({
+        email: normalizedEmail,
+        loginType: "staff",
+        timestamp: Date.now(),
+      });
+      setIsStaffAuthenticated(true);
+
       return { error: null, success: true };
     } catch (err) {
       // Fallback for mock/local testing:
@@ -589,7 +698,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: "authenticated",
           updated_at: new Date().toISOString(),
         };
+        clearCustomerSession();
+        setStaffSession({
+          email: normalizedEmail,
+          userId: mock.userId,
+          companyId: mock.companyId,
+          roleLevel: mock.roleLevel,
+          loginType: "staff",
+          timestamp: Date.now(),
+        });
         setUser(mockUser);
+        setIsStaffAuthenticated(true);
         const comp = MOCK_COMPANIES.find((c) => c.id === mock.companyId) || DEFAULT_COMPANY;
         setCurrentCompany(comp);
         setCurrentCompanyUser(mock);
@@ -815,6 +934,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCompanies((prev) => [newCompany, ...prev.filter((c) => c.id !== newCompany.id)]);
       localStorage.setItem(`cc_company_country_${createdCompanyId}`, country);
 
+      clearCustomerSession();
+      setStaffSession({
+        email: normalizedEmail,
+        userId: authUserId,
+        companyId: createdCompanyId,
+        roleLevel: "super_admin",
+        loginType: "staff",
+        timestamp: Date.now(),
+      });
+      setIsStaffAuthenticated(true);
+
       // 7. Audit log
       await logAuditEvent({
         companyId: createdCompanyId,
@@ -910,6 +1040,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         session,
         loading,
+        isStaffAuthenticated,
         currentCompany,
         companies,
         currentCompanyUser,
