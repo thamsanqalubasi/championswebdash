@@ -53,7 +53,7 @@ import {
   type CompanySubscription,
   type PackageId,
 } from "@/lib/packages";
-import { PackageSwitcherModal, PlanCard } from "@/components/package-switcher-modal";
+import { PackageSwitcherModal, PackageCarousel, PlanCard } from "@/components/package-switcher-modal";
 import { StripePaymentModal } from "@/components/stripe-payment-modal";
 
 export default function SettingsPage() {
@@ -735,7 +735,7 @@ export default function SettingsPage() {
                         className="flex items-center gap-1.5 rounded-xl border border-blue-500/40 bg-blue-600/20 px-3 py-1.5 text-xs font-bold text-blue-300 hover:bg-blue-600/30 transition shadow-xs"
                       >
                         <CreditCard size={13} />
-                        <span>Pay $2 via Stripe</span>
+                        <span>Pay ${SUBSCRIPTION_PACKAGES.test.priceUsd.toFixed(2)} via Stripe</span>
                       </button>
 
                       <button
@@ -813,40 +813,10 @@ export default function SettingsPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                      <PlanCard
-                        plan={SUBSCRIPTION_PACKAGES.starter}
-                        isCurrent={sub.packageId === "starter"}
-                        onSelect={() => handleSelectPackageFromSettings("starter")}
-                        priceDisplay="$5"
-                      />
-                      <PlanCard
-                        plan={SUBSCRIPTION_PACKAGES.standard}
-                        isCurrent={sub.packageId === "standard"}
-                        onSelect={() => handleSelectPackageFromSettings("standard")}
-                        priceDisplay="$20"
-                        recommended
-                      />
-                      <PlanCard
-                        plan={SUBSCRIPTION_PACKAGES.pro}
-                        isCurrent={sub.packageId === "pro"}
-                        onSelect={() => handleSelectPackageFromSettings("pro")}
-                        priceDisplay="$50"
-                      />
-                      <PlanCard
-                        plan={SUBSCRIPTION_PACKAGES.enterprise}
-                        isCurrent={sub.packageId === "enterprise"}
-                        onSelect={() => handleSelectPackageFromSettings("enterprise")}
-                        priceDisplay="$200"
-                      />
-                      <PlanCard
-                        plan={SUBSCRIPTION_PACKAGES.test}
-                        isCurrent={sub.packageId === "test"}
-                        onSelect={() => handleSelectPackageFromSettings("test")}
-                        priceDisplay="$2"
-                        isTestBadge
-                      />
-                    </div>
+                    <PackageCarousel
+                      currentPackageId={sub.packageId}
+                      onSelectPackage={handleSelectPackageFromSettings}
+                    />
                   </div>
 
                   <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3 text-xs">

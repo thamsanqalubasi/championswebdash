@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Modal } from "./modal";
 import {
   SUBSCRIPTION_PACKAGES,
@@ -28,6 +28,8 @@ import {
   ArrowRight,
   Info,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 // TEMPORARY TEST FEATURE: Remove before production launch
@@ -136,6 +138,7 @@ export function PackageSwitcherModal({
         open={open}
         onClose={onClose}
         title="Subscription Packages & Commercialization Architecture"
+        maxWidthClassName="max-w-[85vw] w-[85vw]"
       >
         <div className="space-y-6 py-2">
           {/* Temporary test mode banner */}
@@ -227,7 +230,7 @@ export function PackageSwitcherModal({
                     </div>
                     <p className="text-xs text-muted mt-0.5">
                       {expired
-                        ? "The trial period ended. Test Stripe payment ($2) or choose new minutes and restart below."
+                        ? "The trial period ended. Test Stripe payment ($0.50) or choose new minutes and restart below."
                         : sub.status === "active"
                         ? "Subscription is fully active and verified."
                         : `Test trial is counting down live. Change minutes or restart anytime.`}
@@ -271,13 +274,16 @@ export function PackageSwitcherModal({
                   <button
                     type="button"
                     onClick={() => {
-                      setStripePackageInfo({ amount: 2, title: "Stripe Test Package" });
+                      setStripePackageInfo({
+                        amount: SUBSCRIPTION_PACKAGES.test.priceUsd,
+                        title: SUBSCRIPTION_PACKAGES.test.name,
+                      });
                       setStripeOpen(true);
                     }}
                     className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition"
                   >
                     <CreditCard size={14} />
-                    <span>Pay $2 Test Package (Stripe)</span>
+                    <span>Pay ${SUBSCRIPTION_PACKAGES.test.priceUsd.toFixed(2)} Test Package (Stripe)</span>
                   </button>
                 </div>
               </div>
@@ -312,9 +318,9 @@ export function PackageSwitcherModal({
             </div>
           )}
 
-          {/* Package Grid (4 Standard Tiers + 1 Stripe Test Tier) */}
+          {/* Package Carousel (5 Big Tiers with smooth horizontal scroll) */}
           <div>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-2">
               <div>
                 <h3 className="text-sm font-bold text-foreground">Available Commercial Plans</h3>
                 <p className="text-xs text-muted">
@@ -323,49 +329,10 @@ export function PackageSwitcherModal({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-              {/* Package 1: Starter $5 */}
-              <PlanCard
-                plan={SUBSCRIPTION_PACKAGES.starter}
-                isCurrent={sub.packageId === "starter"}
-                onSelect={() => handleSelectPackage("starter")}
-                priceDisplay="$5"
-              />
-
-              {/* Package 2: Standard $20 */}
-              <PlanCard
-                plan={SUBSCRIPTION_PACKAGES.standard}
-                isCurrent={sub.packageId === "standard"}
-                onSelect={() => handleSelectPackage("standard")}
-                priceDisplay="$20"
-                recommended
-              />
-
-              {/* Package 3: Pro $50 */}
-              <PlanCard
-                plan={SUBSCRIPTION_PACKAGES.pro}
-                isCurrent={sub.packageId === "pro"}
-                onSelect={() => handleSelectPackage("pro")}
-                priceDisplay="$50"
-              />
-
-              {/* Package 4: Enterprise $200 */}
-              <PlanCard
-                plan={SUBSCRIPTION_PACKAGES.enterprise}
-                isCurrent={sub.packageId === "enterprise"}
-                onSelect={() => handleSelectPackage("enterprise")}
-                priceDisplay="$200"
-              />
-
-              {/* Package 5: Stripe Test Package $2 */}
-              <PlanCard
-                plan={SUBSCRIPTION_PACKAGES.test}
-                isCurrent={sub.packageId === "test"}
-                onSelect={() => handleSelectPackage("test")}
-                priceDisplay="$2"
-                isTestBadge
-              />
-            </div>
+            <PackageCarousel
+              currentPackageId={sub.packageId}
+              onSelectPackage={handleSelectPackage}
+            />
           </div>
 
           {/* Commercialization Rationale Breakdown */}
@@ -476,7 +443,96 @@ export function PackageSwitcherModal({
   );
 }
 
-// Plan Card Component
+// Package Carousel Component with horizontal scrolling & navigation controls
+export function PackageCarousel({
+  currentPackageId,
+  onSelectPackage,
+}: {
+  currentPackageId: PackageId;
+  onSelectPackage: (pkgId: PackageId) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const scroll = (dir: "left" | "right") => {
+    if (containerRef.current) {
+      const scrollAmount = 340;
+      containerRef.current.scrollBy({
+        left: dir === "left" ? -scrollAmount : scrollAmount,
+        behavior: "smooth",
+      });
+    }
+  };
+
+  const plans: {
+    plan: (typeof SUBSCRIPTION_PACKAGES)[PackageId];
+    priceDisplay: string;
+    recommended?: boolean;
+    isTestBadge?: boolean;
+  }[] = [
+    { plan: SUBSCRIPTION_PACKAGES.starter, priceDisplay: "$5" },
+    { plan: SUBSCRIPTION_PACKAGES.standard, priceDisplay: "$20", recommended: true },
+    { plan: SUBSCRIPTION_PACKAGES.pro, priceDisplay: "$50" },
+    { plan: SUBSCRIPTION_PACKAGES.enterprise, priceDisplay: "$200" },
+    {
+      plan: SUBSCRIPTION_PACKAGES.test,
+      priceDisplay: `$${SUBSCRIPTION_PACKAGES.test.priceUsd.toFixed(2)}`,
+      isTestBadge: true,
+    },
+  ];
+
+  return (
+    <div className="relative group">
+      {/* Scroll controls bar */}
+      <div className="flex items-center justify-between mb-2.5 px-1">
+        <span className="text-[11px] text-muted flex items-center gap-1.5 font-medium">
+          <span className="hidden sm:inline">← Scroll or drag horizontally to view all plans →</span>
+          <span className="sm:hidden">Swipe sideways to view tiers</span>
+        </span>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => scroll("left")}
+            aria-label="Scroll left"
+            className="flex h-8 w-8 items-center justify-center rounded-xl border border-border-color bg-surface-elevated text-foreground hover:bg-surface hover:border-blue-500 transition shadow-xs"
+            title="Scroll left"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => scroll("right")}
+            aria-label="Scroll right"
+            className="flex h-8 w-8 items-center justify-center rounded-xl border border-border-color bg-surface-elevated text-foreground hover:bg-surface hover:border-blue-500 transition shadow-xs"
+            title="Scroll right"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* Big Carousel Scroll Track */}
+      <div
+        ref={containerRef}
+        className="flex gap-4 overflow-x-auto pb-4 pt-2 px-1 scroll-smooth snap-x snap-mandatory"
+        style={{ scrollbarWidth: "thin" }}
+      >
+        {plans.map(({ plan, priceDisplay, recommended, isTestBadge }) => (
+          <PlanCard
+            key={plan.id}
+            plan={plan}
+            isCurrent={currentPackageId === plan.id}
+            onSelect={() => onSelectPackage(plan.id)}
+            priceDisplay={priceDisplay}
+            recommended={recommended}
+            isTestBadge={isTestBadge}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Plan Card Component - Large, Spacious, and High-Impact
 export function PlanCard({
   plan,
   isCurrent,
@@ -494,9 +550,9 @@ export function PlanCard({
 }) {
   return (
     <div
-      className={`relative flex flex-col justify-between rounded-2xl border p-3.5 transition ${
+      className={`relative flex flex-col justify-between w-[320px] min-w-[300px] shrink-0 snap-start rounded-2xl border p-5 transition shadow-sm hover:shadow-md ${
         isCurrent
-          ? "border-blue-500 bg-blue-500/10 shadow-md ring-1 ring-blue-500"
+          ? "border-blue-500 bg-blue-500/10 shadow-md ring-2 ring-blue-500/50"
           : recommended
           ? "border-violet-500/40 bg-surface-elevated hover:border-violet-500"
           : isTestBadge
@@ -505,89 +561,89 @@ export function PlanCard({
       }`}
     >
       {recommended && (
-        <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-violet-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-xs">
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-violet-600 px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-xs">
           Popular
         </div>
       )}
 
       {isTestBadge && (
-        <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-amber-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-xs">
-          Stripe Test
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-amber-600 px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-xs">
+          Stripe Sandbox
         </div>
       )}
 
       <div>
-        <div className="flex items-center justify-between mb-1">
-          <h4 className="text-xs font-bold text-foreground truncate">{plan.name}</h4>
+        <div className="flex items-center justify-between mb-1.5">
+          <h4 className="text-sm font-bold text-foreground truncate">{plan.name}</h4>
           {isCurrent && (
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white">
-              <Check size={12} />
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white shadow-xs">
+              <Check size={13} />
             </span>
           )}
         </div>
 
-        <div className="mb-2">
-          <div className="flex items-baseline gap-1">
-            <span className="text-xl font-black text-foreground">{priceDisplay}</span>
-            <span className="text-[10px] text-muted font-bold uppercase">/ month</span>
+        <div className="mb-3">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-3xl font-black text-foreground tracking-tight">{priceDisplay}</span>
+            <span className="text-xs text-muted font-bold uppercase">/ month</span>
           </div>
-          <p className="text-[10px] text-muted line-clamp-1">{plan.tagline}</p>
+          <p className="text-xs text-muted leading-relaxed mt-0.5 line-clamp-2">{plan.tagline}</p>
         </div>
 
-        {/* Feature bullets */}
-        <div className="border-t border-border-color pt-2 space-y-1 text-[11px]">
-          <div className="flex items-center gap-1.5 text-foreground font-medium">
-            <Building2 size={12} className="text-blue-400 shrink-0" />
-            <span>{plan.limits.maxProperties === -1 ? "Unlimited" : `${plan.limits.maxProperties}`} Properties</span>
+        {/* Feature bullets in clean mini badges */}
+        <div className="border-t border-border-color pt-3 grid grid-cols-2 gap-2 text-xs">
+          <div className="flex items-center gap-1.5 text-foreground font-semibold rounded-lg bg-surface-elevated/70 p-2 border border-border-color/60">
+            <Building2 size={13} className="text-blue-400 shrink-0" />
+            <span className="truncate">{plan.limits.maxProperties === -1 ? "Unlimited" : `${plan.limits.maxProperties}`} Props</span>
           </div>
-          <div className="flex items-center gap-1.5 text-foreground font-medium">
-            <BedDouble size={12} className="text-emerald-400 shrink-0" />
-            <span>{plan.limits.maxRooms === -1 ? "Unlimited" : `${plan.limits.maxRooms}`} Rooms</span>
+          <div className="flex items-center gap-1.5 text-foreground font-semibold rounded-lg bg-surface-elevated/70 p-2 border border-border-color/60">
+            <BedDouble size={13} className="text-emerald-400 shrink-0" />
+            <span className="truncate">{plan.limits.maxRooms === -1 ? "Unlimited" : `${plan.limits.maxRooms}`} Rooms</span>
           </div>
-          <div className="flex items-center gap-1.5 text-foreground font-medium">
-            <Users size={12} className="text-violet-400 shrink-0" />
-            <span>{plan.limits.maxTenants === -1 ? "Unlimited" : `${plan.limits.maxTenants}`} Tenants</span>
+          <div className="flex items-center gap-1.5 text-foreground font-semibold rounded-lg bg-surface-elevated/70 p-2 border border-border-color/60">
+            <Users size={13} className="text-violet-400 shrink-0" />
+            <span className="truncate">{plan.limits.maxTenants === -1 ? "Unlimited" : `${plan.limits.maxTenants}`} Tenants</span>
           </div>
-          <div className="flex items-center gap-1.5 text-foreground font-medium">
-            <Layers size={12} className="text-amber-400 shrink-0" />
-            <span>{plan.limits.maxStaff === -1 ? "Unlimited" : `${plan.limits.maxStaff}`} Staff</span>
+          <div className="flex items-center gap-1.5 text-foreground font-semibold rounded-lg bg-surface-elevated/70 p-2 border border-border-color/60">
+            <Layers size={13} className="text-amber-400 shrink-0" />
+            <span className="truncate">{plan.limits.maxStaff === -1 ? "Unlimited" : `${plan.limits.maxStaff}`} Staff</span>
           </div>
         </div>
 
         {/* Key Feature highlights */}
-        <div className="mt-2.5 pt-2 border-t border-border-color space-y-1 text-[10px] text-muted">
-          {plan.commercialRationale.keyBenefits.slice(0, 3).map((benefit, i) => (
-            <div key={i} className="flex items-center gap-1 truncate">
-              <Check size={10} className="text-emerald-400 shrink-0" />
-              <span className="truncate">{benefit}</span>
+        <div className="mt-3 pt-3 border-t border-border-color space-y-1.5 text-xs text-muted">
+          {plan.commercialRationale.keyBenefits.slice(0, 4).map((benefit, i) => (
+            <div key={i} className="flex items-start gap-1.5">
+              <Check size={12} className="text-emerald-400 shrink-0 mt-0.5" />
+              <span className="text-[11px] leading-tight text-foreground/80">{benefit}</span>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="mt-3 pt-2">
+      <div className="mt-4 pt-3 border-t border-border-color">
         <button
           type="button"
           onClick={onSelect}
-          className={`w-full rounded-xl py-1.5 text-xs font-bold transition flex items-center justify-center gap-1 ${
+          className={`w-full rounded-xl py-2.5 text-xs font-bold transition flex items-center justify-center gap-1.5 ${
             isCurrent
               ? "bg-surface border border-blue-500 text-blue-400 cursor-default"
               : isTestBadge
-              ? "bg-amber-600 text-white hover:bg-amber-700 shadow-xs"
-              : "bg-foreground text-background hover:opacity-90 shadow-xs"
+              ? "bg-amber-600 text-white hover:bg-amber-700 shadow-md"
+              : "bg-foreground text-background hover:opacity-90 shadow-md"
           }`}
         >
           {isCurrent ? (
             <span>Active Plan</span>
           ) : isTestBadge ? (
             <>
-              <CreditCard size={12} />
-              <span>Test Stripe ($2)</span>
+              <CreditCard size={13} />
+              <span>Test Stripe (${SUBSCRIPTION_PACKAGES.test.priceUsd.toFixed(2)})</span>
             </>
           ) : (
             <>
               <span>Select Plan</span>
-              <ArrowRight size={11} />
+              <ArrowRight size={12} />
             </>
           )}
         </button>
