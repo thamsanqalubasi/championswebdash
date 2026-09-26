@@ -66,6 +66,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Mode B: Hosted Stripe Checkout Session (redirect URL)
     if (mode === "checkout_session") {
+      const host = (req.headers["x-forwarded-host"] as string) || req.headers.host || "localhost:5173";
+      const proto = (req.headers["x-forwarded-proto"] as string) || (host.includes("localhost") ? "http" : "https");
+      const origin = returnUrl || `${proto}://${host}`;
+
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ["card"],
         line_items: [
@@ -74,7 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               currency: "usd",
               product_data: {
                 name: `PaimbaBook Subscription - ${packageId.toUpperCase()}`,
-                description: "Monthly subscription package",
+                description: "Monthly subscription package ($2.00 USD)",
               },
               unit_amount: amountInCents,
             },
@@ -82,8 +86,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           },
         ],
         mode: "payment",
-        success_url: `${returnUrl || "https://" + req.headers.host}/settings?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${returnUrl || "https://" + req.headers.host}/settings?payment=cancelled`,
+        success_url: `${origin}/settings?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${origin}/settings?payment=cancelled`,
         metadata: {
           companyId,
           packageId,

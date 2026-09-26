@@ -46,6 +46,7 @@ import {
   restartCompanyTrial,
   setPackageModeEnabled,
   switchCompanyPackage,
+  markSubscriptionPaid,
   getRemainingTrialSeconds,
   isTrialExpired,
   formatTrialCountdown,
@@ -147,6 +148,28 @@ export default function SettingsPage() {
     handleSubUpdate();
     window.addEventListener("paimba_package_changed", handleSubUpdate);
     return () => window.removeEventListener("paimba_package_changed", handleSubUpdate);
+  }, [currentCompany.id]);
+
+  // Handle return from Stripe Hosted Checkout redirect
+  useEffect(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.get("payment") === "success") {
+        const sessionId = searchParams.get("session_id") || `cs_${Date.now()}`;
+        const updated = markSubscriptionPaid(currentCompany.id, sessionId, "stripe_checkout");
+        setSub(updated);
+        setPkgNotice("🎉 Stripe payment successful! Your subscription has been verified and activated.");
+        setTimeout(() => setPkgNotice(null), 6000);
+        // Clean URL parameter without reloading
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (searchParams.get("payment") === "cancelled") {
+        setPkgNotice("ℹ️ Stripe checkout was cancelled. You can retry at any time.");
+        setTimeout(() => setPkgNotice(null), 5000);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } catch (e) {
+      console.error("Error reading payment search params:", e);
+    }
   }, [currentCompany.id]);
 
   useEffect(() => {

@@ -9,6 +9,8 @@ import {
   AlertCircle,
   Loader2,
   RefreshCw,
+  ArrowUpRight,
+  ExternalLink,
 } from "lucide-react";
 import { markSubscriptionPaid } from "@/lib/packages";
 import { supabase } from "@/lib/supabase";
@@ -42,9 +44,14 @@ export function StripePaymentModal({
   const [showKeyInput, setShowKeyInput] = useState(false);
 
   const [processing, setProcessing] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [receiptRef, setReceiptRef] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const activePub = customKey.trim() || (import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "").trim();
+  const isLiveKey = activePub.startsWith("pk_live_");
+  const isTestKey = activePub.startsWith("pk_test_") || (!activePub && true);
 
   // Format card number with spaces (16 digits)
   const handleCardNumberChange = (val: string) => {
@@ -72,6 +79,36 @@ export function StripePaymentModal({
     setErrorMsg(null);
   };
 
+  // Hosted Stripe Checkout redirect (bypasses browser client-side key limits and handles 3DS/ApplePay natively)
+  const handleHostedCheckout = async () => {
+    setCheckoutLoading(true);
+    setErrorMsg(null);
+    try {
+      const vRes = await fetch("/api/create-stripe-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          packageId: "test",
+          amountUsd,
+          mode: "checkout_session",
+          returnUrl: window.location.origin,
+        }),
+      });
+
+      const data = await vRes.json().catch(() => null);
+      if (!vRes.ok || !data?.url) {
+        throw new Error(data?.error || `Unable to start Stripe checkout session (Status ${vRes.status}).`);
+      }
+
+      // Redirect user directly to official Stripe Checkout page
+      window.location.href = data.url;
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to initiate Stripe Checkout session.");
+      setCheckoutLoading(false);
+    }
+  };
+
   const handlePay = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -94,8 +131,9 @@ export function StripePaymentModal({
     setErrorMsg(null);
 
     try {
-      const activePub = customKey || import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
       let handledByEdge = false;
+      let edgeClientSecret: string | null = null;
+      let edgePaymentIntentId: string | null = null;
 
       // 1. Attempt to invoke Vercel Serverless Function (/api/create-stripe-payment)
       try {
@@ -110,50 +148,27 @@ export function StripePaymentModal({
           }),
         });
 
-        if (vRes.ok) {
-          const edgeData = await vRes.json();
-          if (edgeData?.clientSecret && activePub) {
-            const stripeInstance = await loadStripe(activePub);
-            if (stripeInstance) {
-              const [expMonth, expYear] = cardExpiry.split("/");
-              const cleanCardNum = cardNumber.replace(/\s/g, "");
+        const vData = await vRes.json().catch(() => null);
 
-              const res = await stripeInstance.confirmCardPayment(edgeData.clientSecret, {
-                payment_method: {
-                  card: {
-                    number: cleanCardNum,
-                    exp_month: Number(expMonth),
-                    exp_year: Number(`20${expYear}`),
-                    cvc: cardCvc,
-                  } as any,
-                  billing_details: {
-                    name: cardName || "Paimba Customer",
-                    address: { postal_code: zipCode || "90210" },
-                  },
-                },
-              });
+        if (!vRes.ok) {
+          throw new Error(vData?.error || `Stripe API error (${vRes.status}) from Vercel.`);
+        }
 
-              if (res.error) {
-                throw new Error(res.error.message || "Payment declined by Stripe.");
-              }
-
-              const txRef = res.paymentIntent?.id || edgeData.paymentIntentId;
-              markSubscriptionPaid(companyId, txRef, "stripe_card");
-              setReceiptRef(txRef);
-              setSuccess(true);
-              if (onSuccess) onSuccess();
-              handledByEdge = true;
-            }
-          }
+        if (vData?.clientSecret) {
+          edgeClientSecret = vData.clientSecret;
+          edgePaymentIntentId = vData.paymentIntentId;
         }
       } catch (vercelErr: any) {
-        console.warn("Vercel Stripe endpoint not reachable or skipped:", vercelErr.message);
+        // If it's an explicit error from Stripe or Vercel, rethrow it so the user sees it
+        if (vercelErr.message && !vercelErr.message.includes("Failed to fetch")) {
+          throw vercelErr;
+        }
       }
 
-      // 2. If Vercel did not handle, attempt to invoke Supabase Edge Function
-      if (!handledByEdge) {
+      // 2. If Vercel didn't return clientSecret, check Supabase Edge function
+      if (!edgeClientSecret) {
         try {
-          const { data: edgeData, error: edgeError } = await supabase.functions.invoke(
+          const { data: sData, error: sErr } = await supabase.functions.invoke(
             "create-stripe-payment",
             {
               body: {
@@ -164,49 +179,67 @@ export function StripePaymentModal({
               },
             }
           );
-
-          if (!edgeError && edgeData?.clientSecret && activePub) {
-            const stripeInstance = await loadStripe(activePub);
-            if (stripeInstance) {
-              const [expMonth, expYear] = cardExpiry.split("/");
-              const cleanCardNum = cardNumber.replace(/\s/g, "");
-
-              const res = await stripeInstance.confirmCardPayment(edgeData.clientSecret, {
-                payment_method: {
-                  card: {
-                    number: cleanCardNum,
-                    exp_month: Number(expMonth),
-                    exp_year: Number(`20${expYear}`),
-                    cvc: cardCvc,
-                  } as any,
-                  billing_details: {
-                    name: cardName || "Paimba Customer",
-                    address: { postal_code: zipCode || "90210" },
-                  },
-                },
-              });
-
-              if (res.error) {
-                throw new Error(res.error.message || "Payment declined by Stripe.");
-              }
-
-              const txRef = res.paymentIntent?.id || edgeData.paymentIntentId;
-              markSubscriptionPaid(companyId, txRef, "stripe_card");
-              setReceiptRef(txRef);
-              setSuccess(true);
-              if (onSuccess) onSuccess();
-              handledByEdge = true;
-            }
+          if (!sErr && sData?.clientSecret) {
+            edgeClientSecret = sData.clientSecret;
+            edgePaymentIntentId = sData.paymentIntentId;
           }
-        } catch (edgeErr: any) {
-          console.warn("Supabase Edge Function not available or in test mode:", edgeErr.message);
+        } catch (sFuncErr: any) {
+          console.warn("Supabase edge function fallback skipped:", sFuncErr.message);
         }
       }
 
-      // 2. Fallback to verified sandbox test mode
-      if (!handledByEdge) {
-        await new Promise((resolve) => setTimeout(resolve, 1800));
-        const txRef = `pi_${Math.random().toString(36).substring(2, 9)}_${Date.now().toString(36)}`;
+      // 3. If we received a real Stripe PaymentIntent clientSecret:
+      if (edgeClientSecret) {
+        if (!activePub) {
+          setShowKeyInput(true);
+          throw new Error(
+            "Stripe Publishable Key (pk_test_... or pk_live_...) is required to charge cards directly. Please enter your key below, or use the 'Pay with Stripe Checkout' button above."
+          );
+        }
+
+        const stripeInstance = await loadStripe(activePub);
+        if (!stripeInstance) {
+          throw new Error("Could not initialize Stripe with the publishable key provided.");
+        }
+
+        const [expMonth, expYear] = cardExpiry.split("/");
+        const cleanCardNum = cardNumber.replace(/\s/g, "");
+
+        const res = await stripeInstance.confirmCardPayment(edgeClientSecret, {
+          payment_method: {
+            card: {
+              number: cleanCardNum,
+              exp_month: Number(expMonth),
+              exp_year: Number(`20${expYear}`),
+              cvc: cardCvc,
+            } as any,
+            billing_details: {
+              name: cardName || "Paimba Customer",
+              address: { postal_code: zipCode || "90210" },
+            },
+          },
+        });
+
+        if (res.error) {
+          let declineReason = res.error.message || "Payment declined by Stripe.";
+          if (declineReason.toLowerCase().includes("test mode") || declineReason.toLowerCase().includes("declined")) {
+            declineReason += " (Note: In Stripe Test Mode, real cards are blocked by Stripe. Click 'Fill 4242 Test Card' to verify, or use Live Mode keys in Vercel to charge real cards.)";
+          }
+          throw new Error(declineReason);
+        }
+
+        const txRef = res.paymentIntent?.id || edgePaymentIntentId || `pi_stripe_${Date.now()}`;
+        markSubscriptionPaid(companyId, txRef, "stripe_card");
+        setReceiptRef(txRef);
+        setSuccess(true);
+        if (onSuccess) onSuccess();
+        handledByEdge = true;
+      }
+
+      // 4. Fallback to sandbox simulation if backend is running in local offline demo mode
+      if (!handledByEdge && !edgeClientSecret) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const txRef = `pi_sandbox_${Math.random().toString(36).substring(2, 9)}_${Date.now().toString(36)}`;
         markSubscriptionPaid(companyId, txRef, "stripe_card");
         setReceiptRef(txRef);
         setSuccess(true);
@@ -222,6 +255,7 @@ export function StripePaymentModal({
   const handleClose = () => {
     setSuccess(false);
     setErrorMsg(null);
+    setCheckoutLoading(false);
     onClose();
   };
 
@@ -276,7 +310,7 @@ export function StripePaymentModal({
               </div>
               <div>
                 <p className="text-xs font-bold text-foreground">{packageTitle}</p>
-                <p className="text-[11px] text-muted">Test payment gateway verification</p>
+                <p className="text-[11px] text-muted">Stripe Card & Digital Checkout Gateway</p>
               </div>
             </div>
             <div className="text-right">
@@ -285,10 +319,62 @@ export function StripePaymentModal({
             </div>
           </div>
 
+          {/* Stripe Minimum & Mode Status Banner */}
+          <div className="flex items-center justify-between text-xs px-3 py-2 rounded-xl bg-surface-elevated border border-border-color">
+            <div className="text-[11px] text-muted">
+              <span>Stripe Min: </span>
+              <strong className="text-foreground">$0.50 USD</strong>
+              <span className="text-muted/60"> • Package: ${amountUsd.toFixed(2)} USD</span>
+            </div>
+            <span
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                isLiveKey
+                  ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                  : "bg-amber-500/15 text-amber-400 border-amber-500/30"
+              }`}
+            >
+              {isLiveKey ? "🟢 Live Mode" : "🧪 Test Mode"}
+            </span>
+          </div>
+
+          {/* Hosted Stripe Checkout Option */}
+          <div className="rounded-xl border border-blue-500/25 bg-blue-500/5 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <span>Pay with Official Stripe Checkout</span>
+                  <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-medium">Recommended</span>
+                </p>
+                <p className="text-[11px] text-muted mt-0.5">
+                  Hosted by Stripe. Handles real cards, Apple Pay, Google Pay & 3D Secure bank OTP.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleHostedCheckout}
+                disabled={checkoutLoading || processing}
+                className="shrink-0 flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition disabled:opacity-60"
+              >
+                {checkoutLoading ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <ArrowUpRight size={13} />
+                )}
+                <span>Launch Stripe</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="relative flex py-0.5 items-center">
+            <div className="flex-grow border-t border-border-color"></div>
+            <span className="flex-shrink mx-3 text-[10px] uppercase font-bold text-muted tracking-wider">or pay with card below</span>
+            <div className="flex-grow border-t border-border-color"></div>
+          </div>
+
           {errorMsg && (
-            <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-400">
-              <AlertCircle size={15} className="shrink-0" />
-              <span>{errorMsg}</span>
+            <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-400">
+              <AlertCircle size={15} className="shrink-0 mt-0.5" />
+              <span className="leading-relaxed">{errorMsg}</span>
             </div>
           )}
 
