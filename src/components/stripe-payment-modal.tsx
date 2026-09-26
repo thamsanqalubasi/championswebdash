@@ -97,58 +97,110 @@ export function StripePaymentModal({
       const activePub = customKey || import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
       let handledByEdge = false;
 
-      // 1. Attempt to invoke Supabase Edge Function if deployed
+      // 1. Attempt to invoke Vercel Serverless Function (/api/create-stripe-payment)
       try {
-        const { data: edgeData, error: edgeError } = await supabase.functions.invoke(
-          "create-stripe-payment",
-          {
-            body: {
-              companyId,
-              packageId: "test",
-              amountUsd,
-              mode: "payment_intent",
-            },
-          }
-        );
+        const vRes = await fetch("/api/create-stripe-payment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            companyId,
+            packageId: "test",
+            amountUsd,
+            mode: "payment_intent",
+          }),
+        });
 
-        if (!edgeError && edgeData?.clientSecret && activePub) {
-          const stripeInstance = await loadStripe(activePub);
-          if (stripeInstance) {
-            const [expMonth, expYear] = cardExpiry.split("/");
-            const cleanCardNum = cardNumber.replace(/\s/g, "");
+        if (vRes.ok) {
+          const edgeData = await vRes.json();
+          if (edgeData?.clientSecret && activePub) {
+            const stripeInstance = await loadStripe(activePub);
+            if (stripeInstance) {
+              const [expMonth, expYear] = cardExpiry.split("/");
+              const cleanCardNum = cardNumber.replace(/\s/g, "");
 
-            const res = await stripeInstance.confirmCardPayment(edgeData.clientSecret, {
-              payment_method: {
-                card: {
-                  number: cleanCardNum,
-                  exp_month: Number(expMonth),
-                  exp_year: Number(`20${expYear}`),
-                  cvc: cardCvc,
-                } as any,
-                billing_details: {
-                  name: cardName || "Paimba Customer",
-                  address: { postal_code: zipCode || "90210" },
+              const res = await stripeInstance.confirmCardPayment(edgeData.clientSecret, {
+                payment_method: {
+                  card: {
+                    number: cleanCardNum,
+                    exp_month: Number(expMonth),
+                    exp_year: Number(`20${expYear}`),
+                    cvc: cardCvc,
+                  } as any,
+                  billing_details: {
+                    name: cardName || "Paimba Customer",
+                    address: { postal_code: zipCode || "90210" },
+                  },
                 },
-              },
-            });
+              });
 
-            if (res.error) {
-              throw new Error(res.error.message || "Payment declined by Stripe.");
+              if (res.error) {
+                throw new Error(res.error.message || "Payment declined by Stripe.");
+              }
+
+              const txRef = res.paymentIntent?.id || edgeData.paymentIntentId;
+              markSubscriptionPaid(companyId, txRef, "stripe_card");
+              setReceiptRef(txRef);
+              setSuccess(true);
+              if (onSuccess) onSuccess();
+              handledByEdge = true;
             }
-
-            const txRef = res.paymentIntent?.id || edgeData.paymentIntentId;
-            markSubscriptionPaid(companyId, txRef, "stripe_card");
-            setReceiptRef(txRef);
-            setSuccess(true);
-            if (onSuccess) onSuccess();
-            handledByEdge = true;
           }
         }
-      } catch (edgeErr: any) {
-        console.warn(
-          "Supabase Edge Function not available or in test mode, using sandbox simulation:",
-          edgeErr.message
-        );
+      } catch (vercelErr: any) {
+        console.warn("Vercel Stripe endpoint not reachable or skipped:", vercelErr.message);
+      }
+
+      // 2. If Vercel did not handle, attempt to invoke Supabase Edge Function
+      if (!handledByEdge) {
+        try {
+          const { data: edgeData, error: edgeError } = await supabase.functions.invoke(
+            "create-stripe-payment",
+            {
+              body: {
+                companyId,
+                packageId: "test",
+                amountUsd,
+                mode: "payment_intent",
+              },
+            }
+          );
+
+          if (!edgeError && edgeData?.clientSecret && activePub) {
+            const stripeInstance = await loadStripe(activePub);
+            if (stripeInstance) {
+              const [expMonth, expYear] = cardExpiry.split("/");
+              const cleanCardNum = cardNumber.replace(/\s/g, "");
+
+              const res = await stripeInstance.confirmCardPayment(edgeData.clientSecret, {
+                payment_method: {
+                  card: {
+                    number: cleanCardNum,
+                    exp_month: Number(expMonth),
+                    exp_year: Number(`20${expYear}`),
+                    cvc: cardCvc,
+                  } as any,
+                  billing_details: {
+                    name: cardName || "Paimba Customer",
+                    address: { postal_code: zipCode || "90210" },
+                  },
+                },
+              });
+
+              if (res.error) {
+                throw new Error(res.error.message || "Payment declined by Stripe.");
+              }
+
+              const txRef = res.paymentIntent?.id || edgeData.paymentIntentId;
+              markSubscriptionPaid(companyId, txRef, "stripe_card");
+              setReceiptRef(txRef);
+              setSuccess(true);
+              if (onSuccess) onSuccess();
+              handledByEdge = true;
+            }
+          }
+        } catch (edgeErr: any) {
+          console.warn("Supabase Edge Function not available or in test mode:", edgeErr.message);
+        }
       }
 
       // 2. Fallback to verified sandbox test mode
