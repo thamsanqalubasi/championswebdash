@@ -15,6 +15,7 @@ import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from
 import { useCurrency } from "@/lib/currency";
 import { PropertyStatsModal } from "@/components/property-stats-modal";
 import { CheckinModal } from "@/components/checkin-modal";
+import { Pagination } from "@/components/pagination";
 
 const HOSPITALITY_TYPES = ["hotel", "motel", "lodge", "guest_house", "commercial"];
 const RENTAL_TYPES = ["house", "apartment", "storage"];
@@ -148,6 +149,13 @@ export default function PropertiesPage() {
     }
     return result;
   }, [properties, activeFilter, searchQuery]);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+  const paginatedProperties = useMemo(() => {
+    return filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  }, [filtered, currentPage]);
 
   const [floorCount, setFloorCount] = useState<number>(3);
   const [isCustomCity, setIsCustomCity] = useState(false);
@@ -448,7 +456,13 @@ export default function PropertiesPage() {
       {!loading&&!error&&(
         <section className="rounded-2xl border border-border-color bg-surface p-1 shadow-sm">
           <div className="p-4">
-            <DataTableHeader searchValue={searchQuery} onSearchChange={setSearchQuery} searchPlaceholder="Search by name, city, country..." filters={filterTabs} activeFilter={activeFilter} onFilterChange={setActiveFilter}
+            <DataTableHeader
+              searchValue={searchQuery}
+              onSearchChange={(val) => { setSearchQuery(val); setCurrentPage(1); }}
+              searchPlaceholder="Search by name, city, country..."
+              filters={filterTabs}
+              activeFilter={activeFilter}
+              onFilterChange={(val) => { setActiveFilter(val); setCurrentPage(1); }}
               actions={<button type="button" onClick={openAdd} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition"><Plus size={16}/><span>Add Property</span></button>}
             />
           </div>
@@ -461,7 +475,7 @@ export default function PropertiesPage() {
                   <th className="px-6 py-4">Property</th><th className="px-6 py-4">Type</th><th className="px-6 py-4">Units</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Pricing</th><th className="px-6 py-4 text-right">Actions</th>
                 </tr></thead>
                 <tbody className="divide-y divide-border-color/40">
-                  {filtered.map((row)=>{
+                  {paginatedProperties.map((row)=>{
                     const hosp=isHospitality(row.type);
                     return (
                       <tr key={row.id} onClick={()=>navigate(`/properties/${row.id}`)} className="group cursor-pointer hover:bg-surface-elevated/40 transition-colors">
@@ -551,6 +565,15 @@ export default function PropertiesPage() {
                   })}
                 </tbody>
               </table>
+              <div className="border-t border-border-color p-3 bg-surface">
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  totalItems={filtered.length}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={setCurrentPage}
+                />
+              </div>
             </div>
           )}
         </section>

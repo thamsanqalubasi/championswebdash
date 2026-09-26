@@ -92,6 +92,8 @@ export async function trackUserAction(
     entityId?: string;
     details?: string;
     path?: string;
+    originPath?: string;
+    destinationPath?: string;
   }
 ) {
   try {
@@ -106,7 +108,8 @@ export async function trackUserAction(
     const { device, browser } = getDeviceAndBrowser();
 
     const buttonLabel = options?.buttonName || action;
-    const path = options?.path || window.location.pathname;
+    const originPath = options?.originPath || options?.path || window.location.pathname;
+    const destinationPath = options?.destinationPath || originPath;
 
     const payload: Record<string, unknown> = {
       action: action.toUpperCase().replace(/\s+/g, "_"),
@@ -115,8 +118,10 @@ export async function trackUserAction(
       user_name: user?.fullName || "Staff Member",
       details: {
         button_name: buttonLabel,
-        summary: options?.details || `Clicked "${buttonLabel}" on ${path}`,
-        path,
+        origin_path: originPath,
+        destination_path: destinationPath,
+        summary: options?.details || `Clicked "${buttonLabel}" from ${originPath} to ${destinationPath}`,
+        path: originPath,
         session_id: sessionId,
         device: `${device} · ${browser}`,
         browser,
@@ -140,7 +145,7 @@ export async function trackUserAction(
 let isTrackerInitialized = false;
 
 /**
- * Automatically tracks user button clicks across the entire system.
+ * Automatically tracks user button clicks and navigational journeys across the system.
  */
 export function initActivityTracker() {
   if (typeof window === "undefined" || isTrackerInitialized) return;
@@ -153,20 +158,30 @@ export function initActivityTracker() {
   let lastClickLabel = "";
 
   document.addEventListener("click", (e) => {
-    const target = (e.target as HTMLElement)?.closest(
-      "button, a[role='button'], [data-track-action]"
+    const clickable = (e.target as HTMLElement)?.closest(
+      "button, a, [role='button'], [data-track-action]"
     ) as HTMLElement | null;
 
-    if (!target) return;
+    if (!clickable) return;
 
-    // Ignore tabs/close buttons that don't need logging
     const label =
-      target.getAttribute("data-track-action") ||
-      target.getAttribute("aria-label") ||
-      target.getAttribute("title") ||
-      target.innerText?.trim();
+      clickable.getAttribute("data-track-action") ||
+      clickable.getAttribute("aria-label") ||
+      clickable.getAttribute("title") ||
+      clickable.innerText?.trim();
 
     if (!label || label.length > 50) return;
+
+    // Determine origin and destination
+    const originPath = window.location.pathname;
+    let destinationPath = originPath;
+    const anchor = clickable.closest("a");
+    if (anchor) {
+      const href = anchor.getAttribute("href");
+      if (href && !href.startsWith("#") && !href.startsWith("javascript:")) {
+        destinationPath = href;
+      }
+    }
 
     // Debounce duplicate clicks
     const now = Date.now();
@@ -176,7 +191,9 @@ export function initActivityTracker() {
 
     void trackUserAction("BUTTON_CLICK", {
       buttonName: label,
-      details: `User clicked "${label}" on ${window.location.pathname}`,
+      originPath,
+      destinationPath,
+      details: `User clicked "${label}" on ${originPath}${destinationPath !== originPath ? ` ➔ ${destinationPath}` : ""}`,
     });
   }, { passive: true });
 }

@@ -21,6 +21,7 @@ import {
   Activity,
 } from "lucide-react";
 import { UserProfileActivityModal } from "@/components/user-profile-activity-modal";
+import { Pagination } from "@/components/pagination";
 import { supabase } from "@/lib/supabase";
 import {
   fetchCompanyUsers,
@@ -677,6 +678,13 @@ export default function UsersManagementPage() {
     return matchesSearch && matchesDept;
   });
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
+  const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE) || 1;
+  const paginatedUsers = useMemo(() => {
+    return filteredUsers.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  }, [filteredUsers, currentPage]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -719,7 +727,10 @@ export default function UsersManagementPage() {
             type="search"
             placeholder="Search by Employee Name, Email, or Job Title..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             className="w-full rounded-xl border border-border-color bg-surface-elevated pl-9 pr-4 py-2 text-sm text-foreground outline-none focus:border-blue-600"
           />
         </div>
@@ -728,7 +739,10 @@ export default function UsersManagementPage() {
           <Filter size={14} className="text-muted" />
           <select
             value={deptFilter}
-            onChange={(e) => setDeptFilter(e.target.value)}
+            onChange={(e) => {
+              setDeptFilter(e.target.value);
+              setCurrentPage(1);
+            }}
             className="rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs font-semibold text-foreground focus:border-blue-600 focus:outline-none"
           >
             <option value="all">All Departments</option>
@@ -782,7 +796,7 @@ export default function UsersManagementPage() {
                 </td>
               </tr>
             ) : (
-              filteredUsers.map((u) => (
+              paginatedUsers.map((u) => (
                 <tr key={u.id} className="hover:bg-surface-elevated/30 transition">
                   <td className="px-4 py-3.5">
                     <button
@@ -925,6 +939,15 @@ export default function UsersManagementPage() {
             )}
           </tbody>
         </table>
+        <div className="border-t border-border-color p-3 bg-surface">
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filteredUsers.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={setCurrentPage}
+          />
+        </div>
       </div>
 
       {/* Add User Modal */}

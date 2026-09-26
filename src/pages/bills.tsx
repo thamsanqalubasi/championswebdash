@@ -9,7 +9,9 @@ import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
 import { fetchAdminInfo, uploadFileToBucket } from "@/lib/storage";
 import { billStatusMeta, frequencyLabel, type BillFrequency, type BillRow, type BillStatus } from "@/lib/bills";
-import { Eye, Paperclip, Upload, CheckCircle, Clock, ExternalLink } from "lucide-react";
+import { Eye, Paperclip, Upload, CheckCircle, Clock, ExternalLink, FileText } from "lucide-react";
+import { BillsReportModal } from "@/components/bills-report-modal";
+import { Pagination } from "@/components/pagination";
 
 type BillForm = {
   name: string;
@@ -121,6 +123,16 @@ export default function BillsPage() {
   const [prefillPropertyId, setPrefillPropertyId] = useState("");
   const [flashMessage, setFlashMessage] = useState("");
   const [supportsFrequency, setSupportsFrequency] = useState(true);
+  const [billsReportOpen, setBillsReportOpen] = useState(false);
+  const [kpiListModal, setKpiListModal] = useState<"all" | "paid" | "pending" | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(bills.length / itemsPerPage);
+  const paginatedBills = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return bills.slice(start, start + itemsPerPage);
+  }, [bills, currentPage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -659,32 +671,72 @@ export default function BillsPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <article className="rounded-md border border-border-color bg-surface-elevated p-3">
-                <p className="text-xs text-muted">Total Bills</p>
-                <p className="text-lg font-semibold">{bills.length}</p>
-              </article>
-              <article className="rounded-md border border-border-color bg-surface-elevated p-3">
-                <p className="text-xs text-muted">Paid</p>
-                <p className="text-lg font-semibold">{paidCount}</p>
-              </article>
-              <article className="rounded-md border border-border-color bg-surface-elevated p-3">
-                <p className="text-xs text-muted">Pending</p>
-                <p className="text-lg font-semibold">{Math.max(0, bills.length - paidCount)}</p>
-              </article>
+              <button
+                type="button"
+                onClick={() => setKpiListModal("all")}
+                className="text-left rounded-xl border border-border-color bg-surface-elevated p-3 hover:border-blue-500/50 hover:bg-surface transition shadow-xs group"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted group-hover:text-foreground font-semibold">Total Bills</p>
+                  <ExternalLink size={12} className="text-muted/40 group-hover:text-blue-600" />
+                </div>
+                <p className="text-lg font-black text-foreground mt-0.5">{bills.length}</p>
+                <p className="text-[10px] text-muted">Click to view all →</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setKpiListModal("paid")}
+                className="text-left rounded-xl border border-border-color bg-surface-elevated p-3 hover:border-emerald-500/50 hover:bg-surface transition shadow-xs group"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted group-hover:text-foreground font-semibold">Paid</p>
+                  <ExternalLink size={12} className="text-muted/40 group-hover:text-emerald-600" />
+                </div>
+                <p className="text-lg font-black text-emerald-600 mt-0.5">{paidCount}</p>
+                <p className="text-[10px] text-muted">Click to view paid →</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setKpiListModal("pending")}
+                className="text-left rounded-xl border border-border-color bg-surface-elevated p-3 hover:border-amber-500/50 hover:bg-surface transition shadow-xs group"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted group-hover:text-foreground font-semibold">Pending</p>
+                  <ExternalLink size={12} className="text-muted/40 group-hover:text-amber-600" />
+                </div>
+                <p className="text-lg font-black text-amber-600 mt-0.5">{Math.max(0, bills.length - paidCount)}</p>
+                <p className="text-[10px] text-muted">Click to view pending →</p>
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => openCreate()}
-              className="rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium"
-            >
-              Create Bill
-            </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setBillsReportOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm font-semibold text-foreground hover:bg-surface transition shadow-xs"
+                title="Generate, Preview, Print or Share Bills Report"
+              >
+                <FileText size={16} className="text-blue-600" />
+                <span>Bills Report</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openCreate()}
+                className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-xs hover:bg-blue-700 transition"
+              >
+                <span>Create Bill</span>
+              </button>
+            </div>
           </div>
 
           {bills.length === 0 ? (
             <EmptyState title="No bills yet" description="Create your first recurring bill." />
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              <div className="overflow-x-auto">
               <table className="min-w-full border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-border-color text-left text-muted">
@@ -699,7 +751,7 @@ export default function BillsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {bills.map((bill) => {
+                  {paginatedBills.map((bill) => {
                     const meta = billStatusMeta(bill);
                     return (
                       <tr
@@ -773,6 +825,19 @@ export default function BillsPage() {
                 </tbody>
               </table>
             </div>
+
+            {totalPages > 1 && (
+              <div className="border-t border-border-color p-3 bg-surface">
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                  totalItems={bills.length}
+                  itemsPerPage={itemsPerPage}
+                />
+              </div>
+            )}
+            </>
           )}
         </section>
       )}
@@ -1017,6 +1082,79 @@ export default function BillsPage() {
       </Modal>
 
       <ConfirmDialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} onConfirm={onDelete} title="Delete Bill" message={`Delete bill \"${deleteTarget?.name}\"?`} confirmLabel="Delete" loading={deleting} />
+
+      {/* Bills Report Modal */}
+      <BillsReportModal
+        isOpen={billsReportOpen}
+        onClose={() => setBillsReportOpen(false)}
+        bills={bills}
+        companyName={currentCompany.name}
+      />
+
+      {/* KPI Filtered Bills Modal */}
+      <Modal
+        open={Boolean(kpiListModal)}
+        onClose={() => setKpiListModal(null)}
+        title={
+          kpiListModal === "paid"
+            ? `Paid Recurring Bills (${bills.filter((b) => b.status === "paid").length})`
+            : kpiListModal === "pending"
+            ? `Pending Scheduled Bills (${bills.filter((b) => b.status !== "paid").length})`
+            : `All Scheduled Bills (${bills.length})`
+        }
+      >
+        <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+          {(() => {
+            const list = bills.filter((b) => {
+              if (kpiListModal === "paid") return b.status === "paid";
+              if (kpiListModal === "pending") return b.status !== "paid";
+              return true;
+            });
+
+            if (list.length === 0) {
+              return <p className="text-xs text-muted py-6 text-center">No bills found.</p>;
+            }
+
+            return (
+              <div className="divide-y divide-border-color border border-border-color rounded-xl overflow-hidden text-xs">
+                {list.map((b) => (
+                  <div
+                    key={b.id}
+                    onClick={() => {
+                      setKpiListModal(null);
+                      openPaymentModal(b);
+                    }}
+                    className="p-3 hover:bg-surface-elevated/40 transition flex items-center justify-between gap-3 cursor-pointer"
+                  >
+                    <div>
+                      <p className="font-bold text-foreground">{b.name}</p>
+                      <p className="text-muted mt-0.5">{b.propertyName} • Due Day {b.dueDay}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="font-bold text-foreground">{formatCurrency(b.amount)}</p>
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                        b.status === "paid" ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
+                      }`}>
+                        {b.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={() => setKpiListModal(null)}
+              className="px-4 py-2 text-xs font-bold rounded-xl border border-border-color bg-surface-elevated text-foreground hover:bg-surface transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </Modal>
     </ModulePage>
   );
 }

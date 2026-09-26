@@ -13,6 +13,7 @@ import { COUNTRY_DIAL_CODES, DEFAULT_TRADE_SPECIALIZATIONS } from "./providers";
 import type { WorkOrderRow } from "@/lib/types";
 import { Plus, Wrench, ClipboardList, Clock, Play, CheckCircle2, XCircle, RotateCcw, Trash, ChevronRight, AlertTriangle, User, Building, Calendar, DollarSign, Image as ImageIcon, Save, Upload, Eye, Pencil, UserCheck } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
+import { Pagination } from "@/components/pagination";
 
 const emptyForm = { property_id: "", maintainer_id: "", description: "", category: "general", priority: "medium", status: "open", scheduled_date: "", estimated_cost: 0, actual_cost: 0 };
 
@@ -147,6 +148,13 @@ export default function WorkOrdersPage() {
     }
     return result;
   }, [workOrders, activeFilter, searchQuery]);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+  const paginatedWorkOrders = useMemo(() => {
+    return filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  }, [filtered, currentPage]);
 
   const openAdd = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
 
@@ -409,11 +417,11 @@ export default function WorkOrdersPage() {
           <div className="p-4">
             <DataTableHeader
               searchValue={searchQuery}
-              onSearchChange={setSearchQuery}
+              onSearchChange={(val) => { setSearchQuery(val); setCurrentPage(1); }}
               searchPlaceholder="Search work orders by property, provider, or category..."
               filters={filterTabs}
               activeFilter={activeFilter}
-              onFilterChange={setActiveFilter}
+              onFilterChange={(val) => { setActiveFilter(val); setCurrentPage(1); }}
               actions={
                 <button
                   type="button"
@@ -446,7 +454,7 @@ export default function WorkOrdersPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-color/40">
-                  {filtered.map((row) => (
+                  {paginatedWorkOrders.map((row) => (
                     <tr
                       key={row.id}
                       onClick={() => void openWorkOrderDetails(row.id)}
@@ -550,10 +558,17 @@ export default function WorkOrdersPage() {
               </table>
             </div>
           )}
-          <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20">
+          <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20 flex flex-col sm:flex-row items-center justify-between gap-3">
             <p className="text-[11px] font-bold uppercase tracking-wider text-muted/40">
               Showing {filtered.length} of {counts.all} tickets
             </p>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={filtered.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+            />
           </div>
         </section>
       )}

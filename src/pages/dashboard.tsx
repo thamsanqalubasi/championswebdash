@@ -23,6 +23,7 @@ import type {
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
 import { CheckinModal } from "@/components/checkin-modal";
+import { PendingActionsModal, DueItemsModal } from "@/components/dashboard-hubs-modal";
 import {
   TrendingUp,
   Users,
@@ -171,6 +172,8 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [checkinOpen, setCheckinOpen] = useState(false);
+  const [pendingModalOpen, setPendingModalOpen] = useState(false);
+  const [dueModalOpen, setDueModalOpen] = useState(false);
 
   const togglePropertyAccordion = (propId: string) => {
     setExpandedPropertyIds((prev) => ({
@@ -296,6 +299,244 @@ export default function DashboardPage() {
     return { active, inQuotation, awaitingFunds, completed };
   }, [procurementRequests]);
 
+  const allTiles = useMemo(() => {
+    return [
+      {
+        id: "record_rent",
+        title: "Record Rent & Collections",
+        description: "Collect rental installments, issue instant digital receipts, track arrears & month settlement.",
+        icon: DollarSign,
+        colorClass: "text-emerald-600",
+        bgClass: "bg-emerald-500/10",
+        badge: `${stats?.collectionRate || 0}% Settled`,
+        badgeColor: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+        link: "/rent-collection",
+        allowedDepts: ["admin", "manager", "accountant"],
+      },
+      {
+        id: "checkin_checkout",
+        title: "Check-In & Check-Out",
+        description: "Walk-in guest check-in, live countdown timers, room key issuance & express departure desk.",
+        icon: KeyRound,
+        colorClass: "text-blue-600",
+        bgClass: "bg-blue-500/10",
+        badge: `${stats?.activeCheckinsToday || stats?.occupiedRooms || 0} In-House`,
+        badgeColor: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+        onClick: () => setCheckinOpen(true),
+        allowedDepts: ["admin", "manager", "front_desk"],
+      },
+      {
+        id: "commercial_bookings",
+        title: "Commercial Bookings & Rooms",
+        description: "4-tier meal pricing (B&B, FB, Room Only), room inventory, floor allocations & turnarounds.",
+        icon: BedDouble,
+        colorClass: "text-purple-600",
+        bgClass: "bg-purple-500/10",
+        badge: `${stats?.availableRooms || 0} Rooms Ready`,
+        badgeColor: "bg-purple-500/10 text-purple-600 border-purple-500/20",
+        link: "/commercial-bookings",
+        allowedDepts: ["admin", "manager", "front_desk", "maintenance"],
+      },
+      {
+        id: "contracts",
+        title: "Contracts & Lease Agreements",
+        description: "Tenancy lease agreements, deposit locks, and days-remaining contract countdowns.",
+        icon: FileSignature,
+        colorClass: "text-indigo-600",
+        bgClass: "bg-indigo-500/10",
+        badge: "Lease Registry",
+        badgeColor: "bg-indigo-500/10 text-indigo-600 border-indigo-500/20",
+        link: "/contracts",
+        allowedDepts: ["admin", "manager", "accountant"],
+      },
+      {
+        id: "invoices",
+        title: "Invoices & Statements",
+        description: "Issue rental invoices, commercial bills, print statements and track debt aging status.",
+        icon: ClipboardList,
+        colorClass: "text-sky-600",
+        bgClass: "bg-sky-500/10",
+        badge: "Receivables Desk",
+        badgeColor: "bg-sky-500/10 text-sky-600 border-sky-500/20",
+        link: "/invoices",
+        allowedDepts: ["admin", "manager", "accountant"],
+      },
+      {
+        id: "work_orders",
+        title: "Work Orders & Maintenance",
+        description: "Asset maintenance tickets, contractor dispatch, equipment repairs and room turnover fixes.",
+        icon: Wrench,
+        colorClass: "text-amber-600",
+        bgClass: "bg-amber-500/10",
+        badge: `${stats?.pendingMaintenance || 0} Open Tickets`,
+        badgeColor: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+        link: "/maintenance/work-orders",
+        allowedDepts: ["admin", "manager", "maintenance", "front_desk"],
+      },
+      {
+        id: "scheduled_bills",
+        title: "Scheduled Bills & Outflows",
+        description: "Recurring municipal utilities, recurring vendor commitments, bills & POP verification.",
+        icon: Clock,
+        colorClass: "text-rose-600",
+        bgClass: "bg-rose-500/10",
+        badge: "Utilities & Bills",
+        badgeColor: "bg-rose-500/10 text-rose-600 border-rose-500/20",
+        link: "/bills",
+        allowedDepts: ["admin", "manager", "accountant"],
+      },
+      {
+        id: "enquiries",
+        title: "Client Enquiries & CRM",
+        description: "Prospective customer leads, room inquiries, viewing requests & tenant messages.",
+        icon: Inbox,
+        colorClass: "text-cyan-600",
+        bgClass: "bg-cyan-500/10",
+        badge: "Customer Desk",
+        badgeColor: "bg-cyan-500/10 text-cyan-600 border-cyan-500/20",
+        link: "/portal",
+        allowedDepts: ["admin", "manager", "front_desk"],
+      },
+      {
+        id: "procurement_stores",
+        title: "Procurement & Stores",
+        description: "Requisitions pipeline, multi-quote supplier RFQs, central warehouse inventory & stock.",
+        icon: Truck,
+        colorClass: "text-purple-600",
+        bgClass: "bg-purple-500/10",
+        badge: `${procurementMetrics.active} Requests Active`,
+        badgeColor: "bg-purple-500/10 text-purple-600 border-purple-500/20",
+        link: "/procurement",
+        allowedDepts: ["admin", "manager", "procurement", "stores", "accountant"],
+      },
+      {
+        id: "accounts",
+        title: "Accounts & Financial Reports",
+        description: "Real-time cash flow, net operating income, expense audits, and P&L statements.",
+        icon: TrendingUp,
+        colorClass: "text-emerald-600",
+        bgClass: "bg-emerald-500/10",
+        badge: formatCurrency(stats?.netProfit || 0),
+        badgeColor: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+        link: "/finance/reports",
+        allowedDepts: ["admin", "manager", "accountant", "audit"],
+      },
+      {
+        id: "pendings_hub",
+        title: "Pending Actions Hub",
+        description: "Centralized backlog: open work orders, procurement funds, turnovers and bills.",
+        icon: AlertCircle,
+        colorClass: "text-amber-600",
+        bgClass: "bg-amber-500/10",
+        badge: `${(stats?.pendingMaintenance || 0) + procurementMetrics.awaitingFunds + (stats?.cleaningNeededRooms || 0)} Pending`,
+        badgeColor: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+        onClick: () => setPendingModalOpen(true),
+        allowedDepts: "all" as const,
+      },
+      {
+        id: "due_hub",
+        title: "Due Items & Deadlines",
+        description: "Critical due items: today's guest checkouts, overdue bills, and contract expiries.",
+        icon: Clock,
+        colorClass: "text-red-600",
+        bgClass: "bg-red-500/10",
+        badge: "Active Deadlines",
+        badgeColor: "bg-red-500/10 text-red-600 border-red-500/20",
+        onClick: () => setDueModalOpen(true),
+        allowedDepts: "all" as const,
+      },
+      {
+        id: "tenants",
+        title: "Tenants Directory",
+        description: "Resident records, payment history, property assignments, and rental reports.",
+        icon: Users,
+        colorClass: "text-teal-600",
+        bgClass: "bg-teal-500/10",
+        badge: "Tenants Roster",
+        badgeColor: "bg-teal-500/10 text-teal-600 border-teal-500/20",
+        link: "/tenants",
+        allowedDepts: ["admin", "manager", "accountant", "front_desk"],
+      },
+      {
+        id: "properties",
+        title: "Properties & Real Estate",
+        description: "Manage residential units, commercial buildings, lodges, and public listings.",
+        icon: Building2,
+        colorClass: "text-blue-600",
+        bgClass: "bg-blue-500/10",
+        badge: `${properties.length} Properties`,
+        badgeColor: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+        link: "/properties",
+        allowedDepts: ["admin", "manager"],
+      },
+      {
+        id: "hr",
+        title: "HR & Employee Payroll",
+        description: "Staff directory, compensation tiers, leave records, and department assignments.",
+        icon: Briefcase,
+        colorClass: "text-indigo-600",
+        bgClass: "bg-indigo-500/10",
+        badge: `${companyUsers.length} Staff`,
+        badgeColor: "bg-indigo-500/10 text-indigo-600 border-indigo-500/20",
+        link: "/hr",
+        allowedDepts: ["admin", "manager", "human_resources"],
+      },
+      {
+        id: "organogram",
+        title: "Organogram & Governance",
+        description: "Visual corporate organogram tree, supervisory reporting, and role structures.",
+        icon: Network,
+        colorClass: "text-purple-600",
+        bgClass: "bg-purple-500/10",
+        badge: "Corporate Tree",
+        badgeColor: "bg-purple-500/10 text-purple-600 border-purple-500/20",
+        link: "/organogram",
+        allowedDepts: ["admin", "manager", "human_resources", "it", "audit"],
+      },
+      {
+        id: "audit",
+        title: "Audit Trail & Click Journeys",
+        description: "System compliance events, forensic activity logs, and visual user click journeys.",
+        icon: History,
+        colorClass: "text-amber-600",
+        bgClass: "bg-amber-500/10",
+        badge: `${auditEvents.length} Logs`,
+        badgeColor: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+        link: "/audit-trail",
+        allowedDepts: ["admin", "manager", "it", "audit"],
+      },
+      {
+        id: "it_admin",
+        title: "IT Administration & Security",
+        description: "User credentials, access levels, multi-company security, and system diagnostics.",
+        icon: Server,
+        colorClass: "text-blue-600",
+        bgClass: "bg-blue-500/10",
+        badge: "Security & Access",
+        badgeColor: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+        link: "/users-management",
+        allowedDepts: ["admin", "manager", "it"],
+      },
+    ];
+  }, [
+    stats,
+    procurementMetrics,
+    properties.length,
+    companyUsers.length,
+    auditEvents.length,
+    formatCurrency,
+  ]);
+
+  // Filter tiles based on user role and department
+  const visibleTiles = useMemo(() => {
+    if (isSuperAdmin || isAdmin) return allTiles;
+    return allTiles.filter(
+      (tile) =>
+        tile.allowedDepts === "all" ||
+        (Array.isArray(tile.allowedDepts) && tile.allowedDepts.includes(userDept as DepartmentType))
+    );
+  }, [allTiles, isSuperAdmin, isAdmin, userDept]);
+
   return (
     <ModulePage
       title={isExecutive ? `${currentCompany.name} — Super Admin Dashboard` : `${currentCompany.name} — ${currentCompanyUser?.jobTitle || "Staff Portal"}`}
@@ -314,50 +555,126 @@ export default function DashboardPage() {
       {!loading && !error && stats && data && (
         <div className="space-y-8">
           {/* ========================================================================= */}
+          {/* OPERATIONAL DEPARTMENT COMMAND DESK (3-IN-A-ROW SQUARE TILES)            */}
+          {/* ========================================================================= */}
+          <section className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-blue-500/20 bg-gradient-to-r from-blue-600/10 via-surface to-surface p-5 shadow-xs">
+              <div className="flex items-center gap-3.5">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-md shrink-0">
+                  <Layers size={24} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-bold text-foreground">
+                      Operational Department Command Desk
+                    </h2>
+                    <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-600 border border-emerald-500/20 uppercase tracking-wider">
+                      {isExecutive ? "All Operations Active" : `${userDept.replace(/_/g, " ")} Authorized`}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted mt-0.5">
+                    {isExecutive
+                      ? "Super Admin view • Complete operational command suite across Front Desk, Maintenance, Stores, Accounts, and HR."
+                      : `Role-tailored workspace with authorized operations for the ${userDept.replace(/_/g, " ")} department.`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setPendingModalOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-xs font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition"
+                >
+                  <AlertCircle size={14} className="text-amber-600" />
+                  <span>Pending Hub</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDueModalOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2 text-xs font-bold text-red-700 dark:text-red-300 hover:bg-red-500/20 transition"
+                >
+                  <Clock size={14} className="text-red-600" />
+                  <span>Due Hub</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCheckinOpen(true)}
+                  className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition"
+                >
+                  <KeyRound size={14} />
+                  <span>Check In</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 3 IN A ROW SQUARE TILES GRID */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {visibleTiles.map((tile) => (
+                <div
+                  key={tile.id}
+                  className="group relative flex flex-col justify-between rounded-2xl border border-border-color bg-surface p-5 shadow-xs transition-all hover:border-blue-500/50 hover:shadow-md min-h-[175px]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div
+                      className={`flex h-11 w-11 items-center justify-center rounded-xl ${tile.bgClass} ${tile.colorClass} shadow-xs shrink-0 transition-transform group-hover:scale-105`}
+                    >
+                      <tile.icon size={22} />
+                    </div>
+                    {tile.badge && (
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${
+                          tile.badgeColor || "bg-muted/10 text-muted border-border-color"
+                        } shrink-0`}
+                      >
+                        {tile.badge}
+                      </span>
+                    )}
+                  </div>
+                  <div className="my-2.5">
+                    <h4 className="text-sm font-bold text-foreground group-hover:text-blue-600 transition-colors">
+                      {tile.title}
+                    </h4>
+                    <p className="mt-1 text-xs text-muted line-clamp-2 leading-relaxed">
+                      {tile.description}
+                    </p>
+                  </div>
+                  <div className="pt-2 border-t border-border-color/60 flex items-center justify-between">
+                    {tile.onClick ? (
+                      <button
+                        type="button"
+                        onClick={tile.onClick}
+                        className="w-full flex items-center justify-between text-xs font-bold text-foreground group-hover:text-blue-600 transition"
+                      >
+                        <span>Launch Action</span>
+                        <ArrowUpRight
+                          size={14}
+                          className="text-muted group-hover:text-blue-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition"
+                        />
+                      </button>
+                    ) : (
+                      <Link
+                        to={tile.link || "#"}
+                        className="w-full flex items-center justify-between text-xs font-bold text-foreground group-hover:text-blue-600 transition"
+                      >
+                        <span>Open Workspace</span>
+                        <ArrowUpRight
+                          size={14}
+                          className="text-muted group-hover:text-blue-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition"
+                        />
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* ========================================================================= */}
           {/* SUPER ADMIN / ADMIN MULTI-DEPARTMENT DASHBOARD                            */}
           {/* ========================================================================= */}
           {isExecutive && (
             <>
-              {/* Executive Overview Banner */}
-              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-blue-500/20 bg-gradient-to-r from-blue-600/10 via-surface to-surface p-5 shadow-sm">
-                <div className="flex items-center gap-3.5">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-md shrink-0">
-                    <Layers size={24} />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-base font-bold text-foreground">
-                        Operational Department Command Deck
-                      </h2>
-                      <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-600 border border-emerald-500/20 uppercase tracking-wider">
-                        All Services Active
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted mt-0.5">
-                      10 Operational Departments • Real-time synchronization between Front Desk, Stores, Procurement, HR, and Accounts.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setCheckinOpen(true)}
-                    className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 transition"
-                  >
-                    <KeyRound size={15} />
-                    <span>Check In Guest</span>
-                  </button>
-                  <Link
-                    to="/procurement"
-                    className="flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-purple-700 transition"
-                  >
-                    <Truck size={15} />
-                    <span>New Procurement</span>
-                  </Link>
-                </div>
-              </div>
-
               {/* Accordion Controls Bar */}
               <div className="flex items-center justify-between pt-1">
                 <div className="flex items-center gap-2">
@@ -2031,6 +2348,23 @@ export default function DashboardPage() {
         isOpen={checkinOpen}
         onClose={() => setCheckinOpen(false)}
         onSuccess={() => setReloadKey((k) => k + 1)}
+      />
+
+      {/* Pending Actions Backlog Modal */}
+      <PendingActionsModal
+        isOpen={pendingModalOpen}
+        onClose={() => setPendingModalOpen(false)}
+        pendingMaintenance={stats?.pendingMaintenance || 0}
+        awaitingProcurement={procurementMetrics.awaitingFunds}
+        quotationProcurement={procurementMetrics.inQuotation}
+        cleaningNeededRooms={stats?.cleaningNeededRooms || 0}
+      />
+
+      {/* Due Items & Deadlines Modal */}
+      <DueItemsModal
+        isOpen={dueModalOpen}
+        onClose={() => setDueModalOpen(false)}
+        activeCheckins={stats?.activeCheckinsToday || stats?.occupiedRooms || 0}
       />
     </ModulePage>
   );

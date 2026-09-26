@@ -23,6 +23,12 @@ import {
   Utensils,
   CheckCircle2,
   Lock,
+  Route,
+  MousePointerClick,
+  ArrowRight,
+  Navigation,
+  Compass,
+  MapPin,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -49,7 +55,7 @@ function formatCurrency(amount: number) {
 
 export default function AuditTrailPage() {
   const { currentCompany } = useAuth();
-  const [activeTab, setActiveTab] = useState<"logs" | "patterns" | "financials">("logs");
+  const [activeTab, setActiveTab] = useState<"logs" | "patterns" | "financials" | "journeys">("logs");
   const [events, setEvents] = useState<AuditEventRow[]>([]);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [patterns, setPatterns] = useState<any>(null);
@@ -57,6 +63,8 @@ export default function AuditTrailPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
+  const [journeyActorFilter, setJourneyActorFilter] = useState("all");
+  const [journeySearch, setJourneySearch] = useState("");
 
   useEffect(() => {
     async function loadData() {
@@ -91,6 +99,79 @@ export default function AuditTrailPage() {
       return matchesSearch && matchesFilter;
     });
   }, [events, search, actionFilter]);
+
+  const userJourneys = useMemo(() => {
+    return events.map((e) => {
+      let buttonName = "Click Action";
+      let originPath = "/dashboard";
+      let destinationPath = "/dashboard";
+      let sessionId = "Active Session";
+
+      if (typeof e.details === "object" && e.details !== null) {
+        const d = e.details as Record<string, any>;
+        buttonName = d.button_name || e.action;
+        originPath = d.origin_path || d.path || "/dashboard";
+        destinationPath = d.destination_path || originPath;
+        sessionId = d.session_id || "Active Session";
+      } else if (typeof e.details === "string") {
+        try {
+          const parsed = JSON.parse(e.details);
+          buttonName = parsed.button_name || e.action;
+          originPath = parsed.origin_path || parsed.path || "/dashboard";
+          destinationPath = parsed.destination_path || originPath;
+          sessionId = parsed.session_id || "Active Session";
+        } catch {
+          const clickMatch = e.details.match(/clicked ["'](.*?)["']/i);
+          if (clickMatch) buttonName = clickMatch[1];
+          const originMatch = e.details.match(/from (\/\S+)/i) || e.details.match(/on (\/\S+)/i);
+          if (originMatch) originPath = originMatch[1];
+          const destMatch = e.details.match(/➔ (\/\S+)/i) || e.details.match(/to (\/\S+)/i);
+          if (destMatch) destinationPath = destMatch[1];
+          else destinationPath = originPath;
+        }
+      }
+
+      return {
+        id: e.id,
+        timestamp: e.createdAt,
+        actor: e.actorName || "Staff Member",
+        action: e.action,
+        buttonName,
+        originPath,
+        destinationPath,
+        sessionId,
+      };
+    });
+  }, [events]);
+
+  const uniqueActors = useMemo(() => {
+    return Array.from(new Set(userJourneys.map((j) => j.actor).filter(Boolean)));
+  }, [userJourneys]);
+
+  const filteredJourneys = useMemo(() => {
+    return userJourneys.filter((j) => {
+      const matchesActor = journeyActorFilter === "all" || j.actor === journeyActorFilter;
+      const matchesSearch =
+        !journeySearch ||
+        j.actor.toLowerCase().includes(journeySearch.toLowerCase()) ||
+        j.buttonName.toLowerCase().includes(journeySearch.toLowerCase()) ||
+        j.originPath.toLowerCase().includes(journeySearch.toLowerCase()) ||
+        j.destinationPath.toLowerCase().includes(journeySearch.toLowerCase());
+      return matchesActor && matchesSearch;
+    });
+  }, [userJourneys, journeyActorFilter, journeySearch]);
+
+  const pathwayStats = useMemo(() => {
+    const transitionCounts: Record<string, number> = {};
+    filteredJourneys.forEach((j) => {
+      const key = `${j.originPath} ➔ ${j.destinationPath}`;
+      transitionCounts[key] = (transitionCounts[key] || 0) + 1;
+    });
+    return Object.entries(transitionCounts)
+      .map(([path, count]) => ({ path, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+  }, [filteredJourneys]);
 
   return (
     <ModulePage
@@ -136,6 +217,19 @@ export default function AuditTrailPage() {
         >
           <CreditCard size={16} />
           Financial & Invoicing Audit
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("journeys")}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
+            activeTab === "journeys"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-muted hover:bg-surface-elevated hover:text-foreground"
+          }`}
+        >
+          <Route size={16} />
+          Visual User Journey &amp; Click Map ({userJourneys.length})
         </button>
       </div>
 
@@ -326,6 +420,226 @@ export default function AuditTrailPage() {
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* TAB 4: VISUAL USER JOURNEY & CLICK MAP */}
+      {!loading && !error && activeTab === "journeys" && (
+        <div className="space-y-6">
+          {/* Metrics summary */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase text-muted tracking-wider">Total Interactions</span>
+                <div className="rounded-xl bg-blue-500/10 p-2 text-blue-600">
+                  <MousePointerClick size={18} />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-foreground">{filteredJourneys.length}</p>
+              <p className="text-[11px] text-muted mt-1">Logged clicks &amp; transitions</p>
+            </div>
+
+            <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase text-muted tracking-wider">Active Staff Tracked</span>
+                <div className="rounded-xl bg-purple-500/10 p-2 text-purple-600">
+                  <Users size={18} />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-purple-600">{uniqueActors.length}</p>
+              <p className="text-[11px] text-muted mt-1">Users generating navigation flows</p>
+            </div>
+
+            <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase text-muted tracking-wider">Active Pathways</span>
+                <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-600">
+                  <Route size={18} />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-emerald-600">{pathwayStats.length}</p>
+              <p className="text-[11px] text-muted mt-1">Origin ➔ Destination routes</p>
+            </div>
+
+            <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase text-muted tracking-wider">Top Route</span>
+                <div className="rounded-xl bg-amber-500/10 p-2 text-amber-600">
+                  <Navigation size={18} />
+                </div>
+              </div>
+              <p className="text-sm font-bold text-foreground truncate" title={pathwayStats[0]?.path || "None"}>
+                {pathwayStats[0]?.path || "None yet"}
+              </p>
+              <p className="text-[11px] text-muted mt-1">
+                {pathwayStats[0] ? `${pathwayStats[0].count} traversed transitions` : "No transitions logged"}
+              </p>
+            </div>
+          </div>
+
+          {/* Top Pathways Overview */}
+          {pathwayStats.length > 0 && (
+            <div className="rounded-2xl border border-border-color bg-surface p-5 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                    <Route size={16} className="text-blue-600" />
+                    <span>Top Navigational Flow Pathways</span>
+                  </h3>
+                  <p className="text-xs text-muted">Most frequent routes users traverse through the system.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {pathwayStats.map((item, idx) => {
+                  const parts = item.path.split(" ➔ ");
+                  const origin = parts[0] || "/";
+                  const dest = parts[1] || parts[0];
+                  return (
+                    <div
+                      key={idx}
+                      className="rounded-xl border border-border-color bg-surface-elevated/40 p-3.5 flex flex-col justify-between space-y-2 hover:border-blue-500/40 transition"
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 font-semibold truncate max-w-[120px]">
+                          {origin}
+                        </span>
+                        <ArrowRight size={14} className="text-muted shrink-0 mx-1" />
+                        <span className="font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 font-semibold truncate max-w-[120px]">
+                          {dest}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted pt-1 border-t border-border-color/60">
+                        <span>Traversed Frequency</span>
+                        <span className="font-black text-foreground">{item.count} times</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Controls: Search and User Filter */}
+          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between rounded-2xl border border-border-color bg-surface p-4 shadow-sm">
+            <div className="relative flex-1 w-full">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+              <input
+                type="search"
+                placeholder="Search user journeys by button name, origin, destination, or operator..."
+                value={journeySearch}
+                onChange={(e) => setJourneySearch(e.target.value)}
+                className="w-full rounded-xl border border-border-color bg-surface-elevated pl-9 pr-4 py-2 text-sm text-foreground outline-none focus:border-blue-600"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <span className="text-xs text-muted font-medium whitespace-nowrap">Operator:</span>
+              <select
+                value={journeyActorFilter}
+                onChange={(e) => setJourneyActorFilter(e.target.value)}
+                className="w-full sm:w-auto rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs font-semibold text-foreground focus:border-blue-600 focus:outline-none"
+              >
+                <option value="all">All Operators ({uniqueActors.length})</option>
+                {uniqueActors.map((actor) => (
+                  <option key={actor} value={actor}>
+                    {actor}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Visual User Journey Pipeline & Click Map */}
+          {filteredJourneys.length === 0 ? (
+            <div className="rounded-2xl border border-border-color bg-surface p-12 text-center shadow-sm">
+              <Route size={40} className="mx-auto text-muted mb-3 opacity-60" />
+              <h3 className="text-base font-bold text-foreground">No User Journeys Recorded</h3>
+              <p className="text-xs text-muted max-w-md mx-auto mt-1">
+                As operators navigate between modules, click actions, and operate features, real-time visual movement maps and origin-destination pipelines will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-muted">
+                  Interactive User Movement Sequence ({filteredJourneys.length} events)
+                </span>
+                <span className="text-[11px] text-muted">Arranged from latest transitions</span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                {filteredJourneys.slice(0, 30).map((journey, index) => (
+                  <div
+                    key={journey.id || index}
+                    className="group rounded-2xl border border-border-color bg-surface p-4 shadow-sm hover:border-blue-500/50 hover:shadow-md transition-all duration-200"
+                  >
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      {/* Left: Origin Page */}
+                      <div className="flex items-center gap-3 min-w-[200px] flex-1">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 border border-blue-500/20">
+                          <Compass size={18} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-bold uppercase text-muted tracking-wider">Origin Screen</p>
+                          <p className="font-mono text-xs font-bold text-foreground truncate" title={journey.originPath}>
+                            {journey.originPath}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Center: Button Clicked & Transition Arrow */}
+                      <div className="flex flex-col items-center justify-center gap-1.5 shrink-0 px-2 py-1">
+                        <div className="flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 px-3 py-1 text-xs font-bold text-amber-700 dark:text-amber-400 shadow-xs">
+                          <MousePointerClick size={13} className="text-amber-600" />
+                          <span className="truncate max-w-[220px]" title={journey.buttonName}>
+                            "{journey.buttonName}"
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 text-muted text-[10px]">
+                          <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+                          <ArrowRight size={14} className="text-blue-500" />
+                          <span className="font-semibold uppercase tracking-wider text-[9px]">{journey.action}</span>
+                        </div>
+                      </div>
+
+                      {/* Right: Destination Page */}
+                      <div className="flex items-center gap-3 min-w-[200px] flex-1 md:justify-end">
+                        <div className="text-left md:text-right min-w-0">
+                          <p className="text-[10px] font-bold uppercase text-muted tracking-wider">Destination Screen</p>
+                          <p className="font-mono text-xs font-bold text-emerald-600 truncate" title={journey.destinationPath}>
+                            {journey.destinationPath}
+                          </p>
+                        </div>
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                          <MapPin size={18} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Footer bar with operator and timestamp */}
+                    <div className="mt-3 pt-3 border-t border-border-color/60 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+                      <div className="flex items-center gap-2">
+                        <div className="h-5 w-5 rounded-full bg-surface-elevated border border-border-color flex items-center justify-center text-[10px] font-bold text-foreground">
+                          {journey.actor.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="font-semibold text-foreground">{journey.actor}</span>
+                        <span className="text-muted/40">•</span>
+                        <span className="font-mono text-[10px] bg-surface-elevated px-2 py-0.5 rounded text-muted">
+                          {journey.sessionId}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 font-mono text-[11px] text-muted">
+                        <Clock size={12} />
+                        <span>{new Date(journey.timestamp).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </ModulePage>

@@ -53,7 +53,6 @@ const allNavSections: NavSection[] = [
       { label: "Service Providers", href: "/maintenance/providers", icon: Truck, departments: ["admin","maintenance","manager","procurement"], permissions: ["manage_maintenance"] },
       { label: "Inspections", href: "/maintenance/inspections", icon: SearchCheck, departments: ["admin","maintenance","manager"], permissions: ["manage_maintenance"] },
       { label: "Scheduled Tasks", href: "/maintenance/scheduled-tasks", icon: CalendarClock, departments: ["admin","maintenance","manager"], permissions: ["manage_maintenance"] },
-      { label: "Inventory & Stock", href: "/maintenance/inventory", icon: Package, departments: ["admin","maintenance","procurement","manager"], permissions: ["manage_maintenance"] },
     ],
   },
   {

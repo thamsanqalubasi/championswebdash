@@ -20,6 +20,7 @@ import {
   FileText
 } from "lucide-react";
 import { uploadInventoryMedia } from '@/lib/storage';
+import { Pagination } from "@/components/pagination";
 import type { 
   StoresItem, 
   StoresTransaction, 
@@ -230,6 +231,13 @@ export default function StoresInventoryPage() {
       return true;
     });
   }, [inventory, searchQuery, categoryFilter, sourceFilter]);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
+  const totalPages = Math.ceil(filteredInventory.length / PAGE_SIZE) || 1;
+  const paginatedInventory = useMemo(() => {
+    return filteredInventory.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  }, [filteredInventory, currentPage]);
 
   const stats = useMemo(() => {
     const totalItems = inventory.length;
@@ -572,7 +580,10 @@ export default function StoresInventoryPage() {
                   type="text"
                   placeholder="Search inventory..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   className="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border-color rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -581,7 +592,10 @@ export default function StoresInventoryPage() {
                   <Filter className="w-3 h-3 absolute left-3 top-3 text-muted-foreground" />
                   <select
                     value={categoryFilter}
-                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    onChange={(e) => {
+                      setCategoryFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
                     className="pl-8 pr-8 py-2 text-sm bg-background border border-border-color rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none"
                   >
                     {categories.map(c => <option key={c} value={c}>{c}</option>)}
@@ -591,7 +605,10 @@ export default function StoresInventoryPage() {
                   <Filter className="w-3 h-3 absolute left-3 top-3 text-muted-foreground" />
                   <select
                     value={sourceFilter}
-                    onChange={(e) => setSourceFilter(e.target.value)}
+                    onChange={(e) => {
+                      setSourceFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
                     className="pl-8 pr-8 py-2 text-sm bg-background border border-border-color rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none"
                   >
                     <option value="All">All Sources</option>
@@ -624,7 +641,7 @@ export default function StoresInventoryPage() {
                       </td>
                     </tr>
                   ) : (
-                    filteredInventory.map(item => {
+                    paginatedInventory.map(item => {
                       const isLow = item.quantity <= item.minStockLevel;
                       return (
                         <tr key={item.id} className={`hover:bg-muted/20 transition-colors ${isLow ? 'bg-red-500/5 hover:bg-red-500/10' : ''}`}>
@@ -665,6 +682,15 @@ export default function StoresInventoryPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="border-t border-border-color p-3 bg-surface">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={filteredInventory.length}
+                pageSize={PAGE_SIZE}
+                onPageChange={setCurrentPage}
+              />
             </div>
           </div>
         </div>

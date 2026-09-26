@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   KeyRound,
   Search,
@@ -43,6 +43,8 @@ import { CheckoutCountdown, getCheckoutDelta } from "@/components/checkout-count
 import { ExpressCheckoutModal } from "@/components/express-checkout-modal";
 import { CheckoutConfirmModal } from "@/components/checkout-confirm-modal";
 import { CheckoutHistoryModal } from "@/components/checkout-history-modal";
+import { BookingsReportModal } from "@/components/bookings-report-modal";
+import { Pagination } from "@/components/pagination";
 
 export default function CommercialBookingsPage() {
   const { currentCompany, currentCompanyUser } = useAuth();
@@ -51,6 +53,8 @@ export default function CommercialBookingsPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [bookingsReportOpen, setBookingsReportOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Modals state
   const [checkinOpen, setCheckinOpen] = useState(false);
@@ -128,18 +132,27 @@ export default function CommercialBookingsPage() {
     }
   };
 
-  const filteredBookings = bookings.filter((b) => {
-    const matchesSearch =
-      b.guestName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.bookingCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (b.roomNumber && b.roomNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      b.guestPhone.includes(searchQuery);
+  const filteredBookings = useMemo(() => {
+    return bookings.filter((b) => {
+      const matchesSearch =
+        b.guestName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        b.bookingCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (b.roomNumber && b.roomNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        b.guestPhone.includes(searchQuery);
 
-    const matchesStatus =
-      statusFilter === "all" || b.bookingStatus === statusFilter;
+      const matchesStatus =
+        statusFilter === "all" || b.bookingStatus === statusFilter;
 
-    return matchesSearch && matchesStatus;
-  });
+      return matchesSearch && matchesStatus;
+    });
+  }, [bookings, searchQuery, statusFilter]);
+
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(filteredBookings.length / itemsPerPage);
+  const paginatedBookings = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredBookings.slice(start, start + itemsPerPage);
+  }, [filteredBookings, currentPage]);
 
   const activeCheckedIn = bookings.filter((b) => b.bookingStatus === "checked_in" || b.bookingStatus === "extended").length;
   const occupiedRooms = rooms.filter((r) => r.status === "occupied").length;
@@ -163,17 +176,27 @@ export default function CommercialBookingsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setBookingsReportOpen(true)}
+            className="flex items-center justify-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-elevated transition shadow-xs"
+            title="Generate, Preview, Print or Share Bookings Report"
+          >
+            <FileText size={15} className="text-blue-600" />
+            <span>Bookings Report</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setExpressCheckoutOpen(true)}
-            className="flex items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-500/20 transition shadow-xs"
+            className="flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-500/20 transition shadow-xs"
             title="Express Checkout & Overstay Desk"
           >
-            <LogOut size={18} />
+            <LogOut size={15} />
             <span>Check Out Guest</span>
             {overstayCount > 0 && (
-              <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-black text-white animate-pulse">
+              <span className="rounded-full bg-red-600 px-1.5 py-0.2 text-[10px] font-black text-white animate-pulse">
                 {overstayCount} Overdue
               </span>
             )}
@@ -182,20 +205,20 @@ export default function CommercialBookingsPage() {
           <button
             type="button"
             onClick={() => setCheckoutHistoryOpen(true)}
-            className="flex items-center justify-center gap-2 rounded-xl border border-border-color bg-surface px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-elevated transition shadow-xs"
+            className="flex items-center justify-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-elevated transition shadow-xs"
             title="View Guest Checkout History & Departures Log"
           >
-            <History size={18} className="text-emerald-600" />
+            <History size={15} className="text-emerald-600" />
             <span>Checkout History</span>
           </button>
 
           <button
             type="button"
             onClick={() => setCheckinOpen(true)}
-            className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition"
+            className="flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition"
           >
-            <KeyRound size={18} />
-            <span>New Guest Check-In</span>
+            <KeyRound size={15} />
+            <span>New Check-In</span>
           </button>
         </div>
       </div>
@@ -302,7 +325,7 @@ export default function CommercialBookingsPage() {
                   </td>
                 </tr>
               ) : (
-                filteredBookings.map((b) => {
+                paginatedBookings.map((b) => {
                   const isStayActive = b.bookingStatus === "checked_in" || b.bookingStatus === "extended";
                   return (
                     <tr
@@ -474,6 +497,18 @@ export default function CommercialBookingsPage() {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div className="border-t border-border-color p-3 bg-surface">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              totalItems={filteredBookings.length}
+              itemsPerPage={itemsPerPage}
+            />
+          </div>
+        )}
       </div>
 
       {/* Booking Details & Edit Modal */}
@@ -634,6 +669,15 @@ export default function CommercialBookingsPage() {
           setCheckoutHistoryOpen(false);
         }}
         currency={currentCompany.currency || "ZAR"}
+      />
+
+      {/* Bookings Report Modal */}
+      <BookingsReportModal
+        isOpen={bookingsReportOpen}
+        onClose={() => setBookingsReportOpen(false)}
+        bookings={bookings}
+        rooms={rooms}
+        companyName={currentCompany.name}
       />
     </div>
   );

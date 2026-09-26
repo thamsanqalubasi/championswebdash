@@ -215,15 +215,29 @@ export default function CustomerDashboardPage() {
   }, [assignedTenant, tenantContracts]);
 
   useEffect(() => {
+    const customerSessionRaw = typeof window !== "undefined" ? localStorage.getItem("paimba_customer_session") : null;
+    if (!customerSessionRaw) {
+      navigate("/portal/login");
+      return;
+    }
+
     supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
+      let activeEmail = "";
+      if (data.session?.user?.email) {
+        activeEmail = data.session.user.email;
+        setSession(data.session);
+      } else {
+        try {
+          const parsed = JSON.parse(customerSessionRaw);
+          activeEmail = parsed.email;
+          setSession({ user: { email: parsed.email } });
+        } catch {}
+      }
+      if (!activeEmail) {
         navigate("/portal/login");
         return;
       }
-      setSession(data.session);
-      const email = data.session.user.email!;
-      const sessionData = data.session;
-      void loadAllPortalData(email, sessionData);
+      void loadAllPortalData(activeEmail, data.session);
     });
   }, [navigate]);
 
@@ -1025,7 +1039,10 @@ export default function CustomerDashboardPage() {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    localStorage.removeItem("paimba_customer_session");
+    try {
+      await supabase.auth.signOut();
+    } catch {}
     navigate("/portal/login");
   };
 

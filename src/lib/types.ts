@@ -434,6 +434,12 @@ export type TenantRow = {
   rentStatus: "paid" | "partial" | "overdue" | "unknown";
   tenureStartDate?: string;
   createdAt?: string;
+  name?: string;
+  leaseStart?: string;
+  leaseEnd?: string;
+  rentAmount?: number;
+  depositAmount?: number;
+  status?: string;
 };
 
 export type DashboardStats = {

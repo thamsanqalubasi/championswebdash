@@ -52,6 +52,8 @@ function ProtectedLayout() {
   const { user, loading } = useAuth();
   const location = useLocation();
 
+  const staffSession = typeof window !== "undefined" ? localStorage.getItem("paimba_staff_session") : null;
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -60,7 +62,8 @@ function ProtectedLayout() {
     );
   }
 
-  if (!user) {
+  // Strict boundary: Only allow access if user is logged into the staff/admin session
+  if (!user || !staffSession) {
     const nextPath = encodeURIComponent(`${location.pathname}${location.search}`);
     return <Navigate to={`/login?next=${nextPath}`} replace />;
   }

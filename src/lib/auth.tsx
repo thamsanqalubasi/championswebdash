@@ -297,24 +297,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener("focus", handleFocus);
 
-    // Fetch initial session
-    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
-      setSession(currentSession);
-      setUser(currentSession?.user ?? null);
-      if (currentSession?.user?.email) {
-        void syncUserProfile(currentSession.user.email);
-      }
+    // Fetch initial session - strictly check for dedicated staff session
+    const staffSessionRaw = typeof window !== "undefined" ? localStorage.getItem("paimba_staff_session") : null;
+    if (!staffSessionRaw) {
+      setSession(null);
+      setUser(null);
       setLoading(false);
-    });
+    } else {
+      supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+        if (currentSession?.user?.email) {
+          void syncUserProfile(currentSession.user.email);
+        } else {
+          try {
+            const parsed = JSON.parse(staffSessionRaw);
+            if (parsed.email) void syncUserProfile(parsed.email);
+          } catch {}
+        }
+        setLoading(false);
+      });
+    }
 
     // Listen for auth changes (including recovery & invite tokens)
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-      setUser(newSession?.user ?? null);
-      if (newSession?.user?.email) {
-        void syncUserProfile(newSession.user.email);
+      const activeStaff = typeof window !== "undefined" ? localStorage.getItem("paimba_staff_session") : null;
+      if (activeStaff) {
+        setSession(newSession);
+        setUser(newSession?.user ?? null);
+        if (newSession?.user?.email) {
+          void syncUserProfile(newSession.user.email);
+        }
       }
       setLoading(false);
     });
@@ -326,14 +341,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const normalizedEmail = email.trim().toLowerCase();
+    const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
     if (error) {
       // 1. Check if user is a registered company staff in Supabase
       try {
         const { data: cuList } = await supabase
           .from("company_users")
           .select("*, companies(*), users!inner(*)")
-          .ilike("users.email", email.trim().toLowerCase())
+          .ilike("users.email", normalizedEmail)
           .limit(1);
 
         if (cuList && cuList.length > 0 && password.length >= 6) {
@@ -344,7 +360,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             user_metadata: { full_name: [cu.users?.first_name, cu.users?.last_name].filter(Boolean).join(" ") },
             aud: "authenticated",
             created_at: cu.created_at,
-            email: cu.users?.email || email,
+            email: cu.users?.email || normalizedEmail,
             phone: "",
             role: "authenticated",
             updated_at: new Date().toISOString(),
@@ -372,7 +388,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: cu.id,
             companyId: cu.company_id,
             userId: cu.user_id,
-            email: cu.users?.email || email,
+            email: cu.users?.email || normalizedEmail,
             fullName: [cu.users?.first_name, cu.users?.last_name].filter(Boolean).join(" ") || "Staff Member",
             department: cu.department as DepartmentType,
             jobTitle: cu.job_title,
@@ -382,6 +398,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             createdAt: cu.created_at,
           };
           setCurrentCompanyUser(matchedUser);
+          localStorage.setItem("paimba_staff_session", JSON.stringify({
+            email: normalizedEmail,
+            userId: cu.user_id,
+            companyId: cu.company_id,
+            role: cu.role_level,
+            type: "staff",
+            loggedInAt: new Date().toISOString(),
+          }));
           return { error: null };
         }
       } catch (staffErr) {
@@ -389,7 +413,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // 2. Check if user exists in local mock list for demo / offline
-      const mock = MOCK_COMPANY_USERS.find((u) => u.email.toLowerCase() === email.toLowerCase());
+      const mock = MOCK_COMPANY_USERS.find((u) => u.email.toLowerCase() === normalizedEmail);
       if (mock && password.length >= 6) {
         const mockUser: User = {
           id: mock.userId,
@@ -406,23 +430,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const comp = MOCK_COMPANIES.find((c) => c.id === mock.companyId) || DEFAULT_COMPANY;
         setCurrentCompany(comp);
         setCurrentCompanyUser(mock);
+        localStorage.setItem("paimba_staff_session", JSON.stringify({
+          email: normalizedEmail,
+          userId: mock.userId,
+          companyId: mock.companyId,
+          role: mock.roleLevel,
+          type: "staff",
+          loggedInAt: new Date().toISOString(),
+        }));
         return { error: null };
       }
       return { error: error.message };
     }
 
     if (data.user?.email) {
+      localStorage.setItem("paimba_staff_session", JSON.stringify({
+        email: normalizedEmail,
+        userId: data.user.id,
+        type: "staff",
+        loggedInAt: new Date().toISOString(),
+      }));
       await syncUserProfile(data.user.email);
     }
     return { error: null };
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
+    localStorage.removeItem("paimba_staff_session");
     localStorage.removeItem("cc_selected_role");
     localStorage.removeItem("cc_selected_company");
+    try {
+      await supabase.auth.signOut();
+    } catch {}
+    setUser(null);
+    setSession(null);
   };
 
   const changePassword = async (newPassword: string) => {

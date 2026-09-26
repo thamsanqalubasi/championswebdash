@@ -10,6 +10,8 @@ import { fetchCompanyInfo, fetchAdminInfo, downloadPdfDocument, downloadPdfFromU
 import { buildProfessionalInvoiceHtml, buildUnifiedInvoiceHtml } from "@/lib/document-templates";
 import type { InvoiceRow } from "@/lib/types";
 import { DocumentShareModal } from "@/components/document-share-modal";
+import { InvoicesReportModal } from "@/components/invoices-report-modal";
+import { Pagination } from "@/components/pagination";
 import { Mail, Download, FileText, Send, Info, X } from "lucide-react";
 
 type PeriodFilter = "this_month" | "last_2_months" | "last_3_months";
@@ -104,8 +106,9 @@ export default function InvoicesPage() {
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
 
-  const INVOICES_PAGE_SIZE = 8;
-  const [invoicesLimit, setInvoicesLimit] = useState(INVOICES_PAGE_SIZE);
+  const [invoicesReportOpen, setInvoicesReportOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [shareModalDoc, setShareModalDoc] = useState<{
     isOpen: boolean;
     documentTitle: string;
@@ -292,6 +295,11 @@ export default function InvoicesPage() {
     },
     [invoices, activeFilter],
   );
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+  const paginatedInvoices = useMemo(() => {
+    return filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  }, [filtered, currentPage]);
 
   const selectedTransactions = useMemo(
     () => transactions.filter((row) => selectedTransactionIds.includes(row.id)),
@@ -781,7 +789,10 @@ export default function InvoicesPage() {
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setActiveFilter(key)}
+                    onClick={() => {
+                      setActiveFilter(key);
+                      setCurrentPage(1);
+                    }}
                     className={`rounded-md border border-border-color px-3 py-2 text-sm ${activeFilter === key ? "bg-surface-elevated font-medium" : "text-muted"
                       }`}
                   >
@@ -794,7 +805,15 @@ export default function InvoicesPage() {
                 ))}
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setInvoicesReportOpen(true)}
+                  className="flex items-center gap-1.5 rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium text-foreground hover:bg-surface transition"
+                >
+                  <FileText size={15} className="text-primary" />
+                  Invoices Report
+                </button>
                 <button
                   type="button"
                   onClick={exportCSV}
@@ -829,7 +848,7 @@ export default function InvoicesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.slice(0, invoicesLimit).map((row) => {
+                    {paginatedInvoices.map((row) => {
                       const isSuppressed = row.status === "suppressed";
                       return (
                         <tr key={row.id} className={`border-b border-border-color/60 ${isSuppressed ? "opacity-75 bg-amber-500/[0.02]" : ""}`}>
@@ -1022,11 +1041,13 @@ export default function InvoicesPage() {
                     })}
                   </tbody>
                 </table>
-                {filtered.length > invoicesLimit && (
-                  <button type="button" onClick={() => setInvoicesLimit((v) => v + INVOICES_PAGE_SIZE)} className="mt-2 w-full rounded-md border border-border-color bg-surface-elevated px-3 py-2 text-sm text-muted hover:bg-surface">
-                    Load More ({filtered.length - invoicesLimit} remaining)
-                  </button>
-                )}
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  totalItems={filtered.length}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={setCurrentPage}
+                />
               </div>
             )}
           </div>
@@ -1201,6 +1222,13 @@ export default function InvoicesPage() {
           onSuccess={reload}
         />
       )}
+
+      <InvoicesReportModal
+        open={invoicesReportOpen}
+        onClose={() => setInvoicesReportOpen(false)}
+        invoices={invoices}
+        companyName={currentCompany?.name ?? "Miola Real Estate"}
+      />
     </ModulePage>
   );
 }

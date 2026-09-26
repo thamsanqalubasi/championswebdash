@@ -61,6 +61,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
+import { RentCollectionReportModal } from "@/components/rent-collection-report-modal";
+import { Pagination } from "@/components/pagination";
 
 type RentTenantRow = {
   id: string;
@@ -479,6 +481,16 @@ export default function RentCollectionPage() {
     }
     return result;
   }, [tenants, searchQuery, activeFilter]);
+
+  const [rentReportOpen, setRentReportOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(filteredTenants.length / itemsPerPage);
+  const paginatedTenants = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredTenants.slice(start, start + itemsPerPage);
+  }, [filteredTenants, currentPage]);
 
   const reload = () => setReloadKey((value) => value + 1);
 
@@ -1208,9 +1220,20 @@ export default function RentCollectionPage() {
                 activeFilter={activeFilter}
                 onFilterChange={setActiveFilter}
                 actions={
-                  <button type="button" onClick={reload} className="flex h-9 w-9 items-center justify-center rounded-lg border border-border-color bg-surface-elevated text-muted hover:text-foreground">
-                    <RefreshCw size={16} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRentReportOpen(true)}
+                      className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface transition shadow-xs"
+                      title="Generate Rent Collection Report (PDF, print, email)"
+                    >
+                      <FileText size={15} className="text-emerald-600" />
+                      <span>Collection Report</span>
+                    </button>
+                    <button type="button" onClick={reload} className="flex h-9 w-9 items-center justify-center rounded-lg border border-border-color bg-surface-elevated text-muted hover:text-foreground">
+                      <RefreshCw size={16} />
+                    </button>
+                  </div>
                 }
               />
             </div>
@@ -1227,7 +1250,7 @@ export default function RentCollectionPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-color/40">
-                  {filteredTenants.map((tenant) => {
+                  {paginatedTenants.map((tenant) => {
                     const isAssigned = Boolean(tenant.propertyId);
                     const isOverdue = tenant.paymentStatus === "overdue";
 
@@ -1464,6 +1487,18 @@ export default function RentCollectionPage() {
                 </tbody>
               </table>
             </div>
+
+            {totalPages > 1 && (
+              <div className="border-t border-border-color p-3 bg-surface">
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                  totalItems={filteredTenants.length}
+                  itemsPerPage={itemsPerPage}
+                />
+              </div>
+            )}
             <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20">
               <p className="text-[11px] font-bold uppercase tracking-wider text-muted/40">
                 Managed Portfolio: {tenants.length} Tenant Profiles
@@ -2595,6 +2630,14 @@ export default function RentCollectionPage() {
         description={`Super Admin / Delegated Authority: Enter your 4-digit security PIN to permanently purge "${permanentDeleteTarget?.title}" from the database. This action CANNOT be undone.`}
         actionLabel="Permanently Delete"
         actionVariant="danger"
+      />
+
+      {/* Rent Collection Report Modal */}
+      <RentCollectionReportModal
+        isOpen={rentReportOpen}
+        onClose={() => setRentReportOpen(false)}
+        tenants={tenants as any}
+        companyName={currentCompany.name}
       />
     </ModulePage>
   );

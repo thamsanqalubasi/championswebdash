@@ -9,16 +9,34 @@ export default function PortalLayout() {
   const location = useLocation();
   const [session, setSession] = useState<any>(null);
 
-  // Track auth session for smart nav
+  // Track auth session strictly for customer portal
   useEffect(() => {
+    const customerSessionRaw = typeof window !== "undefined" ? localStorage.getItem("paimba_customer_session") : null;
+    if (!customerSessionRaw) {
+      setSession(null);
+      return;
+    }
+
     supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+      if (data.session) {
+        setSession(data.session);
+      } else {
+        try {
+          const parsed = JSON.parse(customerSessionRaw);
+          setSession({ user: { email: parsed.email } });
+        } catch {}
+      }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
-      setSession(sess);
+      const activeCust = typeof window !== "undefined" ? localStorage.getItem("paimba_customer_session") : null;
+      if (activeCust) {
+        setSession(sess);
+      } else {
+        setSession(null);
+      }
     });
     return () => subscription.unsubscribe();
-  }, []);
+  }, [location.pathname]);
 
   // Close mobile menu on page navigation
   useEffect(() => {
