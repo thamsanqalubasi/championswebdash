@@ -1,6 +1,9 @@
 import { useState } from "react";
-import { X, Send, ShieldAlert, Mail, User, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
+import { X, Send, ShieldAlert, Mail, User, AlertTriangle, CheckCircle2, Loader2, Sparkles, ArrowUpRight } from "lucide-react";
 import { sendEmailViaApi } from "@/lib/notifications";
+import { useAuth } from "@/lib/auth";
+import { getCompanySubscription, SUBSCRIPTION_PACKAGES } from "@/lib/packages";
+import { PackageSwitcherModal } from "../package-switcher-modal";
 
 interface ReportEmailDialogProps {
   isOpen: boolean;
@@ -21,12 +24,18 @@ export function ReportEmailDialog({
   defaultRecipientEmail = "",
   onSuccess,
 }: ReportEmailDialogProps) {
+  const { currentCompany } = useAuth();
   const [recipientName, setRecipientName] = useState(defaultRecipientName);
   const [recipientEmail, setRecipientEmail] = useState(defaultRecipientEmail);
   const [confirmAuth, setConfirmAuth] = useState(false);
   const [sending, setSending] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [packageModalOpen, setPackageModalOpen] = useState(false);
+
+  const sub = getCompanySubscription(currentCompany?.id || "default");
+  const plan = SUBSCRIPTION_PACKAGES[sub.packageId] || SUBSCRIPTION_PACKAGES.starter;
+  const isEmailAllowed = !sub.packageModeEnabled || plan.limits.emailSharing;
 
   if (!isOpen) return null;
 
@@ -179,6 +188,26 @@ export function ReportEmailDialog({
             </span>
           </label>
 
+          {!isEmailAllowed && (
+            <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3.5 space-y-2">
+              <div className="flex items-center gap-2 text-amber-400 font-bold">
+                <Sparkles size={16} />
+                <span>Email Sharing Requires Standard Plan or Higher</span>
+              </div>
+              <p className="text-[11px] text-muted leading-relaxed">
+                Direct emailing of executive reports is not available on the <strong>{plan.name}</strong>. You can close this modal and click <strong>Download PDF</strong> to save it directly, or upgrade your plan to unlock direct email dispatch.
+              </p>
+              <button
+                type="button"
+                onClick={() => setPackageModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition"
+              >
+                <span>Switch / Upgrade Package</span>
+                <ArrowUpRight size={13} />
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-border-color">
             <button
               type="button"
@@ -190,7 +219,7 @@ export function ReportEmailDialog({
             </button>
             <button
               type="submit"
-              disabled={sending || !confirmAuth}
+              disabled={sending || !confirmAuth || !isEmailAllowed}
               className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2 font-bold text-white shadow-md hover:bg-blue-700 transition disabled:opacity-50"
             >
               {sending ? (
@@ -208,6 +237,14 @@ export function ReportEmailDialog({
           </div>
         </form>
       </div>
+
+      {packageModalOpen && (
+        <PackageSwitcherModal
+          open={packageModalOpen}
+          onClose={() => setPackageModalOpen(false)}
+          companyId={currentCompany?.id || "default"}
+        />
+      )}
     </div>
   );
 }

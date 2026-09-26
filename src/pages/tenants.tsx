@@ -4,8 +4,6 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
 import { fetchTenantsData, isValidUuid, fetchCompanyUsers, canDeleteSuppressedRecords, syncPropertyOccupancyStatus } from "@/lib/data";
 import { PinPromptDialog } from "@/components/pin-dialog";
-import { PackageLimitModal } from "@/components/package-limit-modal";
-import { checkPackageCapacityLimit } from "@/lib/packages";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
@@ -65,8 +63,6 @@ import {
   Bell,
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
-import { TenantsReportModal } from "@/components/tenants-report-modal";
-import { Pagination } from "@/components/pagination";
 import {
   isPaymentSuppressed,
   isPaymentAdvance,
@@ -263,8 +259,6 @@ export default function TenantsPage() {
 
   const [activeFilter, setActiveFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [tenantsReportOpen, setTenantsReportOpen] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -542,23 +536,7 @@ export default function TenantsPage() {
     return result;
   }, [tenants, activeFilter, searchQuery]);
 
-  const itemsPerPage = 10;
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const paginatedTenants = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filtered.slice(start, start + itemsPerPage);
-  }, [filtered, currentPage]);
-
-  const [tenantLimitModal, setTenantLimitModal] = useState<{
-    currentCount?: number; maxLimit?: number; planName: string;
-  } | null>(null);
-
   const openAdd = () => {
-    const limitCheck = checkPackageCapacityLimit(currentCompany.id, "tenants", tenants.length);
-    if (!limitCheck.allowed) {
-      setTenantLimitModal({ currentCount: limitCheck.current, maxLimit: limitCheck.max, planName: limitCheck.planName });
-      return;
-    }
     setEditingId(null);
     setForm(emptyForm);
     setModalOpen(true);
@@ -2288,25 +2266,14 @@ export default function TenantsPage() {
               activeFilter={activeFilter}
               onFilterChange={setActiveFilter}
               actions={
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => setTenantsReportOpen(true)}
-                    className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm font-medium text-foreground hover:bg-surface transition-all shadow-xs"
-                    title="Generate, Preview, Print or Share Tenants Report"
-                  >
-                    <FileText size={16} className="text-blue-600" />
-                    <span>Tenants Report</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={openAdd}
-                    className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-surface hover:opacity-90 transition-all"
-                  >
-                    <Plus size={16} />
-                    <span>Add Tenant</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={openAdd}
+                  className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-surface hover:opacity-90 transition-all"
+                >
+                  <Plus size={16} />
+                  <span>Add Tenant</span>
+                </button>
               }
             />
           </div>
@@ -2330,7 +2297,7 @@ export default function TenantsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-color/40">
-                  {paginatedTenants.map((row) => (
+                  {filtered.map((row) => (
                     <tr key={row.id} className="group hover:bg-surface-elevated/40 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -2434,17 +2401,6 @@ export default function TenantsPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
-          )}
-          {totalPages > 1 && (
-            <div className="border-t border-border-color p-3 bg-surface">
-              <Pagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onPageChange={setCurrentPage}
-                totalItems={filtered.length}
-                itemsPerPage={itemsPerPage}
-              />
             </div>
           )}
           <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20">
@@ -4261,25 +4217,6 @@ export default function TenantsPage() {
         actionLabel="Send Payment Reminder"
         actionVariant="primary"
       />
-
-      {/* Tenants Report Modal */}
-      <TenantsReportModal
-        isOpen={tenantsReportOpen}
-        onClose={() => setTenantsReportOpen(false)}
-        tenants={tenants}
-        companyName={currentCompany.name}
-      />
-      {tenantLimitModal && (
-        <PackageLimitModal
-          open={true}
-          onClose={() => setTenantLimitModal(null)}
-          companyId={currentCompany.id}
-          metric="tenants"
-          currentCount={tenantLimitModal.currentCount}
-          maxLimit={tenantLimitModal.maxLimit}
-          planName={tenantLimitModal.planName}
-        />
-      )}
     </ModulePage>
   );
 }

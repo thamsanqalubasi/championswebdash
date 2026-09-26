@@ -30,7 +30,27 @@ import {
   Coins,
   Phone,
   Loader2,
+  Package,
+  RotateCcw,
+  Power,
+  Sparkles,
+  Clock,
+  ArrowUpRight,
+  BedDouble,
+  Users,
+  Layers,
 } from "lucide-react";
+import {
+  SUBSCRIPTION_PACKAGES,
+  getCompanySubscription,
+  restartCompanyTrial,
+  setPackageModeEnabled,
+  getRemainingTrialSeconds,
+  isTrialExpired,
+  type CompanySubscription,
+} from "@/lib/packages";
+import { PackageSwitcherModal } from "@/components/package-switcher-modal";
+import { StripePaymentModal } from "@/components/stripe-payment-modal";
 
 export default function SettingsPage() {
   const { user, currentCompany, currentCompanyUser, setCurrentCompany, setCurrentCompanyUser, changePassword, isAdmin } = useAuth();
@@ -108,6 +128,35 @@ export default function SettingsPage() {
     void load();
     return () => { cancelled = true; };
   }, [reloadKey, currentCompany.id]);
+
+  // Subscription & Package Tier state
+  const [sub, setSub] = useState<CompanySubscription>(() => getCompanySubscription(currentCompany.id));
+  const [remSeconds, setRemSeconds] = useState<number>(() => getRemainingTrialSeconds(sub));
+  const [packageModalOpen, setPackageModalOpen] = useState(false);
+  const [stripeModalOpen, setStripeModalOpen] = useState(false);
+
+  useEffect(() => {
+    const handleSubUpdate = () => {
+      const updated = getCompanySubscription(currentCompany.id);
+      setSub(updated);
+      setRemSeconds(getRemainingTrialSeconds(updated));
+    };
+    handleSubUpdate();
+    window.addEventListener("paimba_package_changed", handleSubUpdate);
+    return () => window.removeEventListener("paimba_package_changed", handleSubUpdate);
+  }, [currentCompany.id]);
+
+  useEffect(() => {
+    if (!sub.packageModeEnabled || !sub.isTrial || sub.status === "active") return;
+    const interval = setInterval(() => {
+      const rem = getRemainingTrialSeconds(sub);
+      setRemSeconds(rem);
+      if (rem <= 0) {
+        setSub((prev) => ({ ...prev, status: "expired" }));
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [sub]);
 
   const reload = () => setReloadKey((v) => v + 1);
 
@@ -515,6 +564,172 @@ export default function SettingsPage() {
       {!loading && error && <ErrorState message={error} onRetry={reload} />}
       {!loading && !error && data && (
         <div className="max-w-4xl space-y-6 pb-16">
+          {/* Subscription & Commercial Packages (Test Mode) */}
+          <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
+            <div className="mb-6 flex flex-col justify-between gap-4 border-b border-border-color pb-4 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600">
+                  <Package size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-bold text-foreground">Subscription & Billing Packages</h2>
+                    <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                      Test Mode Active
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted">
+                    Tiered subscription management, 1-minute trial countdown, Stripe sandbox payment, and feature quota controls.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPackageModalOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition"
+                >
+                  <ArrowUpRight size={13} />
+                  <span>Switch / Upgrade Plan</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Plan Overview & Controls */}
+            {(() => {
+              const currentPlan = SUBSCRIPTION_PACKAGES[sub.packageId] || SUBSCRIPTION_PACKAGES.starter;
+              const expired = isTrialExpired(sub);
+              return (
+                <div className="space-y-4">
+                  {/* Status Banner */}
+                  <div className={`rounded-xl border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                    !sub.packageModeEnabled
+                      ? "border-border-color bg-surface-elevated/70"
+                      : expired
+                      ? "border-red-500/40 bg-red-500/10"
+                      : sub.status === "active"
+                      ? "border-emerald-500/40 bg-emerald-500/10"
+                      : "border-blue-500/30 bg-blue-500/10"
+                  }`}>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg font-black text-foreground">{currentPlan.name}</span>
+                        <span className="text-sm font-bold text-muted">(${currentPlan.priceUsd} / month)</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                          !sub.packageModeEnabled
+                            ? "bg-muted/10 border-border-color text-muted"
+                            : expired
+                            ? "bg-red-500/20 border-red-500/40 text-red-400"
+                            : sub.status === "active"
+                            ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                            : "bg-blue-500/20 border-blue-500/40 text-blue-400"
+                        }`}>
+                          {!sub.packageModeEnabled
+                            ? "Package Mode Disabled"
+                            : expired
+                            ? "Trial Expired"
+                            : sub.status === "active"
+                            ? "Active / Paid"
+                            : `Trial (${remSeconds}s remaining)`}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted mt-1">{currentPlan.tagline}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = restartCompanyTrial(currentCompany.id);
+                          setSub(updated);
+                          setRemSeconds(60);
+                        }}
+                        className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition shadow-xs"
+                      >
+                        <RotateCcw size={13} className="text-amber-400" />
+                        <span>Restart 1-Min Trial</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setStripeModalOpen(true)}
+                        className="flex items-center gap-1.5 rounded-xl border border-blue-500/40 bg-blue-600/20 px-3 py-1.5 text-xs font-bold text-blue-300 hover:bg-blue-600/30 transition shadow-xs"
+                      >
+                        <CreditCard size={13} />
+                        <span>Pay $2 via Stripe</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextVal = !sub.packageModeEnabled;
+                          const updated = setPackageModeEnabled(currentCompany.id, nextVal);
+                          setSub(updated);
+                        }}
+                        className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold border transition ${
+                          sub.packageModeEnabled
+                            ? "border-border-color bg-surface text-muted hover:text-red-400"
+                            : "border-emerald-500 bg-emerald-600 text-white font-bold"
+                        }`}
+                      >
+                        <Power size={13} />
+                        <span>{sub.packageModeEnabled ? "Turn OFF Package Mode" : "Package Mode: OFF"}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Quotas & Capacity Limits */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="rounded-xl border border-border-color bg-surface-elevated/50 p-3">
+                      <div className="flex items-center gap-2 text-muted text-xs mb-1">
+                        <Building2 size={14} className="text-blue-500" />
+                        <span>Max Properties</span>
+                      </div>
+                      <span className="text-base font-bold text-foreground">
+                        {currentPlan.limits.maxProperties === -1 ? "Unlimited" : currentPlan.limits.maxProperties}
+                      </span>
+                    </div>
+
+                    <div className="rounded-xl border border-border-color bg-surface-elevated/50 p-3">
+                      <div className="flex items-center gap-2 text-muted text-xs mb-1">
+                        <BedDouble size={14} className="text-emerald-500" />
+                        <span>Max Rooms</span>
+                      </div>
+                      <span className="text-base font-bold text-foreground">
+                        {currentPlan.limits.maxRooms === -1 ? "Unlimited" : currentPlan.limits.maxRooms}
+                      </span>
+                    </div>
+
+                    <div className="rounded-xl border border-border-color bg-surface-elevated/50 p-3">
+                      <div className="flex items-center gap-2 text-muted text-xs mb-1">
+                        <Users size={14} className="text-violet-500" />
+                        <span>Max Tenants</span>
+                      </div>
+                      <span className="text-base font-bold text-foreground">
+                        {currentPlan.limits.maxTenants === -1 ? "Unlimited" : currentPlan.limits.maxTenants}
+                      </span>
+                    </div>
+
+                    <div className="rounded-xl border border-border-color bg-surface-elevated/50 p-3">
+                      <div className="flex items-center gap-2 text-muted text-xs mb-1">
+                        <Layers size={14} className="text-amber-500" />
+                        <span>Max Staff Users</span>
+                      </div>
+                      <span className="text-base font-bold text-foreground">
+                        {currentPlan.limits.maxStaff === -1 ? "Unlimited" : currentPlan.limits.maxStaff}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3 text-xs">
+                    <p className="font-semibold text-foreground mb-1">Commercial Placement Rationale:</p>
+                    <p className="text-muted leading-relaxed">{currentPlan.commercialRationale.whyThisPrice}</p>
+                  </div>
+                </div>
+              );
+            })()}
+          </section>
+
           {/* Staff Personal Profile & Digital Signature */}
           <section className="rounded-2xl border border-border-color bg-surface p-6 shadow-sm">
             <SectionHeader
@@ -1195,6 +1410,26 @@ export default function SettingsPage() {
           </div>
         </form>
       </Modal>
+
+      {/* Package Switcher Modal */}
+      <PackageSwitcherModal
+        open={packageModalOpen}
+        onClose={() => setPackageModalOpen(false)}
+        companyId={currentCompany.id}
+      />
+
+      {/* Stripe Payment Gateway Modal */}
+      <StripePaymentModal
+        open={stripeModalOpen}
+        onClose={() => setStripeModalOpen(false)}
+        companyId={currentCompany.id}
+        amountUsd={2}
+        packageTitle="Stripe Test Package"
+        onSuccess={() => {
+          setSub(getCompanySubscription(currentCompany.id));
+          setStripeModalOpen(false);
+        }}
+      />
     </ModulePage>
   );
 }
