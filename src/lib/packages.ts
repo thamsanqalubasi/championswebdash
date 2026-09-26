@@ -262,8 +262,8 @@ export const SUBSCRIPTION_PACKAGES: Record<PackageId, PackagePlan> = {
   test: {
     id: "test",
     name: "Stripe Test Package",
-    tagline: "Live Payment & Integration Sandbox ($2)",
-    priceUsd: 2,
+    tagline: "Live Payment & Integration Sandbox ($0.50)",
+    priceUsd: 0.50,
     billingPeriod: "month",
     isTestPackage: true,
     limits: {
@@ -299,10 +299,10 @@ export const SUBSCRIPTION_PACKAGES: Record<PackageId, PackagePlan> = {
     },
     commercialRationale: {
       targetAudience: "Internal QA testers, developers, and platform administrators verifying Stripe integration.",
-      whyThisPrice: "$2 is a micro-test transaction allowing verified card testing via Stripe checkout without incurring large costs.",
+      whyThisPrice: "$0.50 is Stripe's absolute minimum acceptable USD charge, allowing live card testing without incurring extra cost.",
       keyBenefits: [
         "Tests live or sandbox Stripe Checkout flow",
-        "Simulates real card authorization ($2.00 USD)",
+        "Simulates real card authorization ($0.50 USD Stripe minimum)",
         "Unlocks all platform features for verification",
         "1-Minute Trial with Instant Restart option",
       ],

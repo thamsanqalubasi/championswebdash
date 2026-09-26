@@ -49,8 +49,8 @@ export function PackageSwitcherModal({
   const [remainingSeconds, setRemainingSeconds] = useState<number>(() => getRemainingTrialSeconds(sub));
   const [stripeOpen, setStripeOpen] = useState(false);
   const [stripePackageInfo, setStripePackageInfo] = useState<{ amount: number; title: string }>({
-    amount: 2,
-    title: "Stripe Test Package",
+    amount: SUBSCRIPTION_PACKAGES.test.priceUsd,
+    title: SUBSCRIPTION_PACKAGES.test.name,
   });
   const [selectedRationaleTab, setSelectedRationaleTab] = useState<PackageId>("starter");
   const [actionNotice, setActionNotice] = useState<string | null>(null);
@@ -88,7 +88,7 @@ export function PackageSwitcherModal({
   // Select non-test package (no card required in test mode)
   const handleSelectPackage = (pkgId: PackageId) => {
     if (pkgId === "test") {
-      setStripePackageInfo({ amount: 2, title: SUBSCRIPTION_PACKAGES.test.name });
+      setStripePackageInfo({ amount: SUBSCRIPTION_PACKAGES.test.priceUsd, title: SUBSCRIPTION_PACKAGES.test.name });
       setStripeOpen(true);
       return;
     }

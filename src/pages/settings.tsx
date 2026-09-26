@@ -1556,8 +1556,8 @@ export default function SettingsPage() {
         open={stripeModalOpen}
         onClose={() => setStripeModalOpen(false)}
         companyId={currentCompany.id}
-        amountUsd={2}
-        packageTitle="Stripe Test Package"
+        amountUsd={SUBSCRIPTION_PACKAGES.test.priceUsd}
+        packageTitle={SUBSCRIPTION_PACKAGES.test.name}
         onSuccess={() => {
           setSub(getCompanySubscription(currentCompany.id));
           setStripeModalOpen(false);

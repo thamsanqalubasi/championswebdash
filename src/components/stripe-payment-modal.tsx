@@ -30,7 +30,7 @@ export function StripePaymentModal({
   onClose,
   companyId,
   onSuccess,
-  amountUsd = 2,
+  amountUsd = 0.50,
   packageTitle = "Stripe Test Package",
 }: StripePaymentModalProps) {
   const [cardNumber, setCardNumber] = useState("");

@@ -35,13 +35,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       apiVersion: "2023-10-16",
     });
 
-    const { companyId, packageId = "test", amountUsd = 2, mode = "payment_intent", returnUrl } = req.body ?? {};
+    const { companyId, packageId = "test", amountUsd = 0.50, mode = "payment_intent", returnUrl } = req.body ?? {};
 
     if (!companyId) {
       return res.status(400).json({ error: "Missing required parameter: companyId" });
     }
 
-    const amountInCents = Math.round(Number(amountUsd) * 100);
+    const amountInCents = Math.max(50, Math.round(Number(amountUsd) * 100));
 
     // Mode A: PaymentIntent for card forms in frontend modal
     if (mode === "payment_intent") {
@@ -78,7 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               currency: "usd",
               product_data: {
                 name: `PaimbaBook Subscription - ${packageId.toUpperCase()}`,
-                description: "Monthly subscription package ($2.00 USD)",
+                description: "Monthly subscription package ($0.50 USD Stripe Minimum)",
               },
               unit_amount: amountInCents,
             },
