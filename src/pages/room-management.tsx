@@ -75,6 +75,8 @@ import type {
 } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import { useCurrency } from "@/lib/currency";
+import { checkPackageCapacityLimit } from "@/lib/packages";
+import { PackageLimitModal } from "@/components/package-limit-modal";
 
 export const AVAILABLE_AMENITIES = [
   { key: "wifi", label: "Free Wi-Fi", icon: Wifi },
@@ -381,9 +383,20 @@ export default function RoomManagementPage() {
     loadData();
   }, [currentCompany.id, selectedPropertyId, hkPropertyFilter, rsPropertyFilter]);
 
+  const [limitModalInfo, setLimitModalInfo] = useState<{
+    currentCount?: number;
+    maxLimit?: number;
+    planName: string;
+  } | null>(null);
+
   const openAddRoom = () => {
     if (properties.length === 0 || !selectedPropertyId) {
       alert("All rooms must belong to an accommodation property (Hotel, Motel, Lodge, Guest House). Please create or select an accommodation property first.");
+      return;
+    }
+    const roomLimit = checkPackageCapacityLimit(currentCompany.id, "rooms", rooms.length);
+    if (!roomLimit.allowed) {
+      setLimitModalInfo({ currentCount: roomLimit.current, maxLimit: roomLimit.max, planName: roomLimit.planName });
       return;
     }
     setEditingRoom(null);
@@ -792,18 +805,34 @@ export default function RoomManagementPage() {
             </div>
           )}
 
-          {activeTab === "rooms" && (
-            <button
-              type="button"
-              onClick={openAddRoom}
-              disabled={properties.length === 0 || !selectedPropertyId}
-              className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-              title={properties.length === 0 ? "All rooms must belong to an accommodation property. Add a property first." : "Add New Room"}
-            >
-              <Plus size={16} />
-              <span>Add New Room</span>
-            </button>
-          )}
+          {activeTab === "rooms" && (() => {
+            const roomLimit = checkPackageCapacityLimit(currentCompany.id, "rooms", rooms.length);
+            if (!roomLimit.allowed) {
+              return (
+                <button
+                  type="button"
+                  onClick={() => setLimitModalInfo({ currentCount: roomLimit.current, maxLimit: roomLimit.max, planName: roomLimit.planName })}
+                  className="flex items-center gap-2 rounded-xl border-2 border-amber-500/50 bg-amber-500/15 px-4 py-2.5 text-sm font-bold text-amber-500 hover:bg-amber-500/25 transition shadow-sm"
+                  title={`Accommodation room quota reached (${roomLimit.current}/${roomLimit.max}). Click to upgrade plan.`}
+                >
+                  <Lock size={16} className="text-amber-500" />
+                  <span>Add Room ({roomLimit.current}/${roomLimit.max} 🔒)</span>
+                </button>
+              );
+            }
+            return (
+              <button
+                type="button"
+                onClick={openAddRoom}
+                disabled={properties.length === 0 || !selectedPropertyId}
+                className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                title={properties.length === 0 ? "All rooms must belong to an accommodation property. Add a property first." : "Add New Room"}
+              >
+                <Plus size={16} />
+                <span>Add New Room</span>
+              </button>
+            );
+          })()}
         </div>
       </div>
 
@@ -3249,6 +3278,17 @@ export default function RoomManagementPage() {
           </div>
         </div>
       )}
+
+      {/* Package Limit Modal for Accommodation Rooms */}
+      <PackageLimitModal
+        open={Boolean(limitModalInfo)}
+        onClose={() => setLimitModalInfo(null)}
+        companyId={currentCompany.id}
+        metric="rooms"
+        currentCount={limitModalInfo?.currentCount}
+        maxLimit={limitModalInfo?.maxLimit}
+        planName={limitModalInfo?.planName || "Starter"}
+      />
     </div>
   );
 }

@@ -10,7 +10,7 @@ import { uploadFileToBucket } from "@/lib/storage";
 import { supabase } from "@/lib/supabase";
 import type { PropertyRow } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
-import { Plus, Pencil, Trash, ChevronRight, Building2, BedDouble, X, Layers, Image as ImageIcon, Loader2, Eye, Globe, EyeOff, MapPin, DollarSign, Calendar, TrendingUp, KeyRound, ExternalLink, Percent, Sparkles } from "lucide-react";
+import { Plus, Pencil, Trash, ChevronRight, Building2, BedDouble, X, Layers, Image as ImageIcon, Loader2, Eye, Globe, EyeOff, MapPin, DollarSign, Calendar, TrendingUp, KeyRound, ExternalLink, Percent, Sparkles, Lock } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
 import { useCurrency } from "@/lib/currency";
 import { PropertyStatsModal } from "@/components/property-stats-modal";
@@ -460,7 +460,27 @@ export default function PropertiesPage() {
         <section className="rounded-2xl border border-border-color bg-surface p-1 shadow-sm">
           <div className="p-4">
             <DataTableHeader searchValue={searchQuery} onSearchChange={setSearchQuery} searchPlaceholder="Search by name, city, country..." filters={filterTabs} activeFilter={activeFilter} onFilterChange={setActiveFilter}
-              actions={<button type="button" onClick={openAdd} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition"><Plus size={16}/><span>Add Property</span></button>}
+              actions={(() => {
+                const propLimit = checkPackageCapacityLimit(currentCompany.id, "properties", properties.length);
+                if (!propLimit.allowed) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setLimitModalInfo({ currentCount: propLimit.current, maxLimit: propLimit.max, planName: propLimit.planName })}
+                      className="flex items-center gap-2 rounded-xl border-2 border-amber-500/50 bg-amber-500/15 px-4 py-2 text-sm font-bold text-amber-500 hover:bg-amber-500/25 transition shadow-sm"
+                      title={`Property quota reached (${propLimit.current}/${propLimit.max}). Click to upgrade.`}
+                    >
+                      <Lock size={16} className="text-amber-500" />
+                      <span>Add Property ({propLimit.current}/{propLimit.max} 🔒)</span>
+                    </button>
+                  );
+                }
+                return (
+                  <button type="button" onClick={openAdd} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition">
+                    <Plus size={16}/><span>Add Property</span>
+                  </button>
+                );
+              })()}
             />
           </div>
           {filtered.length===0?(

@@ -4,6 +4,7 @@ import {
   getCompanySubscription,
   restartCompanyTrial,
   setPackageModeEnabled,
+  startGracePeriod,
   SUBSCRIPTION_PACKAGES,
   type CompanySubscription,
 } from "@/lib/packages";
@@ -15,6 +16,7 @@ import {
   Power,
   AlertTriangle,
   PackageCheck,
+  ShieldCheck,
 } from "lucide-react";
 
 // TEMPORARY TEST FEATURE: Remove before production launch
@@ -54,6 +56,11 @@ export function TrialExpiredGatewayModal({
     if (onTrialRestarted) onTrialRestarted();
   };
 
+  const handleStartGrace = () => {
+    startGracePeriod(companyId, "Trial period ended — 5-day grace period activated.");
+    if (onTrialRestarted) onTrialRestarted();
+  };
+
   const handleTurnOffPackageMode = () => {
     setPackageModeEnabled(companyId, false);
     if (onTrialRestarted) onTrialRestarted();
@@ -83,21 +90,21 @@ export function TrialExpiredGatewayModal({
             </h3>
             <p className="text-xs text-muted mt-1 leading-relaxed max-w-sm mx-auto">
               You were testing the <span className="font-semibold text-foreground">{currentPlan.name}</span>.
-              To test live payment verification, proceed with the <span className="font-semibold text-blue-400">$2 Test Package</span> via Stripe, or select new minutes and restart.
+              To test live payment verification, proceed with the <span className="font-semibold text-blue-400">$0.50 Test Package</span> via Stripe, test the 5-day grace period, or restart the countdown.
             </p>
           </div>
 
           {/* Action cards */}
           <div className="space-y-2.5 text-left">
-            {/* Primary Action 1: Pay $2 Test Package via Stripe */}
+            {/* Primary Action 1: Pay $0.50 Test Package via Stripe */}
             <div className="rounded-xl border border-blue-500/40 bg-blue-500/10 p-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
                   <CreditCard size={18} />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-foreground">Stripe Payment Gateway ($2.00)</p>
-                  <p className="text-[11px] text-muted">Test live card payment & instant verification</p>
+                  <p className="text-xs font-bold text-foreground">Stripe Payment Gateway ($0.50)</p>
+                  <p className="text-[11px] text-muted">Test live card payment & instant verification ($0.50 Stripe minimum)</p>
                 </div>
               </div>
               <button
@@ -105,11 +112,31 @@ export function TrialExpiredGatewayModal({
                 onClick={() => setStripeOpen(true)}
                 className="shrink-0 rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition"
               >
-                Pay $2 Stripe
+                Pay $0.50 Stripe
               </button>
             </div>
 
-            {/* Action 2: Choose Duration & Restart Trial */}
+            {/* Action 2: Activate 5-Day Grace Period Reminder */}
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface border border-amber-500/40 text-amber-500">
+                  <ShieldCheck size={18} />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-foreground">Activate 5-Day Grace Period</p>
+                  <p className="text-[11px] text-muted">Timed reminder before auto-downgrade. Zero data is ever deleted.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleStartGrace}
+                className="shrink-0 rounded-xl bg-amber-500 hover:bg-amber-600 text-black px-3 py-1.5 text-xs font-black shadow-xs transition"
+              >
+                Start 5-Day Grace
+              </button>
+            </div>
+
+            {/* Action 3: Choose Duration & Restart Trial */}
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3.5 space-y-2.5">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">

@@ -21,20 +21,27 @@ export interface PackagePlan {
   };
   features: {
     dashboardAnalytics: boolean;
+    advancedStatistics: boolean;
     frontDeskCheckInOut: boolean;
     expressCheckoutDesk: boolean;
     mealPricingTiers: boolean;
+    roomShowcasePublicPortal: boolean;
+    customerEnquiriesTickets: boolean;
     maintenanceWorkOrders: boolean;
     serviceProvidersDirectory: boolean;
     inspectionsAndScheduled: boolean;
+    centralStoresAndStock: boolean;
     rentCollectionAndPop: boolean;
     invoicesAndReceipts: boolean;
     recurringBillsTracking: boolean;
-    centralStoresAndStock: boolean;
+    financialAccountsLedger: boolean;
+    financialBalanceReports: boolean;
+    digitalContracts: boolean;
     procurementPipeline: boolean; // RFQs, POs, Vendor approvals
     hrAndPayroll: boolean;       // Staff contracts, leave, payroll
     organogramAndCustomRoles: boolean;
-    financialAccountsLedger: boolean;
+    marketingGrowthHub: boolean;
+    itAndSystemsHub: boolean;
     auditTrailBasic: boolean;
     auditUserJourneyMap: boolean; // Visual journey map & forensic clicks
     exportCsvReports: boolean;
@@ -66,20 +73,27 @@ export const SUBSCRIPTION_PACKAGES: Record<PackageId, PackagePlan> = {
     },
     features: {
       dashboardAnalytics: true,
+      advancedStatistics: false,
       frontDeskCheckInOut: true,
       expressCheckoutDesk: false,
       mealPricingTiers: false,
+      roomShowcasePublicPortal: false,
+      customerEnquiriesTickets: false,
       maintenanceWorkOrders: true,
       serviceProvidersDirectory: false,
       inspectionsAndScheduled: false,
+      centralStoresAndStock: false,
       rentCollectionAndPop: true,
       invoicesAndReceipts: true,
       recurringBillsTracking: true,
-      centralStoresAndStock: false,
+      financialAccountsLedger: false,
+      financialBalanceReports: false,
+      digitalContracts: false,
       procurementPipeline: false,
       hrAndPayroll: false,
       organogramAndCustomRoles: false,
-      financialAccountsLedger: false,
+      marketingGrowthHub: false,
+      itAndSystemsHub: false,
       auditTrailBasic: true,
       auditUserJourneyMap: false,
       exportCsvReports: false,
@@ -117,20 +131,27 @@ export const SUBSCRIPTION_PACKAGES: Record<PackageId, PackagePlan> = {
     },
     features: {
       dashboardAnalytics: true,
+      advancedStatistics: true,
       frontDeskCheckInOut: true,
       expressCheckoutDesk: true,
       mealPricingTiers: true,
+      roomShowcasePublicPortal: true,
+      customerEnquiriesTickets: true,
       maintenanceWorkOrders: true,
       serviceProvidersDirectory: true,
       inspectionsAndScheduled: true,
+      centralStoresAndStock: true, // Inventory up to 50 items
       rentCollectionAndPop: true,
       invoicesAndReceipts: true,
       recurringBillsTracking: true,
-      centralStoresAndStock: true, // Basic inventory up to 50 items
+      financialAccountsLedger: false,
+      financialBalanceReports: false,
+      digitalContracts: true,
       procurementPipeline: false,
       hrAndPayroll: false,
       organogramAndCustomRoles: false,
-      financialAccountsLedger: false,
+      marketingGrowthHub: false,
+      itAndSystemsHub: false,
       auditTrailBasic: true,
       auditUserJourneyMap: false,
       exportCsvReports: true,
@@ -170,20 +191,27 @@ export const SUBSCRIPTION_PACKAGES: Record<PackageId, PackagePlan> = {
     },
     features: {
       dashboardAnalytics: true,
+      advancedStatistics: true,
       frontDeskCheckInOut: true,
       expressCheckoutDesk: true,
       mealPricingTiers: true,
+      roomShowcasePublicPortal: true,
+      customerEnquiriesTickets: true,
       maintenanceWorkOrders: true,
       serviceProvidersDirectory: true,
       inspectionsAndScheduled: true,
+      centralStoresAndStock: true,
       rentCollectionAndPop: true,
       invoicesAndReceipts: true,
       recurringBillsTracking: true,
-      centralStoresAndStock: true,
+      financialAccountsLedger: true, // Chart of accounts, general ledger
+      financialBalanceReports: true, // Balance sheet & financial reports
+      digitalContracts: true,
       procurementPipeline: true, // Requisitions, PO approvals, vendor bids
       hrAndPayroll: true,       // Staff leaves, contracts, payroll records
       organogramAndCustomRoles: true,
-      financialAccountsLedger: true, // Chart of accounts, general ledger
+      marketingGrowthHub: true,
+      itAndSystemsHub: false,
       auditTrailBasic: true,
       auditUserJourneyMap: false,
       exportCsvReports: true,
@@ -223,20 +251,27 @@ export const SUBSCRIPTION_PACKAGES: Record<PackageId, PackagePlan> = {
     },
     features: {
       dashboardAnalytics: true,
+      advancedStatistics: true,
       frontDeskCheckInOut: true,
       expressCheckoutDesk: true,
       mealPricingTiers: true,
+      roomShowcasePublicPortal: true,
+      customerEnquiriesTickets: true,
       maintenanceWorkOrders: true,
       serviceProvidersDirectory: true,
       inspectionsAndScheduled: true,
+      centralStoresAndStock: true,
       rentCollectionAndPop: true,
       invoicesAndReceipts: true,
       recurringBillsTracking: true,
-      centralStoresAndStock: true,
+      financialAccountsLedger: true,
+      financialBalanceReports: true,
+      digitalContracts: true,
       procurementPipeline: true,
       hrAndPayroll: true,
       organogramAndCustomRoles: true,
-      financialAccountsLedger: true,
+      marketingGrowthHub: true,
+      itAndSystemsHub: true,
       auditTrailBasic: true,
       auditUserJourneyMap: true, // Complete Visual User Map & button-level forensics
       exportCsvReports: true,
@@ -276,20 +311,27 @@ export const SUBSCRIPTION_PACKAGES: Record<PackageId, PackagePlan> = {
     },
     features: {
       dashboardAnalytics: true,
+      advancedStatistics: true,
       frontDeskCheckInOut: true,
       expressCheckoutDesk: true,
       mealPricingTiers: true,
+      roomShowcasePublicPortal: true,
+      customerEnquiriesTickets: true,
       maintenanceWorkOrders: true,
       serviceProvidersDirectory: true,
       inspectionsAndScheduled: true,
+      centralStoresAndStock: true,
       rentCollectionAndPop: true,
       invoicesAndReceipts: true,
       recurringBillsTracking: true,
-      centralStoresAndStock: true,
+      financialAccountsLedger: true,
+      financialBalanceReports: true,
+      digitalContracts: true,
       procurementPipeline: true,
       hrAndPayroll: true,
       organogramAndCustomRoles: true,
-      financialAccountsLedger: true,
+      marketingGrowthHub: true,
+      itAndSystemsHub: true,
       auditTrailBasic: true,
       auditUserJourneyMap: true,
       exportCsvReports: true,
@@ -310,9 +352,12 @@ export const SUBSCRIPTION_PACKAGES: Record<PackageId, PackagePlan> = {
   },
 };
 
+export type SubscriptionStatus = "trial" | "active" | "expired" | "grace_period" | "downgraded";
+
 export interface CompanySubscription {
   packageId: PackageId;
-  status: "trial" | "active" | "expired";
+  previousPackageId?: PackageId; // Preserves the prior package tier before safe downgrade
+  status: SubscriptionStatus;
   isTrial: boolean;
   trialStartedAt: number; // Unix timestamp ms
   trialDurationSeconds: number; // 60 seconds (1 minute) in test mode
@@ -320,10 +365,247 @@ export interface CompanySubscription {
   lastPaymentRef?: string;
   paymentMethod?: string;
   packageModeEnabled: boolean; // Master toggle to turn off package mode completely
+  gracePeriodStartedAt?: number; // Timestamp when 5-day grace period began
+  gracePeriodDays?: number; // Defaults to 5 days
+  downgradedAt?: number; // Timestamp when downgraded to Starter
+  paymentFailureReason?: string;
 }
 
 const STORAGE_KEY_PREFIX = "paimba_company_sub_";
 const DEFAULT_TRIAL_SECONDS = 60; // 1 minute as requested
+export const DEFAULT_GRACE_PERIOD_DAYS = 5;
+export const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+export interface FeatureRouteConfig {
+  pathPrefix: string;
+  featureKey: keyof PackagePlan["features"];
+  featureTitle: string;
+  description: string;
+  minPackage: PackageId;
+  minPackageName: string;
+  minPackagePriceUsd: number;
+}
+
+export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
+  {
+    pathPrefix: "/statistics",
+    featureKey: "advancedStatistics",
+    featureTitle: "Advanced Hospitality & Financial Analytics",
+    description: "Deep statistical analytics, occupancy charts, and seasonal forecasting.",
+    minPackage: "standard",
+    minPackageName: "Standard Package",
+    minPackagePriceUsd: 20,
+  },
+  {
+    pathPrefix: "/maintenance/providers",
+    featureKey: "serviceProvidersDirectory",
+    featureTitle: "Service Providers Directory",
+    description: "External contractor registry, trade ratings, and dispatch tracking.",
+    minPackage: "standard",
+    minPackageName: "Standard Package",
+    minPackagePriceUsd: 20,
+  },
+  {
+    pathPrefix: "/maintenance/inspections",
+    featureKey: "inspectionsAndScheduled",
+    featureTitle: "Property Inspections & Move-in/Move-out Audits",
+    description: "Automated inspection checklists, photo deficiency logging, and scheduled visits.",
+    minPackage: "standard",
+    minPackageName: "Standard Package",
+    minPackagePriceUsd: 20,
+  },
+  {
+    pathPrefix: "/maintenance/scheduled-tasks",
+    featureKey: "inspectionsAndScheduled",
+    featureTitle: "Preventative Maintenance Schedules",
+    description: "Recurring HVAC, plumbing, generator, and asset maintenance routines.",
+    minPackage: "standard",
+    minPackageName: "Standard Package",
+    minPackagePriceUsd: 20,
+  },
+  {
+    pathPrefix: "/maintenance/inventory",
+    featureKey: "centralStoresAndStock",
+    featureTitle: "Maintenance Parts & Central Inventory",
+    description: "Track maintenance supplies, tool inventory, and stock depreciation.",
+    minPackage: "standard",
+    minPackageName: "Standard Package",
+    minPackagePriceUsd: 20,
+  },
+  {
+    pathPrefix: "/stores",
+    featureKey: "centralStoresAndStock",
+    featureTitle: "Central Stores & Stock Depot",
+    description: "Warehouse item management, low-stock alerts, and transfer logs.",
+    minPackage: "standard",
+    minPackageName: "Standard Package",
+    minPackagePriceUsd: 20,
+  },
+  {
+    pathPrefix: "/enquiries",
+    featureKey: "customerEnquiriesTickets",
+    featureTitle: "Guest Enquiries & CRM Tickets",
+    description: "Inbound prospective booking leads, ticket triage, and guest messages.",
+    minPackage: "standard",
+    minPackageName: "Standard Package",
+    minPackagePriceUsd: 20,
+  },
+  {
+    pathPrefix: "/room-showcases",
+    featureKey: "roomShowcasePublicPortal",
+    featureTitle: "Public Room Showcases & Direct Booking Catalog",
+    description: "Showcase guest rooms with live availability, gallery photos, and meal pricing.",
+    minPackage: "standard",
+    minPackageName: "Standard Package",
+    minPackagePriceUsd: 20,
+  },
+  {
+    pathPrefix: "/portal",
+    featureKey: "roomShowcasePublicPortal",
+    featureTitle: "Resident & Guest Self-Service Portal",
+    description: "Tenant online payment upload, stay overview, and maintenance requests.",
+    minPackage: "standard",
+    minPackageName: "Standard Package",
+    minPackagePriceUsd: 20,
+  },
+  {
+    pathPrefix: "/agent-mode",
+    featureKey: "roomShowcasePublicPortal",
+    featureTitle: "Direct Agent Booking Desk",
+    description: "Specialized portal for booking agents, corporate rates, and travel desks.",
+    minPackage: "standard",
+    minPackageName: "Standard Package",
+    minPackagePriceUsd: 20,
+  },
+  {
+    pathPrefix: "/contracts",
+    featureKey: "digitalContracts",
+    featureTitle: "Digital Lease Contracts & Signatures",
+    description: "Legally binding electronic contracts, digital signatures, and clause templates.",
+    minPackage: "standard",
+    minPackageName: "Standard Package",
+    minPackagePriceUsd: 20,
+  },
+  {
+    pathPrefix: "/procurement",
+    featureKey: "procurementPipeline",
+    featureTitle: "Procurement Pipeline (RFQs, POs, Vendor Bidding)",
+    description: "End-to-end departmental requisitions, competitive vendor bidding, and PO sign-off.",
+    minPackage: "pro",
+    minPackageName: "Professional Package",
+    minPackagePriceUsd: 50,
+  },
+  {
+    pathPrefix: "/hr",
+    featureKey: "hrAndPayroll",
+    featureTitle: "Human Resources, Leave Management & Payroll",
+    description: "Staff employment records, leave approvals, shifts, and monthly payroll.",
+    minPackage: "pro",
+    minPackageName: "Professional Package",
+    minPackagePriceUsd: 50,
+  },
+  {
+    pathPrefix: "/organogram",
+    featureKey: "organogramAndCustomRoles",
+    featureTitle: "Dynamic Organogram & Custom Granular Roles",
+    description: "Interactive visual company organogram with custom permission hierarchies.",
+    minPackage: "pro",
+    minPackageName: "Professional Package",
+    minPackagePriceUsd: 50,
+  },
+  {
+    pathPrefix: "/finance/accounts",
+    featureKey: "financialAccountsLedger",
+    featureTitle: "General Ledger & Chart of Accounts",
+    description: "Double-entry bookkeeping, chart of accounts, bank journals, and debit/credit ledger.",
+    minPackage: "pro",
+    minPackageName: "Professional Package",
+    minPackagePriceUsd: 50,
+  },
+  {
+    pathPrefix: "/finance/reports",
+    featureKey: "financialBalanceReports",
+    featureTitle: "Financial Balance Sheet & Multi-Period Reports",
+    description: "Balance sheet, income statement, cash flow statement, and tax summaries.",
+    minPackage: "pro",
+    minPackageName: "Professional Package",
+    minPackagePriceUsd: 50,
+  },
+  {
+    pathPrefix: "/marketing",
+    featureKey: "marketingGrowthHub",
+    featureTitle: "Marketing Hub & Mass Broadcasts",
+    description: "Email campaigns, promotions, discount blast engine, and lead conversion tracker.",
+    minPackage: "pro",
+    minPackageName: "Professional Package",
+    minPackagePriceUsd: 50,
+  },
+  {
+    pathPrefix: "/it",
+    featureKey: "itAndSystemsHub",
+    featureTitle: "IT & Systems Architecture Hub",
+    description: "Enterprise system diagnostics, database schema tools, and server metrics.",
+    minPackage: "enterprise",
+    minPackageName: "Enterprise Conglomerate",
+    minPackagePriceUsd: 200,
+  },
+  {
+    pathPrefix: "/audit-trail",
+    featureKey: "auditUserJourneyMap",
+    featureTitle: "Forensic User Journey Map & Audit Dept",
+    description: "High-resolution clickstream forensic replays, session analytics, and user journey graphs.",
+    minPackage: "enterprise",
+    minPackageName: "Enterprise Conglomerate",
+    minPackagePriceUsd: 200,
+  },
+];
+
+const TIER_LEVELS: Record<PackageId, number> = {
+  starter: 1,
+  standard: 2,
+  pro: 3,
+  enterprise: 4,
+  test: 99,
+};
+
+/**
+ * Check if a given route pathname is locked under the company's active plan.
+ */
+export function isRouteLocked(
+  companyId: string,
+  pathname: string
+): { locked: boolean; config?: FeatureRouteConfig; currentPlanName: string } {
+  const sub = getCompanySubscription(companyId);
+  if (!sub.packageModeEnabled) {
+    return { locked: false, currentPlanName: "Unrestricted Mode" };
+  }
+
+  // Find if route matches any protected feature prefix
+  const matched = ROUTE_FEATURE_MAP.find((item) => {
+    return pathname === item.pathPrefix || pathname.startsWith(`${item.pathPrefix}/`);
+  });
+
+  if (!matched) {
+    return { locked: false, currentPlanName: SUBSCRIPTION_PACKAGES[sub.packageId]?.name || "Starter" };
+  }
+
+  const currentLevel = TIER_LEVELS[sub.packageId] || 1;
+  const requiredLevel = TIER_LEVELS[matched.minPackage] || 1;
+
+  if (currentLevel < requiredLevel) {
+    return {
+      locked: true,
+      config: matched,
+      currentPlanName: SUBSCRIPTION_PACKAGES[sub.packageId]?.name || "Starter",
+    };
+  }
+
+  return {
+    locked: false,
+    config: matched,
+    currentPlanName: SUBSCRIPTION_PACKAGES[sub.packageId]?.name || "Starter",
+  };
+}
 
 /**
  * Retrieve the current subscription configuration for a given company.
@@ -351,6 +633,7 @@ export function getCompanySubscription(companyId: string): CompanySubscription {
     trialStartedAt: Date.now(),
     trialDurationSeconds: DEFAULT_TRIAL_SECONDS,
     packageModeEnabled: true,
+    gracePeriodDays: DEFAULT_GRACE_PERIOD_DAYS,
   };
   saveCompanySubscription(companyId, defaultSub);
   return defaultSub;
@@ -387,6 +670,8 @@ export function switchCompanyPackage(
     status: startAsTrial ? "trial" : "active",
     trialStartedAt: Date.now(),
     trialDurationSeconds: DEFAULT_TRIAL_SECONDS,
+    gracePeriodStartedAt: undefined,
+    paymentFailureReason: undefined,
   };
   saveCompanySubscription(companyId, updated);
   return updated;
@@ -414,6 +699,8 @@ export function restartCompanyTrial(companyId: string, durationSeconds?: number)
     status: "trial",
     trialStartedAt: Date.now(),
     trialDurationSeconds: duration,
+    gracePeriodStartedAt: undefined,
+    paymentFailureReason: undefined,
   };
   saveCompanySubscription(companyId, updated);
   return updated;
@@ -437,7 +724,9 @@ export function setCompanyTrialMinutes(companyId: string, minutes: number, resta
 }
 
 /**
- * Mark subscription as paid (e.g. after $2 Stripe test checkout).
+ * Mark subscription as paid (e.g. after $0.50 Stripe test checkout or card billing).
+ * RESTORATION GUARANTEE: If account was previously in grace period or safely downgraded,
+ * restores the previous higher package tier seamlessly! Zero data lost.
  */
 export function markSubscriptionPaid(
   companyId: string,
@@ -445,13 +734,21 @@ export function markSubscriptionPaid(
   method = "stripe_card"
 ): CompanySubscription {
   const current = getCompanySubscription(companyId);
+  const targetPackageId = current.status === "downgraded" && current.previousPackageId
+    ? current.previousPackageId
+    : current.packageId;
+
   const updated: CompanySubscription = {
     ...current,
+    packageId: targetPackageId,
     isTrial: false,
     status: "active",
     paidAt: Date.now(),
     lastPaymentRef: paymentRef,
     paymentMethod: method,
+    gracePeriodStartedAt: undefined,
+    downgradedAt: undefined,
+    paymentFailureReason: undefined,
   };
   saveCompanySubscription(companyId, updated);
   return updated;
@@ -487,6 +784,135 @@ export function isTrialExpired(sub: CompanySubscription): boolean {
   if (!sub.packageModeEnabled) return false; // If package mode is OFF, never block
   if (!sub.isTrial) return false;
   return getRemainingTrialSeconds(sub) <= 0;
+}
+
+// ============================================================================
+// 5-DAY GRACE PERIOD & NON-DESTRUCTIVE SAFE DOWNGRADE ARCHITECTURE
+// ============================================================================
+
+export interface GracePeriodInfo {
+  inGracePeriod: boolean;
+  isDowngraded: boolean;
+  daysRemaining: number;
+  hoursRemaining: number;
+  totalMsRemaining: number;
+  formattedCountdown: string;
+  expiredAtDate: string;
+}
+
+/**
+ * Calculate live remaining grace period duration.
+ */
+export function getGracePeriodInfo(sub: CompanySubscription): GracePeriodInfo {
+  if (sub.status === "downgraded") {
+    return {
+      inGracePeriod: false,
+      isDowngraded: true,
+      daysRemaining: 0,
+      hoursRemaining: 0,
+      totalMsRemaining: 0,
+      formattedCountdown: "Account Safely Downgraded",
+      expiredAtDate: sub.downgradedAt ? new Date(sub.downgradedAt).toLocaleDateString() : "",
+    };
+  }
+
+  if (sub.status !== "grace_period" || !sub.gracePeriodStartedAt) {
+    return {
+      inGracePeriod: false,
+      isDowngraded: false,
+      daysRemaining: 0,
+      hoursRemaining: 0,
+      totalMsRemaining: 0,
+      formattedCountdown: "",
+      expiredAtDate: "",
+    };
+  }
+
+  const totalGraceMs = (sub.gracePeriodDays || DEFAULT_GRACE_PERIOD_DAYS) * MS_PER_DAY;
+  const elapsedMs = Date.now() - sub.gracePeriodStartedAt;
+  const remainingMs = Math.max(0, totalGraceMs - elapsedMs);
+
+  const days = Math.floor(remainingMs / MS_PER_DAY);
+  const hours = Math.floor((remainingMs % MS_PER_DAY) / (60 * 60 * 1000));
+  const mins = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000));
+
+  let formatted = `${days}d ${hours}h left`;
+  if (days === 0) {
+    formatted = `${hours}h ${mins}m left`;
+  }
+
+  return {
+    inGracePeriod: true,
+    isDowngraded: false,
+    daysRemaining: days,
+    hoursRemaining: hours,
+    totalMsRemaining: remainingMs,
+    formattedCountdown: formatted,
+    expiredAtDate: new Date(sub.gracePeriodStartedAt + totalGraceMs).toLocaleDateString(),
+  };
+}
+
+/**
+ * Trigger payment failure or subscription expiry: initiates the 5-day timed grace period.
+ */
+export function startGracePeriod(
+  companyId: string,
+  failureReason = "Payment authorization failed or subscription cycle ended."
+): CompanySubscription {
+  const current = getCompanySubscription(companyId);
+  if (current.status === "grace_period") return current;
+
+  const updated: CompanySubscription = {
+    ...current,
+    status: "grace_period",
+    isTrial: false,
+    gracePeriodStartedAt: Date.now(),
+    gracePeriodDays: DEFAULT_GRACE_PERIOD_DAYS,
+    paymentFailureReason: failureReason,
+  };
+  saveCompanySubscription(companyId, updated);
+  return updated;
+}
+
+/**
+ * Safely downgrade company subscription to Starter when the 5-day grace period expires.
+ *
+ * CRITICAL DATA PRESERVATION NOTICE:
+ * NO DATA IS EVER DELETED!
+ * All properties, accommodation rooms, tenants, contracts, staff accounts, invoices,
+ * and historical logs remain 100% intact in the database.
+ * Higher-tier features are locked/blurred and capacity limits prevent NEW creations
+ * until subscription is renewed via Stripe.
+ */
+export function downgradeCompanySubscription(companyId: string): CompanySubscription {
+  const current = getCompanySubscription(companyId);
+  const updated: CompanySubscription = {
+    ...current,
+    previousPackageId: current.previousPackageId || current.packageId,
+    packageId: "starter",
+    status: "downgraded",
+    isTrial: false,
+    downgradedAt: Date.now(),
+  };
+  saveCompanySubscription(companyId, updated);
+  return updated;
+}
+
+/**
+ * Check grace period status and auto-downgrade safely if the 5 days have elapsed.
+ */
+export function checkGracePeriodAndAutoDowngrade(companyId: string): CompanySubscription {
+  const current = getCompanySubscription(companyId);
+  if (!current.packageModeEnabled) return current;
+
+  if (current.status === "grace_period") {
+    const info = getGracePeriodInfo(current);
+    if (info.totalMsRemaining <= 0) {
+      return downgradeCompanySubscription(companyId);
+    }
+  }
+
+  return current;
 }
 
 /**
@@ -544,3 +970,4 @@ export function isPackageFeatureEnabled(
   const plan = SUBSCRIPTION_PACKAGES[sub.packageId] || SUBSCRIPTION_PACKAGES.starter;
   return !!plan.features[featureKey];
 }
+

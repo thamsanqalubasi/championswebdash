@@ -61,8 +61,11 @@ import {
   RotateCcw,
   AlertCircle,
   Bell,
+  Lock,
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
+import { checkPackageCapacityLimit } from "@/lib/packages";
+import { PackageLimitModal } from "@/components/package-limit-modal";
 import {
   isPaymentSuppressed,
   isPaymentAdvance,
@@ -536,7 +539,18 @@ export default function TenantsPage() {
     return result;
   }, [tenants, activeFilter, searchQuery]);
 
+  const [limitModalInfo, setLimitModalInfo] = useState<{
+    currentCount?: number;
+    maxLimit?: number;
+    planName: string;
+  } | null>(null);
+
   const openAdd = () => {
+    const tenantLimit = checkPackageCapacityLimit(currentCompany?.id || "default", "tenants", tenants.length);
+    if (!tenantLimit.allowed) {
+      setLimitModalInfo({ currentCount: tenantLimit.current, maxLimit: tenantLimit.max, planName: tenantLimit.planName });
+      return;
+    }
     setEditingId(null);
     setForm(emptyForm);
     setModalOpen(true);
@@ -2265,16 +2279,32 @@ export default function TenantsPage() {
               filters={filterTabs}
               activeFilter={activeFilter}
               onFilterChange={setActiveFilter}
-              actions={
-                <button
-                  type="button"
-                  onClick={openAdd}
-                  className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-surface hover:opacity-90 transition-all"
-                >
-                  <Plus size={16} />
-                  <span>Add Tenant</span>
-                </button>
-              }
+              actions={(() => {
+                const tenantLimit = checkPackageCapacityLimit(currentCompany?.id || "default", "tenants", tenants.length);
+                if (!tenantLimit.allowed) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setLimitModalInfo({ currentCount: tenantLimit.current, maxLimit: tenantLimit.max, planName: tenantLimit.planName })}
+                      className="flex items-center gap-2 rounded-lg border-2 border-amber-500/50 bg-amber-500/15 px-4 py-2 text-sm font-bold text-amber-500 hover:bg-amber-500/25 transition shadow-sm"
+                      title={`Tenant quota reached (${tenantLimit.current}/${tenantLimit.max}). Click to upgrade plan.`}
+                    >
+                      <Lock size={15} className="text-amber-500" />
+                      <span>Add Tenant ({tenantLimit.current}/${tenantLimit.max} 🔒)</span>
+                    </button>
+                  );
+                }
+                return (
+                  <button
+                    type="button"
+                    onClick={openAdd}
+                    className="flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-surface hover:opacity-90 transition-all"
+                  >
+                    <Plus size={16} />
+                    <span>Add Tenant</span>
+                  </button>
+                );
+              })()}
             />
           </div>
 
@@ -4216,6 +4246,17 @@ export default function TenantsPage() {
         description="Enter your 4-digit security PIN to authorize and dispatch the official monthly rent payment notice and statement to the tenant."
         actionLabel="Send Payment Reminder"
         actionVariant="primary"
+      />
+
+      {/* Package Quota Limit Modal for Tenants */}
+      <PackageLimitModal
+        open={Boolean(limitModalInfo)}
+        onClose={() => setLimitModalInfo(null)}
+        companyId={currentCompany?.id || "default"}
+        metric="tenants"
+        currentCount={limitModalInfo?.currentCount}
+        maxLimit={limitModalInfo?.maxLimit}
+        planName={limitModalInfo?.planName || "Starter"}
       />
     </ModulePage>
   );

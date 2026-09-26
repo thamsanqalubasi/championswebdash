@@ -15,16 +15,21 @@ import {
   getRemainingTrialSeconds,
   isTrialExpired,
   formatTrialCountdown,
+  isRouteLocked,
+  getGracePeriodInfo,
+  checkGracePeriodAndAutoDowngrade,
   type CompanySubscription,
 } from "@/lib/packages";
 import { PackageSwitcherModal } from "./package-switcher-modal";
 import { TrialExpiredGatewayModal } from "./trial-expired-gateway-modal";
+import { StripePaymentModal } from "./stripe-payment-modal";
 import {
   LayoutDashboard, Building2, Users, DollarSign, Wrench, ClipboardList,
   Truck, SearchCheck, CalendarClock, Package, FileSignature, Settings,
   History, Landmark, BedDouble, KeyRound, Briefcase, Layers, ChevronDown,
   Building, Inbox, Globe, UserCog, ChevronLeft, ChevronRight, Menu,
   ShieldCheck, Check, X, Network, Server, BarChart3, Megaphone,
+  Lock, CreditCard, Clock, Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import type { DepartmentType } from "@/lib/types";
@@ -167,7 +172,21 @@ const navItemKeyMap: Record<string, string> = {
   "/audit-trail": "nav_audit",
 };
 
-function NavItemLink({ item, active, collapsed, label, onClick }: { item: NavItem; active: boolean; collapsed: boolean; label?: string; onClick?: () => void }) {
+function NavItemLink({
+  item,
+  active,
+  collapsed,
+  label,
+  onClick,
+  isLocked,
+}: {
+  item: NavItem;
+  active: boolean;
+  collapsed: boolean;
+  label?: string;
+  onClick?: () => void;
+  isLocked?: boolean;
+}) {
   const Icon = item.icon;
   const displayLabel = label || item.label;
   return (
@@ -175,7 +194,7 @@ function NavItemLink({ item, active, collapsed, label, onClick }: { item: NavIte
       to={item.href}
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      title={collapsed ? displayLabel : undefined}
+      title={collapsed ? (isLocked ? `${displayLabel} (Locked - Upgrade Required)` : displayLabel) : undefined}
       className={`group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-all duration-200 ${
         active ? "bg-surface-elevated font-medium text-foreground" : "text-muted hover:bg-surface-elevated/50 hover:text-foreground"
       } ${collapsed ? "justify-center px-2" : ""}`}
@@ -183,9 +202,12 @@ function NavItemLink({ item, active, collapsed, label, onClick }: { item: NavIte
       <span className={`absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-foreground transition-all duration-300 ease-out ${
         active ? "translate-x-0 opacity-100" : "-translate-x-2 opacity-0 group-hover:translate-x-0 group-hover:opacity-40"
       } ${collapsed ? "hidden" : ""}`}/>
-      <div className={`flex items-center gap-3 transition-transform duration-200 ${active ? "translate-x-1" : "group-hover:translate-x-1"} ${collapsed ? "translate-x-0 group-hover:translate-x-0" : ""}`}>
-        <Icon size={18} strokeWidth={active ? 2.5 : 2} className={`shrink-0 transition-all duration-200 ${active ? "text-foreground" : "text-muted group-hover:text-foreground"}`}/>
-        {!collapsed && <span>{displayLabel}</span>}
+      <div className={`flex items-center gap-3 transition-transform duration-200 w-full ${active ? "translate-x-1" : "group-hover:translate-x-1"} ${collapsed ? "translate-x-0 group-hover:translate-x-0" : ""}`}>
+        <Icon size={18} strokeWidth={active ? 2.5 : 2} className={`shrink-0 transition-all duration-200 ${active ? "text-foreground" : isLocked ? "text-amber-500/70" : "text-muted group-hover:text-foreground"}`}/>
+        {!collapsed && <span className="truncate">{displayLabel}</span>}
+        {!collapsed && isLocked && (
+          <Lock size={12} className="text-amber-500/80 shrink-0 ml-auto" />
+        )}
       </div>
     </Link>
   );
@@ -256,6 +278,21 @@ export function AppShell({ children }: { children: ReactNode }) {
     getRemainingTrialSeconds(sub)
   );
   const [packageModalOpen, setPackageModalOpen] = useState(false);
+  const [stripeModalOpen, setStripeModalOpen] = useState(false);
+
+  const routeLock = isRouteLocked(currentCompany?.id || "default", pathname);
+  const graceInfo = getGracePeriodInfo(sub);
+
+  // Monitor grace period and auto-downgrade safely when 5 days expire
+  useEffect(() => {
+    const runCheck = () => {
+      const updated = checkGracePeriodAndAutoDowngrade(currentCompany?.id || "default");
+      setSub(updated);
+    };
+    runCheck();
+    const interval = setInterval(runCheck, 5000);
+    return () => clearInterval(interval);
+  }, [currentCompany?.id]);
 
   useEffect(() => {
     const handleSubChange = () => {
@@ -378,8 +415,16 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <div className={`space-y-0.5 ${!sidebarCollapsed ? "ml-2 border-l border-border-color/20 pl-2" : ""}`}>
                   {section.items.map((item) => {
                     const itemLabel = navItemKeyMap[item.href] ? t(navItemKeyMap[item.href] as any) : item.label;
+                    const itemLocked = isRouteLocked(currentCompany?.id || "default", item.href).locked;
                     return (
-                      <NavItemLink key={item.href} item={item} active={isActive(pathname, item.href)} collapsed={sidebarCollapsed} label={itemLabel}/>
+                      <NavItemLink
+                        key={item.href}
+                        item={item}
+                        active={isActive(pathname, item.href)}
+                        collapsed={sidebarCollapsed}
+                        label={itemLabel}
+                        isLocked={itemLocked}
+                      />
                     );
                   })}
                 </div>
@@ -558,6 +603,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                 className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition shadow-xs ${
                   !sub.packageModeEnabled
                     ? "border-dashed border-border-color bg-surface-elevated/70 text-muted"
+                    : sub.status === "grace_period"
+                    ? "border-amber-500/60 bg-amber-500/20 text-amber-500 animate-pulse"
+                    : sub.status === "downgraded"
+                    ? "border-amber-500/40 bg-surface text-amber-500"
                     : isTrialExpired(sub)
                     ? "border-red-500/50 bg-red-500/15 text-red-400 animate-pulse"
                     : sub.status === "active"
@@ -565,12 +614,22 @@ export function AppShell({ children }: { children: ReactNode }) {
                     : "border-blue-500/40 bg-blue-500/15 text-blue-400"
                 }`}
               >
-                <Package size={14} className={isTrialExpired(sub) ? "text-red-400" : "text-blue-400"} />
+                <Package size={14} className={sub.status === "grace_period" ? "text-amber-500" : isTrialExpired(sub) ? "text-red-400" : "text-blue-400"} />
                 <span>
                   {SUBSCRIPTION_PACKAGES[sub.packageId]?.name || "Starter"} ($
                   {SUBSCRIPTION_PACKAGES[sub.packageId]?.priceUsd || 5})
                 </span>
-                {sub.packageModeEnabled && sub.isTrial && sub.status !== "active" && (
+                {sub.packageModeEnabled && sub.status === "grace_period" && (
+                  <span className="ml-1 rounded-md bg-amber-500 px-1.5 py-0.5 text-[10px] font-mono font-black text-black">
+                    GRACE: {graceInfo.formattedCountdown}
+                  </span>
+                )}
+                {sub.packageModeEnabled && sub.status === "downgraded" && (
+                  <span className="ml-1 rounded-md bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.5 text-[10px] font-bold text-amber-500">
+                    DOWNGRADED
+                  </span>
+                )}
+                {sub.packageModeEnabled && sub.isTrial && sub.status !== "active" && sub.status !== "grace_period" && sub.status !== "downgraded" && (
                   <span
                     className={`ml-1 rounded-md px-1.5 py-0.5 text-[10px] font-mono font-black ${
                       isTrialExpired(sub)
@@ -643,8 +702,149 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         {/* Main content — scrolls independently, content centred */}
         <main id="main-content" className="flex-1 overflow-y-auto bg-background">
+          {/* 5-Day Timed Grace Period Warning Banner */}
+          {sub.packageModeEnabled && sub.status === "grace_period" && (
+            <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2.5 sm:px-6 animate-in fade-in slide-in-from-top-2">
+              <div className="mx-auto max-w-7xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5 text-xs text-amber-700 dark:text-amber-300">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-500">
+                    <Clock size={16} />
+                  </div>
+                  <div>
+                    <span className="font-black uppercase tracking-wider text-[11px] block sm:inline mr-2">
+                      ⚠️ 5-Day Grace Period Active:
+                    </span>
+                    <span>
+                      Subscription ended or card payment failed. You have <strong>{graceInfo.formattedCountdown}</strong> to renew before automatic downgrade. <strong>All your properties, rooms, tenants, and records are completely safe and will never be deleted.</strong>
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setStripeModalOpen(true)}
+                    className="flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs font-bold shadow-xs transition"
+                  >
+                    <CreditCard size={13} />
+                    <span>Pay $0.50 via Stripe</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPackageModalOpen(true)}
+                    className="rounded-lg border border-amber-500/40 bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
+                  >
+                    View Plans
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Account Safely Downgraded Notice Banner (Data 100% Preserved) */}
+          {sub.packageModeEnabled && sub.status === "downgraded" && (
+            <div className="bg-blue-500/10 border-b border-blue-500/25 px-4 py-2.5 sm:px-6 animate-in fade-in slide-in-from-top-2">
+              <div className="mx-auto max-w-7xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5 text-xs text-blue-700 dark:text-blue-300">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-500/20 text-blue-500">
+                    <ShieldCheck size={16} />
+                  </div>
+                  <div>
+                    <span className="font-black uppercase tracking-wider text-[11px] block sm:inline mr-2">
+                      Account Safely Downgraded to Starter:
+                    </span>
+                    <span>
+                      Higher tier features are locked. <strong>All your properties, rooms, tenants, and contracts remain 100% safe in the database.</strong> Pay or switch plan to immediately restore your full tier.
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setStripeModalOpen(true)}
+                    className="flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs font-bold shadow-xs transition"
+                  >
+                    <CreditCard size={13} />
+                    <span>Restore Full Tier ($0.50)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPackageModalOpen(true)}
+                    className="rounded-lg border border-blue-500/40 bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition"
+                  >
+                    Select Plan
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 lg:px-6">
-            {children}
+            {routeLock.locked ? (
+              <div className="relative min-h-[75vh]">
+                {/* Blurred right div content */}
+                <div className="filter blur-md select-none pointer-events-none opacity-20 min-h-[500px]" aria-hidden="true">
+                  {children}
+                </div>
+
+                {/* Frosted Glass Overlay with Upgrade Trigger Card */}
+                <div
+                  onClick={() => setPackageModalOpen(true)}
+                  className="absolute inset-0 z-30 flex items-center justify-center p-4 cursor-pointer bg-background/50 backdrop-blur-xs transition-all hover:bg-background/40"
+                  title="Click anywhere to upgrade package"
+                >
+                  <div
+                    onClick={(e) => { e.stopPropagation(); setPackageModalOpen(true); }}
+                    className="w-full max-w-lg rounded-3xl border-2 border-amber-500/40 bg-surface/95 p-6 sm:p-8 text-center shadow-2xl backdrop-blur-xl space-y-5 animate-in fade-in zoom-in-95 duration-200"
+                  >
+                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/20">
+                      <Lock size={32} />
+                    </div>
+
+                    <div>
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-amber-500 border border-amber-500/25 mb-2">
+                        <Lock size={12} />
+                        <span>Package Upgrade Required</span>
+                      </span>
+                      <h2 className="text-xl sm:text-2xl font-black text-foreground tracking-tight">
+                        {routeLock.config?.featureTitle || "Feature Locked"}
+                      </h2>
+                      <p className="mt-2 text-xs sm:text-sm text-muted leading-relaxed max-w-md mx-auto">
+                        {routeLock.config?.description}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-border-color bg-surface-elevated/70 p-4 text-xs text-left space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted">Your Active Tier:</span>
+                        <span className="font-bold text-foreground">{routeLock.currentPlanName}</span>
+                      </div>
+                      <div className="flex items-center justify-between border-t border-border-color/50 pt-2">
+                        <span className="text-muted">Required Tier:</span>
+                        <span className="font-bold text-blue-500">
+                          {routeLock.config?.minPackageName} (${routeLock.config?.minPackagePriceUsd}/month)
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setPackageModalOpen(true)}
+                        className="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3.5 text-sm font-black text-white shadow-lg hover:from-blue-700 hover:to-indigo-700 transition"
+                      >
+                        <Sparkles size={16} />
+                        <span>Upgrade to Unlock {routeLock.config?.featureTitle}</span>
+                      </button>
+                      <p className="text-[11px] text-muted">
+                        Click anywhere on this screen to open package tiers.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              children
+            )}
           </div>
         </main>
       </div>
@@ -737,8 +937,17 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <div className="ml-2 space-y-0.5 border-l border-border-color/20 pl-2">
                       {section.items.map((item) => {
                         const itemLabel = navItemKeyMap[item.href] ? t(navItemKeyMap[item.href] as any) : item.label;
+                        const itemLocked = isRouteLocked(currentCompany?.id || "default", item.href).locked;
                         return (
-                          <NavItemLink key={item.href} item={item} active={isActive(pathname, item.href)} collapsed={false} label={itemLabel} onClick={() => setMobileMenuOpen(false)}/>
+                          <NavItemLink
+                            key={item.href}
+                            item={item}
+                            active={isActive(pathname, item.href)}
+                            collapsed={false}
+                            label={itemLabel}
+                            isLocked={itemLocked}
+                            onClick={() => setMobileMenuOpen(false)}
+                          />
                         );
                       })}
                     </div>
@@ -769,13 +978,27 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Trial Expired Gateway Modal */}
       <TrialExpiredGatewayModal
-        open={isTrialExpired(sub) && !packageModalOpen}
+        open={isTrialExpired(sub) && !packageModalOpen && sub.status !== "grace_period" && sub.status !== "downgraded"}
         companyId={currentCompany?.id || "default"}
         onOpenPackageSwitcher={() => setPackageModalOpen(true)}
         onTrialRestarted={() => {
           const updated = getCompanySubscription(currentCompany?.id || "default");
           setSub(updated);
           setRemainingTrialSec(getRemainingTrialSeconds(updated));
+        }}
+      />
+
+      {/* Direct Stripe Payment Modal ($0.50 Sandbox / Live Card Verification) */}
+      <StripePaymentModal
+        open={stripeModalOpen}
+        onClose={() => setStripeModalOpen(false)}
+        companyId={currentCompany?.id || "default"}
+        amountUsd={0.50}
+        packageTitle="Stripe Test Package"
+        onSuccess={() => {
+          setStripeModalOpen(false);
+          const updated = getCompanySubscription(currentCompany?.id || "default");
+          setSub(updated);
         }}
       />
     </div>

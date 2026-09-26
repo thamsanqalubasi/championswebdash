@@ -35,6 +35,8 @@ import {
 } from "@/lib/data";
 import type { CompanyUser, DepartmentType, RoleLevel, RoleProfileDefinition } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
+import { checkPackageCapacityLimit } from "@/lib/packages";
+import { PackageLimitModal } from "@/components/package-limit-modal";
 
 const JOB_TITLES_BY_DEPARTMENT: Record<DepartmentType, Array<{ title: string; defaultLevel: RoleLevel }>> = {
   admin: [
@@ -533,7 +535,19 @@ export default function UsersManagementPage() {
     }
   }, [availableTitles]);
 
+  const [limitModalInfo, setLimitModalInfo] = useState<{
+    currentCount?: number;
+    maxLimit?: number;
+    planName: string;
+  } | null>(null);
+
   const openAddUser = () => {
+    const staffLimit = checkPackageCapacityLimit(currentCompany.id, "staff", users.length);
+    if (!staffLimit.allowed) {
+      setLimitModalInfo({ currentCount: staffLimit.current, maxLimit: staffLimit.max, planName: staffLimit.planName });
+      return;
+    }
+
     setErrorMsg("");
     setSuccessMsg("");
     setFullName("");
@@ -698,16 +712,32 @@ export default function UsersManagementPage() {
             <Network size={18} />
             <span>Organogram & Roles</span>
           </Link>
-          {(isAdmin || isManager) && (
-            <button
-              type="button"
-              onClick={openAddUser}
-              className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition"
-            >
-              <Plus size={18} />
-              <span>Add New User</span>
-            </button>
-          )}
+          {(isAdmin || isManager) && (() => {
+            const staffLimit = checkPackageCapacityLimit(currentCompany.id, "staff", users.length);
+            if (!staffLimit.allowed) {
+              return (
+                <button
+                  type="button"
+                  onClick={() => setLimitModalInfo({ currentCount: staffLimit.current, maxLimit: staffLimit.max, planName: staffLimit.planName })}
+                  className="flex items-center gap-2 rounded-xl border-2 border-amber-500/50 bg-amber-500/15 px-5 py-2.5 text-sm font-bold text-amber-500 hover:bg-amber-500/25 transition shadow-sm"
+                  title={`Staff user quota reached (${staffLimit.current}/${staffLimit.max}). Click to upgrade plan.`}
+                >
+                  <Lock size={18} className="text-amber-500" />
+                  <span>Add User ({staffLimit.current}/${staffLimit.max} 🔒)</span>
+                </button>
+              );
+            }
+            return (
+              <button
+                type="button"
+                onClick={openAddUser}
+                className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition"
+              >
+                <Plus size={18} />
+                <span>Add New User</span>
+              </button>
+            );
+          })()}
         </div>
       </div>
 
@@ -1729,6 +1759,17 @@ export default function UsersManagementPage() {
         isSuperAdmin={isSuperAdmin || isAdmin}
         isManager={isManager}
         currentManagerDept={currentCompanyUser?.department}
+      />
+
+      {/* Package Limit Modal for Staff Users */}
+      <PackageLimitModal
+        open={Boolean(limitModalInfo)}
+        onClose={() => setLimitModalInfo(null)}
+        companyId={currentCompany.id}
+        metric="staff"
+        currentCount={limitModalInfo?.currentCount}
+        maxLimit={limitModalInfo?.maxLimit}
+        planName={limitModalInfo?.planName || "Starter"}
       />
     </div>
   );
