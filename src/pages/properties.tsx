@@ -484,7 +484,7 @@ export default function PropertiesPage() {
                       title={`Property quota reached (${propLimit.current}/${propLimit.max}). Click to upgrade.`}
                     >
                       <Lock size={16} className="text-amber-500" />
-                      <span>Add Property ({propLimit.current}/{propLimit.max} 🔒)</span>
+                      <span>Add Property ({propLimit.current}/{propLimit.max})</span>
                     </button>
                   );
                 }

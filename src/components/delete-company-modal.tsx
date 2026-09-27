@@ -1,4 +1,4 @@
-﻿/**
+/**
  * DeleteCompanyModal - For SUPER ADMIN only.
  *
  * Behavior:
@@ -12,7 +12,7 @@
  * 8. After 30 days: company data + staff affiliations permanently deleted
  * 9. Customer accounts (as tenants/guests) are NOT affected
  *
- * ⚠️ ADMIN DASHBOARD TODO (future agents):
+ * ADMIN DASHBOARD TODO (future agents):
  *   - Show list of frozen companies + staff in admin control panel
  *   - Manual "Permanently Delete Now" button per company
  *   - Auto-delete cron runs after COMPANY_DELETE_FREEZE_DAYS days

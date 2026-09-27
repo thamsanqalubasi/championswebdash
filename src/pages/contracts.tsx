@@ -43,7 +43,6 @@ import {
   RotateCcw
 } from "lucide-react";
 import { DataTableHeader, StatusBadge, TableRowActions, TableActionButton } from "@/components/data-table";
-import { Pagination } from "@/components/pagination";
 
 /* ── local types ── */
 
@@ -650,13 +649,6 @@ export default function ContractsPage() {
     }
     return result;
   }, [contracts, activeFilter, searchQuery]);
-
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const totalPages = Math.ceil(filtered.length / pageSize) || 1;
-  const paginatedContracts = useMemo(() => {
-    return filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  }, [filtered, currentPage, pageSize]);
 
   /* ── contract form actions ── */
   const openAdd = () => {
@@ -1327,7 +1319,7 @@ export default function ContractsPage() {
               <div className="p-4">
                 <DataTableHeader
                   searchValue={searchQuery}
-                  onSearchChange={(val) => { setSearchQuery(val); setCurrentPage(1); }}
+                  onSearchChange={setSearchQuery}
                   searchPlaceholder="Search contracts by tenant or property..."
                   filters={[
                     { key: "all", label: "All", count: counts.all },
@@ -1338,7 +1330,7 @@ export default function ContractsPage() {
                     { key: "suppressed", label: "Suppressed", count: counts.suppressed },
                   ]}
                   activeFilter={activeFilter}
-                  onFilterChange={(val) => { setActiveFilter(val); setCurrentPage(1); }}
+                  onFilterChange={setActiveFilter}
                   actions={
                     <button
                       type="button"
@@ -1370,7 +1362,7 @@ export default function ContractsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border-color/40">
-                      {paginatedContracts.map((row) => {
+                      {filtered.map((row) => {
                         const isSuppressed = Boolean(row.isSuppressed || row.status === "suppressed");
                         const isEnded = isContractEnded(row);
                         return (
@@ -1515,21 +1507,10 @@ export default function ContractsPage() {
                   </table>
                 </div>
               )}
-              <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-muted/40">
                   Showing {filtered.length} of {counts.all} legal records
                 </p>
-                <Pagination
-                  currentPage={currentPage}
-                  totalPages={totalPages}
-                  totalItems={filtered.length}
-                  pageSize={pageSize}
-                  onPageChange={setCurrentPage}
-                  onPageSizeChange={(newSize) => {
-                    setPageSize(newSize);
-                    setCurrentPage(1);
-                  }}
-                />
               </div>
             </section>
           )}

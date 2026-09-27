@@ -1,4 +1,4 @@
-﻿import type { CommercialBooking, MealPlan } from "@/lib/types";
+import type { CommercialBooking, MealPlan } from "@/lib/types";
 
 export function formatRoomDisplayName(roomNumber: string | undefined | null, roomType?: string): string {
   const rawNum = (roomNumber || "101").trim();
@@ -425,7 +425,7 @@ export function buildFolioHtml(
       <!-- Status Banner -->
       <div class="status-banner">
         <div class="status-banner-left">
-          <span class="status-icon">✓</span>
+          <span class="status-icon">&bull;</span>
           <div>
             <div class="status-title">${statusInfo.label}</div>
             <div class="status-time">Registered into ${cleanRoom} at ${booking.propertyName || companyName}</div>
@@ -529,7 +529,7 @@ export function buildFolioHtml(
             <span>
               ${
                 isSettled
-                  ? `<span class="settled-badge">✓ SETTLED IN FULL (${currencySymbol}0)</span>`
+                  ? `<span class="settled-badge">SETTLED IN FULL (${currencySymbol}0)</span>`
                   : `<span class="due-badge">${currencySymbol}${balance.toLocaleString()} DUE</span>`
               }
             </span>
@@ -540,7 +540,7 @@ export function buildFolioHtml(
       <!-- Authenticity Stamp -->
       <div class="security-stamp-box">
         <div>
-          <div class="stamp-text-title">🔒 Digital Verification &amp; Security Stamp</div>
+          <div class="stamp-text-title">Digital Verification &amp; Security Stamp</div>
           <div class="stamp-text-sub">
             Folio Record authenticated by ${companyName} Front Desk Systems.
           </div>

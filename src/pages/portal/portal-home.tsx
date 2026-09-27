@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { getAllCountries, getCitiesForCountry } from "@/lib/geo-data";
@@ -258,7 +258,7 @@ export default function PortalHomePage() {
           const bMap: Record<string, { badge: string; tier: string; score: number }> = {};
           boostData.forEach((b: any) => {
             bMap[b.listing_id] = {
-              badge: b.badge_label || "🔥 Featured",
+              badge: b.badge_label || "Featured",
               tier: b.boost_tier,
               score: b.priority_score || 10,
             };

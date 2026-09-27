@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { uploadFileToBucket } from '@/lib/storage';
@@ -774,7 +774,7 @@ export default function AgentPortalPage() {
                       Agent Profile Active: {`${profile.firstName} ${profile.lastName}`.trim() || user?.user_metadata?.full_name || 'Verified Agent'}
                     </p>
                     <p className="text-[11px] text-muted">
-                      📞 {profile.phone || profile.whatsapp || 'Phone active'} · ✉️ {profile.email || user?.email} · Ready to show properties on public front page.
+                      {profile.phone || profile.whatsapp || 'Phone active'} · {profile.email || user?.email} · Ready to show properties on public front page.
                     </p>
                   </div>
                 </div>
@@ -841,12 +841,12 @@ export default function AgentPortalPage() {
                   className="rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none focus:border-blue-600"
                 >
                   <option value="all">All Residential</option>
-                  <option value="apartment">🏢 Apartments</option>
-                  <option value="house">🏡 Houses</option>
-                  <option value="flat">🏠 Flats</option>
-                  <option value="townhouse">🏘️ Townhouses</option>
-                  <option value="studio">🛋️ Studios</option>
-                  <option value="room">🚪 Rooms</option>
+                  <option value="apartment">Apartments</option>
+                  <option value="house">Houses</option>
+                  <option value="flat">Flats</option>
+                  <option value="townhouse">Townhouses</option>
+                  <option value="studio">Studios</option>
+                  <option value="room">Rooms</option>
                 </select>
               </div>
             </div>
@@ -928,7 +928,6 @@ export default function AgentPortalPage() {
                             {/* Top Badges */}
                             <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 pointer-events-none">
                               <span className="capitalize px-2.5 py-1 rounded-full text-[11px] font-bold bg-black/70 text-white backdrop-blur-xs flex items-center gap-1">
-                                <span>🏠</span>
                                 <span>{prop.type}</span>
                               </span>
 
@@ -1503,20 +1502,20 @@ export default function AgentPortalPage() {
 
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs space-y-1.5">
               <div className="flex items-center gap-2">
-                <span className={((profile.firstName && profile.lastName) || user?.user_metadata?.full_name) ? "text-emerald-600 font-bold" : "text-amber-600 font-bold"}>
-                  {((profile.firstName && profile.lastName) || user?.user_metadata?.full_name) ? "✓" : "✗"} Agent Name:
+                <span className={`inline-flex items-center gap-1 font-bold ${((profile.firstName && profile.lastName) || user?.user_metadata?.full_name) ? "text-emerald-600" : "text-amber-600"}`}>
+                  {((profile.firstName && profile.lastName) || user?.user_metadata?.full_name) ? <Check size={12} /> : <X size={12} />} Agent Name:
                 </span>
                 <span className="text-foreground">{`${profile.firstName} ${profile.lastName}`.trim() || user?.user_metadata?.full_name || 'Missing (Required)'}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className={(profile.phone || profile.whatsapp) ? "text-emerald-600 font-bold" : "text-amber-600 font-bold"}>
-                  {(profile.phone || profile.whatsapp) ? "✓" : "✗"} Phone / WhatsApp:
+                <span className={`inline-flex items-center gap-1 font-bold ${(profile.phone || profile.whatsapp) ? "text-emerald-600" : "text-amber-600"}`}>
+                  {(profile.phone || profile.whatsapp) ? <Check size={12} /> : <X size={12} />} Phone / WhatsApp:
                 </span>
                 <span className="text-foreground">{profile.phone || profile.whatsapp || 'Missing (Required)'}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className={(profile.email || user?.email) ? "text-emerald-600 font-bold" : "text-amber-600 font-bold"}>
-                  {(profile.email || user?.email) ? "✓" : "✗"} Email:
+                <span className={`inline-flex items-center gap-1 font-bold ${(profile.email || user?.email) ? "text-emerald-600" : "text-amber-600"}`}>
+                  {(profile.email || user?.email) ? <Check size={12} /> : <X size={12} />} Email:
                 </span>
                 <span className="text-foreground">{profile.email || user?.email || 'Missing (Required)'}</span>
               </div>
@@ -1582,13 +1581,13 @@ export default function AgentPortalPage() {
                 <p className="text-xl font-extrabold text-foreground mt-0.5">{orgProperties.length}</p>
               </div>
               <div className="bg-surface-elevated rounded-xl p-3 border border-border-color">
-                <p className="text-[11px] font-semibold text-muted uppercase">🏢 Apartments</p>
+                <p className="text-[11px] font-semibold text-muted uppercase">Apartments</p>
                 <p className="text-xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-0.5">
                   {orgProperties.filter(p => (p.type || '').toLowerCase().includes('apartment')).length}
                 </p>
               </div>
               <div className="bg-surface-elevated rounded-xl p-3 border border-border-color">
-                <p className="text-[11px] font-semibold text-muted uppercase">🏡 Houses / Flats</p>
+                <p className="text-[11px] font-semibold text-muted uppercase">Houses / Flats</p>
                 <p className="text-xl font-extrabold text-blue-600 dark:text-blue-400 mt-0.5">
                   {orgProperties.filter(p => {
                     const t = (p.type || '').toLowerCase();
@@ -1640,7 +1639,7 @@ export default function AgentPortalPage() {
                     systemModalCategoryFilter === 'apartment' ? 'bg-indigo-600 text-white' : 'bg-surface-elevated text-muted hover:text-foreground'
                   }`}
                 >
-                  🏢 Apartments ({orgProperties.filter(p => (p.type || '').toLowerCase().includes('apartment')).length})
+                  Apartments ({orgProperties.filter(p => (p.type || '').toLowerCase().includes('apartment')).length})
                 </button>
                 <button
                   type="button"
@@ -1649,7 +1648,7 @@ export default function AgentPortalPage() {
                     systemModalCategoryFilter === 'house' ? 'bg-indigo-600 text-white' : 'bg-surface-elevated text-muted hover:text-foreground'
                   }`}
                 >
-                  🏡 Houses & Flats ({orgProperties.filter(p => {
+                  Houses & Flats ({orgProperties.filter(p => {
                     const t = (p.type || '').toLowerCase();
                     return t.includes('house') || t.includes('flat') || t.includes('townhouse') || t.includes('villa');
                   }).length})
@@ -1661,7 +1660,7 @@ export default function AgentPortalPage() {
                     systemModalCategoryFilter === 'published' ? 'bg-emerald-600 text-white' : 'bg-surface-elevated text-emerald-600'
                   }`}
                 >
-                  🟢 Showing ({livePropsCount})
+                  Showing ({livePropsCount})
                 </button>
                 <button
                   type="button"
@@ -1670,7 +1669,7 @@ export default function AgentPortalPage() {
                     systemModalCategoryFilter === 'hidden' ? 'bg-slate-700 text-white' : 'bg-surface-elevated text-muted'
                   }`}
                 >
-                  ⚪ Hidden ({orgProperties.length - livePropsCount})
+                  Hidden ({orgProperties.length - livePropsCount})
                 </button>
               </div>
             </div>
@@ -1781,7 +1780,7 @@ export default function AgentPortalPage() {
                             <td className="py-3 px-3">
                               <span className="capitalize font-semibold text-foreground block">{prop.type}</span>
                               <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold mt-1 bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300">
-                                🏠 Residential
+                                Residential
                               </span>
                             </td>
 

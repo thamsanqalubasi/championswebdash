@@ -716,7 +716,7 @@ function NotificationsModal({
             }`}
           >
             <div className="flex items-center justify-between">
-              <p className="text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">⚠️ New / Unattended</p>
+              <p className="text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">New / Unattended</p>
               <AlertTriangle size={12} className="text-amber-500" />
             </div>
             <p className="text-lg font-black text-foreground mt-0.5">{unattendedItems.length}</p>
@@ -734,7 +734,7 @@ function NotificationsModal({
             }`}
           >
             <div className="flex items-center justify-between">
-              <p className="text-[10px] font-bold uppercase text-blue-600 dark:text-blue-400">🔄 In Progress</p>
+              <p className="text-[10px] font-bold uppercase text-blue-600 dark:text-blue-400">In Progress</p>
               <Activity size={12} className="text-blue-500" />
             </div>
             <p className="text-lg font-black text-foreground mt-0.5">{inProgressItems.length}</p>
@@ -752,7 +752,7 @@ function NotificationsModal({
             }`}
           >
             <div className="flex items-center justify-between">
-              <p className="text-[10px] font-bold uppercase text-emerald-600 dark:text-emerald-400">✅ Resolved</p>
+              <p className="text-[10px] font-bold uppercase text-emerald-600 dark:text-emerald-400">Resolved</p>
               <CheckCircle2 size={12} className="text-emerald-500" />
             </div>
             <p className="text-lg font-black text-foreground mt-0.5">{attendedItems.length}</p>
@@ -771,7 +771,7 @@ function NotificationsModal({
           >
             <div className="flex items-center justify-between">
               <p className="text-[10px] font-bold uppercase text-red-600 dark:text-red-400 flex items-center gap-1">
-                <Zap size={11} /> Priorities ⚡
+                <Zap size={11} /> Priorities
               </p>
               <Flame size={12} className="text-red-500" />
             </div>
@@ -885,9 +885,9 @@ function NotificationsModal({
                           ? "bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/40"
                           : "bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40"
                       }`}>
-                        {item.stage === "attended" && "✅ Resolved"}
-                        {item.stage === "in_progress" && "🔄 In Progress"}
-                        {item.stage === "unattended" && "⚠️ Unattended"}
+                        {item.stage === "attended" && "Resolved"}
+                        {item.stage === "in_progress" && "In Progress"}
+                        {item.stage === "unattended" && "Unattended"}
                       </span>
 
                       {/* Priority Tag (Freshdesk SLA: Critical/High/Medium/Standard) */}

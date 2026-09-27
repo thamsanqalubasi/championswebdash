@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Users,
   Briefcase,
@@ -1078,7 +1078,7 @@ export default function HRPage() {
       return {
         isPermanent: false,
         daysRemaining,
-        label: `⚠️ Critical: ${daysRemaining} days left`,
+        label: `Critical: ${daysRemaining} days left`,
         colorClass: "bg-red-500/15 text-red-600 border-red-500/30 font-bold",
         urgency: "critical",
       };
@@ -1087,7 +1087,7 @@ export default function HRPage() {
       return {
         isPermanent: false,
         daysRemaining,
-        label: `⏳ Expiring: ${daysRemaining} days left`,
+        label: `Expiring: ${daysRemaining} days left`,
         colorClass: "bg-amber-500/15 text-amber-600 border-amber-500/30 font-bold",
         urgency: "warning",
       };
@@ -1096,7 +1096,7 @@ export default function HRPage() {
       return {
         isPermanent: false,
         daysRemaining,
-        label: `📅 ${daysRemaining} days left (~2 mos)`,
+        label: `${daysRemaining} days left (~2 mos)`,
         colorClass: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
         urgency: "moderate",
       };
@@ -1104,7 +1104,7 @@ export default function HRPage() {
     return {
       isPermanent: false,
       daysRemaining,
-      label: `✓ ${daysRemaining} days left`,
+      label: `${daysRemaining} days left`,
       colorClass: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
       urgency: "good",
     };
@@ -2649,7 +2649,7 @@ export default function HRPage() {
 
             <form onSubmit={handleConfirmDeactivation} className="space-y-3">
               <div className="rounded-lg bg-red-500/10 p-3 text-[11px] text-red-700 dark:text-red-400">
-                <p className="font-bold">⚠️ Important System Rule:</p>
+                <p className="font-bold">Important System Rule:</p>
                 <p>
                   Once deactivated, this employee will be blocked from future payroll generation and payslip calculation.
                 </p>
@@ -2848,7 +2848,7 @@ export default function HRPage() {
 
             <form onSubmit={handleConfirmContractTermination} className="space-y-4">
               <div className="rounded-lg bg-red-500/10 p-3 text-[11px] text-red-700 dark:text-red-400">
-                <p className="font-bold">⚠️ Warning:</p>
+                <p className="font-bold">Warning:</p>
                 <p>
                   This action will terminate the employee agreement effective today ({new Date().toISOString().slice(0, 10)}).
                 </p>
@@ -3160,7 +3160,7 @@ export default function HRPage() {
                     ) : (
                       <>
                         <span className="text-xs text-muted italic mr-2">
-                          🔒 Cannot generate payslip for deactivated personnel
+                          Cannot generate payslip for deactivated personnel
                         </span>
 
                         <button
@@ -3224,7 +3224,7 @@ export default function HRPage() {
                   ))}
                 </select>
                 <p className="text-[10px] text-muted mt-1">
-                  ✓ Only active employees are listed ({activeEmployees.length} eligible). Deactivated staff cannot receive payslips.
+                  Only active employees are listed ({activeEmployees.length} eligible). Deactivated staff cannot receive payslips.
                 </p>
               </div>
 
@@ -3997,7 +3997,7 @@ export default function HRPage() {
                                     </span>
                                   ) : (
                                     <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold text-blue-600">
-                                      ✓ Valid Tenure
+                                      Valid Tenure
                                     </span>
                                   )
                                 ) : (
@@ -4487,7 +4487,7 @@ export default function HRPage() {
                       </div>
                     </div>
                     <p className="text-[10px] text-muted italic">
-                      ✓ Monthly payroll generated for {gradeAdjustmentEmployee.fullName} will immediately reflect this new basic pay and benefits structure.
+                      Monthly payroll generated for {gradeAdjustmentEmployee.fullName} will immediately reflect this new basic pay and benefits structure.
                     </p>
                   </div>
                 );

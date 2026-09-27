@@ -16,7 +16,6 @@ import {
   MousePointerClick,
   Percent,
   Flame,
-  FileImage,
   Check,
   Building2,
   ExternalLink,
@@ -40,6 +39,7 @@ import {
   Upload,
   Loader2,
   CreditCard,
+  Image as FileImage,
 } from "lucide-react";
 
 export default function MarketingPage() {
@@ -365,7 +365,7 @@ export default function MarketingPage() {
         boost_start_date: new Date().toISOString().slice(0, 10),
         boost_end_date: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
       }));
-      setBoostPaymentNotice(`Boost payment of $${boostAmountUsd.toFixed(2)} USD received via Stripe! Your boosted listings are now live on the front portal.`);
+      setBoostPaymentNotice(`Boost payment of $${boostAmountUsd.toFixed(2)} USD received successfully! Your boosted listings are now live on the front portal.`);
       setTimeout(() => setBoostPaymentNotice(null), 8000);
       reload();
     } catch (err: any) {
@@ -690,8 +690,8 @@ export default function MarketingPage() {
                         {ad.subtitle && <p className="text-xs text-muted leading-relaxed line-clamp-2">{ad.subtitle}</p>}
 
                         <div className="flex items-center gap-4 text-xs font-mono pt-1 text-muted border-t border-border-color">
-                          <span>👁️ {ad.impressions_count || 0} views</span>
-                          <span>🖱️ {ad.clicks_count || 0} clicks</span>
+                          <span>{ad.impressions_count || 0} views</span>
+                          <span>{ad.clicks_count || 0} clicks</span>
                           <span className="text-purple-500 font-bold">
                             {ad.impressions_count > 0 ? ((ad.clicks_count / ad.impressions_count) * 100).toFixed(1) : "0"}% CTR
                           </span>
@@ -760,7 +760,7 @@ export default function MarketingPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <span className="inline-block px-2.5 py-0.5 rounded-md bg-amber-500 text-white font-black text-[11px] uppercase tracking-wider mb-1 shadow-xs">
-                            {b.badge_label || "🔥 Featured"}
+                            {b.badge_label || "Featured"}
                           </span>
                           <h4 className="font-bold text-foreground text-sm mt-1">{matchedProp?.name || "Target Listing"}</h4>
                           <p className="text-xs text-muted">{matchedProp?.address || matchedProp?.city || "Property Location"}</p>

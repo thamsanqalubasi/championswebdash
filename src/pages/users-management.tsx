@@ -723,7 +723,7 @@ export default function UsersManagementPage() {
                   title={`Staff user quota reached (${staffLimit.current}/${staffLimit.max}). Click to upgrade plan.`}
                 >
                   <Lock size={18} className="text-amber-500" />
-                  <span>Add User ({staffLimit.current}/${staffLimit.max} 🔒)</span>
+                  <span>Add User ({staffLimit.current}/{staffLimit.max})</span>
                 </button>
               );
             }

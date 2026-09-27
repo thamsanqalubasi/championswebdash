@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Professional document HTML templates for invoices and contracts.
  * These produce well-designed, printable HTML documents with company branding and admin signature.
  */
@@ -1176,9 +1176,9 @@ export function buildExternalQuoteRequestHtml(data: ExternalQuoteRequestData): s
 <body>
 
   <div class="no-print" style="display: flex; align-items: center; justify-content: space-between;">
-    <span>📄 Request for Quotation - ${esc(refNo)}</span>
+    <span>Request for Quotation - ${esc(refNo)}</span>
     <div style="display: flex; gap: 8px;">
-      <button class="btn-print" onclick="window.print()">🖨 Print / Save as PDF</button>
+      <button class="btn-print" onclick="window.print()">Print / Save as PDF</button>
       <button class="btn-close" onclick="window.close()">✕ Close</button>
     </div>
   </div>
@@ -1208,7 +1208,7 @@ export function buildExternalQuoteRequestHtml(data: ExternalQuoteRequestData): s
     <div class="body">
       <div class="meta-grid">
         <div class="meta-card">
-          <div class="meta-card-title">📤 Quote Requested By</div>
+          <div class="meta-card-title">Quote Requested By</div>
           <p><strong>${esc(data.contactName)}</strong></p>
           ${data.contactTitle ? `<p>${esc(data.contactTitle)}</p>` : ""}
           <p>${esc(data.requestingCompanyName)}</p>
@@ -1216,7 +1216,7 @@ export function buildExternalQuoteRequestHtml(data: ExternalQuoteRequestData): s
           ${data.contactPhone ? `<p>Tel: ${esc(data.contactPhone)}</p>` : ""}
         </div>
         <div class="meta-card">
-          <div class="meta-card-title">📩 Quote To Be Submitted To</div>
+          <div class="meta-card-title">Quote To Be Submitted To</div>
           <p><strong>${esc(data.supplierName)}</strong></p>
           ${data.supplierContactPerson ? `<p>Attn: ${esc(data.supplierContactPerson)}</p>` : ""}
           ${data.supplierAddress ? `<p>${esc(data.supplierAddress)}</p>` : ""}
@@ -1231,7 +1231,7 @@ export function buildExternalQuoteRequestHtml(data: ExternalQuoteRequestData): s
         Kindly submit your quotation to <strong>${data.contactEmail ? esc(data.contactEmail) : esc(data.requestingCompanyName)}</strong> by return.
       </div>
 
-      <div class="section-title">📋 Items Requiring Quotation</div>
+      <div class="section-title">Items Requiring Quotation</div>
       <table>
         <thead>
           <tr>

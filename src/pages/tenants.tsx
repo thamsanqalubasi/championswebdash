@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
@@ -2306,7 +2306,7 @@ export default function TenantsPage() {
                       title={`Tenant quota reached (${tenantLimit.current}/${tenantLimit.max}). Click to upgrade plan.`}
                     >
                       <Lock size={15} className="text-amber-500" />
-                      <span>Add Tenant ({tenantLimit.current}/${tenantLimit.max} 🔒)</span>
+                      <span>Add Tenant ({tenantLimit.current}/{tenantLimit.max})</span>
                     </button>
                   );
                 }

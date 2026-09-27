@@ -174,12 +174,12 @@ export default function SettingsPage() {
         const sessionId = searchParams.get("session_id") || `cs_${Date.now()}`;
         const updated = markSubscriptionPaid(currentCompany.id, sessionId, "stripe_checkout");
         setSub(updated);
-        setPkgNotice("Stripe payment successful! Your subscription has been verified and activated.");
+        setPkgNotice("Payment successful! Your subscription has been verified and activated.");
         setTimeout(() => setPkgNotice(null), 6000);
         // Clean URL parameter without reloading
         window.history.replaceState({}, document.title, window.location.pathname);
       } else if (searchParams.get("payment") === "cancelled") {
-        setPkgNotice("Stripe checkout was cancelled. You can retry at any time.");
+        setPkgNotice("Payment checkout was cancelled. You can retry at any time.");
         setTimeout(() => setPkgNotice(null), 5000);
         window.history.replaceState({}, document.title, window.location.pathname);
       }
@@ -641,7 +641,7 @@ export default function SettingsPage() {
                   </span>
                 </div>
                 <p className="text-xs text-muted">
-                  Tiered subscription management, 1-minute trial countdown, Stripe sandbox payment, and feature quota controls.
+                  Tiered subscription management, trial status, secure card payment, and feature quota controls.
                 </p>
               </div>
             </div>
@@ -755,7 +755,7 @@ export default function SettingsPage() {
                         className="flex items-center gap-1.5 rounded-xl border border-blue-500/40 bg-blue-600/20 px-3 py-1.5 text-xs font-bold text-blue-300 hover:bg-blue-600/30 transition shadow-xs"
                       >
                         <CreditCard size={13} />
-                        <span>Pay ${SUBSCRIPTION_PACKAGES.test.priceUsd.toFixed(2)} via Stripe</span>
+                        <span>Pay ${SUBSCRIPTION_PACKAGES.test.priceUsd.toFixed(2)} Test Verification</span>
                       </button>
 
                       <button

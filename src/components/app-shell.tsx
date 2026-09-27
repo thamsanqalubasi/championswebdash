@@ -1,4 +1,4 @@
-﻿import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { ThemeToggle } from "./theme-toggle";
@@ -526,7 +526,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   className="flex items-center justify-center gap-1.5 w-full rounded-xl bg-surface-elevated border border-violet-500/30 py-1.5 text-[11px] font-semibold text-violet-400 hover:bg-violet-600/10 transition mt-1"
                 >
                   <Network size={13} />
-                  <span>Open Full Organogram & Roles ➔</span>
+                  <span>Open Full Organogram &amp; Roles &rarr;</span>
                 </Link>
               </div>
             )}
@@ -604,7 +604,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={() => setPackageModalOpen(true)}
-                title="Switch Subscription Package / Test Stripe"
+                title="Switch Subscription Package / Card Gateway"
                 className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition shadow-xs ${
                   !sub.packageModeEnabled
                     ? "border-dashed border-border-color bg-surface-elevated/70 text-muted"
@@ -717,7 +717,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </div>
                   <div>
                     <span className="font-black uppercase tracking-wider text-[11px] block sm:inline mr-2">
-                      ⚠️ 5-Day Grace Period Active:
+                      5-Day Grace Period Active:
                     </span>
                     <span>
                       Subscription ended or card payment failed. You have <strong>{graceInfo.formattedCountdown}</strong> to renew before automatic downgrade. <strong>All your properties, rooms, tenants, and records are completely safe and will never be deleted.</strong>
@@ -731,7 +731,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     className="flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs font-bold shadow-xs transition"
                   >
                     <CreditCard size={13} />
-                    <span>Pay $0.50 via Stripe</span>
+                    <span>Pay $0.50 Test Payment</span>
                   </button>
                   <button
                     type="button"
@@ -868,7 +868,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                                 onClick={() => setPackageModalOpen(true)}
                                 className="font-bold text-blue-500 hover:underline"
                               >
-                                View Plans &amp; Pricing ➔
+                                View Plans &amp; Pricing &rarr;
                               </button>
                             </div>
                           </div>
@@ -1057,7 +1057,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         onClose={() => setStripeModalOpen(false)}
         companyId={currentCompany?.id || "default"}
         amountUsd={0.50}
-        packageTitle="Stripe Test Package"
+        packageTitle="Test Verification Package"
         onSuccess={() => {
           setStripeModalOpen(false);
           const updated = getCompanySubscription(currentCompany?.id || "default");

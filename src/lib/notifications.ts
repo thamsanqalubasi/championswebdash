@@ -77,10 +77,10 @@ export function wrapDocumentInEmailHtml(opts: {
       ${greetingHtml}
       <p class="body-text">${formattedBody}</p>
       <div class="pdf-badge">
-        📎 <strong>Official PDF Attached:</strong> A printable PDF document has been generated and attached to this email for your records.
+        <strong>Official PDF Attached:</strong> A printable PDF document has been generated and attached to this email for your records.
       </div>
       <div class="document-frame">
-        <div class="document-frame-header">📄 Document Preview</div>
+        <div class="document-frame-header">Document Preview</div>
         <div class="document-frame-content">
           ${documentHtml}
         </div>
@@ -665,11 +665,11 @@ export function wrapTenantInvitationEmailHtml(opts: {
         Create your free tenant account to access all resident benefits:
       </p>
       <ul class="feature-list">
-        <li class="feature-item">📄 <strong>Lease Agreements &amp; Contracts:</strong> Access, review, and download your contracts anytime.</li>
-        <li class="feature-item">🧾 <strong>Digital Rent Invoices:</strong> View monthly invoices and itemized billing statements.</li>
-        <li class="feature-item">💳 <strong>Submit Proof of Payment (POP):</strong> Upload bank slips or payment receipts directly for instant ledger reconciliation.</li>
-        <li class="feature-item">🔧 <strong>Maintenance Requests:</strong> Report plumbing, electrical, or structural repairs with photo attachments.</li>
-        <li class="feature-item">💬 <strong>Direct Property Chat:</strong> Message your property manager and maintenance staff directly.</li>
+        <li class="feature-item"><strong>Lease Agreements &amp; Contracts:</strong> Access, review, and download your contracts anytime.</li>
+        <li class="feature-item"><strong>Digital Rent Invoices:</strong> View monthly invoices and itemized billing statements.</li>
+        <li class="feature-item"><strong>Submit Proof of Payment (POP):</strong> Upload bank slips or payment receipts directly for instant ledger reconciliation.</li>
+        <li class="feature-item"><strong>Maintenance Requests:</strong> Report plumbing, electrical, or structural repairs with photo attachments.</li>
+        <li class="feature-item"><strong>Direct Property Chat:</strong> Message your property manager and maintenance staff directly.</li>
       </ul>
       <div class="btn-container">
         <a href="${inviteUrl}" target="_blank" class="btn">Create Your Tenant Account &rarr;</a>
@@ -753,7 +753,7 @@ export function wrapStaffDeregistrationNoticeEmailHtml(opts: {
       </p>
 
       <div class="alert-banner">
-        <p class="alert-title">⚠️ Existing Staff Account Detected</p>
+        <p class="alert-title">Existing Staff Account Detected</p>
         <p class="alert-body">
           Our system detected that your email address (<strong>${staffEmail}</strong>) is currently registered as a staff or administrator profile for <strong>${staffCompanyName}</strong>.
         </p>
@@ -781,7 +781,7 @@ export function wrapStaffDeregistrationNoticeEmailHtml(opts: {
       </div>
 
       <div class="reassurance-box">
-        ✅ <strong>Your Invoices &amp; Contracts are Secure:</strong> Even while registered under another organization, all your official lease contracts, monthly invoices, and payment receipts will continue to be sent directly to <strong>${staffEmail}</strong> as downloadable PDF attachments.
+        <strong>Your Invoices &amp; Contracts are Secure:</strong> Even while registered under another organization, all your official lease contracts, monthly invoices, and payment receipts will continue to be sent directly to <strong>${staffEmail}</strong> as downloadable PDF attachments.
       </div>
 
       <div class="btn-container">

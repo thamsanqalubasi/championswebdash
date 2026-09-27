@@ -1,4 +1,4 @@
-﻿/**
+/**
  * UnsubscribedGatewayModal
  *
  * Fullscreen modal shown when:
@@ -131,7 +131,7 @@ export function UnsubscribedGatewayModal({
                   You can still reactivate by starting a new subscription below. Your data is preserved for a short window.
                 </p>
                 <p className="text-red-400 font-bold">
-                  ⚠ Permanent deletion in approximately {daysUntilDelete} days if not reactivated.
+                  Permanent deletion in approximately {daysUntilDelete} days if not reactivated.
                 </p>
               </div>
             )}

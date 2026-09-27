@@ -812,7 +812,7 @@ export function ManageRoomsRatesModal({
                                               <span>{room.roomNumber}</span>
                                               {isOverdue && (
                                                 <span className="block text-[10px] font-bold text-red-600">
-                                                  ⚠️ Checkout time passed but no checkout done, must check room
+                                                  Checkout time passed but no checkout done, must check room
                                                 </span>
                                               )}
                                             </div>
@@ -997,11 +997,11 @@ export function ManageRoomsRatesModal({
                         onChange={(e) => setRoomEditForm({ ...roomEditForm, status: e.target.value as RoomStatus })}
                         className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs text-foreground outline-none capitalize font-medium"
                       >
-                        <option value="available">🟢 Available</option>
-                        <option value="occupied">🟣 Occupied</option>
-                        <option value="cleaning_needed">🟡 Cleaning Needed</option>
-                        <option value="maintenance">🔴 Maintenance</option>
-                        <option value="reserved">🔵 Reserved</option>
+                        <option value="available">Available</option>
+                        <option value="occupied">Occupied</option>
+                        <option value="cleaning_needed">Cleaning Needed</option>
+                        <option value="maintenance">Maintenance</option>
+                        <option value="reserved">Reserved</option>
                       </select>
                     </div>
                     <div>

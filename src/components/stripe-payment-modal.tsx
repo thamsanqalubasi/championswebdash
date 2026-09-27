@@ -32,7 +32,7 @@ export function StripePaymentModal({
   companyId,
   onSuccess,
   amountUsd = 0.50,
-  packageTitle = "Stripe Test Package",
+  packageTitle = "Test Verification Package",
   isSubscriptionPayment = true,
 }: StripePaymentModalProps) {
   const [cardNumber, setCardNumber] = useState("");
@@ -100,13 +100,13 @@ export function StripePaymentModal({
 
       const data = await vRes.json().catch(() => null);
       if (!vRes.ok || !data?.url) {
-        throw new Error(data?.error || `Unable to start Stripe checkout session (Status ${vRes.status}).`);
+        throw new Error(data?.error || `Unable to start hosted checkout session (Status ${vRes.status}).`);
       }
 
-      // Redirect user directly to official Stripe Checkout page
+      // Redirect user directly to hosted checkout page
       window.location.href = data.url;
     } catch (err: any) {
-      setErrorMsg(err.message || "Failed to initiate Stripe Checkout session.");
+      setErrorMsg(err.message || "Failed to initiate hosted checkout session.");
       setCheckoutLoading(false);
     }
   };
@@ -195,13 +195,13 @@ export function StripePaymentModal({
         if (!activePub) {
           setShowKeyInput(true);
           throw new Error(
-            "Stripe Publishable Key (pk_test_... or pk_live_...) is required to charge cards directly. Please enter your key below, or use the 'Pay with Stripe Checkout' button above."
+            "Gateway Publishable Key (pk_test_... or pk_live_...) is required to charge cards directly. Please enter your key below, or use the 'Pay with Hosted Checkout' button above."
           );
         }
 
         const stripeInstance = await loadStripe(activePub);
         if (!stripeInstance) {
-          throw new Error("Could not initialize Stripe with the publishable key provided.");
+          throw new Error("Could not initialize payment gateway with the publishable key provided.");
         }
 
         const [expMonth, expYear] = cardExpiry.split("/");
@@ -223,9 +223,9 @@ export function StripePaymentModal({
         });
 
         if (res.error) {
-          let declineReason = res.error.message || "Payment declined by Stripe.";
+          let declineReason = res.error.message || "Payment declined.";
           if (declineReason.toLowerCase().includes("test mode") || declineReason.toLowerCase().includes("declined")) {
-            declineReason += " (Note: In Stripe Test Mode, real cards are blocked by Stripe. Click 'Fill 4242 Test Card' to verify, or use Live Mode keys in Vercel to charge real cards.)";
+            declineReason += " (Note: In Test Mode, real cards are blocked in sandbox. Click 'Fill 4242 Test Card' to verify, or activate live credentials to charge real cards.)";
           }
           throw new Error(declineReason);
         }
@@ -266,7 +266,7 @@ export function StripePaymentModal({
   };
 
   return (
-    <Modal open={open} onClose={handleClose} title="Stripe Secure Checkout">
+    <Modal open={open} onClose={handleClose} title="Secure Payment Gateway">
       {success ? (
         <div className="py-6 text-center space-y-4">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-500">
@@ -275,7 +275,7 @@ export function StripePaymentModal({
           <div>
             <h3 className="text-lg font-bold text-foreground">Payment Successful!</h3>
             <p className="text-xs text-muted mt-1">
-              Your ${amountUsd.toFixed(2)} USD test payment was processed and verified via Stripe.
+              Your ${amountUsd.toFixed(2)} USD payment was processed and verified securely.
             </p>
           </div>
 
@@ -289,7 +289,7 @@ export function StripePaymentModal({
               <span className="font-semibold text-foreground">${amountUsd.toFixed(2)} USD</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted">Stripe Reference:</span>
+              <span className="text-muted">Transaction Reference:</span>
               <span className="font-mono text-emerald-400">{receiptRef}</span>
             </div>
             <div className="flex justify-between">
@@ -316,7 +316,7 @@ export function StripePaymentModal({
               </div>
               <div>
                 <p className="text-xs font-bold text-foreground">{packageTitle}</p>
-                <p className="text-[11px] text-muted">Stripe Card & Digital Checkout Gateway</p>
+                <p className="text-[11px] text-muted">Card & Digital Payment Gateway</p>
               </div>
             </div>
             <div className="text-right">
@@ -325,10 +325,10 @@ export function StripePaymentModal({
             </div>
           </div>
 
-          {/* Stripe Minimum & Mode Status Banner */}
+          {/* Minimum & Mode Status Banner */}
           <div className="flex items-center justify-between text-xs px-3 py-2 rounded-xl bg-surface-elevated border border-border-color">
             <div className="text-[11px] text-muted">
-              <span>Stripe Min: </span>
+              <span>Min Charge: </span>
               <strong className="text-foreground">$0.50 USD</strong>
               <span className="text-muted/60"> • Package: ${amountUsd.toFixed(2)} USD</span>
             </div>
@@ -343,16 +343,16 @@ export function StripePaymentModal({
             </span>
           </div>
 
-          {/* Hosted Stripe Checkout Option */}
+          {/* Hosted Checkout Option */}
           <div className="rounded-xl border border-blue-500/25 bg-blue-500/5 p-3 space-y-2">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                  <span>Pay with Official Stripe Checkout</span>
+                  <span>Pay with Hosted Checkout</span>
                   <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-medium">Recommended</span>
                 </p>
                 <p className="text-[11px] text-muted mt-0.5">
-                  Hosted by Stripe. Handles real cards, Apple Pay, Google Pay & 3D Secure bank OTP.
+                  Secure checkout portal. Handles credit/debit cards, Apple Pay, Google Pay & 3D Secure bank OTP.
                 </p>
               </div>
               <button
@@ -366,7 +366,7 @@ export function StripePaymentModal({
                 ) : (
                   <ArrowUpRight size={13} />
                 )}
-                <span>Launch Stripe</span>
+                <span>Proceed to Checkout</span>
               </button>
             </div>
           </div>
@@ -387,8 +387,7 @@ export function StripePaymentModal({
           {/* Quick autofill helper */}
           <div className="flex items-center justify-between bg-surface-elevated rounded-lg px-3 py-2 border border-border-color">
             <div className="flex items-center gap-1.5 text-xs text-muted">
-              <Sparkles size={14} className="text-amber-400" />
-              <span>Stripe Test Card:</span>
+              <span>Sandbox Test Card:</span>
             </div>
             <button
               type="button"
@@ -488,14 +487,14 @@ export function StripePaymentModal({
             </div>
           </div>
 
-          {/* Optional Stripe Publishable Key configuration */}
+          {/* Optional Gateway Key configuration */}
           <div className="border-t border-border-color pt-2">
             <button
               type="button"
               onClick={() => setShowKeyInput(!showKeyInput)}
               className="text-[11px] text-muted hover:text-foreground flex items-center gap-1"
             >
-              <span>{showKeyInput ? "- Hide" : "+ Configure"} Custom Stripe Publishable Key (pk_test_...)</span>
+              <span>{showKeyInput ? "- Hide" : "+ Configure"} Custom Gateway Key (pk_test_...)</span>
             </button>
             {showKeyInput && (
               <div className="mt-2 space-y-1">
@@ -516,7 +515,7 @@ export function StripePaymentModal({
           {/* Security guarantee */}
           <div className="flex items-center justify-center gap-2 text-[11px] text-muted/70">
             <ShieldCheck size={14} className="text-emerald-500" />
-            <span>Encrypted with Stripe 256-bit SSL Security</span>
+            <span>End-to-End Encrypted 256-bit SSL Security</span>
           </div>
 
           <div className="flex gap-2 pt-2">
@@ -536,12 +535,12 @@ export function StripePaymentModal({
               {processing ? (
                 <>
                   <Loader2 size={15} className="animate-spin" />
-                  <span>Processing via Stripe...</span>
+                  <span>Processing Payment...</span>
                 </>
               ) : (
                 <>
                   <Lock size={14} />
-                  <span>Pay ${amountUsd.toFixed(2)} with Stripe</span>
+                  <span>Pay ${amountUsd.toFixed(2)} Securely</span>
                 </>
               )}
             </button>

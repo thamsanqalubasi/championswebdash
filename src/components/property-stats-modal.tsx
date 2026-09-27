@@ -693,7 +693,7 @@ export function PropertyStatsModal({ isOpen, onClose, property }: PropertyStatsM
                         : "bg-surface-elevated text-muted hover:text-foreground"
                     }`}
                   >
-                    ⚠️ Overdue Checkout ({overdueGuestsCount})
+                    Overdue Checkout ({overdueGuestsCount})
                   </button>
                 </div>
               </div>
@@ -955,7 +955,7 @@ export function PropertyStatsModal({ isOpen, onClose, property }: PropertyStatsM
 
             {emailSentSuccess ? (
               <div className="rounded-xl bg-emerald-500/10 p-4 text-center text-xs text-emerald-600 font-bold">
-                ✓ Report dispatched successfully to {recipientEmail}!
+                Report dispatched successfully to {recipientEmail}!
               </div>
             ) : (
               <form onSubmit={handleSendEmail} className="space-y-3 text-xs">

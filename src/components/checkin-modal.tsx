@@ -408,7 +408,7 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
             <div className="text-right">
               <span className="text-[10px] font-bold uppercase tracking-wider text-muted">Status</span>
               <p className="inline-block rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 text-xs font-bold text-emerald-600">
-                ✓ Checked In
+                Checked In
               </p>
             </div>
           </div>

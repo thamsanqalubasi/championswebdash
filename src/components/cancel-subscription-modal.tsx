@@ -66,7 +66,7 @@ export function CancelSubscriptionModal({
 
         const data = await res.json().catch(() => null);
         if (!res.ok) {
-          throw new Error(data?.error || "Failed to cancel subscription via Stripe.");
+          throw new Error(data?.error || "Failed to cancel subscription.");
         }
       }
 
@@ -171,7 +171,7 @@ export function CancelSubscriptionModal({
         <div className="py-10 flex flex-col items-center gap-3 text-center">
           <Loader2 size={32} className="text-blue-400 animate-spin" />
           <p className="text-sm font-bold text-foreground">Cancelling your subscription...</p>
-          <p className="text-xs text-muted">Communicating with Stripe. Please wait.</p>
+          <p className="text-xs text-muted">Processing cancellation with secure gateway. Please wait...</p>
         </div>
       )}
 

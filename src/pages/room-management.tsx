@@ -816,7 +816,7 @@ export default function RoomManagementPage() {
                   title={`Accommodation room quota reached (${roomLimit.current}/${roomLimit.max}). Click to upgrade plan.`}
                 >
                   <Lock size={16} className="text-amber-500" />
-                  <span>Add Room ({roomLimit.current}/${roomLimit.max} 🔒)</span>
+                  <span>Add Room ({roomLimit.current}/{roomLimit.max})</span>
                 </button>
               );
             }

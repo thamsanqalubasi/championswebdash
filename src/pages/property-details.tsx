@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ModulePage } from "@/components/module-page";
 import { Modal } from "@/components/modal";
@@ -1547,7 +1547,7 @@ export default function PropertyDetailsPage() {
                     <span className="text-xs text-muted font-medium">Active Offer:</span>
                     {property.discountPercentage && property.discountPercentage > 0 ? (
                       <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-black text-amber-600 dark:text-amber-400">
-                        🔥 {property.discountPercentage}% OFF
+                        {property.discountPercentage}% OFF
                       </span>
                     ) : (
                       <span className="text-xs font-semibold text-muted">No discount active</span>
@@ -1809,7 +1809,7 @@ export default function PropertyDetailsPage() {
       >
         <div className="space-y-4 text-xs">
           <p className="text-muted leading-relaxed">
-            Apply a special percentage discount. Live discounts show promotional badges (e.g. 🔥 -15% OFF) and strike-through pricing on the public portal.
+            Apply a special percentage discount. Live discounts show promotional badges (e.g. -15% OFF) and strike-through pricing on the public portal.
           </p>
 
           {/* Movable Bar (Slider) from 5% to 100% */}

@@ -357,7 +357,7 @@ export default function PortalListingPage() {
               <div className="flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-amber-800 dark:text-amber-200 text-xs font-semibold mt-2">
                 <Sparkles size={16} className="text-amber-500 shrink-0" />
                 <span>
-                  🔥 Promotional Discount: <strong>{data.discount_percentage}% OFF</strong> active for this listing!
+                  Promotional Discount: <strong>{data.discount_percentage}% OFF</strong> active for this listing!
                 </span>
               </div>
             )}
@@ -569,7 +569,7 @@ export default function PortalListingPage() {
                   <div className="flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-amber-800 dark:text-amber-200 text-xs">
                     <Sparkles size={16} className="text-amber-500 shrink-0" />
                     <div>
-                      <span className="font-bold block">🔥 {data.discount_percentage}% Promotional Discount</span>
+                      <span className="font-bold block">{data.discount_percentage}% Promotional Discount</span>
                       <span className="text-[11px] opacity-90">Special rates apply when booking directly.</span>
                     </div>
                   </div>
@@ -683,7 +683,7 @@ export default function PortalListingPage() {
                     A full copy of this response has been sent to your email. You can log in to your Customer Portal to view your ticket, upload documents, and reply.
                   </p>
                   <p className="text-[11px] text-emerald-700 dark:text-emerald-300 pt-1 font-semibold border-t border-emerald-200/60 dark:border-emerald-800/40">
-                    💡 If this ticket is ever resolved or closed, replying from your portal will automatically re-open it at any time.
+                    If this ticket is ever resolved or closed, replying from your portal will automatically re-open it at any time.
                   </p>
                 </div>
 

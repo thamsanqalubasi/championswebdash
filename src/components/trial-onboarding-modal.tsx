@@ -139,7 +139,7 @@ export function TrialOnboardingModal({
         await new Promise((r) => setTimeout(r, 1500));
       } else {
         const stripeInstance = await loadStripe(pubKey);
-        if (!stripeInstance) throw new Error("Could not initialize Stripe.");
+        if (!stripeInstance) throw new Error("Could not initialize payment gateway.");
 
         const [expMonth, expYear] = cardExpiry.split("/");
         const result = await stripeInstance.confirmCardSetup(data.clientSecret, {
@@ -238,7 +238,7 @@ export function TrialOnboardingModal({
               {
                 icon: <CreditCard size={18} className="text-emerald-400" />,
                 title: "Card Saved, Not Charged",
-                desc: "We securely save your card via Stripe. No money leaves your account today.",
+                desc: "We securely save your card. No money leaves your account today.",
               },
               {
                 icon: <Shield size={18} className="text-violet-400" />,
@@ -263,7 +263,7 @@ export function TrialOnboardingModal({
           <div className="rounded-xl border border-border-color bg-surface p-4 space-y-2 text-xs">
             <p className="font-bold text-foreground text-[11px] uppercase tracking-wider mb-2">What Happens Next</p>
             {[
-              { dot: "bg-blue-500", label: "Today", text: "Card saved via Stripe (Encrypted, $0 charged)" },
+              { dot: "bg-blue-500", label: "Today", text: "Card saved securely (Encrypted, $0 charged)" },
               {
                 dot: "bg-emerald-500",
                 label: `Day 1–${TRIAL_PERIOD_DAYS}`,
@@ -306,7 +306,7 @@ export function TrialOnboardingModal({
       {step === 2 && (
         <div className="py-4 space-y-4">
           <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-blue-300">
-            <span className="font-bold">✓ Your card will NOT be charged</span> during the{" "}
+            <span className="font-bold">Your card will NOT be charged</span> during the{" "}
             {TRIAL_PERIOD_DAYS}-day trial. First payment on{" "}
             <span className="font-bold text-blue-200">{formattedTrialEnd}</span>.
           </div>
@@ -364,7 +364,7 @@ export function TrialOnboardingModal({
               </p>
             </div>
             <p className="text-[11px] text-muted">
-              Your card is encrypted and stored securely by Stripe. You will NOT be charged anything today.
+              Your card is encrypted and stored securely. You will NOT be charged anything today.
               First payment of{" "}
               <strong className="text-foreground">${selectedPlan?.priceUsd}/month</strong> begins on{" "}
               <strong className="text-foreground">{formattedTrialEnd}</strong>.
@@ -471,7 +471,7 @@ export function TrialOnboardingModal({
           {/* Security note */}
           <div className="flex items-center justify-center gap-2 text-[11px] text-muted/70">
             <Shield size={13} className="text-emerald-500" />
-            <span>Encrypted by Stripe - we never store your card details</span>
+            <span>End-to-End Encrypted - we never store your card details</span>
           </div>
 
           <div className="flex gap-2">
@@ -491,7 +491,7 @@ export function TrialOnboardingModal({
               {processing ? (
                 <>
                   <Loader2 size={14} className="animate-spin" />
-                  Saving card via Stripe...
+                  Saving card securely...
                 </>
               ) : (
                 <>

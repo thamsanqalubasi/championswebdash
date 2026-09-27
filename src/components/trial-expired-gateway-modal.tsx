@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Modal } from "./modal";
 import {
   getCompanySubscription,
@@ -90,21 +90,21 @@ export function TrialExpiredGatewayModal({
             </h3>
             <p className="text-xs text-muted mt-1 leading-relaxed max-w-sm mx-auto">
               You were testing the <span className="font-semibold text-foreground">{currentPlan.name}</span>.
-              To test live payment verification, proceed with the <span className="font-semibold text-blue-400">$0.50 Test Package</span> via Stripe, test the 5-day grace period, or restart the countdown.
+              To test live payment verification, proceed with the <span className="font-semibold text-blue-400">$0.50 Test Package</span>, test the 5-day grace period, or restart the countdown.
             </p>
           </div>
 
           {/* Action cards */}
           <div className="space-y-2.5 text-left">
-            {/* Primary Action 1: Pay $0.50 Test Package via Stripe */}
+            {/* Primary Action 1: Pay $0.50 Test Package */}
             <div className="rounded-xl border border-blue-500/40 bg-blue-500/10 p-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
                   <CreditCard size={18} />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-foreground">Stripe Payment Gateway ($0.50)</p>
-                  <p className="text-[11px] text-muted">Test live card payment & instant verification ($0.50 Stripe minimum)</p>
+                  <p className="text-xs font-bold text-foreground">Secure Payment Gateway ($0.50)</p>
+                  <p className="text-[11px] text-muted">Test live card payment & instant verification ($0.50 minimum)</p>
                 </div>
               </div>
               <button
@@ -112,7 +112,7 @@ export function TrialExpiredGatewayModal({
                 onClick={() => setStripeOpen(true)}
                 className="shrink-0 rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition"
               >
-                Pay $0.50 Stripe
+                Pay $0.50
               </button>
             </div>
 
@@ -219,7 +219,7 @@ export function TrialExpiredGatewayModal({
         onClose={() => setStripeOpen(false)}
         companyId={companyId}
         amountUsd={2}
-        packageTitle="Stripe Test Package"
+        packageTitle="Test Verification Package"
         onSuccess={() => {
           setSub(getCompanySubscription(companyId));
           setStripeOpen(false);

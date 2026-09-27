@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { clearStaffSession, getCustomerSession, setCustomerSession } from "@/lib/auth";
 import { TermsCheckboxField } from "@/components/terms-modal";
 import { sendEmailViaApi, wrapCustomerWelcomeEmailHtml } from "@/lib/notifications";
-import { LogIn, UserPlus, Eye, EyeOff, AlertCircle, CheckCircle, Building } from "lucide-react";
+import { LogIn, UserPlus, Eye, EyeOff, AlertCircle, CheckCircle, Building, Shield } from "lucide-react";
 
 function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   const [show, setShow] = useState(false);
@@ -51,6 +52,14 @@ export default function PortalLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // Auto-redirect if customer is already authenticated
+  useEffect(() => {
+    const cust = getCustomerSession();
+    if (cust && cust.email) {
+      navigate("/portal/dashboard", { replace: true });
+    }
+  }, [navigate]);
 
   useEffect(() => {
     if (paramEmail && !email) {
@@ -106,9 +115,17 @@ export default function PortalLoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault(); setError(""); setLoading(true);
     try {
-      const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+      clearStaffSession();
+      const normalizedEmail = email.trim().toLowerCase();
+      const { data: authData, error: err } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
       if (err) throw err;
-      await bindTenantProperty(email);
+      await bindTenantProperty(normalizedEmail);
+      setCustomerSession({
+        email: normalizedEmail,
+        userId: authData.user?.id,
+        loginType: "customer",
+        timestamp: Date.now(),
+      });
       navigate("/portal/dashboard");
     } catch (err: any) { setError(err.message || "Login failed."); }
     setLoading(false);
@@ -125,20 +142,29 @@ export default function PortalLoginPage() {
       return;
     }
     try {
-      const { error: err } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
+      clearStaffSession();
+      const normalizedEmail = email.trim().toLowerCase();
+      const { data: authData, error: err } = await supabase.auth.signUp({ email: normalizedEmail, password, options: { data: { full_name: name } } });
       if (err) throw err;
 
-      await bindTenantProperty(email);
+      await bindTenantProperty(normalizedEmail);
+      setCustomerSession({
+        email: normalizedEmail,
+        userId: authData.user?.id,
+        name,
+        loginType: "customer",
+        timestamp: Date.now(),
+      });
 
       try {
         const origin = typeof window !== "undefined" ? window.location.origin : "https://paimbabook.com";
         const emailHtml = wrapCustomerWelcomeEmailHtml({
-          customerName: name || email,
-          customerEmail: email,
+          customerName: name || normalizedEmail,
+          customerEmail: normalizedEmail,
           portalUrl: origin,
         });
         void sendEmailViaApi({
-          to: email,
+          to: normalizedEmail,
           subject: "Welcome to Paimbabook - Your Customer Account is Ready",
           html: emailHtml,
         });
@@ -147,6 +173,7 @@ export default function PortalLoginPage() {
       }
 
       setSuccess("Account created! If email confirmation is required, please check your inbox, then sign in.");
+      navigate("/portal/dashboard");
     } catch (err: any) { setError(err.message || "Signup failed."); }
     setLoading(false);
   };
@@ -206,6 +233,20 @@ export default function PortalLoginPage() {
             ) : (
               <p className="text-sm text-gray-500 dark:text-slate-400">Already have an account? <button onClick={() => setMode("login")} className="text-blue-600 dark:text-blue-400 font-semibold hover:underline">Sign in</button></p>
             )}
+          </div>
+
+          {/* Staff Command Desk Link */}
+          <div className="mt-6 pt-4 border-t border-gray-100 dark:border-slate-800 text-center">
+            <p className="text-xs text-gray-500 dark:text-slate-400">
+              Staff member, manager, or property admin?
+            </p>
+            <Link
+              to="/login"
+              className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+            >
+              <Shield size={13} />
+              <span>Go to Staff Command Desk Login &rarr;</span>
+            </Link>
           </div>
         </div>
         <p className="text-center text-xs text-gray-400 dark:text-slate-500 mt-6"><Link to="/" className="hover:text-blue-600 dark:hover:text-blue-400 transition font-medium">← Back to Listings</Link></p>

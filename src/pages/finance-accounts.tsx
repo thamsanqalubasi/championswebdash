@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { ModulePage } from "@/components/module-page";
 import { ErrorState, LoadingState } from "@/components/data-state";
 import { supabase } from "@/lib/supabase";
@@ -2307,7 +2307,7 @@ export default function FinanceAccountsPage() {
                   procurementFilter === "my_sig" ? "bg-blue-600 text-white" : "border border-border-color text-muted hover:text-foreground"
                 }`}
               >
-                ✍️ Requires Your Signature
+                Requires Your Signature
               </button>
             </div>
           </div>
@@ -2349,7 +2349,7 @@ export default function FinanceAccountsPage() {
                                 : "bg-blue-500/10 text-blue-600"
                             }`}
                           >
-                            {req.urgency === "critical" ? "⚡ Critical Priority" : `${req.urgency} Urgency`}
+                            {req.urgency === "critical" ? "Critical Priority" : `${req.urgency} Urgency`}
                           </span>
                           <span className="px-2 py-0.5 rounded-md bg-surface-elevated text-muted font-bold text-[10px] uppercase">
                             Dept: {req.requestingDepartment}
@@ -2488,7 +2488,7 @@ export default function FinanceAccountsPage() {
                 onChange={(e) => setPendingSortBy(e.target.value as any)}
                 className="rounded-xl border border-border-color bg-surface-elevated px-3 py-1.5 text-foreground font-semibold outline-none focus:border-blue-600"
               >
-                <option value="priority">Priority (Critical ⚡ First)</option>
+                <option value="priority">Priority (Critical First)</option>
                 <option value="date_asc">Date (Oldest First / SLA)</option>
                 <option value="date_desc">Date (Newest First)</option>
               </select>
@@ -2520,7 +2520,7 @@ export default function FinanceAccountsPage() {
                             : "bg-blue-500/10 text-blue-600"
                         }`}
                       >
-                        {item.priority === "critical" ? "⚡ Critical Priority" : `${item.priority} Priority`}
+                        {item.priority === "critical" ? "Critical Priority" : `${item.priority} Priority`}
                       </span>
                       <span className="text-[11px] font-bold text-muted">
                         Date: {item.date}
@@ -2738,7 +2738,7 @@ export default function FinanceAccountsPage() {
                   >
                     <option value="normal">Normal Priority</option>
                     <option value="urgent">Urgent Priority</option>
-                    <option value="critical">⚡ Critical (Immediate SLA)</option>
+                    <option value="critical">Critical (Immediate SLA)</option>
                     <option value="low">Low Priority</option>
                   </select>
                 </div>

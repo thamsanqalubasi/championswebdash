@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Modal } from "./modal";
 import {
   SUBSCRIPTION_PACKAGES,
@@ -155,7 +155,7 @@ export function PackageSwitcherModal({
               <Sparkles size={16} className="text-amber-400 shrink-0" />
               <div>
                 <span className="font-bold text-amber-300">
-                  DEVELOPMENT TEST MODE: Package Selector & Stripe Sandbox
+                  DEVELOPMENT TEST MODE: Package Selector &amp; Gateway Sandbox
                 </span>
                 <p className="text-[11px] text-muted">
                   Non-test packages do not require card details. 1-minute trial tests automated expiration.
@@ -238,7 +238,7 @@ export function PackageSwitcherModal({
                     </div>
                     <p className="text-xs text-muted mt-0.5">
                       {expired
-                        ? "The trial period ended. Test Stripe payment ($0.50) or choose new minutes and restart below."
+                        ? "The trial period ended. Test card payment ($0.50) or choose new minutes and restart below."
                         : sub.status === "active"
                         ? "Subscription is fully active and verified."
                         : `Test trial is counting down live. Change minutes or restart anytime.`}
@@ -291,7 +291,7 @@ export function PackageSwitcherModal({
                     className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition"
                   >
                     <CreditCard size={14} />
-                    <span>Pay ${SUBSCRIPTION_PACKAGES.test.priceUsd.toFixed(2)} Test Package (Stripe)</span>
+                    <span>Pay ${SUBSCRIPTION_PACKAGES.test.priceUsd.toFixed(2)} Test Package</span>
                   </button>
                 </div>
               </div>
@@ -443,7 +443,7 @@ export function PackageSwitcherModal({
         onSuccess={() => {
           setSub(getCompanySubscription(companyId));
           setRemainingSeconds(0);
-          setActionNotice("Stripe payment processed! Subscription is now Active.");
+          setActionNotice("Payment processed! Subscription is now Active.");
           setTimeout(() => setActionNotice(null), 3500);
         }}
       />
@@ -605,7 +605,7 @@ export function PlanCard({
 
       {isTestBadge && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-amber-600 px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-xs">
-          Stripe Sandbox
+          Gateway Sandbox
         </div>
       )}
 
@@ -690,7 +690,7 @@ export function PlanCard({
           ) : isTestBadge ? (
             <>
               <CreditCard size={13} />
-              <span>Test Stripe (${SUBSCRIPTION_PACKAGES.test.priceUsd.toFixed(2)})</span>
+              <span>Test Payment (${SUBSCRIPTION_PACKAGES.test.priceUsd.toFixed(2)})</span>
             </>
           ) : (
             <>
