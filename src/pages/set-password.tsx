@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, useParams, Link } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
-import { fetchCompanyBySlug } from "@/lib/data";
+import { fetchCompanyBySlug, verifyNewStaffEligibility, type StaffEligibilityResult } from "@/lib/data";
 import { sendEmailViaApi, wrapPasswordChangeConfirmationEmailHtml } from "@/lib/notifications";
 import { TermsCheckboxField } from "@/components/terms-modal";
 import type { Company } from "@/lib/types";
@@ -13,8 +13,11 @@ import {
   AlertCircle,
   ShieldCheck,
   ArrowLeft,
-  Building2,
   Globe,
+  Loader2,
+  Lock,
+  ArrowRight,
+  UserCheck,
 } from "lucide-react";
 
 export default function SetPasswordPage() {
@@ -33,7 +36,17 @@ export default function SetPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  const action = searchParams.get("action") || "invite"; // 'invite' | 'reset'
+  // Real-time staff database eligibility state
+  const [checkingEligibility, setCheckingEligibility] = useState(false);
+  const [eligibility, setEligibility] = useState<StaffEligibilityResult | null>(null);
+
+  // If user navigated with action=reset, redirect strictly to the reset password page
+  useEffect(() => {
+    if (searchParams.get("action") === "reset") {
+      const qEmail = searchParams.get("email");
+      navigate(`/auth/reset-password${qEmail ? `?email=${encodeURIComponent(qEmail)}` : ""}`, { replace: true });
+    }
+  }, [searchParams, navigate]);
 
   // Load custom company branding if companySlug is present
   useEffect(() => {
@@ -50,6 +63,7 @@ export default function SetPasswordPage() {
     });
   }, [companySlug, setCurrentCompany]);
 
+  // Populate email from URL query if present
   useEffect(() => {
     const queryEmail = searchParams.get("email");
     if (queryEmail) {
@@ -57,12 +71,41 @@ export default function SetPasswordPage() {
     }
   }, [searchParams]);
 
-  // If already logged in and not setting password via query
+  // If already logged in and not setting password via query, redirect to dashboard
   useEffect(() => {
     if (user && !searchParams.get("email")) {
       navigate("/dashboard", { replace: true });
     }
   }, [user, navigate, searchParams]);
+
+  // Strictly verify email against the database
+  useEffect(() => {
+    const trimmed = email.trim();
+    if (!trimmed || !trimmed.includes("@")) {
+      setEligibility(null);
+      return;
+    }
+
+    let active = true;
+    setCheckingEligibility(true);
+    const timer = setTimeout(async () => {
+      const res = await verifyNewStaffEligibility(trimmed);
+      if (active) {
+        setEligibility(res);
+        setCheckingEligibility(false);
+        if (!res.eligible) {
+          setError(res.error || "This email is not authorized for staff password creation.");
+        } else {
+          setError(null);
+        }
+      }
+    }, 350);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [email]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -70,6 +113,13 @@ export default function SetPasswordPage() {
 
     if (!email.trim()) {
       setError("Please enter your registered work email.");
+      return;
+    }
+
+    // STRICT DATABASE ENFORCEMENT:
+    // Block any random email, existing account, or non-staff email
+    if (!eligibility || !eligibility.eligible) {
+      setError(eligibility?.error || "This email does not belong to an invited, newly added staff member.");
       return;
     }
 
@@ -104,18 +154,16 @@ export default function SetPasswordPage() {
         const origin = typeof window !== "undefined" ? window.location.origin : "";
         const portalLoginUrl = companySlug ? `${origin}/c/${companySlug}/login` : `${origin}/login`;
         const emailHtml = wrapPasswordChangeConfirmationEmailHtml({
-          recipientName: email,
+          recipientName: eligibility.fullName || email,
           userEmail: email,
-          companyName: orgName,
+          companyName: eligibility.companyName || orgName,
           companyLogo: company?.logoUrl,
           portalLoginUrl,
-          changeType: action === "reset" ? "reset" : "initial_setup",
+          changeType: "initial_setup",
         });
         void sendEmailViaApi({
           to: email,
-          subject: action === "reset"
-            ? `Security Alert: Password Reset Completed - ${orgName}`
-            : `Account Security: Password Established - ${orgName}`,
+          subject: `Account Security: Staff Credentials Established - ${eligibility.companyName || orgName}`,
           html: emailHtml,
         });
       } catch (emailErr) {
@@ -159,12 +207,10 @@ export default function SetPasswordPage() {
           )}
 
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            {action === "reset" ? "Reset Your Password" : "Create Your Password"}
+            Staff Password Setup
           </h1>
-          <p className="mt-1 text-xs text-muted">
-            {action === "reset"
-              ? `Set a new secure password for your ${orgName} staff account.`
-              : `Welcome to the team at ${orgName}! Set up your secure account password to activate access.`}
+          <p className="mt-1.5 text-xs text-muted leading-relaxed">
+            Welcome to the team! Establish your initial staff password to activate company portal access.
           </p>
           {companySlug && (
             <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-blue-600">
@@ -174,29 +220,91 @@ export default function SetPasswordPage() {
           )}
         </header>
 
+        {/* Security Warning Notice */}
+        <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 text-[11px] text-muted space-y-1">
+          <p className="font-semibold text-blue-400 flex items-center gap-1.5">
+            <Lock size={13} />
+            Restricted Staff Portal
+          </p>
+          <p className="leading-relaxed">
+            This setup page is exclusively for newly invited staff members. It does not accept random emails or existing accounts. If you forgot your password, please use the{" "}
+            <Link to={`/auth/reset-password${email ? `?email=${encodeURIComponent(email)}` : ""}`} className="text-blue-500 underline font-semibold">
+              Reset Password
+            </Link>{" "}
+            page.
+          </p>
+        </div>
+
         {success ? (
           <div className="space-y-4 rounded-xl bg-emerald-500/10 p-5 text-center text-emerald-600">
             <CheckCircle2 size={36} className="mx-auto text-emerald-600 animate-bounce" />
             <div>
-              <p className="font-bold text-sm">
-                {action === "reset" ? "Password Reset Successfully!" : "Account Activated Successfully!"}
-              </p>
+              <p className="font-bold text-sm">Account Activated Successfully!</p>
               <p className="text-xs text-emerald-700/80 mt-1">Logging you in to your dashboard...</p>
             </div>
           </div>
         ) : (
           <form className="space-y-4" onSubmit={handleSubmit}>
+            {/* Error Banner with helpful direct links */}
             {error && (
-              <div className="flex items-start gap-2 rounded-xl bg-red-500/10 p-3 text-xs text-red-600 font-medium">
-                <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                <span>{error}</span>
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3.5 space-y-2">
+                <div className="flex items-start gap-2 text-xs text-red-500 font-medium">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                  <span className="leading-relaxed">{error}</span>
+                </div>
+                {eligibility?.status === "already_active" && (
+                  <div className="flex items-center gap-2 pt-1 border-t border-red-500/20 text-xs">
+                    <Link
+                      to={`/auth/reset-password?email=${encodeURIComponent(email)}`}
+                      className="inline-flex items-center gap-1 font-bold text-blue-500 hover:underline"
+                    >
+                      <span>Reset Password</span>
+                      <ArrowRight size={12} />
+                    </Link>
+                    <span className="text-muted">•</span>
+                    <Link to="/login" className="font-semibold text-muted hover:text-foreground">
+                      Sign In
+                    </Link>
+                  </div>
+                )}
+                {eligibility?.status === "not_staff" && (
+                  <div className="pt-1 border-t border-red-500/20 text-[11px] text-muted">
+                    If you are an existing customer or staff member, you can{" "}
+                    <Link to={`/auth/reset-password?email=${encodeURIComponent(email)}`} className="text-blue-500 underline font-semibold">
+                      reset your password
+                    </Link>{" "}
+                    or contact your company administrator.
+                  </div>
+                )}
               </div>
             )}
 
+            {/* Verified Newly Added Staff Badge */}
+            {eligibility?.eligible && (
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-400 flex items-center gap-2.5 animate-in fade-in">
+                <UserCheck size={18} className="text-emerald-400 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-emerald-300">Verified Newly Added Staff</p>
+                  <p className="text-[11px] text-emerald-400/90 truncate">
+                    {eligibility.jobTitle} • {eligibility.companyName}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Email Field with Live Verification indicator */}
             <div className="space-y-1.5">
-              <label htmlFor="email" className="block text-xs font-semibold text-foreground">
-                Work Email Address
-              </label>
+              <div className="flex items-center justify-between">
+                <label htmlFor="email" className="block text-xs font-semibold text-foreground">
+                  Work Email Address
+                </label>
+                {checkingEligibility && (
+                  <span className="inline-flex items-center gap-1 text-[11px] text-muted">
+                    <Loader2 size={11} className="animate-spin text-blue-500" />
+                    <span>Verifying staff status...</span>
+                  </span>
+                )}
+              </div>
               <input
                 id="email"
                 type="email"
@@ -204,13 +312,19 @@ export default function SetPasswordPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder={company?.email || "name@company.co.za"}
                 required
-                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3.5 py-2.5 text-xs text-foreground outline-none focus:border-blue-600 transition"
+                className={`w-full rounded-xl border bg-surface-elevated px-3.5 py-2.5 text-xs text-foreground outline-none transition ${
+                  eligibility?.eligible
+                    ? "border-emerald-500 focus:border-emerald-500"
+                    : eligibility && !eligibility.eligible
+                    ? "border-red-500 focus:border-red-500"
+                    : "border-border-color focus:border-blue-600"
+                }`}
               />
             </div>
 
             <div className="space-y-1.5">
               <label htmlFor="password" className="block text-xs font-semibold text-foreground">
-                {action === "reset" ? "New Password" : "Create Password"}
+                Create Password
               </label>
               <div className="relative">
                 <input
@@ -220,7 +334,8 @@ export default function SetPasswordPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Min. 6 characters"
                   required
-                  className="w-full rounded-xl border border-border-color bg-surface-elevated pl-3.5 pr-10 py-2.5 text-xs text-foreground outline-none focus:border-blue-600 transition"
+                  disabled={!eligibility?.eligible}
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated pl-3.5 pr-10 py-2.5 text-xs text-foreground outline-none focus:border-blue-600 disabled:opacity-50 transition"
                 />
                 <button
                   type="button"
@@ -243,7 +358,8 @@ export default function SetPasswordPage() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Repeat password"
                 required
-                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3.5 py-2.5 text-xs text-foreground outline-none focus:border-blue-600 transition"
+                disabled={!eligibility?.eligible}
+                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3.5 py-2.5 text-xs text-foreground outline-none focus:border-blue-600 disabled:opacity-50 transition"
               />
             </div>
 
@@ -253,7 +369,7 @@ export default function SetPasswordPage() {
                 Security Guidelines
               </p>
               <p>• Minimum 6 characters</p>
-              <p>• Enterprise access and departmental rights will be assigned automatically</p>
+              <p>• Departmental rights and access permissions will be automatically linked</p>
             </div>
 
             {/* Terms and Conditions Acceptance */}
@@ -263,14 +379,14 @@ export default function SetPasswordPage() {
 
             <button
               type="submit"
-              disabled={loading || !agreedToTerms}
-              className="w-full rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-50 transition"
+              disabled={loading || !agreedToTerms || !eligibility?.eligible}
+              className="w-full rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
             >
               {loading
                 ? "Securing Credentials..."
-                : action === "reset"
-                ? "Reset & Activate Password"
-                : "Create & Activate Password"}
+                : !eligibility?.eligible
+                ? "Enter Valid Staff Email to Continue"
+                : "Create & Activate Staff Password"}
             </button>
           </form>
         )}

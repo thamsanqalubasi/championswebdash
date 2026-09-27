@@ -17,6 +17,7 @@ import {
   logAuditEvent,
   MOCK_COMPANIES,
   MOCK_COMPANY_USERS,
+  verifyNewStaffEligibility,
 } from "./data";
 import {
   sendEmailViaApi,
@@ -610,64 +611,100 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const setupFirstTimePassword = async (email: string, newPassword: string) => {
     const normalizedEmail = email.trim().toLowerCase();
     try {
-      // 1. Check if user already has an active session from an invite / recovery token in URL
+      // 1. STRICT DATABASE GATE: Verify that this email is an invited/newly added staff member
+      const check = await verifyNewStaffEligibility(normalizedEmail);
+      if (!check.eligible) {
+        return {
+          error: check.error || "You are not authorized to establish a password for this email.",
+          success: false,
+        };
+      }
+
+      // 2. Establish credentials in Supabase Auth
       const { data: sessionData } = await supabase.auth.getSession();
       if (sessionData?.session) {
         const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
         if (updateErr) throw updateErr;
       } else {
-        // 2. Try creating user account with their chosen password
+        // Try creating auth credentials
         const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
           email: normalizedEmail,
           password: newPassword,
         });
 
         if (signUpErr) {
-          // If already registered, try sign-in or update
           if (signUpErr.message.toLowerCase().includes("already registered")) {
+            // Check if account already exists with a password
             const { error: signInErr } = await supabase.auth.signInWithPassword({
               email: normalizedEmail,
               password: newPassword,
             });
             if (signInErr) {
-              // Try updating user via password update
-              const { error: updErr } = await supabase.auth.updateUser({ password: newPassword });
-              if (updErr) throw new Error("Account already exists. If you forgot your password, please request a reset.");
+              return {
+                error: "This account already has an established password. If you forgot your password, please use the Reset Password page instead.",
+                success: false,
+              };
             }
+          } else if (signUpErr.message.toLowerCase().includes("confirm")) {
+            return {
+              error: "Email confirmation required. Please check your inbox for the confirmation link before signing in.",
+              success: false,
+            };
           } else {
             throw signUpErr;
           }
         }
       }
 
-      // 3. Sync profile matching their corporate email
+      // 3. Mark staff member in database as activated with password established
+      if (check.companyUser?.id) {
+        try {
+          await supabase
+            .from("company_users")
+            .update({
+              permissions: {
+                ...(check.companyUser.permissions || {}),
+                email: normalizedEmail,
+                password_initialized: true,
+                password_set_at: new Date().toISOString(),
+                account_status: "active",
+              },
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", check.companyUser.id);
+        } catch (dbErr) {
+          console.warn("[setupFirstTimePassword] Could not update company_users status:", dbErr);
+        }
+      }
+
+      // 4. Sync profile matching corporate email
       await syncUserProfile(normalizedEmail);
 
-      // 4. Log audit trail
+      // 5. Log audit trail
       await logAuditEvent({
-        companyId: currentCompany.id,
+        companyId: check.companyUser?.companyId || currentCompany.id,
         action: "FIRST_TIME_PASSWORD_SET",
-        entityType: "user_account",
+        entityType: "company_user",
         entityName: normalizedEmail,
         actorName: normalizedEmail,
-        details: `User ${normalizedEmail} successfully established initial account password and activated account.`,
+        details: `Newly added staff member ${normalizedEmail} successfully established initial password and activated staff access.`,
       });
 
-      // 5. Security confirmation email
+      // 6. Security confirmation email
       try {
         const origin = typeof window !== "undefined" ? window.location.origin : "";
-        const portalLoginUrl = currentCompany?.slug ? `${origin}/c/${currentCompany.slug}/login` : `${origin}/login`;
+        const portalLoginUrl = check.companySlug ? `${origin}/c/${check.companySlug}/login` : `${origin}/login`;
         const emailHtml = wrapPasswordChangeConfirmationEmailHtml({
-          recipientName: normalizedEmail,
+          recipientName: check.fullName || normalizedEmail,
           userEmail: normalizedEmail,
-          companyName: currentCompany?.name || "Paimbabook",
-          companyLogo: currentCompany?.logoUrl,
+          companyName: check.companyName || currentCompany?.name || "Paimbabook",
+          companyLogo: check.companyLogoUrl || currentCompany?.logoUrl,
           portalLoginUrl,
           changeType: "initial_setup",
         });
         void sendEmailViaApi({
           to: normalizedEmail,
-          subject: `Security Alert: Account Password Established - ${currentCompany?.name || "Paimbabook"}`,
+          subject: `Security Alert: Account Password Established - ${check.companyName || currentCompany?.name || "Paimbabook"}`,
           html: emailHtml,
         });
       } catch (emailErr) {

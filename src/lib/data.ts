@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   AuditEventRow,
   CashflowPoint,
   CommercialBooking,
@@ -1584,7 +1584,13 @@ export async function createCompanyUser(user: Partial<CompanyUser>): Promise<Com
   const department = user.department || "front_desk";
   const jobTitle = user.jobTitle || "Front Desk - Receptionist";
   const roleLevel = user.roleLevel || "staff";
-  const permissions = user.permissions || {};
+  const permissions = {
+    ...(user.permissions || {}),
+    email,
+    password_initialized: false,
+    staff_invited_at: new Date().toISOString(),
+    account_status: "pending_activation",
+  };
 
   let validUserId: string = user.userId || "";
   if (!isValidUuid(validUserId)) {
@@ -1782,9 +1788,8 @@ export async function triggerStaffPasswordReset(opts: {
   };
 }): Promise<{ success: boolean; error?: string }> {
   const { company, targetUser, requester } = opts;
-  const companySlug = company.slug || company.id;
   const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:5173";
-  const resetUrl = `${origin}/c/${companySlug}/set-password?email=${encodeURIComponent(targetUser.email)}&action=reset`;
+  const resetUrl = `${origin}/auth/reset-password?email=${encodeURIComponent(targetUser.email)}`;
 
   const html = wrapStaffPasswordResetEmailHtml({
     recipientName: targetUser.fullName,
@@ -1811,6 +1816,155 @@ export async function triggerStaffPasswordReset(opts: {
   });
 
   return res;
+}
+
+export type StaffEligibilityResult = {
+  eligible: boolean;
+  status: "eligible" | "not_staff" | "already_active" | "deactivated";
+  companyUser?: CompanyUser | null;
+  companyName?: string;
+  companySlug?: string;
+  companyLogoUrl?: string;
+  jobTitle?: string;
+  fullName?: string;
+  error?: string;
+};
+
+/**
+ * STRICT SECURITY GATE:
+ * Confirms whether an email belongs to a newly added/invited staff member in the database.
+ * Blocks:
+ * 1. Random unregistered emails (not in company_users)
+ * 2. Already established accounts (password_initialized === true)
+ * 3. Deactivated staff accounts
+ * 4. Forgotten password attempts (must use /auth/reset-password instead)
+ */
+export async function verifyNewStaffEligibility(email: string): Promise<StaffEligibilityResult> {
+  const normalized = (email || "").trim().toLowerCase();
+  if (!normalized || !normalized.includes("@")) {
+    return {
+      eligible: false,
+      status: "not_staff",
+      error: "Please enter a valid work email address.",
+    };
+  }
+
+  try {
+    // 1. Direct query in company_users joining users and companies
+    const { data: cuList } = await supabase
+      .from("company_users")
+      .select("id, company_id, user_id, department, job_title, role_level, permissions, is_active, created_at, companies(id, name, slug, logo_url), users!inner(id, email, first_name, last_name)")
+      .ilike("users.email", normalized)
+      .limit(1);
+
+    let cu: any = cuList && cuList.length > 0 ? cuList[0] : null;
+
+    // 2. Fallback: check permissions->>email in company_users
+    if (!cu) {
+      const { data: fallbackList } = await supabase
+        .from("company_users")
+        .select("id, company_id, user_id, department, job_title, role_level, permissions, is_active, created_at, companies(id, name, slug, logo_url)")
+        .eq("permissions->>email", normalized)
+        .limit(1);
+      if (fallbackList && fallbackList.length > 0) {
+        cu = fallbackList[0];
+      }
+    }
+
+    // 3. Fallback: check in local mock company users (for demo/dev)
+    if (!cu) {
+      const mock = MOCK_COMPANY_USERS.find(
+        (u) => (u.email || "").toLowerCase() === normalized
+      );
+      if (mock) {
+        if (mock.permissions?.password_initialized === true) {
+          return {
+            eligible: false,
+            status: "already_active",
+            companyName: "Paimbabook Group",
+            jobTitle: mock.jobTitle,
+            error: "This staff account has already been activated and its password established. Newly added staff password setup cannot be used for existing accounts. If you forgot your password, please use the Reset Password page.",
+          };
+        }
+        return {
+          eligible: true,
+          status: "eligible",
+          companyName: "Paimbabook Group",
+          jobTitle: mock.jobTitle,
+          fullName: mock.fullName,
+        };
+      }
+    }
+
+    // If no record exists anywhere in the database
+    if (!cu) {
+      return {
+        eligible: false,
+        status: "not_staff",
+        error: "This email does not belong to any newly added or invited staff member in the system. Newly added staff password setup is strictly reserved for authorized staff. If you are an existing user or forgot your password, please use the Reset Password page.",
+      };
+    }
+
+    // Check if staff member was deactivated
+    if (cu.is_active === false) {
+      return {
+        eligible: false,
+        status: "deactivated",
+        companyName: cu.companies?.name || "Organization",
+        jobTitle: cu.job_title,
+        error: "This staff account has been deactivated. Please contact your company administrator.",
+      };
+    }
+
+    // Check if staff member has already established their password
+    const permissions = cu.permissions || {};
+    if (permissions.password_initialized === true) {
+      return {
+        eligible: false,
+        status: "already_active",
+        companyName: cu.companies?.name || "Organization",
+        jobTitle: cu.job_title,
+        error: "This staff account has already been activated and its password established. Newly added staff password setup cannot be used for existing accounts. If you forgot your password, please use the Reset Password page.",
+      };
+    }
+
+    const companyName = cu.companies?.name || "Paimbabook Staff Portal";
+    const companySlug = cu.companies?.slug || undefined;
+    const companyLogoUrl = cu.companies?.logo_url || undefined;
+    const fullName = cu.users?.first_name
+      ? `${cu.users.first_name} ${cu.users.last_name || ""}`.trim()
+      : cu.job_title;
+
+    return {
+      eligible: true,
+      status: "eligible",
+      companyName,
+      companySlug,
+      companyLogoUrl,
+      jobTitle: cu.job_title,
+      fullName,
+      companyUser: {
+        id: cu.id,
+        companyId: cu.company_id,
+        userId: cu.user_id,
+        email: normalized,
+        fullName,
+        department: cu.department,
+        jobTitle: cu.job_title,
+        roleLevel: cu.role_level,
+        permissions: cu.permissions,
+        isActive: cu.is_active,
+        createdAt: cu.created_at,
+      },
+    };
+  } catch (err: any) {
+    console.error("[verifyNewStaffEligibility] Error:", err);
+    return {
+      eligible: false,
+      status: "not_staff",
+      error: "Could not verify staff invitation status. Please verify your email or contact your administrator.",
+    };
+  }
 }
 
 export async function fetchCommercialRooms(
