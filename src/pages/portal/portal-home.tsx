@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+﻿import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { getAllCountries, getCitiesForCountry } from "@/lib/geo-data";
@@ -346,7 +346,7 @@ export default function PortalHomePage() {
         <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 text-white px-4 py-2.5 text-xs text-center font-bold flex items-center justify-center gap-2 shadow-xs">
           <span className="bg-black/30 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider">{tickerAd.badge_text || "PROMOTION"}</span>
           <span>{tickerAd.title}</span>
-          {tickerAd.subtitle && <span className="hidden sm:inline text-white/90 font-normal">— {tickerAd.subtitle}</span>}
+          {tickerAd.subtitle && <span className="hidden sm:inline text-white/90 font-normal">- {tickerAd.subtitle}</span>}
           {tickerAd.link_url && (
             <a
               href={tickerAd.link_url}
@@ -557,7 +557,7 @@ export default function PortalHomePage() {
           </div>
         )}
 
-        {/* Book a Room — room_type_listings */}
+        {/* Book a Room - room_type_listings */}
         {!loading && filteredRooms.length > 0 && (
           <section className="mb-14">
             <div className="flex items-center gap-3 mb-6">
@@ -702,7 +702,7 @@ export default function PortalHomePage() {
           </section>
         )}
 
-        {/* For Rent — published rental properties */}
+        {/* For Rent - published rental properties */}
         {!loading && filteredRentals.length > 0 && (
           <section>
             <div className="flex items-center gap-3 mb-6">

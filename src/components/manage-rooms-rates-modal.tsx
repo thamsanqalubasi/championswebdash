@@ -845,7 +845,7 @@ export function ManageRoomsRatesModal({
                                               </span>
                                             ) : (
                                               <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-400">
-                                                🏨 Platform
+                                                Platform
                                               </span>
                                             )}
                                           </td>
@@ -1112,7 +1112,6 @@ export function ManageRoomsRatesModal({
                       }`}
                     >
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-base">🏨</span>
                         <span className="font-black text-xs text-foreground">Paimbabook Platform</span>
                       </div>
                       <p className="text-[10px] text-muted leading-relaxed">

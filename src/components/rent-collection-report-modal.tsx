@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+﻿import { useState, useMemo } from "react";
 import {
   X,
   Calendar,
@@ -78,7 +78,7 @@ export function RentCollectionReportModal({
   ], [stats]);
 
   const reportHtml = useMemo(() => `
-    <h3>${companyName} — Rent Collection & Revenue Audit Report</h3>
+    <h3>${companyName} - Rent Collection & Revenue Audit Report</h3>
     <p><strong>Cycle:</strong> Current Billing Cycle | Generated: ${new Date().toLocaleString()}</p>
     <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;" />
     <table style="width: 100%; border-collapse: collapse; font-size: 13px;">

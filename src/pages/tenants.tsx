@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
@@ -1159,7 +1159,7 @@ export default function TenantsPage() {
       if (oldPropertyId && oldPropertyId !== newPropertyId) {
         const { status: oldPropStatus, tenantCount: oldPropRemaining } = await syncPropertyOccupancyStatus(oldPropertyId);
         if (oldPropRemaining === 0) {
-          console.info(`Property ${oldPropertyId} has no tenants remaining — status set to vacant.`);
+          console.info(`Property ${oldPropertyId} has no tenants remaining - status set to vacant.`);
         }
       }
 
@@ -3380,7 +3380,7 @@ export default function TenantsPage() {
       <Modal
         open={Boolean(viewTenantTarget)}
         onClose={() => setViewTenantTarget(null)}
-        title={`View Tenant — ${viewTenantTarget?.fullName ?? ""}`}
+        title={`View Tenant - ${viewTenantTarget?.fullName ?? ""}`}
       >
         {viewTenantTarget && (
           <div className="space-y-6">
@@ -3388,20 +3388,20 @@ export default function TenantsPage() {
             <div className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60 mb-1">Full Name</p>
-                <p className="font-bold text-foreground">{viewTenantTarget.fullName || "—"}</p>
+                <p className="font-bold text-foreground">{viewTenantTarget.fullName || "-"}</p>
               </div>
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60 mb-1">Phone</p>
                 <div className="flex items-center gap-1.5 font-medium text-foreground">
                   <Phone size={13} className="text-muted/50" />
-                  <span>{viewTenantTarget.phone || "—"}</span>
+                  <span>{viewTenantTarget.phone || "-"}</span>
                 </div>
               </div>
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-muted/60 mb-1">Email</p>
                 <div className="flex items-center gap-1.5 font-medium text-foreground">
                   <Mail size={13} className="text-muted/50" />
-                  <span>{viewTenantTarget.email || "—"}</span>
+                  <span>{viewTenantTarget.email || "-"}</span>
                 </div>
               </div>
               <div>

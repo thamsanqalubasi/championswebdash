@@ -1,5 +1,5 @@
-/**
- * DeleteCompanyModal — For SUPER ADMIN only.
+﻿/**
+ * DeleteCompanyModal - For SUPER ADMIN only.
  *
  * Behavior:
  * 1. Super admin clicks "Delete Company" in Settings
@@ -162,7 +162,7 @@ export function DeleteCompanyModal({
           {/* Impact details */}
           <div className="rounded-xl border border-border-color bg-surface-elevated p-4 space-y-3 text-xs">
             <p className="font-bold text-foreground text-[11px] uppercase tracking-wider">
-              Full Impact — 30-Day Freeze Policy
+              Full Impact - 30-Day Freeze Policy
             </p>
             {[
               {
@@ -183,7 +183,7 @@ export function DeleteCompanyModal({
               },
               {
                 icon: <Trash2 size={13} className="text-red-400" />,
-                text: `After ${freezeDays} days, all company data — properties, rooms, tenants, contracts, invoices, staff — is permanently deleted and unrecoverable.`,
+                text: `After ${freezeDays} days, all company data - properties, rooms, tenants, contracts, invoices, staff - is permanently deleted and unrecoverable.`,
               },
             ].map((item, i) => (
               <div key={i} className="flex items-start gap-2.5">
@@ -216,7 +216,7 @@ export function DeleteCompanyModal({
               onClick={handleClose}
               className="w-1/2 rounded-xl border border-border-color bg-surface px-3 py-2.5 text-xs font-semibold text-muted hover:text-foreground transition"
             >
-              Cancel — Keep Company
+              Cancel - Keep Company
             </button>
             <button
               type="button"

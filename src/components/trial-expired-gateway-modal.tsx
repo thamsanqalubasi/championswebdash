@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { Modal } from "./modal";
 import {
   getCompanySubscription,
@@ -57,7 +57,7 @@ export function TrialExpiredGatewayModal({
   };
 
   const handleStartGrace = () => {
-    startGracePeriod(companyId, "Trial period ended — 5-day grace period activated.");
+    startGracePeriod(companyId, "Trial period ended - 5-day grace period activated.");
     if (onTrialRestarted) onTrialRestarted();
   };
 
@@ -73,7 +73,7 @@ export function TrialExpiredGatewayModal({
       <Modal
         open={open}
         onClose={() => {}} // Block dismissal while expired unless restarted, paid, or turned off
-        title="Trial Expired — Payment Gateway"
+        title="Trial Expired - Payment Gateway"
       >
         <div className="py-2 text-center space-y-4">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400">

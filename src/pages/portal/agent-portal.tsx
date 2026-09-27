@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+﻿import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { uploadFileToBucket } from '@/lib/storage';
@@ -383,7 +383,7 @@ export default function AgentPortalPage() {
           address: prop.address || '',
           city: prop.city || '',
           country: prop.country || '',
-          description: prop.description || `${prop.name} — managed residential property ready for lease.`,
+          description: prop.description || `${prop.name} - managed residential property ready for lease.`,
           bedrooms: prop.total_rooms || 1,
           bathrooms: 1,
           area_sqm: 0,
@@ -425,7 +425,7 @@ export default function AgentPortalPage() {
       address: prop.address || '',
       city: prop.city || '',
       country: prop.country || '',
-      description: prop.description || `${prop.name} — managed residential property available in ${prop.city || 'Windhoek'}.`,
+      description: prop.description || `${prop.name} - managed residential property available in ${prop.city || 'Windhoek'}.`,
       bedrooms: prop.total_rooms && prop.total_rooms > 1 ? String(prop.total_rooms) : '1',
       bathrooms: '1',
       areaSqm: '',
@@ -645,7 +645,7 @@ export default function AgentPortalPage() {
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Agent Portal — Property Listings</h1>
+          <h1 className="text-2xl font-bold text-foreground">Agent Portal - Property Listings</h1>
           <p className="text-xs text-muted mt-1">
             Manage published residential properties and control their visibility on the public front page index.
           </p>
@@ -715,7 +715,7 @@ export default function AgentPortalPage() {
               <div>
                 <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
                   <Building2 size={20} className="text-blue-600" />
-                  <span>Published Residential Properties — Front Page Visibility</span>
+                  <span>Published Residential Properties - Front Page Visibility</span>
                 </h2>
                 <p className="text-xs text-muted mt-1">
                   Control which residential properties appear on the public front page index for prospective customers. Click "Show" or "Hide" to toggle visibility, or select from system properties to import and customize.
@@ -750,7 +750,7 @@ export default function AgentPortalPage() {
                     <AlertTriangle size={20} />
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-foreground">Agent Profile Incomplete — Contact Details Required</p>
+                    <p className="text-xs font-bold text-foreground">Agent Profile Incomplete - Contact Details Required</p>
                     <p className="text-[11px] text-muted">Properties cannot be shown on the public front page index until your agent profile has a contact phone number and name.</p>
                   </div>
                 </div>
@@ -1160,7 +1160,7 @@ export default function AgentPortalPage() {
                   <option value="">-- Autofill from Portfolio --</option>
                   {orgProperties.map(p => (
                     <option key={p.id} value={p.id}>
-                      {p.name} ({p.type}) — {formatWhole(p.monthly_rent || 0)}/mo
+                      {p.name} ({p.type}) - {formatWhole(p.monthly_rent || 0)}/mo
                     </option>
                   ))}
                 </select>

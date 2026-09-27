@@ -23,6 +23,7 @@ interface StripePaymentModalProps {
   onSuccess?: () => void;
   amountUsd?: number;
   packageTitle?: string;
+  isSubscriptionPayment?: boolean;
 }
 
 export function StripePaymentModal({
@@ -32,6 +33,7 @@ export function StripePaymentModal({
   onSuccess,
   amountUsd = 0.50,
   packageTitle = "Stripe Test Package",
+  isSubscriptionPayment = true,
 }: StripePaymentModalProps) {
   const [cardNumber, setCardNumber] = useState("");
   const [cardExpiry, setCardExpiry] = useState("");
@@ -89,7 +91,7 @@ export function StripePaymentModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           companyId,
-          packageId: "test",
+          packageId: isSubscriptionPayment ? "test" : "boost",
           amountUsd,
           mode: "checkout_session",
           returnUrl: window.location.origin,
@@ -142,7 +144,7 @@ export function StripePaymentModal({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             companyId,
-            packageId: "test",
+            packageId: isSubscriptionPayment ? "test" : "boost",
             amountUsd,
             mode: "payment_intent",
           }),
@@ -173,7 +175,7 @@ export function StripePaymentModal({
             {
               body: {
                 companyId,
-                packageId: "test",
+                packageId: isSubscriptionPayment ? "test" : "boost",
                 amountUsd,
                 mode: "payment_intent",
               },
@@ -229,7 +231,9 @@ export function StripePaymentModal({
         }
 
         const txRef = res.paymentIntent?.id || edgePaymentIntentId || `pi_stripe_${Date.now()}`;
-        markSubscriptionPaid(companyId, txRef, "stripe_card");
+        if (isSubscriptionPayment) {
+          markSubscriptionPaid(companyId, txRef, "stripe_card");
+        }
         setReceiptRef(txRef);
         setSuccess(true);
         if (onSuccess) onSuccess();
@@ -240,7 +244,9 @@ export function StripePaymentModal({
       if (!handledByEdge && !edgeClientSecret) {
         await new Promise((resolve) => setTimeout(resolve, 1500));
         const txRef = `pi_sandbox_${Math.random().toString(36).substring(2, 9)}_${Date.now().toString(36)}`;
-        markSubscriptionPaid(companyId, txRef, "stripe_card");
+        if (isSubscriptionPayment) {
+          markSubscriptionPaid(companyId, txRef, "stripe_card");
+        }
         setReceiptRef(txRef);
         setSuccess(true);
         if (onSuccess) onSuccess();
@@ -315,7 +321,7 @@ export function StripePaymentModal({
             </div>
             <div className="text-right">
               <p className="text-lg font-black text-foreground">${amountUsd.toFixed(2)}</p>
-              <p className="text-[10px] text-muted uppercase font-bold tracking-wider">USD / Mo</p>
+              <p className="text-[10px] text-muted uppercase font-bold tracking-wider">{isSubscriptionPayment ? "USD / Mo" : "USD Total"}</p>
             </div>
           </div>
 
@@ -333,7 +339,7 @@ export function StripePaymentModal({
                   : "bg-amber-500/15 text-amber-400 border-amber-500/30"
               }`}
             >
-              {isLiveKey ? "🟢 Live Mode" : "🧪 Test Mode"}
+              {isLiveKey ? "Live Mode" : "Test Mode"}
             </span>
           </div>
 
@@ -489,7 +495,7 @@ export function StripePaymentModal({
               onClick={() => setShowKeyInput(!showKeyInput)}
               className="text-[11px] text-muted hover:text-foreground flex items-center gap-1"
             >
-              <span>{showKeyInput ? "▼ Hide" : "▶ Configure"} Custom Stripe Publishable Key (pk_test_...)</span>
+              <span>{showKeyInput ? "- Hide" : "+ Configure"} Custom Stripe Publishable Key (pk_test_...)</span>
             </button>
             {showKeyInput && (
               <div className="mt-2 space-y-1">

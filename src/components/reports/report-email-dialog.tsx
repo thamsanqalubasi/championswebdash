@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { X, Send, ShieldAlert, Mail, User, AlertTriangle, CheckCircle2, Loader2, Sparkles, ArrowUpRight } from "lucide-react";
 import { sendEmailViaApi } from "@/lib/notifications";
 import { useAuth } from "@/lib/auth";
@@ -69,7 +69,7 @@ export function ReportEmailDialog({
           <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
             <div style="background-color: #0f172a; color: #ffffff; padding: 16px 20px; border-radius: 6px; margin-bottom: 20px;">
               <h2 style="margin: 0; font-size: 18px;">${reportTitle}</h2>
-              <p style="margin: 4px 0 0 0; font-size: 12px; color: #94a3b8;">Confidential Company Document — Dispatched to ${name} (${email})</p>
+              <p style="margin: 4px 0 0 0; font-size: 12px; color: #94a3b8;">Confidential Company Document - Dispatched to ${name} (${email})</p>
             </div>
             <p style="font-size: 14px; color: #334155;">Hello <strong>${name}</strong>,</p>
             <p style="font-size: 14px; color: #334155;">Please find the attached verified executive summary and report below:</p>

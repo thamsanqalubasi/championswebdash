@@ -853,7 +853,7 @@ export default function RoomManagementPage() {
           />
           <div>
             <span className="font-bold text-sm block sm:inline mr-1.5">
-              {properties.length === 0 ? "⚠️ Accommodation Property Required:" : "🏨 Accommodation Property Assignment:"}
+              {properties.length === 0 ? "Accommodation Property Required:" : "Accommodation Property Assignment:"}
             </span>
             <span>
               All rooms must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial). Without selecting a property or having an accommodation property in the system, you cannot create or manage rooms.
@@ -1998,8 +1998,8 @@ export default function RoomManagementPage() {
                   <div>
                     <p className="font-bold">
                       {properties.length === 0
-                        ? "⚠️ Accommodation Property Required"
-                        : "🏨 Accommodation Property Assignment"}
+                        ? "Accommodation Property Required"
+                        : "Accommodation Property Assignment"}
                     </p>
                     <p className="text-[11px] opacity-90 mt-0.5">
                       All rooms must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial). Without selecting a property or having an accommodation property in the system, you cannot create or manage rooms.
@@ -2232,7 +2232,6 @@ export default function RoomManagementPage() {
                       }`}
                     >
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-base">🏨</span>
                         <span className="font-bold text-xs text-foreground">Paimbabook Platform</span>
                       </div>
                       <p className="text-[10px] text-muted">

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { clearCustomerSession, getCustomerSession } from "@/lib/auth";
@@ -1621,7 +1621,7 @@ export default function CustomerDashboardPage() {
                             </span>
                           </div>
                           <p className="text-[11px] text-gray-500 mt-0.5">
-                            Payment Date: {p.payment_date} &bull; Ref: {p.reference_number || "—"}
+                            Payment Date: {p.payment_date} &bull; Ref: {p.reference_number || "-"}
                           </p>
                           {p.notes && <p className="text-[11px] text-gray-600 dark:text-slate-400 mt-1">{p.notes}</p>}
                         </div>

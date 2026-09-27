@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+﻿import { useState, useMemo } from "react";
 import {
   X,
   Calendar,
@@ -82,7 +82,7 @@ export function InvoicesReportModal({
   ].filter((p) => p.value > 0), [stats]);
 
   const reportHtml = useMemo(() => `
-    <h3>${companyName} — Invoices & Accounts Receivable Report</h3>
+    <h3>${companyName} - Invoices & Accounts Receivable Report</h3>
     <p>Generated: ${new Date().toLocaleString()}</p>
     <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;" />
     <table style="width: 100%; border-collapse: collapse; font-size: 13px;">

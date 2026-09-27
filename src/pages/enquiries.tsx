@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
@@ -310,7 +310,7 @@ export default function EnquiriesPage() {
       </div>
 
       {/* Ticket Thread Modal */}
-      <Modal open={selected!==null} onClose={()=>setSelected(null)} title={selected?`${formatTypeLabel(selected.type)} — ${selected.customer_name}`:""}>
+      <Modal open={selected!==null} onClose={()=>setSelected(null)} title={selected?`${formatTypeLabel(selected.type)} - ${selected.customer_name}`:""}>
         {selected && (
           <div className="space-y-4">
             <div className="rounded-xl bg-surface-elevated/50 border border-border-color p-4 text-sm space-y-2">

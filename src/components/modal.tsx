@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+﻿import { useEffect, type ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
 
 type ModalProps = {
@@ -43,7 +43,7 @@ export function Modal({ open, onClose, title, children, maxWidthClassName }: Mod
         className="fixed inset-0 bg-black/50 backdrop-blur-xs"
         onMouseDown={onClose}
       />
-      {/* Panel — grows with content but never taller than ~90vh before scrolling */}
+      {/* Panel - grows with content but never taller than ~90vh before scrolling */}
       <div className={`pointer-events-auto relative z-10 w-full ${maxWidthClassName || "max-w-lg"} rounded-xl border border-border-color bg-surface text-foreground shadow-2xl my-auto`}>
         {/* Sticky header */}
         <div className="sticky top-0 z-10 mb-0 flex items-center justify-between gap-3 rounded-t-xl border-b border-border-color bg-surface px-6 py-4">

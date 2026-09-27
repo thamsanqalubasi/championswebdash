@@ -1,5 +1,5 @@
-/**
- * AccountFrozenBanner — Shown to staff members whose company has been deleted.
+﻿/**
+ * AccountFrozenBanner - Shown to staff members whose company has been deleted.
  *
  * Replaces the entire dashboard for affected staff.
  * Shows a countdown of the remaining 30-day hold period.

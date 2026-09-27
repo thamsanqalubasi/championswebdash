@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+﻿import { useEffect, useState, useMemo } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import {
@@ -539,7 +539,7 @@ export default function DashboardPage() {
 
   return (
     <ModulePage
-      title={isExecutive ? `${currentCompany.name} — Super Admin Dashboard` : `${currentCompany.name} — ${currentCompanyUser?.jobTitle || "Staff Portal"}`}
+      title={isExecutive ? `${currentCompany.name} - Super Admin Dashboard` : `${currentCompany.name} - ${currentCompanyUser?.jobTitle || "Staff Portal"}`}
       description={
         isExecutive
           ? "Enterprise hospitality & property management. Click any department below to toggle its operational functions."

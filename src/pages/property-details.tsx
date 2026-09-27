@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ModulePage } from "@/components/module-page";
 import { Modal } from "@/components/modal";
@@ -596,7 +596,7 @@ export default function PropertyDetailsPage() {
 
       alert(
         tenantCount === 0
-          ? `${tenant.fullName} unassigned. No tenants remain assigned — property status changed to VACANT.`
+          ? `${tenant.fullName} unassigned. No tenants remain assigned - property status changed to VACANT.`
           : `${tenant.fullName} unassigned. Property remains OCCUPIED with ${tenantCount} active tenant${tenantCount === 1 ? "" : "s"}.`
       );
 
@@ -1377,7 +1377,7 @@ export default function PropertyDetailsPage() {
                           <option value="">Select unassigned tenant ({unassignedTenants.length} available)...</option>
                           {unassignedTenants.map((tenant) => (
                             <option key={tenant.id} value={tenant.id}>
-                              {tenant.full_name} — {tenant.tag}
+                              {tenant.full_name} - {tenant.tag}
                             </option>
                           ))}
                         </select>

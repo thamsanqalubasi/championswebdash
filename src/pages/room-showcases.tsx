@@ -276,7 +276,7 @@ export default function ShowcasePage() {
   const filteredRentals = rentalProperties.filter((p: any) => !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || (p.city||"").toLowerCase().includes(searchQuery.toLowerCase()));
 
   return (
-    <ModulePage title="Showcase" description="Manage what shows on the public portal — rooms for booking and properties for rent.">
+    <ModulePage title="Showcase" description="Manage what shows on the public portal - rooms for booking and properties for rent.">
       {loading && <LoadingState label="Loading showcase..."/>}
       {!loading && (
         <div className="space-y-6">
@@ -324,7 +324,7 @@ export default function ShowcasePage() {
                 />
                 <div>
                   <span className="font-bold text-sm block sm:inline mr-1.5">
-                    {hospProps.length === 0 ? "⚠️ Accommodation Property Required:" : "🏨 Accommodation Property Assignment:"}
+                    {hospProps.length === 0 ? "Accommodation Property Required:" : "Accommodation Property Assignment:"}
                   </span>
                   <span>
                     All rooms and booking types must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial). Without selecting a property or having an accommodation property in the system, you cannot create or showcase rooms.
@@ -479,8 +479,8 @@ export default function ShowcasePage() {
             <div>
               <p className="font-bold">
                 {hospProps.length === 0
-                  ? "⚠️ Accommodation Property Required"
-                  : "🏨 Accommodation Property Assignment"}
+                  ? "Accommodation Property Required"
+                  : "Accommodation Property Assignment"}
               </p>
               <p className="text-[11px] opacity-90 mt-0.5">
                 All rooms and showcase listings must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial). Without selecting a property, room listings cannot be saved.
@@ -491,7 +491,7 @@ export default function ShowcasePage() {
           <div>
             <label className="mb-1 block font-semibold text-foreground">Property <span className="text-red-500">*</span></label>
             <select value={form.property_id} onChange={e => { setForm(f=>({...f,property_id:e.target.value,type_key:"",display_name:""})); setErrors(v=>({...v,property_id:""})); }} className={inputCls("property_id")}>
-              <option value="">— Select a hospitality property —</option>
+              <option value="">- Select a hospitality property -</option>
               {hospProps.map(p => <option key={p.id} value={p.id}>{p.name} ({p.type.replace(/_/g," ")})</option>)}
             </select>
             {errors.property_id && <p className="mt-1 flex items-center gap-1 text-red-500 text-[11px]"><AlertCircle size={11}/>{errors.property_id}</p>}
@@ -499,7 +499,7 @@ export default function ShowcasePage() {
           <div>
             <label className="mb-1 block font-semibold text-foreground">Room Type <span className="text-red-500">*</span></label>
             <select value={form.type_key} onChange={e => { const opt = ROOM_TYPE_OPTIONS.find(o=>o.key===e.target.value); setForm(f=>({...f,type_key:e.target.value,display_name:opt?opt.label:f.display_name,adults_capacity:opt?opt.adults:f.adults_capacity,kids_capacity:opt?opt.kids:f.kids_capacity})); setErrors(v=>({...v,type_key:""})); }} disabled={!form.property_id} className={`${inputCls("type_key")} ${!form.property_id?"opacity-50 cursor-not-allowed":""}`}>
-              <option value="">{form.property_id?"— Select room type —":"— Select a property first —"}</option>
+              <option value="">{form.property_id?"- Select room type -":"- Select a property first -"}</option>
               {availableTypeOptions.map(o => <option key={o.key} value={o.key}>{o.label} · {o.adults} Adults, {o.kids} Kids</option>)}
             </select>
             {errors.type_key && <p className="mt-1 flex items-center gap-1 text-red-500 text-[11px]"><AlertCircle size={11}/>{errors.type_key}</p>}

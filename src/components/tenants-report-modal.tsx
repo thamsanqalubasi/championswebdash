@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+﻿import { useState, useMemo } from "react";
 import {
   X,
   Calendar,
@@ -179,7 +179,7 @@ export function TenantsReportModal({
   // Printable HTML builder
   const reportHtml = useMemo(() => {
     return `
-      <h3>${companyName} — Comprehensive Tenant & Lease Executive Report</h3>
+      <h3>${companyName} - Comprehensive Tenant & Lease Executive Report</h3>
       <p><strong>Reporting Scope:</strong> ${PERIODS.find((p) => p.id === period)?.label || "Custom"} | Generated on ${new Date().toLocaleString()}</p>
       <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;" />
       <table style="width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;">
@@ -221,7 +221,7 @@ export function TenantsReportModal({
           </style>
         </head>
         <body>
-          <h1>${companyName} — Tenants & Leases Executive Report</h1>
+          <h1>${companyName} - Tenants & Leases Executive Report</h1>
           <p>Timeframe: ${PERIODS.find((p) => p.id === period)?.label || "Custom"} | Generated on ${new Date().toLocaleString()}</p>
           <div class="kpi-grid">
             <div class="kpi"><div class="kpi-title">Total Tenants</div><div class="kpi-val">${stats.total}</div></div>

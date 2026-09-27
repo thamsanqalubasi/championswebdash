@@ -1,5 +1,5 @@
-/**
- * EnterpriseSalesModal — Custom Enterprise Consultation Request Form
+﻿/**
+ * EnterpriseSalesModal - Custom Enterprise Consultation Request Form
  *
  * Designed for operations with:
  *   - Over 20 Properties

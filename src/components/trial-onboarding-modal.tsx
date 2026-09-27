@@ -1,9 +1,9 @@
 /**
- * TrialOnboardingModal — 3-Step Free Trial Signup Flow
+ * TrialOnboardingModal - 3-Step Free Trial Signup Flow
  *
- * Step 1: Welcome screen — "3 months free, no charge today"
- * Step 2: Package selection — user picks their plan (sees features of that plan)
- * Step 3: Card details — Stripe SetupIntent (card saved, $0 charged)
+ * Step 1: Welcome screen - "3 months free, no charge today"
+ * Step 2: Package selection - user picks their plan (sees features of that plan)
+ * Step 3: Card details - Stripe SetupIntent (card saved, $0 charged)
  *
  * After completing step 3, Stripe saves the card and a subscription is created
  * with a TRIAL_PERIOD_DAYS trial. First real charge happens after trial ends.
@@ -135,7 +135,7 @@ export function TrialOnboardingModal({
       const pubKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "";
       if (!pubKey) {
         // Fallback: sandbox simulation (for dev without Stripe publishable key)
-        console.warn("No Stripe publishable key — simulating card save.");
+        console.warn("No Stripe publishable key - simulating card save.");
         await new Promise((r) => setTimeout(r, 1500));
       } else {
         const stripeInstance = await loadStripe(pubKey);
@@ -203,12 +203,12 @@ export function TrialOnboardingModal({
       onClose={handleClose}
       title={
         step === 1
-          ? "🎁 Start Your Free 3-Month Trial"
+          ? "Start Your Free 3-Month Trial"
           : step === 2
           ? "Choose Your Plan"
           : step === 3
-          ? "Save Your Card — No Charge Today"
-          : "Trial Started! 🎉"
+          ? "Save Your Card - No Charge Today"
+          : "Trial Started!"
       }
       maxWidthClassName="max-w-[85vw] w-[85vw]"
     >
@@ -277,7 +277,7 @@ export function TrialOnboardingModal({
               {
                 dot: "bg-violet-500",
                 label: `Day ${TRIAL_PERIOD_DAYS + 1}`,
-                text: `First monthly charge — ${selectedPlan?.priceUsd ? `$${selectedPlan.priceUsd}/month` : "plan price"} — auto-renews monthly`,
+                text: `First monthly charge - ${selectedPlan?.priceUsd ? `$${selectedPlan.priceUsd}/month` : "plan price"} - auto-renews monthly`,
               },
             ].map((item, i) => (
               <div key={i} className="flex items-start gap-3">
@@ -328,7 +328,7 @@ export function TrialOnboardingModal({
           <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs">
             <p className="font-bold text-emerald-300">Selected: {selectedPlan?.name}</p>
             <p className="text-muted mt-0.5">
-              {selectedPlan?.tagline} — ${selectedPlan?.priceUsd}/month after trial.
+              {selectedPlan?.tagline} - ${selectedPlan?.priceUsd}/month after trial.
             </p>
           </div>
 
@@ -352,7 +352,7 @@ export function TrialOnboardingModal({
         </div>
       )}
 
-      {/* Step 3: Card Details (SetupIntent — $0 charge) */}
+      {/* Step 3: Card Details (SetupIntent - $0 charge) */}
       {step === 3 && (
         <form onSubmit={handleStartTrial} className="py-4 space-y-4">
           {/* Header */}
@@ -360,7 +360,7 @@ export function TrialOnboardingModal({
             <div className="flex items-center gap-2">
               <Lock size={15} className="text-amber-400" />
               <p className="text-xs font-bold text-amber-300">
-                No charge today — card saved for after trial
+                No charge today - card saved for after trial
               </p>
             </div>
             <p className="text-[11px] text-muted">
@@ -471,7 +471,7 @@ export function TrialOnboardingModal({
           {/* Security note */}
           <div className="flex items-center justify-center gap-2 text-[11px] text-muted/70">
             <Shield size={13} className="text-emerald-500" />
-            <span>Encrypted by Stripe — we never store your card details</span>
+            <span>Encrypted by Stripe - we never store your card details</span>
           </div>
 
           <div className="flex gap-2">
@@ -496,7 +496,7 @@ export function TrialOnboardingModal({
               ) : (
                 <>
                   <Lock size={13} />
-                  Start Free Trial — $0 Charged Today
+                  Start Free Trial - $0 Charged Today
                 </>
               )}
             </button>
@@ -511,7 +511,7 @@ export function TrialOnboardingModal({
             <CheckCircle2 size={36} />
           </div>
           <div>
-            <h3 className="text-xl font-black text-foreground">Trial Started! 🎉</h3>
+            <h3 className="text-xl font-black text-foreground">Trial Started!</h3>
             <p className="text-sm text-muted mt-1">
               Welcome to your free {TRIAL_PERIOD_DAYS}-day trial of{" "}
               <strong className="text-foreground">{selectedPlan?.name}</strong>.

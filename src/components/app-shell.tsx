@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
+﻿import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { ThemeToggle } from "./theme-toggle";
@@ -536,7 +536,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* ── Right Panel: Header + Scrollable Main ── */}
       <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
-        {/* Top Header — fixed, does NOT scroll */}
+        {/* Top Header - fixed, does NOT scroll */}
         <header className="flex-shrink-0 z-20 border-b border-border-color bg-surface px-3 py-2.5 sm:px-4 sm:py-3 lg:px-6">
           <div className="flex items-center justify-between gap-2 sm:gap-3 flex-wrap lg:flex-nowrap">
             {/* Mobile menu button & Brand */}
@@ -705,7 +705,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        {/* Main content — scrolls independently, content centred */}
+        {/* Main content - scrolls independently, content centred */}
         <main id="main-content" className="flex-1 overflow-y-auto bg-background">
           {/* 5-Day Timed Grace Period Warning Banner */}
           {sub.packageModeEnabled && sub.status === "grace_period" && (
@@ -791,7 +791,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {children}
                 </div>
 
-                {/* Frosted Glass Overlay with Upgrade Trigger Card — fully scrollable on all viewports */}
+                {/* Frosted Glass Overlay with Upgrade Trigger Card - fully scrollable on all viewports */}
                 <div
                   onClick={() => setPackageModalOpen(true)}
                   className="absolute inset-0 z-30 flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto cursor-pointer bg-background/60 backdrop-blur-xs transition-all hover:bg-background/50"

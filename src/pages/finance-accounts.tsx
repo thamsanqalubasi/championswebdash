@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+﻿import { useEffect, useMemo, useState, useRef } from "react";
 import { ModulePage } from "@/components/module-page";
 import { ErrorState, LoadingState } from "@/components/data-state";
 import { supabase } from "@/lib/supabase";
@@ -1527,7 +1527,7 @@ export default function FinanceAccountsPage() {
         items.push({
           id: t.id,
           source: "manual_tx",
-          title: `${t.category} — ${t.referenceNumber}`,
+          title: `${t.category} - ${t.referenceNumber}`,
           subtitle: t.description,
           amount: t.amount,
           date: t.transactionDate,
@@ -2134,7 +2134,7 @@ export default function FinanceAccountsPage() {
             <section className="space-y-4 rounded-2xl border border-border-color bg-surface p-5 shadow-xs">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border-color/60 pb-3">
                 <h3 className="text-base font-black text-foreground">
-                  Statement Summary — {scopeLabel}
+                  Statement Summary - {scopeLabel}
                 </h3>
                 <span className="text-xs text-muted font-medium">
                   Period: {startDate} to {endDate}
@@ -2723,7 +2723,7 @@ export default function FinanceAccountsPage() {
                   >
                     {FINANCE_STAFF_HIERARCHY.map((staff) => (
                       <option key={staff.id} value={staff.id}>
-                        {staff.role} — {staff.name} ({staff.level})
+                        {staff.role} - {staff.name} ({staff.level})
                       </option>
                     ))}
                   </select>
@@ -3089,7 +3089,7 @@ export default function FinanceAccountsPage() {
               >
                 {FINANCE_STAFF_HIERARCHY.map((staff) => (
                   <option key={staff.id} value={staff.id}>
-                    {staff.level} — {staff.role}: {staff.name}
+                    {staff.level} - {staff.role}: {staff.name}
                   </option>
                 ))}
               </select>

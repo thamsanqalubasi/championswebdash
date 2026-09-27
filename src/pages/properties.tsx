@@ -457,7 +457,7 @@ export default function PropertiesPage() {
     catch(e){alert(e instanceof Error?e.message:"Delete failed");}finally{setDeleting(false);}
   };
 
-  const filterTabs=[{key:"all",label:"All Properties",count:statusCounts.all},{key:"hospitality",label:"🏨 Hospitality",count:statusCounts.hospitality},{key:"rental",label:"🏠 Rental",count:statusCounts.rental},{key:"occupied",label:"Occupied",count:statusCounts.occupied},{key:"vacant",label:"Vacant",count:statusCounts.vacant}];
+  const filterTabs=[{key:"all",label:"All Properties",count:statusCounts.all},{key:"hospitality",label:"Hospitality",count:statusCounts.hospitality},{key:"rental",label:"Rental",count:statusCounts.rental},{key:"occupied",label:"Occupied",count:statusCounts.occupied},{key:"vacant",label:"Vacant",count:statusCounts.vacant}];
 
   return (
     <ModulePage title={`Properties (${currentCompany.name})`} description="Manage rental and hospitality properties.">
@@ -626,7 +626,7 @@ export default function PropertiesPage() {
               {viewTarget.isPublished&&<span className="rounded-full bg-green-500/15 px-3 py-1 text-xs font-bold text-green-600">Live on Portal</span>}
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-xl bg-surface-elevated/50 border border-border-color p-3"><p className="text-[10px] font-bold uppercase text-muted/60 mb-1">Address</p><div className="flex items-start gap-1.5"><MapPin size={13} className="mt-0.5 shrink-0 text-muted"/><span className="font-semibold text-foreground">{viewTarget.address||"—"}</span></div></div>
+              <div className="rounded-xl bg-surface-elevated/50 border border-border-color p-3"><p className="text-[10px] font-bold uppercase text-muted/60 mb-1">Address</p><div className="flex items-start gap-1.5"><MapPin size={13} className="mt-0.5 shrink-0 text-muted"/><span className="font-semibold text-foreground">{viewTarget.address||"-"}</span></div></div>
               {(viewTarget.city||viewTarget.country)&&(<div className="rounded-xl bg-surface-elevated/50 border border-border-color p-3"><p className="text-[10px] font-bold uppercase text-muted/60 mb-1">Location</p><div className="flex items-center gap-1.5"><Globe size={13} className="shrink-0 text-muted"/><span className="font-semibold text-foreground">{[viewTarget.city,viewTarget.country].filter(Boolean).join(", ")}</span></div></div>)}
               <div className="rounded-xl bg-surface-elevated/50 border border-border-color p-3"><p className="text-[10px] font-bold uppercase text-muted/60 mb-1">{isHospitality(viewTarget.type)?"Rate":"Monthly Rent"}</p><div className="flex items-center gap-1.5"><DollarSign size={13} className="shrink-0 text-muted"/><span className="font-bold text-foreground">{isHospitality(viewTarget.type)?`${viewTarget.totalRooms||0} rooms from ${formatCurrency(viewTarget.defaultRoomPrice||0)}/night`:formatCurrency(viewTarget.monthlyRent)+"/month"}</span></div></div>
               {viewTarget.availableFrom && (
@@ -695,7 +695,7 @@ export default function PropertiesPage() {
                 className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-blue-600"
                 required
               >
-                <option value="">— Select Country First —</option>
+                <option value="">- Select Country First -</option>
                 {Object.keys(COUNTRIES_AND_CITIES).map((c) => (
                   <option key={c} value={c}>
                     {c}
@@ -722,7 +722,7 @@ export default function PropertiesPage() {
                 required
               >
                 <option value="">
-                  {!form.country ? "— Select Country First —" : "— Select City —"}
+                  {!form.country ? "- Select Country First -" : "- Select City -"}
                 </option>
                 {availableCities.map((city) => (
                   <option key={city} value={city}>
@@ -828,7 +828,7 @@ export default function PropertiesPage() {
                     : "border-border-color bg-surface text-muted hover:border-blue-400/50"
                 }`}
               >
-                <span className="text-xs font-bold text-foreground">🏨 Paimbabook Platform</span>
+                <span className="text-xs font-bold text-foreground">Paimbabook Platform</span>
                 <span className="text-[10px] text-muted">Process reservations, enquiries &amp; check-ins here</span>
               </button>
 

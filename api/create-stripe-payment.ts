@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+﻿import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Stripe from "stripe";
 
 // ============================================================
@@ -16,7 +16,7 @@ import Stripe from "stripe";
 //   90  = 3 months trial (current marketing offer: "3 months free!")
 //   120 = 4 months trial
 // ============================================================
-const TRIAL_PERIOD_DAYS = 90; // 3-month free trial — card saved now, first charge on day 91
+const TRIAL_PERIOD_DAYS = 90; // 3-month free trial - card saved now, first charge on day 91
 
 // Map of package IDs to Stripe recurring Price IDs.
 // ============================================================
@@ -126,7 +126,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         stripeCustomerId = anonCustomer.id;
       }
 
-      // Create SetupIntent — no charge, just saves the card
+      // Create SetupIntent - no charge, just saves the card
       const setupIntent = await stripe.setupIntents.create({
         customer: stripeCustomerId,
         // off_session = card can be charged later without user present (for auto-renewal)
@@ -213,7 +213,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ============================================================
     // Mode: subscription_checkout
     // Stripe-hosted checkout with built-in trial + recurring billing.
-    // The cleanest UX — Stripe handles card UI, 3DS, Apple/Google Pay.
+    // The cleanest UX - Stripe handles card UI, 3DS, Apple/Google Pay.
     // After trial, Stripe auto-charges monthly.
     // ============================================================
     if (mode === "subscription_checkout") {
@@ -233,7 +233,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 currency: "usd",
                 product_data: {
                   name: `PaimbaBook - ${packageId.charAt(0).toUpperCase() + packageId.slice(1)} Package`,
-                  description: `Monthly subscription (${TRIAL_PERIOD_DAYS}-day free trial — card saved now, first charge after trial)`,
+                  description: `Monthly subscription (${TRIAL_PERIOD_DAYS}-day free trial - card saved now, first charge after trial)`,
                 },
                 recurring: { interval: "month" },
                 unit_amount: amountInCents,
@@ -272,7 +272,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // ============================================================
-    // Mode: payment_intent (legacy one-off payment — still used for the $0.50 test package)
+    // Mode: payment_intent (legacy one-off payment - still used for the $0.50 test package)
     // ============================================================
     if (mode === "payment_intent") {
       const paymentIntent = await stripe.paymentIntents.create({

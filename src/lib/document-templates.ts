@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Professional document HTML templates for invoices and contracts.
  * These produce well-designed, printable HTML documents with company branding and admin signature.
  */
@@ -1112,7 +1112,7 @@ export function buildExternalQuoteRequestHtml(data: ExternalQuoteRequestData): s
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Request for Quotation — ${esc(refNo)}</title>
+  <title>Request for Quotation - ${esc(refNo)}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #f9fafb; color: #111827; }
@@ -1176,7 +1176,7 @@ export function buildExternalQuoteRequestHtml(data: ExternalQuoteRequestData): s
 <body>
 
   <div class="no-print" style="display: flex; align-items: center; justify-content: space-between;">
-    <span>📄 Request for Quotation — ${esc(refNo)}</span>
+    <span>📄 Request for Quotation - ${esc(refNo)}</span>
     <div style="display: flex; gap: 8px;">
       <button class="btn-print" onclick="window.print()">🖨 Print / Save as PDF</button>
       <button class="btn-close" onclick="window.close()">✕ Close</button>
@@ -1250,7 +1250,7 @@ export function buildExternalQuoteRequestHtml(data: ExternalQuoteRequestData): s
       <div class="sig-area">
         <div class="sig-box">
           <strong>${esc(data.contactName)}</strong>
-          <p>${data.contactTitle ? esc(data.contactTitle) + " — " : ""}${esc(data.requestingCompanyName)}</p>
+          <p>${data.contactTitle ? esc(data.contactTitle) + " - " : ""}${esc(data.requestingCompanyName)}</p>
           <p style="margin-top: 4px; color: #9ca3af;">Signature: ________________________</p>
           <p style="color: #9ca3af;">Date: ________________________</p>
         </div>

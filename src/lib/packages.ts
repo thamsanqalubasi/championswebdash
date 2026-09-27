@@ -1,4 +1,4 @@
-// ============================================================================
+﻿// ============================================================================
 // PAIMBABOOK SUBSCRIPTION PACKAGES & COMMERCIALIZATION ARCHITECTURE
 // ============================================================================
 
@@ -430,17 +430,17 @@ export const SUBSCRIPTION_PACKAGES: Record<PackageId, PackagePlan> = {
 // When changed, also update the matching TRIAL_PERIOD_DAYS in:
 //   → web/api/create-stripe-payment.ts  (line ~17)
 // ============================================================
-export const TRIAL_PERIOD_DAYS = 90; // 3-month free trial — first charge on day 91
+export const TRIAL_PERIOD_DAYS = 90; // 3-month free trial - first charge on day 91
 
 export type SubscriptionStatus =
   | "trial"        // In free trial period (card saved, no charge yet)
   | "active"       // Paying, subscription current
   | "expired"      // Trial expired without subscribing
-  | "grace_period" // Payment failed — 5-day grace period before downgrade
+  | "grace_period" // Payment failed - 5-day grace period before downgrade
   | "downgraded"   // Safely downgraded to Starter (payment failure after grace)
   | "cancelling"   // Cancel requested, access active until period ends
   | "cancelled"    // Subscription ended, features locked
-  | "frozen";      // Account frozen (60+ days no subscription — can't login)
+  | "frozen";      // Account frozen (60+ days no subscription - can't login)
 
 export interface CompanySubscription {
   packageId: PackageId;
@@ -449,7 +449,7 @@ export interface CompanySubscription {
   isTrial: boolean;
   trialStartedAt: number;         // Unix timestamp ms
   trialDurationSeconds: number;   // Test mode: 60s (1 min); Production: TRIAL_PERIOD_DAYS * 86400
-  trialEndsAt?: number;           // Production trial end timestamp (ms) — first charge after this
+  trialEndsAt?: number;           // Production trial end timestamp (ms) - first charge after this
   paidAt?: number;
   lastPaymentRef?: string;
   paymentMethod?: string;
@@ -1269,7 +1269,7 @@ export function getDaysUntilFreeze(sub: CompanySubscription): number {
 /**
  * Reactivate a cancelled or frozen account (user re-subscribed).
  * This is called when payment succeeds after cancellation.
- * Does NOT restore the old Stripe subscription — requires new subscription setup.
+ * Does NOT restore the old Stripe subscription - requires new subscription setup.
  */
 export function reactivateSubscription(
   companyId: string,
@@ -1304,7 +1304,7 @@ export function isAccountUnsubscribed(sub: CompanySubscription): boolean {
 
 /**
  * Get formatted trial end date string (for display in UI).
- * e.g. "Your free trial ends on December 31, 2026 — first charge on January 1, 2027"
+ * e.g. "Your free trial ends on December 31, 2026 - first charge on January 1, 2027"
  */
 export function getTrialEndDateDisplay(sub: CompanySubscription): string {
   const trialEndsMs = sub.trialEndsAt || (sub.trialStartedAt + TRIAL_PERIOD_DAYS * MS_PER_DAY);

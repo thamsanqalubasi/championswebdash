@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import { Modal } from "@/components/modal";
 import { ShieldCheck, Scale, AlertTriangle, FileText, CheckCircle2, X } from "lucide-react";
 
@@ -18,7 +18,7 @@ The Platform does not inspect properties, verify physical ownership, broker sale
     content: `By registering an organization, creating a user profile, advertising any room or property, issuing a contract or invoice, or utilizing the Agent Mode / Hospitality modules, you explicitly, unconditionally warrant and covenant that:
 
 a) You and your organization operate in full and strict compliance with all local, regional, provincial, state, and national laws, regulations, statutes, and municipal bylaws of each country and jurisdiction in which you advertise, lease, sell, or manage properties.
-b) You and your business entity possess all valid, unexpired, legally required statutory licenses, regulatory registrations, and fidelity fund certificates—including, without limitation, Property Practitioners Regulatory Authority (PPRA) accreditation, Estate Agency Affairs Board certifications, Hospitality Operating Permits, Hotel & Lodge Lodging licenses, VAT/Tax registrations, and municipal health & safety certificates.
+b) You and your business entity possess all valid, unexpired, legally required statutory licenses, regulatory registrations, and fidelity fund certificates-including, without limitation, Property Practitioners Regulatory Authority (PPRA) accreditation, Estate Agency Affairs Board certifications, Hospitality Operating Permits, Hotel & Lodge Lodging licenses, VAT/Tax registrations, and municipal health & safety certificates.
 c) Operating or advertising any real estate listing, tenancy, or hospitality lodging without the requisite statutory licenses and authority is strictly prohibited and constitutes an immediate material breach of these Terms.`,
   },
   {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { Modal } from "./modal";
 import {
   SUBSCRIPTION_PACKAGES,
@@ -503,7 +503,7 @@ export function PackageCarousel({
     },
   ];
 
-  // In trial mode, hide the test/sandbox package — only show real commercial plans
+  // In trial mode, hide the test/sandbox package - only show real commercial plans
   const plans = trialMode ? allPlans.filter((p) => !p.isTestBadge) : allPlans;
 
   return (

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * UnsubscribedGatewayModal
  *
  * Fullscreen modal shown when:
@@ -125,7 +125,7 @@ export function UnsubscribedGatewayModal({
 
             {isFrozen && (
               <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-xs text-muted space-y-1.5">
-                <p className="font-bold text-red-300">Account Frozen — Action Required</p>
+                <p className="font-bold text-red-300">Account Frozen - Action Required</p>
                 <p>
                   Your account was frozen after {UNSUBSCRIBED_FREEZE_DAYS} days without an active subscription.
                   You can still reactivate by starting a new subscription below. Your data is preserved for a short window.

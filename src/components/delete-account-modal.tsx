@@ -1,5 +1,5 @@
 /**
- * DeleteAccountModal — For ALL users to delete their own personal account.
+ * DeleteAccountModal - For ALL users to delete their own personal account.
  *
  * Behavior:
  * 1. User clicks "Delete My Account" in Settings
@@ -127,7 +127,7 @@ export function DeleteAccountModal({
           {/* 30-day freeze explanation */}
           <div className="rounded-xl border border-border-color bg-surface-elevated p-4 space-y-3 text-xs">
             <p className="font-bold text-foreground text-[11px] uppercase tracking-wider">
-              What Happens — 30-Day Freeze Policy
+              What Happens - 30-Day Freeze Policy
             </p>
             {[
               {
@@ -136,7 +136,7 @@ export function DeleteAccountModal({
               },
               {
                 icon: <RotateCcw size={13} className="text-emerald-400" />,
-                text: `To reactivate: simply log in before ${deleteDate}. No form required — logging in restores your account automatically.`,
+                text: `To reactivate: simply log in before ${deleteDate}. No form required - logging in restores your account automatically.`,
               },
               {
                 icon: <Trash2 size={13} className="text-red-400" />,
@@ -210,8 +210,8 @@ export function DeleteAccountModal({
             </p>
           </div>
           <div className="rounded-xl border border-border-color bg-surface-elevated p-3 text-xs text-muted space-y-1">
-            <p>📧 A confirmation email has been sent to <strong className="text-foreground">{userEmail}</strong></p>
-            <p>🔑 Log in before <strong className="text-foreground">{deleteDate}</strong> to restore your account</p>
+            <p>A confirmation email has been sent to <strong className="text-foreground">{userEmail}</strong></p>
+            <p>Log in before <strong className="text-foreground">{deleteDate}</strong> to restore your account</p>
           </div>
           <button
             type="button"

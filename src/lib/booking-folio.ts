@@ -1,4 +1,4 @@
-import type { CommercialBooking, MealPlan } from "@/lib/types";
+﻿import type { CommercialBooking, MealPlan } from "@/lib/types";
 
 export function formatRoomDisplayName(roomNumber: string | undefined | null, roomType?: string): string {
   const rawNum = (roomNumber || "101").trim();
@@ -501,7 +501,7 @@ export function buildFolioHtml(
           <tbody>
             <tr>
               <td>
-                <div class="item-title">Room Accommodation — ${cleanRoom}</div>
+                <div class="item-title">Room Accommodation - ${cleanRoom}</div>
                 <div class="item-sub">${booking.propertyName || companyName} • Meal Board: ${mealPlanName}</div>
                 ${booking.notes ? `<div class="item-sub" style="margin-top: 4px; font-style: italic; color: #475569;">Notes: ${booking.notes}</div>` : ""}
               </td>

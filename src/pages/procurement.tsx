@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { 
   Plus, CheckCircle, Clock, AlertTriangle, FileText, 
   Upload, Search, Mail, Download, ArrowRight, Package,
@@ -40,7 +40,7 @@ const MOCK_REQUESTS: ProcurementRequest[] = [
     events: [
       { id: "ev-001", requestId: "proc-001", stage: "draft", action: "Request submitted", actorName: "Sipho Khumalo", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 50).toISOString() },
       { id: "ev-002", requestId: "proc-001", stage: "dept_manager_approval", action: "Approved by department manager", actorName: "Thamsanqa Lubasi", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 40).toISOString() },
-      { id: "ev-003", requestId: "proc-001", stage: "stores_check", action: "Stores checked — item not found", actorName: "Procurement Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 35).toISOString() },
+      { id: "ev-003", requestId: "proc-001", stage: "stores_check", action: "Stores checked - item not found", actorName: "Procurement Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 35).toISOString() },
       { id: "ev-004", requestId: "proc-001", stage: "quotation_gathering", action: "Quotation gathering started", actorName: "Procurement Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 30).toISOString() },
     ],
     quotations: [
@@ -67,7 +67,7 @@ const MOCK_REQUESTS: ProcurementRequest[] = [
     events: [
       { id: "ev-010", requestId: "proc-002", stage: "draft", action: "Request submitted", actorName: "Nomsa Dlamini", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 10).toISOString() },
       { id: "ev-011", requestId: "proc-002", stage: "dept_manager_approval", action: "Approved", actorName: "Thamsanqa Lubasi", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString() },
-      { id: "ev-012", requestId: "proc-002", stage: "stores_check", action: "Stores checked — 25 reams found in stores", actorName: "Stores Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString() },
+      { id: "ev-012", requestId: "proc-002", stage: "stores_check", action: "Stores checked - 25 reams found in stores", actorName: "Stores Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString() },
       { id: "ev-013", requestId: "proc-002", stage: "stores_dispatch", action: "Item confirmed available in stores. Awaiting dispatch.", actorName: "Stores Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString() },
     ],
     quotations: [],
@@ -559,7 +559,7 @@ export default function ProcurementPage() {
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h4 className="font-medium text-sm">{req.itemName}</h4>
-                    <p className="text-xs text-gray-500 mt-1">{req.quantity} {req.unit} — {req.requestingDepartment}</p>
+                    <p className="text-xs text-gray-500 mt-1">{req.quantity} {req.unit} - {req.requestingDepartment}</p>
                   </div>
                   <button 
                     onClick={() => setSelectedQuoteRequest(req)}
@@ -803,7 +803,7 @@ export default function ProcurementPage() {
                     <span>•</span>
                     <span className="capitalize">{req.requestingDepartment.replace('_', ' ')}</span>
                     <span>•</span>
-                    <span>Stage {currentIdx + 1} of {STAGES.length} — {progressPct}% Complete</span>
+                    <span>Stage {currentIdx + 1} of {STAGES.length} - {progressPct}% Complete</span>
                   </div>
                   {/* Progress bar */}
                   <div className="mt-3 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">

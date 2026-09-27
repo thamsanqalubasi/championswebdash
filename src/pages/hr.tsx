@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+﻿import { useState, useEffect, useMemo } from "react";
 import {
   Users,
   Briefcase,
@@ -2278,7 +2278,7 @@ export default function HRPage() {
               <h2 className="text-xl font-black text-foreground mt-1">
                 {historyPeriodFilter === "all"
                   ? "Historical Salary Payments & Disbursements"
-                  : `Salary Disbursements — ${historyPeriodFilter}`}
+                  : `Salary Disbursements - ${historyPeriodFilter}`}
               </h2>
               <p className="text-xs text-muted mt-0.5">
                 Every past transaction below includes official branded payslips with authorized signatures available for immediate print or PDF export.

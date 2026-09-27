@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+﻿import { useState, useMemo } from "react";
 import {
   X,
   Calendar,
@@ -188,7 +188,7 @@ export function BookingsReportModal({
   // Printable HTML builder for export / email
   const reportHtml = useMemo(() => {
     return `
-      <h3>${companyName} — Front Desk & Bookings Executive Report</h3>
+      <h3>${companyName} - Front Desk & Bookings Executive Report</h3>
       <p><strong>Reporting Period:</strong> ${PERIODS.find((p) => p.id === period)?.label || "Custom Range"} | Generated: ${new Date().toLocaleString()}</p>
       <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;" />
       <table style="width: 100%; text-align: left; border-collapse: collapse; font-size: 13px;">
@@ -231,7 +231,7 @@ export function BookingsReportModal({
           </style>
         </head>
         <body>
-          <h1>${companyName} — Bookings & Lodging Executive Report</h1>
+          <h1>${companyName} - Bookings & Lodging Executive Report</h1>
           <p>Timeframe: ${PERIODS.find((p) => p.id === period)?.label || "Custom"} | Generated on ${new Date().toLocaleString()}</p>
           <div class="kpi-grid">
             <div class="kpi"><div class="kpi-title">Total Bookings</div><div class="kpi-val">${stats.total}</div></div>

@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AuditEventRow,
   CashflowPoint,
   CommercialBooking,
@@ -5470,7 +5470,7 @@ export const MOCK_PROCUREMENT_REQUESTS: ProcurementRequest[] = [
     events: [
       { id: "ev-001", requestId: "proc-001", stage: "draft", action: "Request submitted by requester", actorName: "Sipho Khumalo", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 50).toISOString() },
       { id: "ev-002", requestId: "proc-001", stage: "dept_manager_approval", action: "Approved by department manager", actorName: "Thamsanqa Lubasi", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 40).toISOString() },
-      { id: "ev-003", requestId: "proc-001", stage: "stores_check", action: "Stores checked — item not found in inventory", actorName: "Stores Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 35).toISOString() },
+      { id: "ev-003", requestId: "proc-001", stage: "stores_check", action: "Stores checked - item not found in inventory", actorName: "Stores Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 35).toISOString() },
       { id: "ev-004", requestId: "proc-001", stage: "quotation_gathering", action: "Quotation gathering initiated", actorName: "Procurement Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 30).toISOString() },
     ],
     quotations: [
@@ -5497,7 +5497,7 @@ export const MOCK_PROCUREMENT_REQUESTS: ProcurementRequest[] = [
     events: [
       { id: "ev-010", requestId: "proc-002", stage: "draft", action: "Request submitted", actorName: "Nomsa Dlamini", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 10).toISOString() },
       { id: "ev-011", requestId: "proc-002", stage: "dept_manager_approval", action: "Approved by manager", actorName: "Thamsanqa Lubasi", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString() },
-      { id: "ev-012", requestId: "proc-002", stage: "stores_check", action: "Stores checked — 25 reams found in inventory", actorName: "Stores Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString() },
+      { id: "ev-012", requestId: "proc-002", stage: "stores_check", action: "Stores checked - 25 reams found in inventory", actorName: "Stores Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString() },
       { id: "ev-013", requestId: "proc-002", stage: "stores_dispatch", action: "Item confirmed available in stores. Awaiting dispatch.", actorName: "Stores Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString() },
     ],
     quotations: [],
@@ -5525,7 +5525,7 @@ export const MOCK_PROCUREMENT_REQUESTS: ProcurementRequest[] = [
     events: [
       { id: "ev-020", requestId: "proc-003", stage: "draft", action: "Request submitted", actorName: "Lerato Mokoena", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 80).toISOString() },
       { id: "ev-021", requestId: "proc-003", stage: "dept_manager_approval", action: "Approved", actorName: "Thamsanqa Lubasi", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 75).toISOString() },
-      { id: "ev-022", requestId: "proc-003", stage: "stores_check", action: "Stores checked — not in inventory", actorName: "Stores Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 70).toISOString() },
+      { id: "ev-022", requestId: "proc-003", stage: "stores_check", action: "Stores checked - not in inventory", actorName: "Stores Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 70).toISOString() },
       { id: "ev-023", requestId: "proc-003", stage: "quotation_gathering", action: "Quotation gathering started", actorName: "Procurement Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 65).toISOString() },
       { id: "ev-024", requestId: "proc-003", stage: "procurement_manager_approval", action: "Approved by procurement manager. Best quote: TechZone R18,500", actorName: "Procurement Manager", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 55).toISOString() },
       { id: "ev-025", requestId: "proc-003", stage: "fund_request_to_accounts", action: "Fund request submitted to accounts. Payment method: Bank Deposit.", actorName: "Procurement Staff", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 50).toISOString() },
@@ -5943,12 +5943,12 @@ export async function performStoresCheck(requestId: string, actorName: string, f
   if (foundInStores) {
     return advancePipelineStage(
       requestId, "stores_dispatch", actorName,
-      `Stores check complete — ${quantityAvailable || 0} unit(s) available in inventory. Routing to stores dispatch.`,
+      `Stores check complete - ${quantityAvailable || 0} unit(s) available in inventory. Routing to stores dispatch.`,
       notes,
       { pipelineType: "stores" }
     );
   }
-  return advancePipelineStage(requestId, "quotation_gathering", actorName, "Stores check complete — item not in inventory. Proceeding to quotation gathering.", notes);
+  return advancePipelineStage(requestId, "quotation_gathering", actorName, "Stores check complete - item not in inventory. Proceeding to quotation gathering.", notes);
 }
 
 export async function startQuotationGathering(requestId: string, actorName: string): Promise<ProcurementRequest | null> {
@@ -6065,7 +6065,7 @@ export async function triggerStageReminder(requestId: string, actorName: string)
       id: `ev-remind-${Date.now()}`,
       requestId,
       stage: req.pipelineStage,
-      action: `Reminder triggered by ${actorName} — request has been at "${req.pipelineStage}" stage for extended time.`,
+      action: `Reminder triggered by ${actorName} - request has been at "${req.pipelineStage}" stage for extended time.`,
       actorName,
       createdAt: now,
     };
@@ -6492,7 +6492,7 @@ export const ALL_ROLE_CAPABILITIES: RoleCapability[] = [
   { slug: "view_audit_trail", label: "View Audit Trail", description: "View the full system audit log", section: "Administration & Audit", defaultEnabled: ["admin", "audit", "manager"] },
   { slug: "manage_companies", label: "Manage Companies / Organisations", description: "Add and manage multiple company organisations", section: "Administration & Audit", defaultEnabled: ["admin"] },
   { slug: "manage_roles_organogram", label: "Manage Roles, Restrictions & Organogram", description: "Create new roles/job titles, modify duties, and adjust restrictions in the organogram", section: "Administration & Audit", defaultEnabled: ["admin"] },
-  // Finance Accounts — sub-features
+  // Finance Accounts - sub-features
   { slug: "view_finance_journal", label: "View Finance Daily Journal", description: "Access the daily journal & transactions tab in Finance Accounts", section: "Finance & Accounts", defaultEnabled: ["admin", "manager", "accountant", "audit"] },
   { slug: "record_finance_transaction", label: "Record Finance Transaction", description: "Manually record income, expense, transfer or payment entries with invoice attachments", section: "Finance & Accounts", defaultEnabled: ["admin", "accountant"] },
   { slug: "request_payment_approval", label: "Request Payment Approval", description: "Submit a manually entered transaction for manager or CFO approval", section: "Finance & Accounts", defaultEnabled: ["admin", "manager", "accountant"] },

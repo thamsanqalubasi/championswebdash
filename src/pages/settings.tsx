@@ -174,12 +174,12 @@ export default function SettingsPage() {
         const sessionId = searchParams.get("session_id") || `cs_${Date.now()}`;
         const updated = markSubscriptionPaid(currentCompany.id, sessionId, "stripe_checkout");
         setSub(updated);
-        setPkgNotice("🎉 Stripe payment successful! Your subscription has been verified and activated.");
+        setPkgNotice("Stripe payment successful! Your subscription has been verified and activated.");
         setTimeout(() => setPkgNotice(null), 6000);
         // Clean URL parameter without reloading
         window.history.replaceState({}, document.title, window.location.pathname);
       } else if (searchParams.get("payment") === "cancelled") {
-        setPkgNotice("ℹ️ Stripe checkout was cancelled. You can retry at any time.");
+        setPkgNotice("Stripe checkout was cancelled. You can retry at any time.");
         setTimeout(() => setPkgNotice(null), 5000);
         window.history.replaceState({}, document.title, window.location.pathname);
       }
@@ -844,11 +844,11 @@ export default function SettingsPage() {
                     <p className="text-muted leading-relaxed">{currentPlan.commercialRationale.whyThisPrice}</p>
                   </div>
 
-                  {/* Free Trial CTA — shown when not on an active paid subscription */}
+                  {/* Free Trial CTA - shown when not on an active paid subscription */}
                   {(sub.status === "trial" || sub.status === "expired" || !sub.stripeSubscriptionId) && (
                     <div className="rounded-xl border border-blue-500/30 bg-gradient-to-r from-blue-500/10 to-violet-500/10 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-bold text-foreground">🎁 Start Your Free {TRIAL_PERIOD_DAYS}-Day Trial</p>
+                        <p className="text-sm font-bold text-foreground">Start Your Free {TRIAL_PERIOD_DAYS}-Day Trial</p>
                         <p className="text-xs text-muted mt-0.5">
                           Choose your plan. Save your card. No charge for {TRIAL_PERIOD_DAYS} days. Cancel anytime before trial ends.
                         </p>
@@ -864,7 +864,7 @@ export default function SettingsPage() {
                     </div>
                   )}
 
-                  {/* Cancel Subscription — shown only when actively subscribed */}
+                  {/* Cancel Subscription - shown only when actively subscribed */}
                   {(sub.status === "active" || sub.status === "cancelling") && sub.stripeSubscriptionId && (
                     <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3 flex flex-col sm:flex-row items-center justify-between gap-3">
                       <div>
@@ -890,7 +890,7 @@ export default function SettingsPage() {
             })()}
           </section>
 
-          {/* Danger Zone — Account & Company Deletion */}
+          {/* Danger Zone - Account & Company Deletion */}
           <section className="rounded-2xl border border-red-500/20 bg-surface p-6 shadow-sm">
             <div className="mb-4 flex items-center gap-3 pb-4 border-b border-red-500/20">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-600/10 text-red-500">
@@ -925,7 +925,7 @@ export default function SettingsPage() {
               {currentCompanyUser?.roleLevel === "super_admin" && (
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/5 p-4">
                   <div>
-                    <p className="text-xs font-bold text-red-400">Delete Company — Super Admin Only</p>
+                    <p className="text-xs font-bold text-red-400">Delete Company - Super Admin Only</p>
                     <p className="text-[11px] text-muted mt-0.5">
                       Permanently deletes this company and notifies all staff. 30-day freeze before permanent data removal.
                       All staff accounts go on hold for 30 days.
@@ -1658,7 +1658,7 @@ export default function SettingsPage() {
         onSuccess={(pkgId) => {
           setSub(getCompanySubscription(currentCompany.id));
           setTrialOnboardingOpen(false);
-          setPkgNotice(`🎉 ${TRIAL_PERIOD_DAYS}-day free trial started for ${SUBSCRIPTION_PACKAGES[pkgId]?.name}! First charge on ${getTrialEndDateDisplay(getCompanySubscription(currentCompany.id))}.`);
+          setPkgNotice(`${TRIAL_PERIOD_DAYS}-day free trial started for ${SUBSCRIPTION_PACKAGES[pkgId]?.name}! First charge on ${getTrialEndDateDisplay(getCompanySubscription(currentCompany.id))}.`);
           setTimeout(() => setPkgNotice(null), 6000);
         }}
       />

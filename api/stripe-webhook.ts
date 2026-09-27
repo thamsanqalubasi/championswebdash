@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+﻿import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 
@@ -72,7 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const companyId = subscription.metadata?.companyId;
       const packageId = subscription.metadata?.packageId || "starter";
 
-      console.log(`🎉 Subscription created for company ${companyId} — package: ${packageId} — trial_end: ${subscription.trial_end}`);
+      console.log(`🎉 Subscription created for company ${companyId} - package: ${packageId} - trial_end: ${subscription.trial_end}`);
 
       if (supabase && companyId) {
         const trialEnd = subscription.trial_end
@@ -129,7 +129,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const packageId = subscription.metadata?.packageId || "starter";
       const amountUsd = invoice.amount_paid / 100;
 
-      console.log(`✅ Monthly payment succeeded for company ${companyId} — $${amountUsd} — pkg: ${packageId}`);
+      console.log(`✅ Monthly payment succeeded for company ${companyId} - $${amountUsd} - pkg: ${packageId}`);
 
       if (supabase && companyId) {
         // Update subscription to active + extend period
@@ -180,7 +180,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const subscription = await stripe.subscriptions.retrieve(subscription_id);
       const companyId = subscription.metadata?.companyId;
 
-      console.log(`❌ Payment failed for company ${companyId} — invoice: ${invoice.id}`);
+      console.log(`❌ Payment failed for company ${companyId} - invoice: ${invoice.id}`);
 
       if (supabase && companyId) {
         await supabase.from("company_subscriptions").upsert(
@@ -238,7 +238,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const companyId = subscription.metadata?.companyId;
       const packageId = subscription.metadata?.packageId || "starter";
 
-      console.log(`🔄 Subscription updated for company ${companyId} — status: ${subscription.status}`);
+      console.log(`🔄 Subscription updated for company ${companyId} - status: ${subscription.status}`);
 
       if (supabase && companyId) {
         await supabase.from("company_subscriptions").upsert(
@@ -259,7 +259,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // ============================================================
-    // SetupIntent Succeeded — Card saved for future billing
+    // SetupIntent Succeeded - Card saved for future billing
     // Fired after user completes the trial card capture form.
     // We know the card is saved; we can now create the subscription.
     // ============================================================
@@ -297,7 +297,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const packageId = paymentIntent.metadata?.packageId || "test";
       const amountUsd = (paymentIntent.amount / 100).toFixed(2);
 
-      console.log(`✅ One-off payment succeeded for company ${companyId} — $${amountUsd}`);
+      console.log(`✅ One-off payment succeeded for company ${companyId} - $${amountUsd}`);
 
       if (supabase && companyId) {
         await supabase.from("company_subscriptions").upsert(
@@ -339,7 +339,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const packageId = session.metadata?.packageId || "standard";
       const amountUsd = session.amount_total ? (session.amount_total / 100).toFixed(2) : "0.00";
 
-      console.log(`✅ Checkout session completed for company ${companyId} — mode: ${session.mode}`);
+      console.log(`✅ Checkout session completed for company ${companyId} - mode: ${session.mode}`);
 
       if (supabase && companyId) {
         await supabase.from("company_subscriptions").upsert(

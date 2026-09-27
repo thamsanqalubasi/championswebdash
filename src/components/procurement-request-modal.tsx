@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+﻿import React, { useState, useEffect, useMemo } from "react";
 import {
   Truck,
   Plus,
@@ -1049,7 +1049,7 @@ export function ProcurementRequestModal({ open, onClose, initialTab = "request" 
                       >
                         {companyStaff.map((staff) => (
                           <option key={staff.id || staff.email} value={staff.email}>
-                            {staff.name} — {staff.role} ({staff.department}) &lt;{staff.email}&gt;
+                            {staff.name} - {staff.role} ({staff.department}) &lt;{staff.email}&gt;
                           </option>
                         ))}
                       </select>

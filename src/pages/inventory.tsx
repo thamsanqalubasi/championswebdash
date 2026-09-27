@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
@@ -422,7 +422,7 @@ export default function InventoryPage() {
                         </td>
                         <td className="px-6 py-4 text-right font-medium text-foreground">{formatCurrency(row.unitCost)}</td>
                         <td className="px-6 py-4 text-right font-bold text-foreground">{formatCurrency(row.quantity * row.unitCost)}</td>
-                        <td className="px-6 py-4 text-muted truncate max-w-[150px]">{row.supplier || "—"}</td>
+                        <td className="px-6 py-4 text-muted truncate max-w-[150px]">{row.supplier || "-"}</td>
                         <td className="px-6 py-4 text-right">
                           <TableRowActions>
                             <TableActionButton

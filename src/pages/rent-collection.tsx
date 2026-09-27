@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, Fragment } from "react";
+﻿import { useEffect, useMemo, useState, Fragment } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal } from "@/components/modal";
@@ -2167,7 +2167,7 @@ export default function RentCollectionPage() {
               >
                 {duplicatePrompt.matchingPayments.map(p => (
                   <option key={p.id} value={p.id}>
-                    {p.paymentDate} — NAD {p.amountPaid.toLocaleString()} ({p.paymentMethod || "EFT"})
+                    {p.paymentDate} - NAD {p.amountPaid.toLocaleString()} ({p.paymentMethod || "EFT"})
                   </option>
                 ))}
               </select>
