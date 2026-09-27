@@ -447,9 +447,11 @@ export function PackageSwitcherModal({
 export function PackageCarousel({
   currentPackageId,
   onSelectPackage,
+  trialMode = false,
 }: {
   currentPackageId: PackageId;
   onSelectPackage: (pkgId: PackageId) => void;
+  trialMode?: boolean; // When true: shows "Start Trial" instead of "Select Plan", hides test package
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -463,7 +465,7 @@ export function PackageCarousel({
     }
   };
 
-  const plans: {
+  const allPlans: {
     plan: (typeof SUBSCRIPTION_PACKAGES)[PackageId];
     priceDisplay: string;
     recommended?: boolean;
@@ -479,6 +481,9 @@ export function PackageCarousel({
       isTestBadge: true,
     },
   ];
+
+  // In trial mode, hide the test/sandbox package — only show real commercial plans
+  const plans = trialMode ? allPlans.filter((p) => !p.isTestBadge) : allPlans;
 
   return (
     <div className="relative group">

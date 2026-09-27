@@ -50,11 +50,19 @@ import {
   getRemainingTrialSeconds,
   isTrialExpired,
   formatTrialCountdown,
+  TRIAL_PERIOD_DAYS,
+  getTrialEndDateDisplay,
+  isAccountUnsubscribed,
   type CompanySubscription,
   type PackageId,
 } from "@/lib/packages";
 import { PackageSwitcherModal, PackageCarousel, PlanCard } from "@/components/package-switcher-modal";
 import { StripePaymentModal } from "@/components/stripe-payment-modal";
+import { TrialOnboardingModal } from "@/components/trial-onboarding-modal";
+import { CancelSubscriptionModal } from "@/components/cancel-subscription-modal";
+import { DeleteAccountModal } from "@/components/delete-account-modal";
+import { DeleteCompanyModal } from "@/components/delete-company-modal";
+import { UnsubscribedGatewayModal } from "@/components/unsubscribed-gateway-modal";
 
 export default function SettingsPage() {
   const { user, currentCompany, currentCompanyUser, setCurrentCompany, setCurrentCompanyUser, changePassword, isAdmin } = useAuth();
@@ -138,6 +146,12 @@ export default function SettingsPage() {
   const [remSeconds, setRemSeconds] = useState<number>(() => getRemainingTrialSeconds(sub));
   const [packageModalOpen, setPackageModalOpen] = useState(false);
   const [stripeModalOpen, setStripeModalOpen] = useState(false);
+
+  // New lifecycle modals
+  const [trialOnboardingOpen, setTrialOnboardingOpen] = useState(false);
+  const [cancelSubOpen, setCancelSubOpen] = useState(false);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deleteCompanyOpen, setDeleteCompanyOpen] = useState(false);
 
   useEffect(() => {
     const handleSubUpdate = () => {
@@ -823,9 +837,104 @@ export default function SettingsPage() {
                     <p className="font-semibold text-foreground mb-1">Active Tier Commercial Rationale:</p>
                     <p className="text-muted leading-relaxed">{currentPlan.commercialRationale.whyThisPrice}</p>
                   </div>
+
+                  {/* Free Trial CTA — shown when not on an active paid subscription */}
+                  {(sub.status === "trial" || sub.status === "expired" || !sub.stripeSubscriptionId) && (
+                    <div className="rounded-xl border border-blue-500/30 bg-gradient-to-r from-blue-500/10 to-violet-500/10 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-foreground">🎁 Start Your Free {TRIAL_PERIOD_DAYS}-Day Trial</p>
+                        <p className="text-xs text-muted mt-0.5">
+                          Choose your plan. Save your card. No charge for {TRIAL_PERIOD_DAYS} days. Cancel anytime before trial ends.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setTrialOnboardingOpen(true)}
+                        className="shrink-0 flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:opacity-90 transition"
+                      >
+                        <Sparkles size={14} />
+                        Start Free Trial
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Cancel Subscription — shown only when actively subscribed */}
+                  {(sub.status === "active" || sub.status === "cancelling") && sub.stripeSubscriptionId && (
+                    <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-3 flex flex-col sm:flex-row items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-bold text-foreground">Subscription Management</p>
+                        <p className="text-[11px] text-muted mt-0.5">
+                          {sub.status === "cancelling"
+                            ? "Your subscription is scheduled to cancel at end of billing period."
+                            : `Active subscription. You are billed $${currentPlan.priceUsd}/month. Cancel anytime.`}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setCancelSubOpen(true)}
+                        disabled={sub.status === "cancelling"}
+                        className="shrink-0 flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2 text-xs font-bold text-red-400 hover:bg-red-500/20 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {sub.status === "cancelling" ? "Cancellation Pending" : "Cancel Subscription"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })()}
+          </section>
+
+          {/* Danger Zone — Account & Company Deletion */}
+          <section className="rounded-2xl border border-red-500/20 bg-surface p-6 shadow-sm">
+            <div className="mb-4 flex items-center gap-3 pb-4 border-b border-red-500/20">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-600/10 text-red-500">
+                <AlertCircle size={20} />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-foreground">Danger Zone</h2>
+                <p className="text-xs text-muted">Irreversible account and company management actions. Proceed with caution.</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {/* Delete My Account (all users) */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-border-color bg-surface-elevated/40 p-4">
+                <div>
+                  <p className="text-xs font-bold text-foreground">Delete My Account</p>
+                  <p className="text-[11px] text-muted mt-0.5">
+                    Permanently removes your personal account after a 30-day freeze window.
+                    Log in within 30 days to cancel the deletion.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDeleteAccountOpen(true)}
+                  className="shrink-0 flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2 text-xs font-bold text-red-400 hover:bg-red-500/20 transition"
+                >
+                  Delete Account
+                </button>
+              </div>
+
+              {/* Delete Company (Super Admin only) */}
+              {currentCompanyUser?.roleLevel === "super_admin" && (
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+                  <div>
+                    <p className="text-xs font-bold text-red-400">Delete Company — Super Admin Only</p>
+                    <p className="text-[11px] text-muted mt-0.5">
+                      Permanently deletes this company and notifies all staff. 30-day freeze before permanent data removal.
+                      All staff accounts go on hold for 30 days.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteCompanyOpen(true)}
+                    className="shrink-0 flex items-center gap-2 rounded-xl border border-red-600/50 bg-red-600/20 px-3.5 py-2 text-xs font-bold text-red-400 hover:bg-red-600/30 transition"
+                  >
+                    Delete Company
+                  </button>
+                </div>
+              )}
+            </div>
           </section>
 
           {loading && <LoadingState label="Synchronizing cloud settings..." />}
@@ -1533,6 +1642,70 @@ export default function SettingsPage() {
           setStripeModalOpen(false);
         }}
       />
+
+      {/* Trial Onboarding Modal (3-step: welcome → choose plan → card details) */}
+      <TrialOnboardingModal
+        open={trialOnboardingOpen}
+        onClose={() => setTrialOnboardingOpen(false)}
+        companyId={currentCompany.id}
+        customerEmail={user?.email}
+        onSuccess={(pkgId) => {
+          setSub(getCompanySubscription(currentCompany.id));
+          setTrialOnboardingOpen(false);
+          setPkgNotice(`🎉 ${TRIAL_PERIOD_DAYS}-day free trial started for ${SUBSCRIPTION_PACKAGES[pkgId]?.name}! First charge on ${getTrialEndDateDisplay(getCompanySubscription(currentCompany.id))}.`);
+          setTimeout(() => setPkgNotice(null), 6000);
+        }}
+      />
+
+      {/* Cancel Subscription Modal */}
+      <CancelSubscriptionModal
+        open={cancelSubOpen}
+        onClose={() => setCancelSubOpen(false)}
+        companyId={currentCompany.id}
+        packageName={SUBSCRIPTION_PACKAGES[sub.packageId]?.name}
+        onCancelled={() => {
+          setSub(getCompanySubscription(currentCompany.id));
+          setCancelSubOpen(false);
+        }}
+      />
+
+      {/* Delete Account Modal (all users) */}
+      <DeleteAccountModal
+        open={deleteAccountOpen}
+        onClose={() => setDeleteAccountOpen(false)}
+        userId={user?.id || ""}
+        userEmail={user?.email || ""}
+        userName={currentCompanyUser?.fullName || user?.email || "Unknown"}
+        isSuperAdmin={currentCompanyUser?.roleLevel === "super_admin"}
+        onDeleted={() => {
+          setDeleteAccountOpen(false);
+          // Sign user out after deletion
+          supabase.auth.signOut();
+        }}
+      />
+
+      {/* Delete Company Modal (Super Admin only) */}
+      {currentCompanyUser?.roleLevel === "super_admin" && (
+        <DeleteCompanyModal
+          open={deleteCompanyOpen}
+          onClose={() => setDeleteCompanyOpen(false)}
+          companyId={currentCompany.id}
+          companyName={currentCompany.name || ""}
+          onDeleted={() => {
+            setDeleteCompanyOpen(false);
+            supabase.auth.signOut();
+          }}
+        />
+      )}
+
+      {/* Unsubscribed Gateway Modal (shown when subscription is cancelled/frozen) */}
+      {isAccountUnsubscribed(sub) && (
+        <UnsubscribedGatewayModal
+          companyId={currentCompany.id}
+          customerEmail={user?.email}
+          onReactivated={() => setSub(getCompanySubscription(currentCompany.id))}
+        />
+      )}
     </ModulePage>
   );
 }

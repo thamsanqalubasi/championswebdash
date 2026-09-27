@@ -352,29 +352,69 @@ export const SUBSCRIPTION_PACKAGES: Record<PackageId, PackagePlan> = {
   },
 };
 
-export type SubscriptionStatus = "trial" | "active" | "expired" | "grace_period" | "downgraded";
+// ============================================================
+// TRIAL PERIOD CONFIGURATION
+// ============================================================
+// CHANGE THIS VALUE to adjust the free trial length for ALL new subscriptions.
+// This mirrors the TRIAL_PERIOD_DAYS constant in web/api/create-stripe-payment.ts.
+//
+// Future agents and admins: you can also expose this via a backend admin UI
+// so non-technical staff can adjust trial periods without a code deploy.
+//
+// Examples:
+//   7   = 1 week trial
+//   30  = 1 month trial  (recommended for soft launch)
+//   90  = 3 months trial (current marketing offer: "3 months free!")
+//   120 = 4 months trial
+//
+// When changed, also update the matching TRIAL_PERIOD_DAYS in:
+//   → web/api/create-stripe-payment.ts  (line ~17)
+// ============================================================
+export const TRIAL_PERIOD_DAYS = 90; // 3-month free trial — first charge on day 91
+
+export type SubscriptionStatus =
+  | "trial"        // In free trial period (card saved, no charge yet)
+  | "active"       // Paying, subscription current
+  | "expired"      // Trial expired without subscribing
+  | "grace_period" // Payment failed — 5-day grace period before downgrade
+  | "downgraded"   // Safely downgraded to Starter (payment failure after grace)
+  | "cancelling"   // Cancel requested, access active until period ends
+  | "cancelled"    // Subscription ended, features locked
+  | "frozen";      // Account frozen (60+ days no subscription — can't login)
 
 export interface CompanySubscription {
   packageId: PackageId;
-  previousPackageId?: PackageId; // Preserves the prior package tier before safe downgrade
+  previousPackageId?: PackageId;  // Prior package tier before safe downgrade
   status: SubscriptionStatus;
   isTrial: boolean;
-  trialStartedAt: number; // Unix timestamp ms
-  trialDurationSeconds: number; // 60 seconds (1 minute) in test mode
+  trialStartedAt: number;         // Unix timestamp ms
+  trialDurationSeconds: number;   // Test mode: 60s (1 min); Production: TRIAL_PERIOD_DAYS * 86400
+  trialEndsAt?: number;           // Production trial end timestamp (ms) — first charge after this
   paidAt?: number;
   lastPaymentRef?: string;
   paymentMethod?: string;
-  packageModeEnabled: boolean; // Master toggle to turn off package mode completely
-  gracePeriodStartedAt?: number; // Timestamp when 5-day grace period began
-  gracePeriodDays?: number; // Defaults to 5 days
-  downgradedAt?: number; // Timestamp when downgraded to Starter
+  stripeSubscriptionId?: string;  // Stripe sub ID for cancel/update operations
+  stripeCustomerId?: string;      // Stripe customer ID for future charges
+  packageModeEnabled: boolean;    // Master toggle to turn off package mode completely
+  gracePeriodStartedAt?: number;  // Timestamp when 5-day grace period began
+  gracePeriodDays?: number;       // Defaults to 5 days
+  downgradedAt?: number;          // Timestamp when downgraded to Starter
   paymentFailureReason?: string;
+  cancelledAt?: number;           // Timestamp when user cancelled
+  frozenAt?: number;              // Timestamp when account was frozen (60+ days no sub)
 }
 
 const STORAGE_KEY_PREFIX = "paimba_company_sub_";
 const DEFAULT_TRIAL_SECONDS = 60; // 1 minute as requested
 export const DEFAULT_GRACE_PERIOD_DAYS = 5;
 export const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// 60 days no subscription → account frozen (can't login)
+export const UNSUBSCRIBED_FREEZE_DAYS = 60;
+// 30 days after company deletion → permanent data deletion
+export const COMPANY_DELETE_FREEZE_DAYS = 30;
+// 90 days after freeze (non-payment) → permanent auto-deletion
+export const AUTO_DELETE_AFTER_DAYS = 90;
 
 export interface FeatureRouteConfig {
   pathPrefix: string;
@@ -971,3 +1011,127 @@ export function isPackageFeatureEnabled(
   return !!plan.features[featureKey];
 }
 
+// ============================================================
+// SUBSCRIPTION CANCELLATION & ACCOUNT FREEZE HELPERS
+// ============================================================
+
+/**
+ * Mark a subscription as cancelling (user clicked cancel).
+ * Stripe will still charge until end of billing period, then webhook fires.
+ * The cancel API endpoint (web/api/cancel-subscription.ts) handles the Stripe call.
+ */
+export function markSubscriptionCancelling(
+  companyId: string,
+  stripeSubscriptionId?: string
+): CompanySubscription {
+  const current = getCompanySubscription(companyId);
+  const updated: CompanySubscription = {
+    ...current,
+    status: "cancelling",
+    cancelledAt: Date.now(),
+    stripeSubscriptionId: stripeSubscriptionId || current.stripeSubscriptionId,
+  };
+  saveCompanySubscription(companyId, updated);
+  return updated;
+}
+
+/**
+ * Mark a subscription as fully cancelled (fired by webhook after period ends).
+ * Features are now locked. User sees the unsubscribed gateway modal.
+ * After 60 days, account will be frozen.
+ */
+export function markSubscriptionCancelled(companyId: string): CompanySubscription {
+  const current = getCompanySubscription(companyId);
+  const updated: CompanySubscription = {
+    ...current,
+    status: "cancelled",
+    cancelledAt: current.cancelledAt || Date.now(),
+  };
+  saveCompanySubscription(companyId, updated);
+  return updated;
+}
+
+/**
+ * Check if a cancelled account has exceeded UNSUBSCRIBED_FREEZE_DAYS
+ * and should be frozen (can't login, only reactivation prompt visible).
+ * After UNSUBSCRIBED_FREEZE_DAYS days without resubscribing, account becomes "frozen".
+ * After AUTO_DELETE_AFTER_DAYS total, flagged for permanent deletion.
+ */
+export function checkAndApplyAccountFreeze(companyId: string): CompanySubscription {
+  const current = getCompanySubscription(companyId);
+  if (current.status !== "cancelled" || !current.cancelledAt) return current;
+
+  const daysSinceCancelled = (Date.now() - current.cancelledAt) / MS_PER_DAY;
+
+  if (daysSinceCancelled >= UNSUBSCRIBED_FREEZE_DAYS) {
+    const updated: CompanySubscription = {
+      ...current,
+      status: "frozen",
+      frozenAt: Date.now(),
+    };
+    saveCompanySubscription(companyId, updated);
+    // TODO (future admin dashboard agent):
+    //   - Flag this company in the admin dashboard as "Pending Deletion"
+    //   - Send email to company admin: "Your account has been frozen. Re-subscribe within X days."
+    //   - After AUTO_DELETE_AFTER_DAYS, auto-delete company data permanently
+    return updated;
+  }
+
+  return current;
+}
+
+/**
+ * Get days remaining before account freeze (after cancellation).
+ * Shows in the unsubscribed gateway modal as a countdown warning.
+ */
+export function getDaysUntilFreeze(sub: CompanySubscription): number {
+  if (sub.status !== "cancelled" || !sub.cancelledAt) return UNSUBSCRIBED_FREEZE_DAYS;
+  const daysSinceCancelled = (Date.now() - sub.cancelledAt) / MS_PER_DAY;
+  return Math.max(0, UNSUBSCRIBED_FREEZE_DAYS - daysSinceCancelled);
+}
+
+/**
+ * Reactivate a cancelled or frozen account (user re-subscribed).
+ * This is called when payment succeeds after cancellation.
+ * Does NOT restore the old Stripe subscription — requires new subscription setup.
+ */
+export function reactivateSubscription(
+  companyId: string,
+  packageId: PackageId,
+  paymentRef: string
+): CompanySubscription {
+  const current = getCompanySubscription(companyId);
+  const updated: CompanySubscription = {
+    ...current,
+    packageId,
+    status: "active",
+    isTrial: false,
+    paidAt: Date.now(),
+    lastPaymentRef: paymentRef,
+    cancelledAt: undefined,
+    frozenAt: undefined,
+    gracePeriodStartedAt: undefined,
+    paymentFailureReason: undefined,
+  };
+  saveCompanySubscription(companyId, updated);
+  return updated;
+}
+
+/**
+ * Check if a subscription is in "unsubscribed" state (cancelled or frozen).
+ * Used to show the unsubscribed gateway modal that blocks all features.
+ */
+export function isAccountUnsubscribed(sub: CompanySubscription): boolean {
+  if (!sub.packageModeEnabled) return false;
+  return sub.status === "cancelled" || sub.status === "frozen";
+}
+
+/**
+ * Get formatted trial end date string (for display in UI).
+ * e.g. "Your free trial ends on December 31, 2026 — first charge on January 1, 2027"
+ */
+export function getTrialEndDateDisplay(sub: CompanySubscription): string {
+  const trialEndsMs = sub.trialEndsAt || (sub.trialStartedAt + TRIAL_PERIOD_DAYS * MS_PER_DAY);
+  const trialEndDate = new Date(trialEndsMs);
+  return trialEndDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+}
