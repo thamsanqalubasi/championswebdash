@@ -652,11 +652,11 @@ export default function ContractsPage() {
   }, [contracts, activeFilter, searchQuery]);
 
   const [currentPage, setCurrentPage] = useState(1);
-  const PAGE_SIZE = 10;
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+  const [pageSize, setPageSize] = useState(10);
+  const totalPages = Math.ceil(filtered.length / pageSize) || 1;
   const paginatedContracts = useMemo(() => {
-    return filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  }, [filtered, currentPage]);
+    return filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  }, [filtered, currentPage, pageSize]);
 
   /* ── contract form actions ── */
   const openAdd = () => {
@@ -1523,8 +1523,12 @@ export default function ContractsPage() {
                   currentPage={currentPage}
                   totalPages={totalPages}
                   totalItems={filtered.length}
-                  pageSize={PAGE_SIZE}
+                  pageSize={pageSize}
                   onPageChange={setCurrentPage}
+                  onPageSizeChange={(newSize) => {
+                    setPageSize(newSize);
+                    setCurrentPage(1);
+                  }}
                 />
               </div>
             </section>

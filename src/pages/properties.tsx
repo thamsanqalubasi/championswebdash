@@ -152,6 +152,13 @@ export default function PropertiesPage() {
     return result;
   }, [properties, activeFilter, searchQuery]);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const paginatedProperties = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, currentPage, pageSize]);
+
   const [limitModalInfo, setLimitModalInfo] = useState<{
     currentCount?: number; maxLimit?: number; planName: string;
   } | null>(null);
@@ -459,7 +466,13 @@ export default function PropertiesPage() {
       {!loading&&!error&&(
         <section className="rounded-2xl border border-border-color bg-surface p-1 shadow-sm">
           <div className="p-4">
-            <DataTableHeader searchValue={searchQuery} onSearchChange={setSearchQuery} searchPlaceholder="Search by name, city, country..." filters={filterTabs} activeFilter={activeFilter} onFilterChange={setActiveFilter}
+            <DataTableHeader
+              searchValue={searchQuery}
+              onSearchChange={(val) => { setSearchQuery(val); setCurrentPage(1); }}
+              searchPlaceholder="Search by name, city, country..."
+              filters={filterTabs}
+              activeFilter={activeFilter}
+              onFilterChange={(key) => { setActiveFilter(key); setCurrentPage(1); }}
               actions={(() => {
                 const propLimit = checkPackageCapacityLimit(currentCompany.id, "properties", properties.length);
                 if (!propLimit.allowed) {
@@ -492,7 +505,7 @@ export default function PropertiesPage() {
                   <th className="px-6 py-4">Property</th><th className="px-6 py-4">Type</th><th className="px-6 py-4">Units</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Pricing</th><th className="px-6 py-4 text-right">Actions</th>
                 </tr></thead>
                 <tbody className="divide-y divide-border-color/40">
-                  {filtered.map((row)=>{
+                  {paginatedProperties.map((row)=>{
                     const hosp=isHospitality(row.type);
                     return (
                       <tr key={row.id} onClick={()=>navigate(`/properties/${row.id}`)} className="group cursor-pointer hover:bg-surface-elevated/40 transition-colors">
@@ -582,6 +595,20 @@ export default function PropertiesPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+          {filtered.length > 0 && (
+            <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20">
+              <Pagination
+                currentPage={currentPage}
+                totalItems={filtered.length}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(newSize) => {
+                  setPageSize(newSize);
+                  setCurrentPage(1);
+                }}
+              />
             </div>
           )}
         </section>

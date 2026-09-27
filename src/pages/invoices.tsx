@@ -108,7 +108,7 @@ export default function InvoicesPage() {
 
   const [invoicesReportOpen, setInvoicesReportOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const PAGE_SIZE = 10;
+  const [pageSize, setPageSize] = useState(10);
   const [shareModalDoc, setShareModalDoc] = useState<{
     isOpen: boolean;
     documentTitle: string;
@@ -296,10 +296,10 @@ export default function InvoicesPage() {
     [invoices, activeFilter],
   );
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+  const totalPages = Math.ceil(filtered.length / pageSize) || 1;
   const paginatedInvoices = useMemo(() => {
-    return filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  }, [filtered, currentPage]);
+    return filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  }, [filtered, currentPage, pageSize]);
 
   const selectedTransactions = useMemo(
     () => transactions.filter((row) => selectedTransactionIds.includes(row.id)),
@@ -1045,8 +1045,12 @@ export default function InvoicesPage() {
                   currentPage={currentPage}
                   totalPages={totalPages}
                   totalItems={filtered.length}
-                  pageSize={PAGE_SIZE}
+                  pageSize={pageSize}
                   onPageChange={setCurrentPage}
+                  onPageSizeChange={(newSize) => {
+                    setPageSize(newSize);
+                    setCurrentPage(1);
+                  }}
                 />
               </div>
             )}

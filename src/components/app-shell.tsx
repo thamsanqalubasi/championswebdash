@@ -26,7 +26,7 @@ import { StripePaymentModal } from "./stripe-payment-modal";
 import {
   LayoutDashboard, Building2, Users, DollarSign, Wrench, ClipboardList,
   Truck, SearchCheck, CalendarClock, Package, FileSignature, Settings,
-  History, Landmark, BedDouble, KeyRound, Briefcase, Layers, ChevronDown,
+  History, Landmark, BedDouble, KeyRound, Briefcase, Layers, ChevronDown, ChevronUp,
   Building, Inbox, Globe, UserCog, ChevronLeft, ChevronRight, Menu,
   ShieldCheck, Check, X, Network, Server, BarChart3, Megaphone,
   Lock, CreditCard, Clock, Sparkles,
@@ -231,6 +231,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   const langDropdownRef = useRef<HTMLDivElement>(null);
   const { language, setLanguage, t } = useLanguage();
+  const [readMoreLocked, setReadMoreLocked] = useState(false);
+
+  useEffect(() => {
+    setReadMoreLocked(false);
+  }, [pathname]);
 
   useEffect(() => {
     initActivityTracker();
@@ -786,15 +791,15 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {children}
                 </div>
 
-                {/* Frosted Glass Overlay with Upgrade Trigger Card */}
+                {/* Frosted Glass Overlay with Upgrade Trigger Card — fully scrollable on all viewports */}
                 <div
                   onClick={() => setPackageModalOpen(true)}
-                  className="absolute inset-0 z-30 flex items-center justify-center p-4 cursor-pointer bg-background/50 backdrop-blur-xs transition-all hover:bg-background/40"
+                  className="absolute inset-0 z-30 flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto cursor-pointer bg-background/60 backdrop-blur-xs transition-all hover:bg-background/50"
                   title="Click anywhere to upgrade package"
                 >
                   <div
-                    onClick={(e) => { e.stopPropagation(); setPackageModalOpen(true); }}
-                    className="w-full max-w-lg rounded-3xl border-2 border-amber-500/40 bg-surface/95 p-6 sm:p-8 text-center shadow-2xl backdrop-blur-xl space-y-5 animate-in fade-in zoom-in-95 duration-200"
+                    onClick={(e) => { e.stopPropagation(); }}
+                    className="w-full max-w-xl my-auto rounded-3xl border-2 border-amber-500/40 bg-surface/95 p-6 sm:p-8 text-center shadow-2xl backdrop-blur-xl space-y-5 animate-in fade-in zoom-in-95 duration-200"
                   >
                     <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/20">
                       <Lock size={32} />
@@ -812,6 +817,64 @@ export function AppShell({ children }: { children: ReactNode }) {
                         {routeLock.config?.description}
                       </p>
                     </div>
+
+                    {/* Detailed Feature Summary & Read More / Show Less Toggle */}
+                    {routeLock.config?.detailedCapabilities && routeLock.config.detailedCapabilities.length > 0 && (
+                      <div className="space-y-3 pt-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setReadMoreLocked(!readMoreLocked);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 px-3.5 py-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition shadow-xs"
+                        >
+                          {readMoreLocked ? (
+                            <>
+                              <ChevronUp size={14} />
+                              <span>Show Less</span>
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown size={14} />
+                              <span>Read More About Everything This Feature Can Do ({routeLock.config.detailedCapabilities.length} capabilities)</span>
+                            </>
+                          )}
+                        </button>
+
+                        {readMoreLocked && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="rounded-2xl border border-blue-500/30 bg-surface-elevated/90 p-4 text-left text-xs space-y-3 shadow-md animate-in fade-in slide-in-from-top-2 duration-200"
+                          >
+                            <p className="text-[11px] font-black uppercase tracking-wider text-blue-500 flex items-center gap-1.5">
+                              <Sparkles size={12} />
+                              <span>Everything You Can Do in {routeLock.config.featureTitle}:</span>
+                            </p>
+                            <ul className="space-y-2">
+                              {routeLock.config.detailedCapabilities.map((item, idx) => (
+                                <li key={idx} className="flex items-start gap-2.5 text-foreground leading-relaxed text-xs">
+                                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 mt-0.5">
+                                    <Check size={12} className="stroke-[3]" />
+                                  </div>
+                                  <span>{item}</span>
+                                </li>
+                              ))}
+                            </ul>
+                            <div className="pt-2 border-t border-border-color/60 text-[11px] text-muted flex items-center justify-between">
+                              <span>Unlocks with {routeLock.config.minPackageName} (${routeLock.config.minPackagePriceUsd}/mo)</span>
+                              <button
+                                type="button"
+                                onClick={() => setPackageModalOpen(true)}
+                                className="font-bold text-blue-500 hover:underline"
+                              >
+                                View Plans &amp; Pricing ➔
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <div className="rounded-2xl border border-border-color bg-surface-elevated/70 p-4 text-xs text-left space-y-2">
                       <div className="flex items-center justify-between">

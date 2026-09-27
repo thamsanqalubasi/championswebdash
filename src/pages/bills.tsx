@@ -126,13 +126,12 @@ export default function BillsPage() {
   const [billsReportOpen, setBillsReportOpen] = useState(false);
   const [kpiListModal, setKpiListModal] = useState<"all" | "paid" | "pending" | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const totalPages = Math.ceil(bills.length / itemsPerPage);
   const paginatedBills = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return bills.slice(start, start + itemsPerPage);
-  }, [bills, currentPage]);
+  }, [bills, currentPage, itemsPerPage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -826,14 +825,18 @@ export default function BillsPage() {
               </table>
             </div>
 
-            {totalPages > 1 && (
+            {bills.length > 0 && (
               <div className="border-t border-border-color p-3 bg-surface">
                 <Pagination
                   currentPage={currentPage}
                   totalPages={totalPages}
                   onPageChange={setCurrentPage}
+                  onPageSizeChange={(newSize) => {
+                    setItemsPerPage(newSize);
+                    setCurrentPage(1);
+                  }}
                   totalItems={bills.length}
-                  itemsPerPage={itemsPerPage}
+                  pageSize={itemsPerPage}
                 />
               </div>
             )}

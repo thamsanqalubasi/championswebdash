@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { ModulePage } from "@/components/module-page";
+import { Pagination } from "@/components/pagination";
 import { fetchAuditEvents, fetchCheckinPatterns, fetchInvoices } from "@/lib/data";
 import type { AuditEventRow, InvoiceRow } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
@@ -65,6 +66,12 @@ export default function AuditTrailPage() {
   const [actionFilter, setActionFilter] = useState("all");
   const [journeyActorFilter, setJourneyActorFilter] = useState("all");
   const [journeySearch, setJourneySearch] = useState("");
+
+  // Pagination states (default 10 rows, user switchable to 50 or 100)
+  const [logsPage, setLogsPage] = useState(1);
+  const [logsPageSize, setLogsPageSize] = useState(10);
+  const [journeysPage, setJourneysPage] = useState(1);
+  const [journeysPageSize, setJourneysPageSize] = useState(10);
 
   useEffect(() => {
     async function loadData() {
@@ -173,6 +180,17 @@ export default function AuditTrailPage() {
       .slice(0, 6);
   }, [filteredJourneys]);
 
+  // Paginated slices (10 rows default, switchable to 50 or 100)
+  const paginatedEvents = useMemo(() => {
+    const start = (logsPage - 1) * logsPageSize;
+    return filteredEvents.slice(start, start + logsPageSize);
+  }, [filteredEvents, logsPage, logsPageSize]);
+
+  const paginatedJourneys = useMemo(() => {
+    const start = (journeysPage - 1) * journeysPageSize;
+    return filteredJourneys.slice(start, start + journeysPageSize);
+  }, [filteredJourneys, journeysPage, journeysPageSize]);
+
   return (
     <ModulePage
       title={`Audit Department & Compliance (${currentCompany.name})`}
@@ -255,7 +273,10 @@ export default function AuditTrailPage() {
               <span className="text-xs text-muted font-medium">Filter:</span>
               <select
                 value={actionFilter}
-                onChange={(e) => setActionFilter(e.target.value)}
+                onChange={(e) => {
+                  setActionFilter(e.target.value);
+                  setLogsPage(1);
+                }}
                 className="rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs font-semibold text-foreground focus:border-blue-600 focus:outline-none"
               >
                 <option value="all">All Events</option>
@@ -268,41 +289,65 @@ export default function AuditTrailPage() {
           </div>
 
           <div className="rounded-2xl border border-border-color bg-surface overflow-hidden shadow-sm">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-border-color bg-surface-elevated/70 text-[11px] font-bold uppercase tracking-wider text-muted">
-                <tr>
-                  <th className="px-4 py-3.5">Timestamp</th>
-                  <th className="px-4 py-3.5">Action & Scope</th>
-                  <th className="px-4 py-3.5">Entity / Target</th>
-                  <th className="px-4 py-3.5">Performed By</th>
-                  <th className="px-4 py-3.5">Audit Summary & Details</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-color text-foreground">
-                {filteredEvents.map((row) => (
-                  <tr key={row.id} className="hover:bg-surface-elevated/30 transition">
-                    <td className="px-4 py-3.5 font-mono text-xs text-muted whitespace-nowrap">
-                      {new Date(row.createdAt).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className="rounded-md bg-blue-500/10 px-2 py-0.5 text-xs font-bold text-blue-600">
-                        {row.action}
-                      </span>
-                      <p className="text-[10px] text-muted capitalize mt-0.5">{row.entityType}</p>
-                    </td>
-                    <td className="px-4 py-3.5 font-semibold text-foreground">
-                      {row.entityName}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className="font-semibold text-foreground">{row.actorName}</span>
-                    </td>
-                    <td className="px-4 py-3.5 text-xs text-muted max-w-md">
-                      {row.details}
-                    </td>
+            <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
+              <table className="w-full text-left text-sm">
+                <thead className="sticky top-0 z-10 border-b border-border-color bg-surface-elevated text-[11px] font-bold uppercase tracking-wider text-muted shadow-xs">
+                  <tr>
+                    <th className="px-4 py-3.5">Timestamp</th>
+                    <th className="px-4 py-3.5">Action & Scope</th>
+                    <th className="px-4 py-3.5">Entity / Target</th>
+                    <th className="px-4 py-3.5">Performed By</th>
+                    <th className="px-4 py-3.5">Audit Summary & Details</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-border-color text-foreground">
+                  {paginatedEvents.map((row) => (
+                    <tr key={row.id} className="hover:bg-surface-elevated/30 transition">
+                      <td className="px-4 py-3.5 font-mono text-xs text-muted whitespace-nowrap">
+                        {new Date(row.createdAt).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className="rounded-md bg-blue-500/10 px-2 py-0.5 text-xs font-bold text-blue-600">
+                          {row.action}
+                        </span>
+                        <p className="text-[10px] text-muted capitalize mt-0.5">{row.entityType}</p>
+                      </td>
+                      <td className="px-4 py-3.5 font-semibold text-foreground">
+                        {row.entityName}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className="font-semibold text-foreground">{row.actorName}</span>
+                      </td>
+                      <td className="px-4 py-3.5 text-xs text-muted max-w-md">
+                        {row.details}
+                      </td>
+                    </tr>
+                  ))}
+                  {paginatedEvents.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-12 text-center text-muted">
+                        No audit events match your search criteria.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {filteredEvents.length > 0 && (
+              <div className="p-4 bg-surface border-t border-border-color/60">
+                <Pagination
+                  currentPage={logsPage}
+                  totalItems={filteredEvents.length}
+                  pageSize={logsPageSize}
+                  onPageChange={setLogsPage}
+                  onPageSizeChange={(newSize) => {
+                    setLogsPageSize(newSize);
+                    setLogsPage(1);
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -528,7 +573,10 @@ export default function AuditTrailPage() {
                 type="search"
                 placeholder="Search user journeys by button name, origin, destination, or operator..."
                 value={journeySearch}
-                onChange={(e) => setJourneySearch(e.target.value)}
+                onChange={(e) => {
+                  setJourneySearch(e.target.value);
+                  setJourneysPage(1);
+                }}
                 className="w-full rounded-xl border border-border-color bg-surface-elevated pl-9 pr-4 py-2 text-sm text-foreground outline-none focus:border-blue-600"
               />
             </div>
@@ -537,7 +585,10 @@ export default function AuditTrailPage() {
               <span className="text-xs text-muted font-medium whitespace-nowrap">Operator:</span>
               <select
                 value={journeyActorFilter}
-                onChange={(e) => setJourneyActorFilter(e.target.value)}
+                onChange={(e) => {
+                  setJourneyActorFilter(e.target.value);
+                  setJourneysPage(1);
+                }}
                 className="w-full sm:w-auto rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs font-semibold text-foreground focus:border-blue-600 focus:outline-none"
               >
                 <option value="all">All Operators ({uniqueActors.length})</option>
@@ -565,11 +616,11 @@ export default function AuditTrailPage() {
                 <span className="text-xs font-bold uppercase tracking-wider text-muted">
                   Interactive User Movement Sequence ({filteredJourneys.length} events)
                 </span>
-                <span className="text-[11px] text-muted">Arranged from latest transitions</span>
+                <span className="text-[11px] text-muted">Page {journeysPage} of {Math.max(1, Math.ceil(filteredJourneys.length / journeysPageSize))}</span>
               </div>
 
               <div className="grid grid-cols-1 gap-3">
-                {filteredJourneys.slice(0, 30).map((journey, index) => (
+                {paginatedJourneys.map((journey, index) => (
                   <div
                     key={journey.id || index}
                     className="group rounded-2xl border border-border-color bg-surface p-4 shadow-sm hover:border-blue-500/50 hover:shadow-md transition-all duration-200"
@@ -638,6 +689,21 @@ export default function AuditTrailPage() {
                   </div>
                 ))}
               </div>
+
+              {filteredJourneys.length > 0 && (
+                <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-sm">
+                  <Pagination
+                    currentPage={journeysPage}
+                    totalItems={filteredJourneys.length}
+                    pageSize={journeysPageSize}
+                    onPageChange={setJourneysPage}
+                    onPageSizeChange={(newSize) => {
+                      setJourneysPageSize(newSize);
+                      setJourneysPage(1);
+                    }}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

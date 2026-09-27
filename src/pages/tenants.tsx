@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ModulePage } from "@/components/module-page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Modal, ConfirmDialog, SideDrawer } from "@/components/modal";
+import { Pagination } from "@/components/pagination";
 import { fetchTenantsData, isValidUuid, fetchCompanyUsers, canDeleteSuppressedRecords, syncPropertyOccupancyStatus } from "@/lib/data";
 import { PinPromptDialog } from "@/components/pin-dialog";
 import { supabase } from "@/lib/supabase";
@@ -538,6 +539,15 @@ export default function TenantsPage() {
     }
     return result;
   }, [tenants, activeFilter, searchQuery]);
+
+  // Pagination states (default 10 rows, user switchable to 50 or 100)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const paginatedTenants = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, currentPage, pageSize]);
 
   const [limitModalInfo, setLimitModalInfo] = useState<{
     currentCount?: number;
@@ -2274,11 +2284,17 @@ export default function TenantsPage() {
           <div className="p-4">
             <DataTableHeader
               searchValue={searchQuery}
-              onSearchChange={setSearchQuery}
+              onSearchChange={(val) => {
+                setSearchQuery(val);
+                setCurrentPage(1);
+              }}
               searchPlaceholder="Search tenants by name, email, or property..."
               filters={filterTabs}
               activeFilter={activeFilter}
-              onFilterChange={setActiveFilter}
+              onFilterChange={(key) => {
+                setActiveFilter(key);
+                setCurrentPage(1);
+              }}
               actions={(() => {
                 const tenantLimit = checkPackageCapacityLimit(currentCompany?.id || "default", "tenants", tenants.length);
                 if (!tenantLimit.allowed) {
@@ -2327,7 +2343,7 @@ export default function TenantsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-color/40">
-                  {filtered.map((row) => (
+                  {paginatedTenants.map((row) => (
                     <tr key={row.id} className="group hover:bg-surface-elevated/40 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -2433,11 +2449,20 @@ export default function TenantsPage() {
               </table>
             </div>
           )}
-          <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-muted/40">
-              Showing {filtered.length} of {statusCounts.all} tenants
-            </p>
-          </div>
+          {filtered.length > 0 && (
+            <div className="border-t border-border-color/50 px-6 py-4 bg-surface-elevated/20">
+              <Pagination
+                currentPage={currentPage}
+                totalItems={filtered.length}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(newSize) => {
+                  setPageSize(newSize);
+                  setCurrentPage(1);
+                }}
+              />
+            </div>
+          )}
         </section>
       )}
 

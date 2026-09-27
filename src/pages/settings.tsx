@@ -63,6 +63,7 @@ import { CancelSubscriptionModal } from "@/components/cancel-subscription-modal"
 import { DeleteAccountModal } from "@/components/delete-account-modal";
 import { DeleteCompanyModal } from "@/components/delete-company-modal";
 import { UnsubscribedGatewayModal } from "@/components/unsubscribed-gateway-modal";
+import { EnterpriseSalesModal } from "@/components/enterprise-sales-modal";
 
 export default function SettingsPage() {
   const { user, currentCompany, currentCompanyUser, setCurrentCompany, setCurrentCompanyUser, changePassword, isAdmin } = useAuth();
@@ -152,6 +153,7 @@ export default function SettingsPage() {
   const [cancelSubOpen, setCancelSubOpen] = useState(false);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deleteCompanyOpen, setDeleteCompanyOpen] = useState(false);
+  const [salesModalOpen, setSalesModalOpen] = useState(false);
 
   useEffect(() => {
     const handleSubUpdate = () => {
@@ -204,6 +206,10 @@ export default function SettingsPage() {
   );
 
   const handleSelectPackageFromSettings = (pkgId: PackageId) => {
+    if (pkgId === "custom") {
+      setSalesModalOpen(true);
+      return;
+    }
     if (pkgId === "test") {
       setStripeModalOpen(true);
       return;
@@ -1706,6 +1712,15 @@ export default function SettingsPage() {
           onReactivated={() => setSub(getCompanySubscription(currentCompany.id))}
         />
       )}
+
+      {/* Custom Enterprise Sales Consultation Modal */}
+      <EnterpriseSalesModal
+        open={salesModalOpen}
+        onClose={() => setSalesModalOpen(false)}
+        companyId={currentCompany.id}
+        defaultEmail={user?.email || ""}
+        defaultCompanyName={currentCompany.name || ""}
+      />
     </ModulePage>
   );
 }

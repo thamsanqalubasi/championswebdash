@@ -30,7 +30,9 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Mail,
 } from "lucide-react";
+import { EnterpriseSalesModal } from "./enterprise-sales-modal";
 
 // TEMPORARY TEST FEATURE: Remove before production launch
 
@@ -56,6 +58,7 @@ export function PackageSwitcherModal({
   });
   const [selectedRationaleTab, setSelectedRationaleTab] = useState<PackageId>("starter");
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [salesModalOpen, setSalesModalOpen] = useState(false);
 
   // Sync state on companyId change or storage update
   useEffect(() => {
@@ -87,8 +90,13 @@ export function PackageSwitcherModal({
 
   const expired = isTrialExpired(sub) || (forceExpiredView && sub.packageModeEnabled);
 
-  // Select non-test package (no card required in test mode)
+  // Select package handler
   const handleSelectPackage = (pkgId: PackageId) => {
+    if (pkgId === "custom") {
+      setSalesModalOpen(true);
+      return;
+    }
+
     if (pkgId === "test") {
       setStripePackageInfo({ amount: SUBSCRIPTION_PACKAGES.test.priceUsd, title: SUBSCRIPTION_PACKAGES.test.name });
       setStripeOpen(true);
@@ -439,6 +447,13 @@ export function PackageSwitcherModal({
           setTimeout(() => setActionNotice(null), 3500);
         }}
       />
+
+      {/* Custom Enterprise Consultation Form Modal */}
+      <EnterpriseSalesModal
+        open={salesModalOpen}
+        onClose={() => setSalesModalOpen(false)}
+        companyId={companyId}
+      />
     </>
   );
 }
@@ -470,11 +485,17 @@ export function PackageCarousel({
     priceDisplay: string;
     recommended?: boolean;
     isTestBadge?: boolean;
+    isContactSales?: boolean;
   }[] = [
     { plan: SUBSCRIPTION_PACKAGES.starter, priceDisplay: "$5" },
     { plan: SUBSCRIPTION_PACKAGES.standard, priceDisplay: "$20", recommended: true },
     { plan: SUBSCRIPTION_PACKAGES.pro, priceDisplay: "$50" },
     { plan: SUBSCRIPTION_PACKAGES.enterprise, priceDisplay: "$200" },
+    {
+      plan: SUBSCRIPTION_PACKAGES.custom,
+      priceDisplay: "Custom Quote",
+      isContactSales: true,
+    },
     {
       plan: SUBSCRIPTION_PACKAGES.test,
       priceDisplay: `$${SUBSCRIPTION_PACKAGES.test.priceUsd.toFixed(2)}`,
@@ -521,7 +542,7 @@ export function PackageCarousel({
         className="flex gap-4 overflow-x-auto pb-4 pt-2 px-1 scroll-smooth snap-x snap-mandatory"
         style={{ scrollbarWidth: "thin" }}
       >
-        {plans.map(({ plan, priceDisplay, recommended, isTestBadge }) => (
+        {plans.map(({ plan, priceDisplay, recommended, isTestBadge, isContactSales }) => (
           <PlanCard
             key={plan.id}
             plan={plan}
@@ -530,6 +551,7 @@ export function PackageCarousel({
             priceDisplay={priceDisplay}
             recommended={recommended}
             isTestBadge={isTestBadge}
+            isContactSales={isContactSales}
           />
         ))}
       </div>
@@ -545,6 +567,7 @@ export function PlanCard({
   priceDisplay,
   recommended,
   isTestBadge,
+  isContactSales,
 }: {
   plan: (typeof SUBSCRIPTION_PACKAGES)[PackageId];
   isCurrent: boolean;
@@ -552,6 +575,7 @@ export function PlanCard({
   priceDisplay: string;
   recommended?: boolean;
   isTestBadge?: boolean;
+  isContactSales?: boolean;
 }) {
   return (
     <div
@@ -560,6 +584,8 @@ export function PlanCard({
           ? "border-blue-500 bg-blue-500/10 shadow-md ring-2 ring-blue-500/50"
           : recommended
           ? "border-violet-500/40 bg-surface-elevated hover:border-violet-500"
+          : isContactSales
+          ? "border-indigo-500/40 bg-surface-elevated hover:border-indigo-500"
           : isTestBadge
           ? "border-amber-500/40 bg-surface-elevated hover:border-amber-500"
           : "border-border-color bg-surface hover:border-foreground/30"
@@ -568,6 +594,12 @@ export function PlanCard({
       {recommended && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-violet-600 px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-xs">
           Popular
+        </div>
+      )}
+
+      {isContactSales && (
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-xs">
+          Bespoke Scale
         </div>
       )}
 
@@ -590,7 +622,7 @@ export function PlanCard({
         <div className="mb-3">
           <div className="flex items-baseline gap-1.5">
             <span className="text-3xl font-black text-foreground tracking-tight">{priceDisplay}</span>
-            <span className="text-xs text-muted font-bold uppercase">/ month</span>
+            {!isContactSales && <span className="text-xs text-muted font-bold uppercase">/ month</span>}
           </div>
           <p className="text-xs text-muted leading-relaxed mt-0.5 line-clamp-2">{plan.tagline}</p>
         </div>
@@ -599,19 +631,27 @@ export function PlanCard({
         <div className="border-t border-border-color pt-3 grid grid-cols-2 gap-2 text-xs">
           <div className="flex items-center gap-1.5 text-foreground font-semibold rounded-lg bg-surface-elevated/70 p-2 border border-border-color/60">
             <Building2 size={13} className="text-blue-400 shrink-0" />
-            <span className="truncate">{plan.limits.maxProperties === -1 ? "Unlimited" : `${plan.limits.maxProperties}`} Props</span>
+            <span className="truncate">
+              {isContactSales ? "> 20 Props" : plan.limits.maxProperties === -1 ? "Unlimited" : `${plan.limits.maxProperties} Props`}
+            </span>
           </div>
           <div className="flex items-center gap-1.5 text-foreground font-semibold rounded-lg bg-surface-elevated/70 p-2 border border-border-color/60">
             <BedDouble size={13} className="text-emerald-400 shrink-0" />
-            <span className="truncate">{plan.limits.maxRooms === -1 ? "Unlimited" : `${plan.limits.maxRooms}`} Rooms</span>
+            <span className="truncate">
+              {isContactSales ? "> 500 Rooms" : plan.limits.maxRooms === -1 ? "Unlimited" : `${plan.limits.maxRooms} Rooms`}
+            </span>
           </div>
           <div className="flex items-center gap-1.5 text-foreground font-semibold rounded-lg bg-surface-elevated/70 p-2 border border-border-color/60">
             <Users size={13} className="text-violet-400 shrink-0" />
-            <span className="truncate">{plan.limits.maxTenants === -1 ? "Unlimited" : `${plan.limits.maxTenants}`} Tenants</span>
+            <span className="truncate">
+              {isContactSales ? "> 600 Tenants" : plan.limits.maxTenants === -1 ? "Unlimited" : `${plan.limits.maxTenants} Tenants`}
+            </span>
           </div>
           <div className="flex items-center gap-1.5 text-foreground font-semibold rounded-lg bg-surface-elevated/70 p-2 border border-border-color/60">
             <Layers size={13} className="text-amber-400 shrink-0" />
-            <span className="truncate">{plan.limits.maxStaff === -1 ? "Unlimited" : `${plan.limits.maxStaff}`} Staff</span>
+            <span className="truncate">
+              {isContactSales ? "> 100 Staff" : plan.limits.maxStaff === -1 ? "Unlimited" : `${plan.limits.maxStaff} Staff`}
+            </span>
           </div>
         </div>
 
@@ -633,6 +673,8 @@ export function PlanCard({
           className={`w-full rounded-xl py-2.5 text-xs font-bold transition flex items-center justify-center gap-1.5 ${
             isCurrent
               ? "bg-surface border border-blue-500 text-blue-400 cursor-default"
+              : isContactSales
+              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-md"
               : isTestBadge
               ? "bg-amber-600 text-white hover:bg-amber-700 shadow-md"
               : "bg-foreground text-background hover:opacity-90 shadow-md"
@@ -640,6 +682,11 @@ export function PlanCard({
         >
           {isCurrent ? (
             <span>Active Plan</span>
+          ) : isContactSales ? (
+            <>
+              <Mail size={13} />
+              <span>Contact Our Sales Agent</span>
+            </>
           ) : isTestBadge ? (
             <>
               <CreditCard size={13} />

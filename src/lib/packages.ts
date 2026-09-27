@@ -2,7 +2,7 @@
 // PAIMBABOOK SUBSCRIPTION PACKAGES & COMMERCIALIZATION ARCHITECTURE
 // ============================================================================
 
-export type PackageId = "starter" | "standard" | "pro" | "enterprise" | "test";
+export type PackageId = "starter" | "standard" | "pro" | "enterprise" | "custom" | "test";
 
 export interface PackagePlan {
   id: PackageId;
@@ -11,6 +11,7 @@ export interface PackagePlan {
   priceUsd: number;
   billingPeriod: "month";
   isTestPackage?: boolean;
+  isContactSales?: boolean;
   limits: {
     maxProperties: number; // -1 for unlimited
     maxRooms: number;      // -1 for unlimited
@@ -184,7 +185,7 @@ export const SUBSCRIPTION_PACKAGES: Record<PackageId, PackagePlan> = {
     limits: {
       maxProperties: 20,
       maxRooms: 100,
-      maxTenants: 300,
+      maxTenants: 200, // Updated to 200 max tenants
       maxStaff: 20,
       emailSharing: true,
       multiRecipientEmail: true,
@@ -224,7 +225,7 @@ export const SUBSCRIPTION_PACKAGES: Record<PackageId, PackagePlan> = {
       whyThisPrice: "$50/month replaces multiple standalone tools (HR software, procurement trackers, accounting modules) into one unified system, delivering massive ROI.",
       keyBenefits: [
         "Up to 20 Properties & 100 Lodging Rooms",
-        "Up to 300 Managed Tenants",
+        "Up to 200 Managed Tenants",
         "Full Procurement Pipeline (Requisitions, RFQs, POs)",
         "Human Resources Suite (Leave approvals & Contracts)",
         "Interactive Organogram & Granular Permissions",
@@ -238,14 +239,14 @@ export const SUBSCRIPTION_PACKAGES: Record<PackageId, PackagePlan> = {
   enterprise: {
     id: "enterprise",
     name: "Enterprise Conglomerate",
-    tagline: "For Hotel Chains, REITs & Large Hospitality Portfolios",
+    tagline: "For Multi-Property Operators, Boutique Hotel Chains & REIT Portfolios",
     priceUsd: 200,
     billingPeriod: "month",
     limits: {
-      maxProperties: -1, // Unlimited
-      maxRooms: -1,      // Unlimited
-      maxTenants: -1,    // Unlimited
-      maxStaff: -1,      // Unlimited
+      maxProperties: 20,   // Max 20 properties
+      maxRooms: 500,        // Max 500 rooms
+      maxTenants: 600,      // Max 600 tenants
+      maxStaff: 100,        // Max 100 staff
       emailSharing: true,
       multiRecipientEmail: true,
     },
@@ -280,16 +281,75 @@ export const SUBSCRIPTION_PACKAGES: Record<PackageId, PackagePlan> = {
       prioritySupportSla: true,
     },
     commercialRationale: {
-      targetAudience: "Large hospitality groups, national property funds, REITs, and enterprise hotel brands requiring unlimited capacity and compliance auditing.",
-      whyThisPrice: "$200/month delivers enterprise-scale power: unlimited properties and rooms, full forensic visual audit trails, custom corporate domains, and 24/7 dedicated support.",
+      targetAudience: "Established hospitality groups, multi-property portfolios, and boutique hotel operators needing robust high-capacity infrastructure.",
+      whyThisPrice: "$200/month delivers powerful high-capacity operations: up to 20 properties, 500 rooms, 600 tenants, and 100 staff with forensic audit trails.",
       keyBenefits: [
-        "UNLIMITED Properties, Rooms, and Tenants",
-        "UNLIMITED Staff and Departmental Accounts",
+        "Up to 20 Properties & 500 Lodging Rooms",
+        "Up to 600 Tenants & Complete Lease Management",
+        "Up to 100 Staff and Departmental Accounts",
         "Visual User Journey Map & Deep Session Forensics",
         "Full Financial Ledger, Balance Sheet & Multi-Entity",
         "Mass HR Payroll Processing & Bank Export",
-        "Custom Branding, White-Label & Dedicated SLA",
-        "Complete Unlimited Multi-Range Report Generation",
+        "Custom Corporate Domain & Dedicated SLA Support",
+      ],
+    },
+  },
+
+  custom: {
+    id: "custom",
+    name: "Custom Enterprise",
+    tagline: "For Portfolios with >20 Properties, >500 Rooms & >600 Tenants",
+    priceUsd: 0,
+    billingPeriod: "month",
+    isContactSales: true,
+    limits: {
+      maxProperties: -1, // Over 20 properties
+      maxRooms: -1,      // Over 500 rooms
+      maxTenants: -1,    // Over 600 tenants
+      maxStaff: -1,      // Over 100 staff
+      emailSharing: true,
+      multiRecipientEmail: true,
+    },
+    features: {
+      dashboardAnalytics: true,
+      advancedStatistics: true,
+      frontDeskCheckInOut: true,
+      expressCheckoutDesk: true,
+      mealPricingTiers: true,
+      roomShowcasePublicPortal: true,
+      customerEnquiriesTickets: true,
+      maintenanceWorkOrders: true,
+      serviceProvidersDirectory: true,
+      inspectionsAndScheduled: true,
+      centralStoresAndStock: true,
+      rentCollectionAndPop: true,
+      invoicesAndReceipts: true,
+      recurringBillsTracking: true,
+      financialAccountsLedger: true,
+      financialBalanceReports: true,
+      digitalContracts: true,
+      procurementPipeline: true,
+      hrAndPayroll: true,
+      organogramAndCustomRoles: true,
+      marketingGrowthHub: true,
+      itAndSystemsHub: true,
+      auditTrailBasic: true,
+      auditUserJourneyMap: true,
+      exportCsvReports: true,
+      exportPdfReports: true,
+      customDomainBranding: true,
+      prioritySupportSla: true,
+    },
+    commercialRationale: {
+      targetAudience: "National hotel chains, government hospitality assets, large international REIT portfolios, and operators with over 20 properties, 500 rooms, 600 tenants, or 100 staff.",
+      whyThisPrice: "Bespoke annual or multi-entity commercial contract tailored to your specific scale, ERP integrations, dedicated database clusters, and 24/7 dedicated engineering SLA.",
+      keyBenefits: [
+        "Greater than 20 Properties & Over 500 Rooms",
+        "Over 600 Tenants & Infinite Tenancy Archiving",
+        "Over 100 Staff Accounts with Granular Organograms",
+        "Custom ERP Integrations (SAP, Oracle, QuickBooks)",
+        "Dedicated Account Executive & 24/7 Priority SLA",
+        "Custom White-Labeling, SSO & Custom Cloud Clusters",
       ],
     },
   },
@@ -421,6 +481,7 @@ export interface FeatureRouteConfig {
   featureKey: keyof PackagePlan["features"];
   featureTitle: string;
   description: string;
+  detailedCapabilities: string[]; // Deep breakdown of everything possible in this module
   minPackage: PackageId;
   minPackageName: string;
   minPackagePriceUsd: number;
@@ -432,6 +493,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "advancedStatistics",
     featureTitle: "Advanced Hospitality & Financial Analytics",
     description: "Deep statistical analytics, occupancy charts, and seasonal forecasting.",
+    detailedCapabilities: [
+      "Interactive multi-year revenue, ADR (Average Daily Rate), and RevPAR performance forecasting",
+      "Historical seasonal occupancy rate heatmaps and comparative monthly trend curves",
+      "Dynamic guest length-of-stay analysis with front-desk check-in arrival distribution",
+      "Exportable executive presentation summaries in PDF and formatted CSV data feeds",
+    ],
     minPackage: "standard",
     minPackageName: "Standard Package",
     minPackagePriceUsd: 20,
@@ -441,6 +508,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "serviceProvidersDirectory",
     featureTitle: "Service Providers Directory",
     description: "External contractor registry, trade ratings, and dispatch tracking.",
+    detailedCapabilities: [
+      "Comprehensive trade contractor registry with verified licensing, insurance, and contact details",
+      "Specialty categorization: Plumbing, Electrical, HVAC, Masonry, Carpentry, and Security",
+      "One-click work order dispatch with automated supplier confirmation and ETA scheduling",
+      "Historical contractor rating scorecards, completion timelines, and invoice reconciliation",
+    ],
     minPackage: "standard",
     minPackageName: "Standard Package",
     minPackagePriceUsd: 20,
@@ -450,6 +523,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "inspectionsAndScheduled",
     featureTitle: "Property Inspections & Move-in/Move-out Audits",
     description: "Automated inspection checklists, photo deficiency logging, and scheduled visits.",
+    detailedCapabilities: [
+      "Standardized digital inspection checklists customized for lodging rooms and long-term units",
+      "Immediate photographic deficiency logging with room condition ratings and damage tagging",
+      "Automatic work order generation directly from failed inspection checklist criteria",
+      "Digital tenant endorsement signatures captured directly on move-in and exit audit folios",
+    ],
     minPackage: "standard",
     minPackageName: "Standard Package",
     minPackagePriceUsd: 20,
@@ -459,6 +538,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "inspectionsAndScheduled",
     featureTitle: "Preventative Maintenance Schedules",
     description: "Recurring HVAC, plumbing, generator, and asset maintenance routines.",
+    detailedCapabilities: [
+      "Automated preventative maintenance routines with custom recurrence: weekly, monthly, quarterly",
+      "Asset compliance tracking for backup generators, fire extinguishers, water pumps, and HVAC",
+      "Technician task dispatching with real-time countdown alerts and status change verification",
+      "Historical equipment service records preventing expensive breakdowns and asset depreciation",
+    ],
     minPackage: "standard",
     minPackageName: "Standard Package",
     minPackagePriceUsd: 20,
@@ -468,6 +553,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "centralStoresAndStock",
     featureTitle: "Maintenance Parts & Central Inventory",
     description: "Track maintenance supplies, tool inventory, and stock depreciation.",
+    detailedCapabilities: [
+      "Granular maintenance supplies inventory tracking spare parts, plumbing fittings, and paint",
+      "Automated low-stock threshold alerts with one-click reorder requisition generation",
+      "Stock transfer logs between central warehouses and individual accommodation properties",
+      "Depreciation tracking and material cost allocation per work order and maintenance ticket",
+    ],
     minPackage: "standard",
     minPackageName: "Standard Package",
     minPackagePriceUsd: 20,
@@ -477,6 +568,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "centralStoresAndStock",
     featureTitle: "Central Stores & Stock Depot",
     description: "Warehouse item management, low-stock alerts, and transfer logs.",
+    detailedCapabilities: [
+      "Central warehouse SKU inventory management with unit purchase pricing and suppliers",
+      "Inter-property stock dispatching with verified digital sign-off and custodial logging",
+      "Automated batch reorder recommendations based on historical consumption velocity",
+      "Real-time total inventory valuation reports for accounting and balance sheet audits",
+    ],
     minPackage: "standard",
     minPackageName: "Standard Package",
     minPackagePriceUsd: 20,
@@ -486,6 +583,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "customerEnquiriesTickets",
     featureTitle: "Guest Enquiries & CRM Tickets",
     description: "Inbound prospective booking leads, ticket triage, and guest messages.",
+    detailedCapabilities: [
+      "Multi-channel inbound inquiry intake pipeline for website leads, walk-ins, and phone calls",
+      "Priority ticket triage with internal team assignments and guest status progression boards",
+      "Integrated quotation generation and direct email responses stamped with company branding",
+      "Instant conversion of prospective leads into live confirmed room and lodging reservations",
+    ],
     minPackage: "standard",
     minPackageName: "Standard Package",
     minPackagePriceUsd: 20,
@@ -495,6 +598,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "roomShowcasePublicPortal",
     featureTitle: "Public Room Showcases & Direct Booking Catalog",
     description: "Showcase guest rooms with live availability, gallery photos, and meal pricing.",
+    detailedCapabilities: [
+      "Public-facing direct booking room showcase with high-res galleries and amenities lists",
+      "Real-time calendar availability preventing double bookings and manual scheduling errors",
+      "Tiered meal plan pricing options (Bed & Breakfast, Half Board, Full Board, Room Only)",
+      "Direct commission-free guest reservation intake with automated confirmation emails",
+    ],
     minPackage: "standard",
     minPackageName: "Standard Package",
     minPackagePriceUsd: 20,
@@ -504,6 +613,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "roomShowcasePublicPortal",
     featureTitle: "Resident & Guest Self-Service Portal",
     description: "Tenant online payment upload, stay overview, and maintenance requests.",
+    detailedCapabilities: [
+      "Dedicated resident and guest self-service portal accessible from any phone or computer",
+      "Direct Proof of Payment (POP) upload with instant accounting verification notifications",
+      "Tenant maintenance issue reporting with live ticket progress and technician updates",
+      "Instant download of historical rent receipts, invoices, and active lease agreement copies",
+    ],
     minPackage: "standard",
     minPackageName: "Standard Package",
     minPackagePriceUsd: 20,
@@ -513,6 +628,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "roomShowcasePublicPortal",
     featureTitle: "Direct Agent Booking Desk",
     description: "Specialized portal for booking agents, corporate rates, and travel desks.",
+    detailedCapabilities: [
+      "Specialized B2B portal for accredited travel agents, corporate desks, and tour operators",
+      "Custom negotiated corporate rate tiers with automated agent commission calculation",
+      "Bulk room block reservations with delayed guest name manifest submission",
+      "Consolidated monthly invoicing and agent statement generation with payment tracking",
+    ],
     minPackage: "standard",
     minPackageName: "Standard Package",
     minPackagePriceUsd: 20,
@@ -522,6 +643,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "digitalContracts",
     featureTitle: "Digital Lease Contracts & Signatures",
     description: "Legally binding electronic contracts, digital signatures, and clause templates.",
+    detailedCapabilities: [
+      "Legally binding electronic lease contract builder with custom legal clause templates",
+      "Dual digital signature capture for company administrators and incoming tenants",
+      "Automated lease expiration countdowns with 30, 60, and 90-day renewal notice alerts",
+      "Official PDF contract generation with verified audit timestamps and security hashing",
+    ],
     minPackage: "standard",
     minPackageName: "Standard Package",
     minPackagePriceUsd: 20,
@@ -531,6 +658,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "procurementPipeline",
     featureTitle: "Procurement Pipeline (RFQs, POs, Vendor Bidding)",
     description: "End-to-end departmental requisitions, competitive vendor bidding, and PO sign-off.",
+    detailedCapabilities: [
+      "Multi-stage departmental procurement workflow: Requisition ➔ Review ➔ RFQ ➔ PO ➔ GRN",
+      "Competitive vendor quotation matrix comparing supplier pricing, delivery, and warranty",
+      "Official Purchase Order (PO) creation with digital signatures and budgetary sign-offs",
+      "Goods Received Note (GRN) three-way matching against supplier delivery and invoices",
+    ],
     minPackage: "pro",
     minPackageName: "Professional Package",
     minPackagePriceUsd: 50,
@@ -540,6 +673,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "hrAndPayroll",
     featureTitle: "Human Resources, Leave Management & Payroll",
     description: "Staff employment records, leave approvals, shifts, and monthly payroll.",
+    detailedCapabilities: [
+      "Complete employee personnel profiles, employment contracts, and document repositories",
+      "Interactive annual/sick/maternity leave request workflow with multi-level manager approvals",
+      "Automated monthly payroll generation with overtime, allowances, and statutory deductions",
+      "Professional individual salary payslip PDF generation and bank payroll export batches",
+    ],
     minPackage: "pro",
     minPackageName: "Professional Package",
     minPackagePriceUsd: 50,
@@ -549,6 +688,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "organogramAndCustomRoles",
     featureTitle: "Dynamic Organogram & Custom Granular Roles",
     description: "Interactive visual company organogram with custom permission hierarchies.",
+    detailedCapabilities: [
+      "Interactive visual company organogram diagram showing departmental chains of command",
+      "Granular role-based permission toggles across 20+ operational, financial, and audit rights",
+      "Department head assignments with delegated managerial approval authorizations",
+      "Real-time access audit preventing unauthorized modifications to financial accounts",
+    ],
     minPackage: "pro",
     minPackageName: "Professional Package",
     minPackagePriceUsd: 50,
@@ -558,6 +703,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "financialAccountsLedger",
     featureTitle: "General Ledger & Chart of Accounts",
     description: "Double-entry bookkeeping, chart of accounts, bank journals, and debit/credit ledger.",
+    detailedCapabilities: [
+      "Comprehensive double-entry general ledger complying with standard accounting practices",
+      "Multi-level chart of accounts: Assets, Liabilities, Equity, Revenue, and Operating Expenses",
+      "Bank reconciliation journal entries with audit receipts and petty cash tracking",
+      "Real-time accounts receivable (AR) and accounts payable (AP) aging summaries",
+    ],
     minPackage: "pro",
     minPackageName: "Professional Package",
     minPackagePriceUsd: 50,
@@ -567,6 +718,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "financialBalanceReports",
     featureTitle: "Financial Balance Sheet & Multi-Period Reports",
     description: "Balance sheet, income statement, cash flow statement, and tax summaries.",
+    detailedCapabilities: [
+      "Instant Balance Sheet, Income Statement (P&L), and Cash Flow Statement generation",
+      "Comparative multi-period financial analyses across quarters, fiscal years, and months",
+      "Departmental cost-center profitability reports identifying revenue leaders and cost leaks",
+      "Audit-ready financial package exportable in high-resolution PDF and Excel spreadsheets",
+    ],
     minPackage: "pro",
     minPackageName: "Professional Package",
     minPackagePriceUsd: 50,
@@ -576,6 +733,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "marketingGrowthHub",
     featureTitle: "Marketing Hub & Mass Broadcasts",
     description: "Email campaigns, promotions, discount blast engine, and lead conversion tracker.",
+    detailedCapabilities: [
+      "Automated guest re-engagement campaigns targeting past guests with personalized promotions",
+      "Promotional discount code generator with usage limits, date ranges, and percentage caps",
+      "Automated loyalty rewards, birthday vouchers, and corporate holiday greetings",
+      "Campaign ROI tracking linking marketing broadcasts directly to confirmed paid stays",
+    ],
     minPackage: "pro",
     minPackageName: "Professional Package",
     minPackagePriceUsd: 50,
@@ -585,6 +748,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "itAndSystemsHub",
     featureTitle: "IT & Systems Architecture Hub",
     description: "Enterprise system diagnostics, database schema tools, and server metrics.",
+    detailedCapabilities: [
+      "Enterprise infrastructure health monitoring, database latency, and storage bucket metrics",
+      "API webhook logs, webhook retry triggers, and third-party integration diagnostics",
+      "User session IP geolocation, device forensics, and active socket connection monitoring",
+      "Security key rotation, environment variable audit, and backup restoration verification",
+    ],
     minPackage: "enterprise",
     minPackageName: "Enterprise Conglomerate",
     minPackagePriceUsd: 200,
@@ -594,6 +763,12 @@ export const ROUTE_FEATURE_MAP: FeatureRouteConfig[] = [
     featureKey: "auditUserJourneyMap",
     featureTitle: "Forensic User Journey Map & Audit Dept",
     description: "High-resolution clickstream forensic replays, session analytics, and user journey graphs.",
+    detailedCapabilities: [
+      "Visual user journey mapping with button-level clickstream tracking and origin-to-destination pathways",
+      "High-resolution session forensics showing operator transitions, timestamps, and active sessions",
+      "Immutable system activity trail recording all creations, edits, deletions, and payment receipts",
+      "Comprehensive compliance search filterable by staff actor, entity type, and chronological windows",
+    ],
     minPackage: "enterprise",
     minPackageName: "Enterprise Conglomerate",
     minPackagePriceUsd: 200,
@@ -605,6 +780,7 @@ const TIER_LEVELS: Record<PackageId, number> = {
   standard: 2,
   pro: 3,
   enterprise: 4,
+  custom: 5,
   test: 99,
 };
 
