@@ -282,6 +282,36 @@ export default function PortalHomePage() {
     } catch {}
   };
 
+  const [adPageIndex, setAdPageIndex] = useState(0);
+
+  // Active ads for front portal top banner
+  const activePortalAds = useMemo(() => {
+    const now = new Date();
+    return ads.filter((ad) => {
+      if (!ad.is_active) return false;
+      if (ad.starts_at && new Date(ad.starts_at) > now) return false;
+      if (ad.expires_at && new Date(ad.expires_at) < now) return false;
+      return true;
+    });
+  }, [ads]);
+
+  const totalAdPages = Math.ceil(activePortalAds.length / 4);
+
+  // Auto-alternate active ads every 5 seconds if more than 4 ads
+  useEffect(() => {
+    if (totalAdPages <= 1) return;
+    const interval = setInterval(() => {
+      setAdPageIndex((prev) => (prev + 1) % totalAdPages);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [totalAdPages]);
+
+  const visibleTopAds = useMemo(() => {
+    if (activePortalAds.length === 0) return [];
+    const start = (adPageIndex % Math.max(1, totalAdPages)) * 4;
+    return activePortalAds.slice(start, start + 4);
+  }, [activePortalAds, adPageIndex, totalAdPages]);
+
   const tickerAd = useMemo(() => ads.find((a) => a.placement === "ticker"), [ads]);
   const heroBannerAd = useMemo(() => ads.find((a) => a.placement === "hero_banner"), [ads]);
   const inFeedAds = useMemo(() => ads.filter((a) => a.placement === "in_feed"), [ads]);
@@ -525,36 +555,136 @@ export default function PortalHomePage() {
           </div>
         )}
 
-        {/* In-Feed Sponsored Ads */}
-        {inFeedAds.length > 0 && (
-          <div className="mb-14 grid gap-6 grid-cols-1 md:grid-cols-2">
-            {inFeedAds.map((ad) => (
-              <div key={ad.id} className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-purple-900 via-indigo-900 to-blue-900 text-white p-6 shadow-xl flex flex-col justify-between border border-purple-400/30">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="rounded-full bg-amber-400 text-slate-900 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide">
-                    {ad.badge_text || "Sponsored Highlight"}
-                  </span>
-                  <Megaphone size={16} className="text-amber-300" />
-                </div>
-                <div className="mb-4">
-                  <h3 className="text-xl font-black mb-1">{ad.title}</h3>
-                  {ad.subtitle && <p className="text-sm text-purple-200">{ad.subtitle}</p>}
-                </div>
-                {ad.image_url && (
-                  <img src={ad.image_url} alt={ad.title} className="w-full h-40 object-cover rounded-xl mb-4" />
-                )}
-                {ad.link_url && (
-                  <a
-                    href={ad.link_url}
-                    onClick={() => trackAdClick(ad.id)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-white text-purple-900 font-bold px-4 py-2.5 text-sm hover:bg-purple-50 transition shadow"
-                  >
-                    {ad.cta_text || "Learn More"} <ExternalLink size={14} />
-                  </a>
-                )}
+        {/* Top Promoted Ads Showcase (Max 4 at a time, 5-second alternating rotation) */}
+        {visibleTopAds.length > 0 && (
+          <section className="mb-12">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
+                  <Megaphone size={14} />
+                </span>
+                <h3 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white uppercase tracking-wider">
+                  Featured Highlights
+                </h3>
+                <span className="rounded-full bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                  Sponsored
+                </span>
               </div>
-            ))}
-          </div>
+
+              {totalAdPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400 dark:text-slate-500">
+                    {adPageIndex + 1} / {totalAdPages}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: totalAdPages }).map((_, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setAdPageIndex(i)}
+                        className={`h-1.5 rounded-full transition-all ${
+                          i === adPageIndex
+                            ? "w-5 bg-amber-500"
+                            : "w-1.5 bg-gray-300 dark:bg-slate-700 hover:bg-gray-400"
+                        }`}
+                        aria-label={`Go to ad slide ${i + 1}`}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1 ml-1">
+                    <button
+                      type="button"
+                      onClick={() => setAdPageIndex((prev) => (prev > 0 ? prev - 1 : totalAdPages - 1))}
+                      className="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800"
+                      aria-label="Previous ads"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdPageIndex((prev) => (prev + 1) % totalAdPages)}
+                      className="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800"
+                      aria-label="Next ads"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="grid gap-4 sm:gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+              {visibleTopAds.map((ad) => {
+                const destination = ad.link_url || (ad.target_property_id ? `/listing/${ad.target_property_id}` : "#");
+                const isInternal = destination.startsWith("/");
+                return (
+                  <div
+                    key={ad.id}
+                    className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5"
+                  >
+                    <div>
+                      {ad.image_url ? (
+                        <div className="relative aspect-[16/9] w-full overflow-hidden bg-gray-100 dark:bg-slate-800">
+                          <img
+                            src={ad.image_url}
+                            alt={ad.title}
+                            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+                          <div className="absolute top-2.5 left-2.5">
+                            <span className="rounded-full bg-slate-900/80 backdrop-blur-xs text-white px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase">
+                              {ad.badge_text || "Featured Ad"}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="relative aspect-[16/9] w-full bg-gradient-to-br from-indigo-900 via-purple-900 to-slate-900 p-3 flex flex-col justify-between text-white">
+                          <span className="inline-block self-start rounded-full bg-amber-400/90 text-slate-950 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide">
+                            {ad.badge_text || "Sponsored"}
+                          </span>
+                          <Sparkles size={24} className="text-amber-300 self-end opacity-60" />
+                        </div>
+                      )}
+
+                      <div className="p-4">
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white line-clamp-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition">
+                          {ad.title}
+                        </h4>
+                        {ad.subtitle && (
+                          <p className="mt-1 text-xs text-gray-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                            {ad.subtitle}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="p-4 pt-0">
+                      {isInternal ? (
+                        <Link
+                          to={destination}
+                          onClick={() => trackAdClick(ad.id)}
+                          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gray-900 dark:bg-slate-800 hover:bg-blue-600 dark:hover:bg-blue-600 px-3 py-2 text-xs font-bold text-white transition"
+                        >
+                          <span>{ad.cta_text || "View Details"}</span>
+                          <ChevronRight size={13} />
+                        </Link>
+                      ) : (
+                        <a
+                          href={destination}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => trackAdClick(ad.id)}
+                          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gray-900 dark:bg-slate-800 hover:bg-blue-600 dark:hover:bg-blue-600 px-3 py-2 text-xs font-bold text-white transition"
+                        >
+                          <span>{ad.cta_text || "Explore Link"}</span>
+                          <ExternalLink size={12} />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
         )}
 
         {/* Book a Room - room_type_listings */}

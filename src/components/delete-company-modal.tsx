@@ -39,6 +39,7 @@ interface DeleteCompanyModalProps {
   onClose: () => void;
   companyId: string;
   companyName: string;
+  userEmail?: string;
   onDeleted?: () => void;
 }
 
@@ -47,14 +48,16 @@ export function DeleteCompanyModal({
   onClose,
   companyId,
   companyName,
+  userEmail,
   onDeleted,
 }: DeleteCompanyModalProps) {
   const [step, setStep] = useState<"confirm" | "processing" | "done" | "error">("confirm");
   const [confirmText, setConfirmText] = useState("");
+  const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [staffCount, setStaffCount] = useState<number>(0);
 
-  const isConfirmed = confirmText.trim() === companyName;
+  const isConfirmed = confirmText.trim() === companyName && password.length > 0;
   const freezeDays = COMPANY_DELETE_FREEZE_DAYS; // 30 days
 
   const deleteDate = new Date(Date.now() + freezeDays * 24 * 60 * 60 * 1000).toLocaleDateString("en-US", {
@@ -79,6 +82,22 @@ export function DeleteCompanyModal({
     setErrorMsg(null);
 
     try {
+      // Verify user's password before proceeding
+      const emailToVerify = userEmail || (await supabase.auth.getUser()).data.user?.email;
+      if (!emailToVerify) {
+        throw new Error("Could not determine user email for password verification.");
+      }
+
+      const { error: authErr } = await supabase.auth.signInWithPassword({
+        email: emailToVerify,
+        password: password,
+      });
+
+      if (authErr) {
+        setErrorMsg("Incorrect password. Please enter your valid password to confirm company deletion.");
+        setStep("error");
+        return;
+      }
       // 1. Soft-delete the company (set deleted_at)
       const { error: companyErr } = await supabase
         .from("companies")
@@ -138,6 +157,7 @@ export function DeleteCompanyModal({
   const handleClose = () => {
     setStep("confirm");
     setConfirmText("");
+    setPassword("");
     setErrorMsg(null);
     onClose();
   };
@@ -205,9 +225,23 @@ export function DeleteCompanyModal({
               onChange={(e) => setConfirmText(e.target.value)}
               className="w-full rounded-xl border border-border-color bg-surface px-3 py-2 text-xs text-foreground focus:border-red-500 focus:outline-none"
             />
-            {confirmText.length > 0 && !isConfirmed && (
+            {confirmText.length > 0 && confirmText.trim() !== companyName && (
               <p className="text-[10px] text-red-400">Must match exactly: "{companyName}"</p>
             )}
+          </div>
+
+          {/* Password verification input */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-muted block">
+              Enter your Super Admin account password
+            </label>
+            <input
+              type="password"
+              placeholder="Your password to verify authorization"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-xl border border-border-color bg-surface px-3 py-2 text-xs text-foreground focus:border-red-500 focus:outline-none"
+            />
           </div>
 
           <div className="flex gap-2 pt-1">

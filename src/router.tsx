@@ -4,6 +4,8 @@ import { AppShell } from "@/components/app-shell";
 import LoginPage from "@/pages/login";
 import SignupPage from "@/pages/signup";
 import SetPasswordPage from "@/pages/set-password";
+import ConfirmEmailPage from "@/pages/auth/confirm-email";
+import ResetPasswordPage from "@/pages/auth/reset-password";
 import DashboardPage from "@/pages/dashboard";
 import CommercialBookingsPage from "@/pages/commercial-bookings";
 import RoomManagementPage from "@/pages/room-management";
@@ -80,11 +82,17 @@ export function AppRouter() {
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/set-password" element={<SetPasswordPage />} />
+      <Route path="/auth/confirm-email" element={<ConfirmEmailPage />} />
+      <Route path="/confirm-email" element={<ConfirmEmailPage />} />
+      <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {/* Unique Dedicated Multi-Tenant Organization URLs */}
       <Route path="/c/:companySlug" element={<CompanySlugRedirect />} />
       <Route path="/c/:companySlug/login" element={<LoginPage />} />
       <Route path="/c/:companySlug/set-password" element={<SetPasswordPage />} />
+      <Route path="/c/:companySlug/confirm-email" element={<ConfirmEmailPage />} />
+      <Route path="/c/:companySlug/reset-password" element={<ResetPasswordPage />} />
 
       {/* Public Customer Portal Routes */}
       <Route path="/" element={<PortalLayout />}>

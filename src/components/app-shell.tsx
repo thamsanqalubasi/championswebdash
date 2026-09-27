@@ -29,7 +29,7 @@ import {
   History, Landmark, BedDouble, KeyRound, Briefcase, Layers, ChevronDown, ChevronUp,
   Building, Inbox, Globe, UserCog, ChevronLeft, ChevronRight, Menu,
   ShieldCheck, Check, X, Network, Server, BarChart3, Megaphone,
-  Lock, CreditCard, Clock, Sparkles,
+  Lock, CreditCard, Clock, Sparkles, User, LogOut,
   type LucideIcon,
 } from "lucide-react";
 import type { DepartmentType } from "@/lib/types";
@@ -117,7 +117,6 @@ const allNavSections: NavSection[] = [
       { label: "Users & Rights", href: "/users-management", icon: UserCog, departments: ["admin","it","manager"], permissions: ["manage_all_users", "manage_user_rights", "manage_hr"] },
       { label: "Organogram & Roles", href: "/organogram", icon: Network, departments: ["admin","it","manager"], permissions: ["manage_roles_organogram", "manage_all_users", "manage_hr"] },
       { label: "Contracts", href: "/contracts", icon: FileSignature, departments: ["admin","manager"], permissions: ["manage_properties", "manage_hr"] },
-      { label: "Settings", href: "/settings", icon: Settings, departments: ["admin","it","manager"], permissions: ["manage_all_users"] },
       { label: "Audit Department", href: "/audit-trail", icon: History, departments: ["admin","audit","manager","it"], permissions: ["view_audit_trail", "manage_audit"] },
     ],
   },
@@ -323,6 +322,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [sub]);
 
   const userEmail = user?.email || currentCompanyUser.email;
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    }
+    if (profileMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [profileMenuOpen]);
 
   const onSignOut = async () => {
     await signOut();
@@ -682,15 +695,106 @@ export function AppShell({ children }: { children: ReactNode }) {
               >
                 <Truck size={14} className="text-amber-500" /><span>Procure</span>
               </button>
-              <ThemeToggle variant="compact" />
-              <div className="hidden xl:block max-w-[160px] truncate px-1 py-1 text-xs font-medium text-muted" title={userEmail}>{userEmail}</div>
-              <button
-                type="button"
-                onClick={onSignOut}
-                className="rounded-xl border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground transition"
-              >
-                {t("header_sign_out")}
-              </button>
+              {/* Profile Avatar & Menu Popover */}
+              <div className="relative" ref={profileMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setProfileMenuOpen((prev) => !prev)}
+                  className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border transition-all ${
+                    profileMenuOpen
+                      ? "border-blue-500 bg-blue-500/10 text-blue-500 shadow-sm"
+                      : "border-border-color bg-surface-elevated text-foreground hover:bg-surface hover:border-foreground/30"
+                  }`}
+                  aria-label="User Profile and Settings"
+                  title="Profile & Settings"
+                >
+                  <User size={16} />
+                </button>
+
+                {profileMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-border-color bg-surface p-3 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2">
+                    {/* User Identity Header */}
+                    <div className="flex items-center gap-3 p-2.5 rounded-xl bg-surface-elevated border border-border-color mb-2.5">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-bold text-sm shadow-sm uppercase">
+                        {(userEmail || "U")[0]}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold text-foreground truncate" title={userEmail}>
+                          {userEmail}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="inline-block rounded-md bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-blue-400 capitalize">
+                            {currentCompanyUser?.roleLevel || "Staff"}
+                          </span>
+                          <span className="text-[10px] text-muted truncate">
+                            {currentCompany?.name}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs">
+                      {/* Theme Toggle (Dark / Light Mode) */}
+                      <div className="flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-surface-elevated transition">
+                        <span className="font-medium text-foreground">Theme Mode</span>
+                        <ThemeToggle variant="compact" />
+                      </div>
+
+                      {/* Subscription Info & Upgrade */}
+                      <div className="px-2.5 py-2 rounded-xl bg-surface-elevated/60 border border-border-color space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Subscription</span>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                            {SUBSCRIPTION_PACKAGES[sub.packageId]?.name || "Starter"}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-muted flex items-center justify-between">
+                          <span>
+                            {sub.isTrial
+                              ? `Trial: ${formatTrialCountdown(remainingTrialSec)}`
+                              : sub.status === "grace_period"
+                              ? "Grace Period"
+                              : "Active Plan"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProfileMenuOpen(false);
+                              setPackageModalOpen(true);
+                            }}
+                            className="font-bold text-blue-500 hover:underline cursor-pointer"
+                          >
+                            Plans
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Settings Link */}
+                      <Link
+                        to="/settings"
+                        onClick={() => setProfileMenuOpen(false)}
+                        className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-xl font-medium text-foreground hover:bg-surface-elevated transition"
+                      >
+                        <Settings size={15} className="text-muted" />
+                        <span>Settings</span>
+                      </Link>
+
+                      {/* Sign Out */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProfileMenuOpen(false);
+                          onSignOut();
+                        }}
+                        className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-xl font-medium text-red-500 hover:bg-red-500/10 transition cursor-pointer"
+                      >
+                        <LogOut size={15} />
+                        <span>{t("header_sign_out")}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Global Search - wraps neatly below on mobile phones */}

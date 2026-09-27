@@ -48,9 +48,10 @@ export function DeleteAccountModal({
 }: DeleteAccountModalProps) {
   const [step, setStep] = useState<"confirm" | "processing" | "done" | "error">("confirm");
   const [confirmText, setConfirmText] = useState("");
+  const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const isConfirmed = confirmText.toLowerCase().trim() === "delete";
+  const isConfirmed = confirmText.toLowerCase().trim() === "delete" && password.length > 0;
   const freezeDays = COMPANY_DELETE_FREEZE_DAYS; // 30 days
 
   const handleDelete = async () => {
@@ -59,6 +60,23 @@ export function DeleteAccountModal({
     setErrorMsg(null);
 
     try {
+      // Verify user's password before proceeding
+      const emailToVerify = userEmail || (await supabase.auth.getUser()).data.user?.email;
+      if (!emailToVerify) {
+        throw new Error("Could not determine user email for password verification.");
+      }
+
+      const { error: authErr } = await supabase.auth.signInWithPassword({
+        email: emailToVerify,
+        password: password,
+      });
+
+      if (authErr) {
+        setErrorMsg("Incorrect password. Please enter your valid password to confirm deletion.");
+        setStep("error");
+        return;
+      }
+
       // Soft-delete: update user metadata with deleted_at timestamp
       // The user can reactivate by simply logging in within 30 days
       const { error: metaError } = await supabase.auth.updateUser({
@@ -92,6 +110,7 @@ export function DeleteAccountModal({
   const handleClose = () => {
     setStep("confirm");
     setConfirmText("");
+    setPassword("");
     setErrorMsg(null);
     onClose();
   };
@@ -154,7 +173,7 @@ export function DeleteAccountModal({
             ))}
           </div>
 
-          {/* Confirmation input */}
+          {/* Confirmation text input */}
           <div className="space-y-1.5">
             <label className="text-[11px] font-bold uppercase tracking-wider text-muted block">
               Type <strong className="text-red-400">delete</strong> to confirm account deletion
@@ -164,6 +183,20 @@ export function DeleteAccountModal({
               placeholder='Type "delete" to confirm'
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
+              className="w-full rounded-xl border border-border-color bg-surface px-3 py-2 text-xs text-foreground focus:border-red-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Password verification input */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-muted block">
+              Enter your account password
+            </label>
+            <input
+              type="password"
+              placeholder="Your password to verify identity"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               className="w-full rounded-xl border border-border-color bg-surface px-3 py-2 text-xs text-foreground focus:border-red-500 focus:outline-none"
             />
           </div>

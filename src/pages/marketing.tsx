@@ -345,12 +345,42 @@ export default function MarketingPage() {
     if (!pendingBoostPayload || pendingBoostPayload.length === 0) return;
     setSubmittingBoost(true);
     try {
+      // 1. Insert active boost listings
       const { error } = await supabase.from("marketing_boosted_listings").insert(pendingBoostPayload);
       if (error) {
         if (error.message?.includes("row-level security")) {
           alert("Database Row-Level Security Notice:\nPlease execute the SQL migration in 'docs/fix-all-rls-and-pop.sql' in your Supabase SQL Editor to enable public & staff permissions on marketing_boosted_listings.");
         }
         throw error;
+      }
+
+      // 2. Track financial transaction in payment_transactions table
+      // CONTROL ADMIN DASHBOARD TODO (future agents):
+      // - Query public.payment_transactions where package_id LIKE 'boost_%' to display all advertising & boost revenue
+      // - Provide metrics: Total Boost Revenue, Active Boosts Count, Top Spending Companies
+      // - Allow Control Admin to pause, terminate, or extend any company's boosted listings
+      // - Filter by date range and export financial reports
+      try {
+        await supabase.from("payment_transactions").insert({
+          company_id: currentCompany.id,
+          package_id: `boost_${boostForm.boost_tier}`,
+          amount_usd: boostAmountUsd,
+          currency: "usd",
+          status: "succeeded",
+          provider: "secure_payment_gateway",
+          provider_tx_id: `boost_tx_${Date.now()}`,
+          metadata: {
+            boost_type: "listing_boost",
+            boost_tier: boostForm.boost_tier,
+            listings_count: boostSelectedIds.length,
+            listing_ids: boostSelectedIds,
+            starts_at: boostForm.boost_start_date,
+            expires_at: boostForm.boost_end_date,
+            budget_nad: boostForm.budget,
+          },
+        });
+      } catch (txErr) {
+        console.warn("[Marketing] Could not insert transaction log:", txErr);
       }
 
       setPendingBoostPayload(null);

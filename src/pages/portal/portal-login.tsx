@@ -4,7 +4,8 @@ import { supabase } from "@/lib/supabase";
 import { clearStaffSession, getCustomerSession, setCustomerSession } from "@/lib/auth";
 import { TermsCheckboxField } from "@/components/terms-modal";
 import { sendEmailViaApi, wrapCustomerWelcomeEmailHtml } from "@/lib/notifications";
-import { LogIn, UserPlus, Eye, EyeOff, AlertCircle, CheckCircle, Building, Shield } from "lucide-react";
+import { LogIn, UserPlus, Eye, EyeOff, AlertCircle, CheckCircle, Building, Shield, Mail } from "lucide-react";
+import { ResendConfirmationModal } from "@/components/resend-confirmation-modal";
 
 function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   const [show, setShow] = useState(false);
@@ -52,6 +53,7 @@ export default function PortalLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [showConfirmEmailModal, setShowConfirmEmailModal] = useState(false);
 
   // Auto-redirect if customer is already authenticated
   useEffect(() => {
@@ -201,7 +203,26 @@ export default function PortalLoginPage() {
             {mode === "login" && <p className="text-xs text-blue-600 dark:text-blue-400 mt-2 font-semibold">Sign in below ↓</p>}
           </div>
 
-          {error && (<div className="mb-4 flex items-start gap-2 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/50 p-3 text-sm text-red-700 dark:text-red-300"><AlertCircle size={15} className="mt-0.5 shrink-0"/>{error}</div>)}
+          {error && (
+            <div className="mb-4 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/50 p-3.5 text-sm text-red-700 dark:text-red-300 space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle size={15} className="mt-0.5 shrink-0"/>
+                <span>{error}</span>
+              </div>
+              {error.toLowerCase().includes("confirm") && (
+                <div className="pt-1 pl-6">
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmEmailModal(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-red-700 transition"
+                  >
+                    <Mail size={12} />
+                    <span>Confirm Email &bull; Send Link</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           {success && (<div className="mb-4 flex items-start gap-2 rounded-xl bg-green-50 dark:bg-green-950/50 border border-green-200 dark:border-green-900/50 p-3 text-sm text-green-700 dark:text-green-300"><CheckCircle size={15} className="mt-0.5 shrink-0"/>{success}</div>)}
 
           <form onSubmit={mode === "login" ? handleLogin : handleSignup} className="space-y-4">
@@ -251,6 +272,12 @@ export default function PortalLoginPage() {
         </div>
         <p className="text-center text-xs text-gray-400 dark:text-slate-500 mt-6"><Link to="/" className="hover:text-blue-600 dark:hover:text-blue-400 transition font-medium">← Back to Listings</Link></p>
       </div>
+
+      <ResendConfirmationModal
+        open={showConfirmEmailModal}
+        onClose={() => setShowConfirmEmailModal(false)}
+        defaultEmail={email}
+      />
     </div>
   );
 }

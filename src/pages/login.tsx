@@ -3,7 +3,8 @@ import { Navigate, useNavigate, useSearchParams, useParams, Link } from "react-r
 import { useAuth } from "@/lib/auth";
 import { fetchCompanyBySlug } from "@/lib/data";
 import type { Company } from "@/lib/types";
-import { Lock, Mail, KeyRound, Building2, ShieldCheck, ArrowRight, Sparkles, Globe } from "lucide-react";
+import { Lock, Mail, KeyRound, Building2, ShieldCheck, ArrowRight, Sparkles, Globe, AlertCircle } from "lucide-react";
+import { ResendConfirmationModal } from "@/components/resend-confirmation-modal";
 
 export default function LoginPage() {
   const { signIn, user, isStaffAuthenticated, setCurrentCompany } = useAuth();
@@ -18,6 +19,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showConfirmEmailModal, setShowConfirmEmailModal] = useState(false);
 
   // Load custom company branding if companySlug is present in URL
   useEffect(() => {
@@ -81,6 +83,9 @@ export default function LoginPage() {
   const setPasswordPath = companySlug
     ? `/c/${companySlug}/set-password`
     : "/set-password";
+  const resetPasswordPath = companySlug
+    ? `/c/${companySlug}/reset-password`
+    : "/auth/reset-password";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
@@ -138,8 +143,23 @@ export default function LoginPage() {
 
         <form className="space-y-4 text-xs" onSubmit={onSubmit}>
           {error && (
-            <div className="rounded-xl bg-red-500/10 p-3 text-red-600 font-medium">
-              {error}
+            <div className="rounded-xl bg-red-500/10 p-3.5 text-red-600 font-medium space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{error}</span>
+              </div>
+              {error.toLowerCase().includes("confirm") && (
+                <div className="pt-1 pl-5">
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmEmailModal(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-xs hover:bg-red-700 transition"
+                  >
+                    <Mail size={12} />
+                    <span>Confirm Email &bull; Send Verification Link</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -166,7 +186,7 @@ export default function LoginPage() {
                 Password
               </label>
               <Link
-                to={`${setPasswordPath}${email ? `?email=${encodeURIComponent(email)}&action=reset` : "?action=reset"}`}
+                to={`${resetPasswordPath}${email ? `?email=${encodeURIComponent(email)}` : ""}`}
                 className="text-[11px] font-medium text-blue-600 hover:underline"
               >
                 Forgot Password?
@@ -241,6 +261,12 @@ export default function LoginPage() {
           <p>Protected by Enterprise RBAC &amp; Multi-Tenant Security</p>
         </footer>
       </section>
+
+      <ResendConfirmationModal
+        open={showConfirmEmailModal}
+        onClose={() => setShowConfirmEmailModal(false)}
+        defaultEmail={email}
+      />
     </main>
   );
 }

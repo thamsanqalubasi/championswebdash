@@ -1697,6 +1697,7 @@ export default function SettingsPage() {
           onClose={() => setDeleteCompanyOpen(false)}
           companyId={currentCompany.id}
           companyName={currentCompany.name || ""}
+          userEmail={user?.email || ""}
           onDeleted={() => {
             setDeleteCompanyOpen(false);
             supabase.auth.signOut();
