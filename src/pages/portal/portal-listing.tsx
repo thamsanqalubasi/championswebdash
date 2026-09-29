@@ -7,6 +7,29 @@ import { Modal } from "@/components/modal";
 import { DEFAULT_ENQUIRY_QUESTIONS, getDefaultResponseForQuestion, sendEnquiryResponseEmail } from "@/lib/enquiry-templates";
 
 const AMENITY_ICONS: Record<string, any> = { wifi: Wifi, tv: Tv, ac: Wind, coffee: Coffee, bath: Bath, gym: Dumbbell, parking: ParkingCircle, breakfast: Utensils, balcony: Globe };
+
+const PHONE_COUNTRY_CODES = [
+  { code: "+27", label: "ZA +27" },
+  { code: "+264", label: "NA +264" },
+  { code: "+263", label: "ZW +263" },
+  { code: "+267", label: "BW +267" },
+  { code: "+260", label: "ZM +260" },
+  { code: "+254", label: "KE +254" },
+  { code: "+255", label: "TZ +255" },
+  { code: "+256", label: "UG +256" },
+  { code: "+250", label: "RW +250" },
+  { code: "+258", label: "MZ +258" },
+  { code: "+234", label: "NG +234" },
+  { code: "+233", label: "GH +233" },
+  { code: "+244", label: "AO +244" },
+  { code: "+61", label: "AU +61" },
+  { code: "+1", label: "US +1" },
+  { code: "+44", label: "UK +44" },
+  { code: "+49", label: "DE +49" },
+  { code: "+33", label: "FR +33" },
+  { code: "+971", label: "AE +971" },
+  { code: "+91", label: "IN +91" },
+];
 const AMENITY_LABELS: Record<string, string> = { wifi: "Free Wi-Fi", tv: "Smart TV", ac: "Air Con", coffee: "Coffee Maker", bath: "Bathtub", gym: "Gym Access", parking: "Parking", breakfast: "Breakfast", balcony: "Balcony" };
 
 type Review = { id: string; customer_name: string; rating: number; title: string; body: string; created_at: string; };
@@ -44,6 +67,16 @@ export default function PortalListingPage() {
   const [reviewSent, setReviewSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", phone: "", message: "", check_in: "", check_out: "", guests: 1 });
+  const [phoneCountryCode, setPhoneCountryCode] = useState("+27");
+  const [phoneLocalNumber, setPhoneLocalNumber] = useState("");
+
+  useEffect(() => {
+    setForm(prev => ({
+      ...prev,
+      phone: phoneLocalNumber.trim() ? `${phoneCountryCode} ${phoneLocalNumber.trim()}` : ""
+    }));
+  }, [phoneCountryCode, phoneLocalNumber]);
+
   const [review, setReview] = useState({ name: "", email: "", rating: 5, title: "", body: "" });
   const [automatedResponse, setAutomatedResponse] = useState<string>("");
   const [createdTicketId, setCreatedTicketId] = useState<string>("");
@@ -579,8 +612,24 @@ export default function PortalListingPage() {
               <h3 className="font-bold text-gray-900 dark:text-white text-lg">{bookingMode === 'instant' ? 'Complete Your Booking' : 'Reserve Your Room'}</h3>
               
               <input placeholder="Your name *" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
-              <input placeholder="Email address *" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
-              <input placeholder="Phone number" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
+              <div className="flex rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden focus-within:border-blue-500 transition">
+                <select
+                  value={phoneCountryCode}
+                  onChange={(e) => setPhoneCountryCode(e.target.value)}
+                  className="border-r border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/60 px-2.5 py-2 text-xs font-semibold text-gray-700 dark:text-slate-200 outline-none cursor-pointer shrink-0"
+                >
+                  {PHONE_COUNTRY_CODES.map((c) => (
+                    <option key={c.code} value={c.code}>{c.label}</option>
+                  ))}
+                </select>
+                <input
+                  type="tel"
+                  placeholder="Phone number *"
+                  value={phoneLocalNumber}
+                  onChange={(e) => setPhoneLocalNumber(e.target.value)}
+                  className="flex-1 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none bg-transparent"
+                />
+              </div>
               
               <div className="grid grid-cols-2 gap-2">
                 <div><label className="text-xs font-medium text-gray-600 dark:text-slate-400 mb-1 flex items-center gap-1"><Calendar size={11}/>Check-in *</label><input type="date" min={new Date().toISOString().slice(0, 10)} value={form.check_in} onChange={e=>setForm({...form,check_in:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/></div>
@@ -628,7 +677,24 @@ export default function PortalListingPage() {
               <h3 className="font-bold text-gray-900 dark:text-white text-lg">{isHosp ? "Send an Enquiry" : "Enquire Now"}</h3>
               <input placeholder="Your name *" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
               <input placeholder="Email address *" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
-              <input placeholder="Phone number" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
+              <div className="flex rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden focus-within:border-blue-500 transition">
+                <select
+                  value={phoneCountryCode}
+                  onChange={(e) => setPhoneCountryCode(e.target.value)}
+                  className="border-r border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/60 px-2.5 py-2 text-xs font-semibold text-gray-700 dark:text-slate-200 outline-none cursor-pointer shrink-0"
+                >
+                  {PHONE_COUNTRY_CODES.map((c) => (
+                    <option key={c.code} value={c.code}>{c.label}</option>
+                  ))}
+                </select>
+                <input
+                  type="tel"
+                  placeholder="Phone number *"
+                  value={phoneLocalNumber}
+                  onChange={(e) => setPhoneLocalNumber(e.target.value)}
+                  className="flex-1 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none bg-transparent"
+                />
+              </div>
               {isHosp && (
                 <>
                   <div className="grid grid-cols-2 gap-2">

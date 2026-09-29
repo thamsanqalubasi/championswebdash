@@ -24,6 +24,11 @@ import {
   MessageSquare,
   UserCheck,
   CalendarRange,
+  Copy,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Send,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -63,6 +68,15 @@ export default function CommercialBookingsPage() {
   const [activeTab, setActiveTab] = useState<'bookings' | 'reservations' | 'enquiries'>('bookings');
   const [reservations, setReservations] = useState<CommercialBooking[]>([]);
   const [bookingEnquiries, setBookingEnquiries] = useState<any[]>([]);
+  const [expandedEnquiryId, setExpandedEnquiryId] = useState<string | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [emailModalEnquiry, setEmailModalEnquiry] = useState<any | null>(null);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [responseEmail, setResponseEmail] = useState("");
+  const [showResponseEmailSetting, setShowResponseEmailSetting] = useState(false);
+  const [responseEmailInput, setResponseEmailInput] = useState("");
 
   // Modals state
   const [checkinOpen, setCheckinOpen] = useState(false);
@@ -89,6 +103,13 @@ export default function CommercialBookingsPage() {
     isOpen: false,
     documentTitle: "",
   });
+
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    });
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -738,129 +759,393 @@ export default function CommercialBookingsPage() {
       )}
 
       {activeTab === 'enquiries' && (
-        <div className="overflow-hidden rounded-2xl border border-border-color bg-surface shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-border-color bg-surface-elevated/70 text-[11px] font-bold uppercase tracking-wider text-muted">
-                <tr>
-                  <th className="px-4 py-3.5">Customer</th>
-                  <th className="px-4 py-3.5">Enquiry Type</th>
-                  <th className="px-4 py-3.5">Dates / Guests</th>
-                  <th className="px-4 py-3.5">Message</th>
-                  <th className="px-4 py-3.5">Received / Status</th>
-                  <th className="px-4 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-color text-foreground">
-                {bookingEnquiries.length === 0 ? (
+        <div className="space-y-4">
+          {/* Response Email Setting Bar */}
+          <div className="flex items-center gap-3 rounded-xl border border-border-color bg-surface p-3">
+            <Mail size={15} className="text-muted shrink-0" />
+            <div className="flex-1">
+              <span className="text-xs font-medium text-muted">Response From Email: </span>
+              {responseEmail ? (
+                <span className="text-xs font-bold text-foreground">{responseEmail}</span>
+              ) : (
+                <span className="text-xs text-amber-600 font-medium">Not set - replies will use system default</span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setResponseEmailInput(responseEmail);
+                setShowResponseEmailSetting(true);
+              }}
+              className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated/80 transition"
+            >
+              <Pencil size={13} />
+              Set Response Email
+            </button>
+          </div>
+
+          {/* Response Email Setting Modal */}
+          {showResponseEmailSetting && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-4">
+                <h3 className="text-base font-bold text-foreground">Set Response Email Address</h3>
+                <p className="text-xs text-muted">Emails sent from the Booking Enquiries tab will appear to come from this address. Make sure it's a monitored inbox.</p>
+                <input
+                  type="email"
+                  placeholder="e.g. reservations@yourproperty.com"
+                  value={responseEmailInput}
+                  onChange={(e) => setResponseEmailInput(e.target.value)}
+                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground outline-none focus:border-blue-600"
+                />
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setShowResponseEmailSetting(false)} className="rounded-lg border border-border-color px-4 py-2 text-xs font-medium text-muted hover:bg-surface-elevated">
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResponseEmail(responseEmailInput.trim());
+                      setShowResponseEmailSetting(false);
+                    }}
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700"
+                  >
+                    Save Email
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Email Compose Modal */}
+          {emailModalEnquiry && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-lg rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-4">
+                <div className="flex items-center justify-between border-b border-border-color pb-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Compose Email Response</p>
+                    <h3 className="text-base font-bold text-foreground">To: {emailModalEnquiry.customer_name}</h3>
+                  </div>
+                  <button onClick={() => setEmailModalEnquiry(null)} className="rounded-lg p-1.5 text-muted hover:bg-surface-elevated">
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-medium text-muted block mb-1">From</label>
+                    <div className="rounded-xl border border-border-color bg-surface-elevated/50 px-3 py-2 text-sm text-muted">
+                      {responseEmail || 'system@paimbabook.com'}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted block mb-1">To</label>
+                    <div className="rounded-xl border border-border-color bg-surface-elevated/50 px-3 py-2 text-sm text-foreground">
+                      {emailModalEnquiry.customer_email}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted block mb-1">Subject</label>
+                    <input
+                      type="text"
+                      value={emailSubject}
+                      onChange={(e) => setEmailSubject(e.target.value)}
+                      className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground outline-none focus:border-blue-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted block mb-1">Message</label>
+                    <textarea
+                      rows={6}
+                      value={emailBody}
+                      onChange={(e) => setEmailBody(e.target.value)}
+                      placeholder="Type your response here..."
+                      className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground outline-none focus:border-blue-600 resize-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <button type="button" onClick={() => setEmailModalEnquiry(null)} className="rounded-lg border border-border-color px-4 py-2 text-xs font-medium text-muted hover:bg-surface-elevated">
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={sendingEmail || !emailBody.trim()}
+                    onClick={async () => {
+                      setSendingEmail(true);
+                      try {
+                        const { sendEnquiryResponseEmail } = await import('@/lib/enquiry-templates');
+                        await sendEnquiryResponseEmail({
+                          toEmail: emailModalEnquiry.customer_email,
+                          customerName: emailModalEnquiry.customer_name,
+                          propertyName: undefined,
+                          enquiryId: emailModalEnquiry.id,
+                          question: emailModalEnquiry.message,
+                          response: emailBody,
+                          companyName: currentCompany.name,
+                        });
+                        // Log to audit trail
+                        const actorName = currentCompanyUser?.fullName || 'Staff';
+                        await supabase.from('audit_logs').insert([{
+                          company_id: currentCompany.id,
+                          action: 'sent_email_response',
+                          target_entity: 'enquiry',
+                          target_id: emailModalEnquiry.id,
+                          performed_by_name: actorName,
+                          details: { subject: emailSubject, to: emailModalEnquiry.customer_email }
+                        }]);
+                        // Mark as in_progress
+                        await supabase.from('enquiries').update({ status: 'in_progress' }).eq('id', emailModalEnquiry.id);
+                        loadData();
+                        setEmailModalEnquiry(null);
+                        setEmailSubject('');
+                        setEmailBody('');
+                        alert('Email response sent successfully.');
+                      } catch (err: any) {
+                        alert('Failed to send email: ' + (err.message || String(err)));
+                      } finally {
+                        setSendingEmail(false);
+                      }
+                    }}
+                    className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    <Send size={13} />
+                    {sendingEmail ? 'Sending...' : 'Send Email'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="overflow-hidden rounded-2xl border border-border-color bg-surface shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-border-color bg-surface-elevated/70 text-[11px] font-bold uppercase tracking-wider text-muted">
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-muted">
-                      <div className="flex flex-col items-center justify-center">
-                        <MessageSquare size={32} className="mb-2 text-purple-400" />
-                        <p>No booking enquiries</p>
-                      </div>
-                    </td>
+                    <th className="px-4 py-3.5 w-8"></th>
+                    <th className="px-4 py-3.5">Customer</th>
+                    <th className="px-4 py-3.5">Enquiry Type</th>
+                    <th className="px-4 py-3.5">Dates / Guests</th>
+                    <th className="px-4 py-3.5">Message</th>
+                    <th className="px-4 py-3.5">Received / Status</th>
+                    <th className="px-4 py-3.5 text-right">Actions</th>
                   </tr>
-                ) : (
-                  bookingEnquiries.map((e) => (
-                    <tr key={e.id} className="hover:bg-surface-elevated/70 transition">
-                      <td className="px-4 py-3.5">
-                        <p className="font-bold text-foreground">{e.customer_name}</p>
-                        <div className="flex items-center gap-2 text-xs text-muted mt-0.5">
-                          <Mail size={12} />
-                          <span>{e.customer_email}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-muted mt-0.5">
-                          <Phone size={12} />
-                          <span>{e.customer_phone}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          e.type === 'room_booking' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          {e.type === 'room_booking' ? 'Room Booking' : 'Rental Enquiry'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 text-xs">
-                        {e.check_in_date && (
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <Calendar size={13} className="text-muted" />
-                            <span>
-                              {new Date(e.check_in_date).toLocaleDateString()}
-                              {e.check_out_date && ` → ${new Date(e.check_out_date).toLocaleDateString()}`}
-                            </span>
-                          </div>
-                        )}
-                        {e.guests && (
-                          <div className="flex items-center gap-1.5">
-                            <UserCheck size={13} className="text-muted" />
-                            <span>{e.guests} Guests</span>
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <p className="text-xs text-muted max-w-[250px] truncate" title={e.message}>
-                          {e.message}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3.5 text-xs">
-                        <p className="text-muted mb-1">{new Date(e.created_at).toLocaleDateString()}</p>
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                          e.status === 'open' ? 'bg-orange-100 text-orange-700' :
-                          e.status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-green-100 text-green-700'
-                        }`}>
-                          {e.status.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {e.status !== 'resolved' && e.status !== 'in_progress' ? (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const actorName = currentCompanyUser?.fullName || "Staff";
-                                await supabase.from('enquiries').update({
-                                  status: 'in_progress',
-                                  resolved_by_name: actorName,
-                                  resolved_at: new Date().toISOString()
-                                }).eq('id', e.id);
-                                await supabase.from('audit_logs').insert([{
-                                  company_id: currentCompany.id,
-                                  action: 'attended_booking_enquiry',
-                                  target_entity: 'enquiry',
-                                  target_id: e.id,
-                                  performed_by_name: actorName,
-                                  details: { enquiry_type: e.type, customer_name: e.customer_name }
-                                }]);
-                                loadData();
-                              }}
-                              className="flex items-center gap-1 rounded-lg border border-purple-500/30 bg-purple-500/10 px-2.5 py-1 text-xs font-semibold text-purple-600 hover:bg-purple-500/20"
-                            >
-                              <CheckCircle2 size={13} />
-                              <span>Attend</span>
-                            </button>
-                          ) : (
-                            <span className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-50/50 px-2.5 py-1 text-xs font-semibold text-emerald-600">
-                              <CheckCircle2 size={13} />
-                              Attended
-                            </span>
-                          )}
-                          <a
-                            href={`mailto:${e.customer_email}?subject=Re: Your Booking Enquiry`}
-                            className="flex items-center gap-1 rounded-lg border border-border-color bg-surface-elevated px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-surface-elevated/80"
-                          >
-                            <Mail size={13} />
-                            <span>Email</span>
-                          </a>
+                </thead>
+                <tbody className="divide-y divide-border-color text-foreground">
+                  {bookingEnquiries.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-muted">
+                        <div className="flex flex-col items-center justify-center">
+                          <MessageSquare size={32} className="mb-2 text-purple-400" />
+                          <p>No booking enquiries yet</p>
                         </div>
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    bookingEnquiries.map((e) => (
+                      <>
+                        <tr key={e.id} className="hover:bg-surface-elevated/50 transition cursor-pointer" onClick={() => setExpandedEnquiryId(expandedEnquiryId === e.id ? null : e.id)}>
+                          <td className="px-4 py-3.5">
+                            <button type="button" className="text-muted hover:text-foreground transition">
+                              {expandedEnquiryId === e.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                            </button>
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <p className="font-bold text-foreground">{e.customer_name}</p>
+                            <div className="flex items-center gap-1.5 text-xs text-muted mt-0.5">
+                              <Mail size={11} />
+                              <span className="truncate max-w-[160px]">{e.customer_email}</span>
+                            </div>
+                            {e.customer_phone && (
+                              <div className="flex items-center gap-1.5 text-xs text-muted mt-0.5">
+                                <Phone size={11} />
+                                <span>{e.customer_phone}</span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                              e.type === 'room_booking' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                            }`}>
+                              {e.type === 'room_booking' ? 'Room Booking' : 'Rental Enquiry'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 text-xs">
+                            {e.check_in_date && (
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <Calendar size={12} className="text-muted" />
+                                <span>{new Date(e.check_in_date).toLocaleDateString()}{e.check_out_date && ` → ${new Date(e.check_out_date).toLocaleDateString()}`}</span>
+                              </div>
+                            )}
+                            {e.guests && <div className="text-muted">{e.guests} guests</div>}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <p className="text-xs text-muted max-w-[200px] truncate">{e.message}</p>
+                          </td>
+                          <td className="px-4 py-3.5 text-xs">
+                            <p className="text-muted mb-1">{new Date(e.created_at).toLocaleDateString()}</p>
+                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                              e.status === 'open' ? 'bg-orange-100 text-orange-700' :
+                              e.status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-green-100 text-green-700'
+                            }`}>
+                              {e.status.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 text-right" onClick={(ev) => ev.stopPropagation()}>
+                            <div className="flex items-center justify-end gap-1.5">
+                              {e.status !== 'resolved' && e.status !== 'in_progress' ? (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const actorName = currentCompanyUser?.fullName || 'Staff';
+                                    await supabase.from('enquiries').update({
+                                      status: 'in_progress',
+                                      resolved_by_name: actorName,
+                                      resolved_at: new Date().toISOString()
+                                    }).eq('id', e.id);
+                                    await supabase.from('audit_logs').insert([{
+                                      company_id: currentCompany.id,
+                                      action: 'attended_booking_enquiry',
+                                      target_entity: 'enquiry',
+                                      target_id: e.id,
+                                      performed_by_name: actorName,
+                                      details: { enquiry_type: e.type, customer_name: e.customer_name }
+                                    }]);
+                                    loadData();
+                                  }}
+                                  className="flex items-center gap-1 rounded-lg border border-purple-500/30 bg-purple-500/10 px-2.5 py-1 text-xs font-semibold text-purple-600 hover:bg-purple-500/20"
+                                >
+                                  <CheckCircle2 size={13} />
+                                  <span>Attend</span>
+                                </button>
+                              ) : (
+                                <span className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-50/50 px-2.5 py-1 text-xs font-semibold text-emerald-600">
+                                  <CheckCircle2 size={13} />
+                                  Attended
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEmailModalEnquiry(e);
+                                  setEmailSubject(`Re: Your Booking Enquiry - ${currentCompany.name}`);
+                                  setEmailBody('');
+                                }}
+                                className="flex items-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-500/20"
+                                title="Reply by email within the system"
+                              >
+                                <Mail size={13} />
+                                <span>Reply</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {/* Expanded row */}
+                        {expandedEnquiryId === e.id && (
+                          <tr key={`${e.id}-expanded`}>
+                            <td colSpan={7} className="px-6 pb-5 pt-0 bg-surface-elevated/30">
+                              <div className="rounded-xl border border-border-color bg-surface p-4 space-y-4">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Full Enquiry Details</p>
+                                
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                  <div>
+                                    <span className="text-[11px] font-bold uppercase text-muted block mb-1">Customer Name</span>
+                                    <p className="text-sm font-bold text-foreground">{e.customer_name}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-[11px] font-bold uppercase text-muted block mb-1">Email Address</span>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-sm text-foreground">{e.customer_email}</p>
+                                      <button
+                                        type="button"
+                                        onClick={() => copyToClipboard(e.customer_email, `email-${e.id}`)}
+                                        className="flex items-center gap-1 rounded-md bg-surface-elevated border border-border-color px-2 py-0.5 text-[11px] text-muted hover:text-foreground transition"
+                                        title="Copy email"
+                                      >
+                                        {copiedField === `email-${e.id}` ? <CheckCircle2 size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                                        {copiedField === `email-${e.id}` ? 'Copied' : 'Copy'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <span className="text-[11px] font-bold uppercase text-muted block mb-1">Phone Number</span>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-sm text-foreground">{e.customer_phone || 'Not provided'}</p>
+                                      {e.customer_phone && (
+                                        <button
+                                          type="button"
+                                          onClick={() => copyToClipboard(e.customer_phone, `phone-${e.id}`)}
+                                          className="flex items-center gap-1 rounded-md bg-surface-elevated border border-border-color px-2 py-0.5 text-[11px] text-muted hover:text-foreground transition"
+                                          title="Copy phone"
+                                        >
+                                          {copiedField === `phone-${e.id}` ? <CheckCircle2 size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                                          {copiedField === `phone-${e.id}` ? 'Copied' : 'Copy'}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {(e.check_in_date || e.guests) && (
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    {e.check_in_date && (
+                                      <div>
+                                        <span className="text-[11px] font-bold uppercase text-muted block mb-1">Check-in Date</span>
+                                        <p className="text-sm text-foreground">{new Date(e.check_in_date).toLocaleDateString()}</p>
+                                      </div>
+                                    )}
+                                    {e.check_out_date && (
+                                      <div>
+                                        <span className="text-[11px] font-bold uppercase text-muted block mb-1">Check-out Date</span>
+                                        <p className="text-sm text-foreground">{new Date(e.check_out_date).toLocaleDateString()}</p>
+                                      </div>
+                                    )}
+                                    {e.guests && (
+                                      <div>
+                                        <span className="text-[11px] font-bold uppercase text-muted block mb-1">Guests</span>
+                                        <p className="text-sm text-foreground">{e.guests}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                <div>
+                                  <span className="text-[11px] font-bold uppercase text-muted block mb-1">Full Message</span>
+                                  <p className="text-sm text-foreground whitespace-pre-wrap rounded-xl bg-surface-elevated/50 border border-border-color p-3">{e.message}</p>
+                                </div>
+
+                                {e.resolved_by_name && (
+                                  <div className="flex items-center gap-2 text-xs text-emerald-600">
+                                    <CheckCircle2 size={13} />
+                                    <span>Attended by {e.resolved_by_name} on {e.resolved_at ? new Date(e.resolved_at).toLocaleString() : 'N/A'}</span>
+                                  </div>
+                                )}
+
+                                <div className="flex gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEmailModalEnquiry(e);
+                                      setEmailSubject(`Re: Your Booking Enquiry - ${currentCompany.name}`);
+                                      setEmailBody('');
+                                    }}
+                                    className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 transition"
+                                  >
+                                    <Mail size={13} />
+                                    Reply by Email
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

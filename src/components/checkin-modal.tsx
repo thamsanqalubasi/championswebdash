@@ -6,6 +6,7 @@ import {
   UserCheck,
   Calendar,
   CreditCard,
+  Banknote,
   Utensils,
   Bed,
   CheckCircle2,
@@ -129,6 +130,8 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
   const [quickRoomType, setQuickRoomType] = useState("");
   const [quickRoomId, setQuickRoomId] = useState("");
   const [quickAdults, setQuickAdults] = useState<number>(1);
+  const [quickPaymentMethod, setQuickPaymentMethod] = useState<"card" | "cash">("card");
+  const [quickPaidInFull, setQuickPaidInFull] = useState(true);
 
   // Instant Checkin Form fields
   const [guestName, setGuestName] = useState("");
@@ -314,6 +317,16 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
   }
   const totalAmount = nights * nightlyRate;
 
+  const quickSelectedRoom = rooms.find((r) => r.id === quickRoomId);
+  let quickNightlyRate = quickSelectedRoom?.priceBedBreakfast || quickSelectedRoom?.pricePerNight || 1200;
+  if (quickSelectedRoom) {
+    if (mealPlan === "room_only") quickNightlyRate = quickSelectedRoom.pricePerNight || 950;
+    else if (mealPlan === "bed_breakfast") quickNightlyRate = quickSelectedRoom.priceBedBreakfast || 1200;
+    else if (mealPlan === "bed_lunch") quickNightlyRate = quickSelectedRoom.priceBedLunch || 1500;
+    else if (mealPlan === "full_board") quickNightlyRate = quickSelectedRoom.priceFullBoard || 1900;
+  }
+  const quickTotalAmount = nights * quickNightlyRate;
+
   useEffect(() => {
     if (totalAmount > 0 && amountPaid === 0) {
       setAmountPaid(totalAmount);
@@ -366,9 +379,9 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
         totalAmount: total,
         depositAmount: total,
         amountPaid: total,
-        paymentMethod: "card",
+        paymentMethod: quickPaymentMethod,
         checkedInByName: actorName,
-        notes: `Quick Check-In | Adults: ${quickAdults}`,
+        notes: `Quick Check-In | Adults: ${quickAdults} | Paid in Full via ${quickPaymentMethod.toUpperCase()}`,
       });
 
       setCompletedBooking(newBooking);
@@ -920,11 +933,53 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
                 </div>
               </div>
 
-              <div className="rounded-xl border border-border-color bg-surface-elevated/80 p-4 flex items-center justify-between">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" required className="h-5 w-5 rounded border-border-color text-blue-600 focus:ring-blue-600" defaultChecked />
-                  <span className="text-sm font-medium text-foreground">
-                    Collected full amount via Card
+              {/* Payment Method & Full Payment Confirmation */}
+              <div className="rounded-xl border border-border-color bg-surface-elevated/80 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted">
+                    Payment Method (Paid in Full) *
+                  </span>
+                  <span className="text-sm font-black text-foreground">
+                    {symbol}{quickTotalAmount.toLocaleString()}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setQuickPaymentMethod("card")}
+                    className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-xs font-bold transition-all ${
+                      quickPaymentMethod === "card"
+                        ? "border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 ring-2 ring-blue-600"
+                        : "border-border-color bg-surface text-muted hover:border-foreground/30"
+                    }`}
+                  >
+                    <CreditCard size={16} />
+                    <span>Paid in Full with Card</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setQuickPaymentMethod("cash")}
+                    className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-xs font-bold transition-all ${
+                      quickPaymentMethod === "cash"
+                        ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-600"
+                        : "border-border-color bg-surface text-muted hover:border-foreground/30"
+                    }`}
+                  >
+                    <Banknote size={16} />
+                    <span>Paid in Full with Cash</span>
+                  </button>
+                </div>
+                <label className="flex items-center gap-2.5 cursor-pointer pt-1">
+                  <input
+                    type="checkbox"
+                    checked={quickPaidInFull}
+                    onChange={(e) => setQuickPaidInFull(e.target.checked)}
+                    required
+                    className="h-4 w-4 rounded border-border-color text-blue-600 focus:ring-blue-600 cursor-pointer"
+                  />
+                  <span className="text-xs font-semibold text-foreground">
+                    Confirmed: Full payment of {symbol}{quickTotalAmount.toLocaleString()} collected at Front Desk ({quickPaymentMethod === "cash" ? "Cash" : "Card Terminal"})
                   </span>
                 </label>
               </div>
