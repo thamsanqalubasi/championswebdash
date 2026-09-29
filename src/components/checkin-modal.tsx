@@ -18,6 +18,7 @@ import {
   Mail,
   Printer,
   RefreshCw,
+  Zap,
 } from "lucide-react";
 import {
   fetchCommercialRooms,
@@ -115,7 +116,7 @@ export function CheckinModal(props: CheckinModalProps) {
 function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinModalProps) {
   const { currentCompany, currentCompanyUser } = useAuth();
   const { currency, symbol } = useCurrency();
-  const [activeTab, setActiveTab] = useState<"instant" | "code">("instant");
+  const [activeTab, setActiveTab] = useState<"quick" | "instant" | "code">("quick");
 
   // Properties & Rooms state
   const [properties, setProperties] = useState<PropertyRow[]>([]);
@@ -123,6 +124,11 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
   const [selectedPropertyId, setSelectedPropertyId] = useState("");
   const [selectedRoomId, setSelectedRoomId] = useState("");
   const [loadingData, setLoadingData] = useState(true);
+
+  // Quick Checkin Form fields
+  const [quickRoomType, setQuickRoomType] = useState("");
+  const [quickRoomId, setQuickRoomId] = useState("");
+  const [quickAdults, setQuickAdults] = useState<number>(1);
 
   // Instant Checkin Form fields
   const [guestName, setGuestName] = useState("");
@@ -252,6 +258,8 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
 
   useEffect(() => {
     if (selectedPropertyId && compId) {
+      setQuickRoomType("");
+      setQuickRoomId("");
       fetchCommercialRooms(compId, selectedPropertyId)
         .then((allRooms) => {
           const list = Array.isArray(allRooms) ? allRooms : [];
@@ -268,6 +276,24 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
         });
     }
   }, [selectedPropertyId, compId]);
+
+  useEffect(() => {
+    if (quickRoomType) {
+      const availableOfType = rooms.find(
+        (r) => String(r.roomType).toUpperCase() === quickRoomType.toUpperCase() && r.status === "available"
+      );
+      if (availableOfType) {
+        setQuickRoomId(availableOfType.id);
+      } else {
+        setQuickRoomId("");
+      }
+    }
+  }, [quickRoomType, rooms]);
+
+  const uniqueRoomTypes = Array.from(new Set(rooms.map((r) => String(r.roomType || "standard").toUpperCase()))).filter(Boolean);
+  const quickAvailableRooms = rooms.filter(
+    (r) => r.status === "available" && (!quickRoomType || String(r.roomType).toUpperCase() === quickRoomType.toUpperCase())
+  );
 
   const selectedProperty = properties.find((p) => p.id === selectedPropertyId);
   const selectedRoom = rooms.find((r) => r.id === selectedRoomId);
@@ -293,6 +319,67 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
       setAmountPaid(totalAmount);
     }
   }, [totalAmount]);
+
+  const handleQuickSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const qRoom = rooms.find((r) => r.id === quickRoomId);
+    if (!guestName.trim() || !guestPhone.trim() || !qRoom) {
+      setErrorMsg("Please fill in Guest Name, Phone, and select an available room.");
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg("");
+
+    try {
+      const actorName = currentCompanyUser?.fullName || currentCompanyUser?.jobTitle || "Front Desk Staff";
+
+      const d1 = new Date(checkInDate);
+      const d2 = new Date(checkOutDate);
+      const diffTime = Math.max(d2.getTime() - d1.getTime(), 86400000);
+      const n = Math.max(Math.ceil(diffTime / (1000 * 60 * 60 * 24)), 1);
+
+      let rate = qRoom.priceBedBreakfast || qRoom.pricePerNight || 1200;
+      if (mealPlan === "room_only") rate = qRoom.pricePerNight || 950;
+      else if (mealPlan === "bed_breakfast") rate = qRoom.priceBedBreakfast || 1200;
+      else if (mealPlan === "bed_lunch") rate = qRoom.priceBedLunch || 1500;
+      else if (mealPlan === "full_board") rate = qRoom.priceFullBoard || 1900;
+      
+      const total = n * rate;
+
+      const newBooking = await createInstantCheckin({
+        companyId: compId,
+        propertyId: selectedPropertyId,
+        propertyName: selectedProperty?.name || "Safari Lodge",
+        roomId: qRoom.id,
+        roomNumber: qRoom.roomNumber || "101",
+        roomType: qRoom.roomType || "standard",
+        guestName,
+        guestPhone,
+        guestEmail: "",
+        guestIdNumber: "Quick Check-In",
+        checkInDate,
+        checkOutDate,
+        mealPlan,
+        nights: n,
+        ratePerNight: rate,
+        totalAmount: total,
+        depositAmount: total,
+        amountPaid: total,
+        paymentMethod: "card",
+        checkedInByName: actorName,
+        notes: `Quick Check-In | Adults: ${quickAdults}`,
+      });
+
+      setCompletedBooking(newBooking);
+      onSuccess?.();
+    } catch (err: any) {
+      const msg = err?.message || err?.error_description || (err instanceof Error ? err.message : String(err));
+      setErrorMsg(msg || "Failed to execute quick check-in");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleInstantSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -563,7 +650,24 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
       </div>
 
       {/* Tabs */}
-      <div className="mt-4 flex gap-2 border-b border-border-color pb-3">
+      <div className="mt-4 flex gap-2 border-b border-border-color pb-3 overflow-x-auto">
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab("quick");
+            setErrorMsg("");
+            setSuccessMsg("");
+          }}
+          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all whitespace-nowrap ${
+            activeTab === "quick"
+              ? "bg-blue-600 text-white shadow-xs"
+              : "text-muted hover:bg-surface-elevated hover:text-foreground"
+          }`}
+        >
+          <Zap size={16} />
+          Quick Check-In
+          <span className={`ml-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${activeTab === "quick" ? "bg-white/20" : "bg-blue-500/10 text-blue-600"}`}>&lt;8 sec</span>
+        </button>
         <button
           type="button"
           onClick={() => {
@@ -571,14 +675,14 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
             setErrorMsg("");
             setSuccessMsg("");
           }}
-          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all whitespace-nowrap ${
             activeTab === "instant"
               ? "bg-blue-600 text-white shadow-xs"
               : "text-muted hover:bg-surface-elevated hover:text-foreground"
           }`}
         >
           <UserCheck size={16} />
-          Instant Walk-In Check-In
+          Instant Walk-In
         </button>
         <button
           type="button"
@@ -587,14 +691,14 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
             setErrorMsg("");
             setSuccessMsg("");
           }}
-          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all whitespace-nowrap ${
             activeTab === "code"
               ? "bg-blue-600 text-white shadow-xs"
               : "text-muted hover:bg-surface-elevated hover:text-foreground"
           }`}
         >
           <QrCode size={16} />
-          Online Booking Code Check-In
+          Code
         </button>
       </div>
 
@@ -619,6 +723,232 @@ function CheckinModalContent({ onClose, onSuccess, initialPropertyId }: CheckinM
         </div>
       ) : (
         <>
+          {/* Tab: Quick Check-In */}
+          {activeTab === "quick" && (
+            <form onSubmit={handleQuickSubmit} className="mt-4 space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-foreground">
+                    Property *
+                  </label>
+                  {properties.length === 0 ? (
+                    <div className="rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-xs text-muted">
+                      No properties
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedPropertyId}
+                      onChange={(e) => setSelectedPropertyId(e.target.value)}
+                      className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none"
+                      required
+                    >
+                      {properties.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name || "Property"}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-foreground">
+                    Room Type *
+                  </label>
+                  <select
+                    value={quickRoomType}
+                    onChange={(e) => setQuickRoomType(e.target.value)}
+                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none"
+                    required
+                  >
+                    <option value="" disabled>Select Type</option>
+                    {uniqueRoomTypes.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-foreground">
+                    Available Room *
+                  </label>
+                  <select
+                    value={quickRoomId}
+                    onChange={(e) => setQuickRoomId(e.target.value)}
+                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none"
+                    required
+                    disabled={!quickRoomType}
+                  >
+                    <option value="" disabled>Select Room</option>
+                    {quickAvailableRooms.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.roomNumber} ({String(r.status).replace(/_/g, " ")})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-xs font-medium text-foreground">
+                    Guest Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Guest Name"
+                    value={guestName}
+                    onChange={(e) => setGuestName(e.target.value)}
+                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-xs font-medium text-foreground">
+                    Phone Number *
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="Phone"
+                    value={guestPhone}
+                    onChange={(e) => setGuestPhone(e.target.value)}
+                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-foreground">
+                    Check-In (Today)
+                  </label>
+                  <input
+                    type="date"
+                    value={checkInDate}
+                    onChange={(e) => setCheckInDate(e.target.value)}
+                    className="w-full rounded-lg border border-border-color bg-surface-elevated/50 px-3 py-2 text-sm text-muted focus:outline-none"
+                    disabled
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-foreground">
+                    Check-Out *
+                  </label>
+                  <input
+                    type="date"
+                    value={checkOutDate}
+                    onChange={(e) => setCheckOutDate(e.target.value)}
+                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-xs font-medium text-foreground">
+                    Adults
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={quickAdults}
+                    onChange={(e) => setQuickAdults(Number(e.target.value))}
+                    className="w-full rounded-lg border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted">
+                  Meal Plan
+                </label>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <button
+                    type="button"
+                    onClick={() => setMealPlan("room_only")}
+                    className={`rounded-xl border p-2 text-left transition-all ${
+                      mealPlan === "room_only"
+                        ? "border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-foreground ring-1 ring-blue-600"
+                        : "border-border-color bg-surface-elevated/60 text-muted hover:border-foreground/30"
+                    }`}
+                  >
+                    <Bed size={16} className="mb-1 text-blue-600" />
+                    <p className="text-xs font-bold text-foreground">Room Only</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMealPlan("bed_breakfast")}
+                    className={`rounded-xl border p-2 text-left transition-all ${
+                      mealPlan === "bed_breakfast"
+                        ? "border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-foreground ring-1 ring-blue-600"
+                        : "border-border-color bg-surface-elevated/60 text-muted hover:border-foreground/30"
+                    }`}
+                  >
+                    <Utensils size={16} className="mb-1 text-emerald-600" />
+                    <p className="text-xs font-bold text-foreground">B&amp;B</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMealPlan("bed_lunch")}
+                    className={`rounded-xl border p-2 text-left transition-all ${
+                      mealPlan === "bed_lunch"
+                        ? "border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-foreground ring-1 ring-blue-600"
+                        : "border-border-color bg-surface-elevated/60 text-muted hover:border-foreground/30"
+                    }`}
+                  >
+                    <Utensils size={16} className="mb-1 text-amber-600" />
+                    <p className="text-xs font-bold text-foreground">Half Board</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMealPlan("full_board")}
+                    className={`rounded-xl border p-2 text-left transition-all ${
+                      mealPlan === "full_board"
+                        ? "border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-foreground ring-1 ring-blue-600"
+                        : "border-border-color bg-surface-elevated/60 text-muted hover:border-foreground/30"
+                    }`}
+                  >
+                    <Utensils size={16} className="mb-1 text-purple-600" />
+                    <p className="text-xs font-bold text-foreground">Full Board</p>
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border-color bg-surface-elevated/80 p-4 flex items-center justify-between">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" required className="h-5 w-5 rounded border-border-color text-blue-600 focus:ring-blue-600" defaultChecked />
+                  <span className="text-sm font-medium text-foreground">
+                    Collected full amount via Card
+                  </span>
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-lg border border-border-color px-4 py-2 text-sm font-medium text-muted hover:bg-surface-elevated"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || !quickRoomId}
+                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2 text-sm font-semibold text-white shadow-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  <Zap size={16} />
+                  {loading ? "Processing..." : "Check In Now"}
+                </button>
+              </div>
+            </form>
+          )}
+
           {/* Tab 1: Instant Walk-In Check-In */}
           {activeTab === "instant" && (
             <form onSubmit={handleInstantSubmit} className="mt-4 space-y-4">

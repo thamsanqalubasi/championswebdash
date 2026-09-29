@@ -21,7 +21,11 @@ import {
   Eye,
   Pencil,
   History,
+  MessageSquare,
+  UserCheck,
+  CalendarRange,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 import {
   fetchCommercialBookings,
   fetchCommercialRooms,
@@ -55,6 +59,10 @@ export default function CommercialBookingsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [bookingsReportOpen, setBookingsReportOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+
+  const [activeTab, setActiveTab] = useState<'bookings' | 'reservations' | 'enquiries'>('bookings');
+  const [reservations, setReservations] = useState<CommercialBooking[]>([]);
+  const [bookingEnquiries, setBookingEnquiries] = useState<any[]>([]);
 
   // Modals state
   const [checkinOpen, setCheckinOpen] = useState(false);
@@ -90,6 +98,58 @@ export default function CommercialBookingsPage() {
     ]);
     setBookings(bks);
     setRooms(rms);
+
+    const { data: reservData } = await supabase
+      .from('commercial_bookings')
+      .select('*, properties(name), commercial_rooms(room_number, room_type)')
+      .eq('company_id', currentCompany.id)
+      .eq('booking_status', 'reserved')
+      .order('created_at', { ascending: false });
+      
+    if (reservData) {
+      setReservations(reservData.map((b: any) => ({
+        id: b.id,
+        companyId: b.company_id,
+        propertyId: b.property_id,
+        propertyName: b.properties?.name || "Lodge Property",
+        roomId: b.room_id,
+        roomNumber: b.commercial_rooms?.room_number || "Room",
+        roomType: b.commercial_rooms?.room_type || "standard",
+        bookingCode: b.booking_code,
+        guestName: b.guest_name,
+        guestPhone: b.guest_phone,
+        guestEmail: b.guest_email,
+        guestIdNumber: b.guest_id_number,
+        checkInDate: b.check_in_date,
+        checkOutDate: b.check_out_date,
+        actualCheckIn: b.actual_check_in,
+        actualCheckOut: b.actual_check_out,
+        mealPlan: b.meal_plan,
+        nights: b.nights,
+        ratePerNight: Number(b.rate_per_night),
+        totalAmount: Number(b.total_amount),
+        depositAmount: Number(b.deposit_amount),
+        amountPaid: Number(b.amount_paid),
+        paymentMethod: b.payment_method,
+        paymentStatus: b.payment_status,
+        bookingStatus: b.booking_status,
+        isExtended: b.is_extended,
+        extensionHistory: b.extension_history || [],
+        checkedInByName: b.checked_in_by_name,
+        checkedOutByName: b.checked_out_by_name || b.checked_out_by || undefined,
+        notes: b.notes,
+        createdAt: b.created_at,
+      })));
+    }
+
+    const { data: enqData } = await supabase
+      .from('enquiries')
+      .select('*')
+      .eq('company_id', currentCompany.id)
+      .in('type', ['room_booking', 'rental_enquiry'])
+      .order('created_at', { ascending: false });
+    if (enqData) setBookingEnquiries(enqData);
+
     setLoading(false);
   };
 
@@ -224,7 +284,7 @@ export default function CommercialBookingsPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-6">
         <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase text-muted">Active In-House</p>
           <p className="mt-2 text-2xl font-black text-blue-600">{activeCheckedIn}</p>
@@ -258,15 +318,73 @@ export default function CommercialBookingsPage() {
           <p className="mt-1 text-[11px] text-muted">Pending turnovers</p>
         </div>
 
-        <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-sm col-span-2 sm:col-span-1">
+        <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-sm sm:col-span-1">
           <p className="text-xs font-semibold uppercase text-muted">Available Rooms</p>
           <p className="mt-2 text-2xl font-black text-emerald-600">
             {rooms.filter((r) => r.status === "available").length}
           </p>
           <p className="mt-1 text-[11px] text-muted">Ready for walk-in</p>
         </div>
+
+        <div className="rounded-2xl border border-border-color bg-surface p-4 shadow-sm sm:col-span-1">
+          <p className="text-xs font-semibold uppercase text-muted">Pending Reservations</p>
+          <div className="mt-2 flex items-center gap-2">
+            <CalendarRange size={24} className="text-indigo-600" />
+            <p className="text-2xl font-black text-indigo-600">{reservations.length}</p>
+          </div>
+          <p className="mt-1 text-[11px] text-muted">Awaiting check-in</p>
+        </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex space-x-1 rounded-xl bg-surface-elevated p-1">
+        <button
+          onClick={() => setActiveTab('bookings')}
+          className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold transition-all ${
+            activeTab === 'bookings'
+              ? 'bg-surface shadow-sm text-foreground'
+              : 'text-muted hover:text-foreground hover:bg-surface-elevated/80'
+          }`}
+        >
+          <KeyRound size={16} />
+          Active Bookings
+        </button>
+        <button
+          onClick={() => setActiveTab('reservations')}
+          className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold transition-all ${
+            activeTab === 'reservations'
+              ? 'bg-surface shadow-sm text-indigo-600'
+              : 'text-muted hover:text-indigo-600 hover:bg-surface-elevated/80'
+          }`}
+        >
+          <CalendarRange size={16} />
+          Reservations
+          {reservations.length > 0 && (
+            <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
+              {reservations.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('enquiries')}
+          className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold transition-all ${
+            activeTab === 'enquiries'
+              ? 'bg-surface shadow-sm text-purple-600'
+              : 'text-muted hover:text-purple-600 hover:bg-surface-elevated/80'
+          }`}
+        >
+          <MessageSquare size={16} />
+          Booking Enquiries
+          {bookingEnquiries.filter(e => e.status !== 'resolved').length > 0 && (
+            <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+              {bookingEnquiries.filter(e => e.status !== 'resolved').length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'bookings' && (
+        <div className="space-y-6">
       {/* Search and Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-border-color bg-surface p-4">
         <div className="relative flex-1">
@@ -291,6 +409,7 @@ export default function CommercialBookingsPage() {
             <option value="checked_in">Checked In</option>
             <option value="extended">Stay Extended</option>
             <option value="confirmed">Confirmed / Upcoming</option>
+            <option value="reserved">Reserved</option>
             <option value="checked_out">Checked Out</option>
           </select>
         </div>
@@ -510,6 +629,241 @@ export default function CommercialBookingsPage() {
           </div>
         )}
       </div>
+        </div>
+      )}
+
+      {activeTab === 'reservations' && (
+        <div className="overflow-hidden rounded-2xl border border-border-color bg-surface shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-border-color bg-surface-elevated/70 text-[11px] font-bold uppercase tracking-wider text-muted">
+                <tr>
+                  <th className="px-4 py-3.5">Booking Code</th>
+                  <th className="px-4 py-3.5">Guest Details</th>
+                  <th className="px-4 py-3.5">Room & Property</th>
+                  <th className="px-4 py-3.5">Stay Dates</th>
+                  <th className="px-4 py-3.5">Financials</th>
+                  <th className="px-4 py-3.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-color text-foreground">
+                {reservations.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-muted">
+                      <div className="flex flex-col items-center justify-center">
+                        <CalendarRange size={32} className="mb-2 text-indigo-400" />
+                        <p>No pending reservations</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  reservations.map((b) => (
+                    <tr key={b.id} className="hover:bg-surface-elevated/70 transition">
+                      <td className="px-4 py-3.5">
+                        <span className="font-mono text-xs font-extrabold text-indigo-600 bg-indigo-500/10 px-2.5 py-1 rounded-md">
+                          {b.bookingCode}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <p className="font-bold text-foreground">{b.guestName}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted mt-0.5">
+                          <Phone size={12} />
+                          <span>{b.guestPhone}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <p className="font-bold text-foreground">{b.roomNumber}</p>
+                        <p className="text-xs text-muted">{b.propertyName}</p>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-1.5 text-xs text-foreground">
+                          <Calendar size={13} className="text-muted" />
+                          <span>
+                            {new Date(b.checkInDate).toLocaleDateString()} →{" "}
+                            {new Date(b.checkOutDate).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <p className="font-extrabold text-foreground">R{b.totalAmount.toLocaleString()}</p>
+                      </td>
+                      <td className="px-4 py-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setDetailModalBooking(b)}
+                            className="flex items-center gap-1 rounded-lg border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted hover:text-blue-600 hover:border-blue-500/40 transition"
+                          >
+                            <Eye size={13} />
+                            <span className="hidden sm:inline">Details</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const actorName = currentCompanyUser?.fullName || currentCompanyUser?.jobTitle || "Staff";
+                                await checkinCommercialBooking(b.id, actorName);
+                                loadData();
+                              } catch (err: any) {
+                                alert("Check-in failed: " + (err.message || JSON.stringify(err)));
+                              }
+                            }}
+                            className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-600 hover:bg-emerald-500/20"
+                          >
+                            <UserCheck size={13} />
+                            <span>Check In</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (window.confirm('Cancel this reservation?')) {
+                                await supabase.from('commercial_bookings').update({ booking_status: 'cancelled' }).eq('id', b.id);
+                                loadData();
+                              }
+                            }}
+                            className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-500/20"
+                          >
+                            <LogOut size={13} />
+                            <span>Cancel</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'enquiries' && (
+        <div className="overflow-hidden rounded-2xl border border-border-color bg-surface shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-border-color bg-surface-elevated/70 text-[11px] font-bold uppercase tracking-wider text-muted">
+                <tr>
+                  <th className="px-4 py-3.5">Customer</th>
+                  <th className="px-4 py-3.5">Enquiry Type</th>
+                  <th className="px-4 py-3.5">Dates / Guests</th>
+                  <th className="px-4 py-3.5">Message</th>
+                  <th className="px-4 py-3.5">Received / Status</th>
+                  <th className="px-4 py-3.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-color text-foreground">
+                {bookingEnquiries.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-muted">
+                      <div className="flex flex-col items-center justify-center">
+                        <MessageSquare size={32} className="mb-2 text-purple-400" />
+                        <p>No booking enquiries</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  bookingEnquiries.map((e) => (
+                    <tr key={e.id} className="hover:bg-surface-elevated/70 transition">
+                      <td className="px-4 py-3.5">
+                        <p className="font-bold text-foreground">{e.customer_name}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted mt-0.5">
+                          <Mail size={12} />
+                          <span>{e.customer_email}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-muted mt-0.5">
+                          <Phone size={12} />
+                          <span>{e.customer_phone}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                          e.type === 'room_booking' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {e.type === 'room_booking' ? 'Room Booking' : 'Rental Enquiry'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5 text-xs">
+                        {e.check_in_date && (
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <Calendar size={13} className="text-muted" />
+                            <span>
+                              {new Date(e.check_in_date).toLocaleDateString()}
+                              {e.check_out_date && ` → ${new Date(e.check_out_date).toLocaleDateString()}`}
+                            </span>
+                          </div>
+                        )}
+                        {e.guests && (
+                          <div className="flex items-center gap-1.5">
+                            <UserCheck size={13} className="text-muted" />
+                            <span>{e.guests} Guests</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <p className="text-xs text-muted max-w-[250px] truncate" title={e.message}>
+                          {e.message}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3.5 text-xs">
+                        <p className="text-muted mb-1">{new Date(e.created_at).toLocaleDateString()}</p>
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                          e.status === 'open' ? 'bg-orange-100 text-orange-700' :
+                          e.status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-green-100 text-green-700'
+                        }`}>
+                          {e.status.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {e.status !== 'resolved' && e.status !== 'in_progress' ? (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const actorName = currentCompanyUser?.fullName || "Staff";
+                                await supabase.from('enquiries').update({
+                                  status: 'in_progress',
+                                  resolved_by_name: actorName,
+                                  resolved_at: new Date().toISOString()
+                                }).eq('id', e.id);
+                                await supabase.from('audit_logs').insert([{
+                                  company_id: currentCompany.id,
+                                  action: 'attended_booking_enquiry',
+                                  target_entity: 'enquiry',
+                                  target_id: e.id,
+                                  performed_by_name: actorName,
+                                  details: { enquiry_type: e.type, customer_name: e.customer_name }
+                                }]);
+                                loadData();
+                              }}
+                              className="flex items-center gap-1 rounded-lg border border-purple-500/30 bg-purple-500/10 px-2.5 py-1 text-xs font-semibold text-purple-600 hover:bg-purple-500/20"
+                            >
+                              <CheckCircle2 size={13} />
+                              <span>Attend</span>
+                            </button>
+                          ) : (
+                            <span className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-50/50 px-2.5 py-1 text-xs font-semibold text-emerald-600">
+                              <CheckCircle2 size={13} />
+                              Attended
+                            </span>
+                          )}
+                          <a
+                            href={`mailto:${e.customer_email}?subject=Re: Your Booking Enquiry`}
+                            className="flex items-center gap-1 rounded-lg border border-border-color bg-surface-elevated px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-surface-elevated/80"
+                          >
+                            <Mail size={13} />
+                            <span>Email</span>
+                          </a>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Booking Details & Edit Modal */}
       <CommercialBookingDetailModal

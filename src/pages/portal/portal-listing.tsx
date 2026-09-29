@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { ImageSlider } from "@/components/image-slider";
-import { MapPin, BedDouble, Star, Send, ArrowLeft, CheckCircle, Users, Calendar, Baby, Wifi, Tv, Wind, Coffee, Bath, Dumbbell, ParkingCircle, Utensils, Globe, MessageSquareQuote, HelpCircle, MessageSquare, ExternalLink, Sparkles, Loader2, CalendarCheck } from "lucide-react";
+import { MapPin, BedDouble, Star, Send, ArrowLeft, CheckCircle, Users, Calendar, Baby, Wifi, Tv, Wind, Coffee, Bath, Dumbbell, ParkingCircle, Utensils, Globe, MessageSquareQuote, HelpCircle, MessageSquare, ExternalLink, Sparkles, Loader2, CalendarCheck, CalendarPlus, CalendarX } from "lucide-react";
 import { Modal } from "@/components/modal";
 import { DEFAULT_ENQUIRY_QUESTIONS, getDefaultResponseForQuestion, sendEnquiryResponseEmail } from "@/lib/enquiry-templates";
 
@@ -48,6 +48,10 @@ export default function PortalListingPage() {
   const [automatedResponse, setAutomatedResponse] = useState<string>("");
   const [createdTicketId, setCreatedTicketId] = useState<string>("");
   const [selectedQuestionId, setSelectedQuestionId] = useState<string>("");
+  const [bookingMode, setBookingMode] = useState<'select' | 'instant' | 'reserve' | 'enquiry'>('select');
+  const [reservationSuccess, setReservationSuccess] = useState<{bookingCode: string; email: string} | null>(null);
+  const [unavailableDates, setUnavailableDates] = useState<string[]>([]);
+  const [checkingAvailability, setCheckingAvailability] = useState(false);
 
   // External booking & marketing opt-in state
   const [marketingAgreed, setMarketingAgreed] = useState(false);
@@ -131,6 +135,41 @@ export default function PortalListingPage() {
     void load();
   }, [propertyId]);
 
+  useEffect(() => {
+    if (!data || listingType !== 'room_listing') return;
+    async function loadUnavailableDates() {
+      const { data: bookings } = await supabase
+        .from('commercial_bookings')
+        .select('check_in_date, check_out_date, booking_status')
+        .eq('property_id', data.property_id)
+        .in('booking_status', ['confirmed', 'checked_in', 'reserved', 'extended']);
+      
+      if (!bookings) return;
+      
+      const dateSet = new Set<string>();
+      bookings.forEach((b: any) => {
+        const start = new Date(b.check_in_date);
+        const end = new Date(b.check_out_date);
+        for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
+          dateSet.add(d.toISOString().slice(0, 10));
+        }
+      });
+      setUnavailableDates(Array.from(dateSet));
+    }
+    void loadUnavailableDates();
+  }, [data?.property_id, listingType]);
+
+  const hasUnavailableDatesInRange = useMemo(() => {
+    if (!form.check_in || !form.check_out) return false;
+    const start = new Date(form.check_in);
+    const end = new Date(form.check_out);
+    for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
+      if (unavailableDates.includes(d.toISOString().slice(0, 10))) return true;
+    }
+    return false;
+  }, [form.check_in, form.check_out, unavailableDates]);
+
+
   const isExternalBooking = data?.booking_mode === "external" && Boolean(data?.external_booking_url);
   const externalBookingUrl = data?.external_booking_url || "";
 
@@ -166,9 +205,10 @@ export default function PortalListingPage() {
   const isHosp = listingType === "room_listing" || (data && ["hotel","motel","lodge","guest_house","commercial"].includes(data.type));
   const avgRating = reviews.length > 0 ? reviews.reduce((s,r) => s+r.rating, 0) / reviews.length : 0;
 
-  const submitEnquiry = async () => {
+  const submitEnquiry = async (overrideMessage?: string) => {
     if (!form.name || !form.email) { alert("Please enter your name and email."); return; }
-    if (!form.message.trim()) { alert("Please enter a question or select one from the common questions list."); return; }
+    const finalMessage = overrideMessage || form.message;
+    if (!finalMessage.trim()) { alert("Please enter a question or select one from the common questions list."); return; }
     setSubmitting(true);
     try {
       const targetCompanyId = data?.company_id || data?.companyId || null;
@@ -180,7 +220,7 @@ export default function PortalListingPage() {
         check_in_date: form.check_in || null,
         check_out_date: form.check_out || null,
         guests: form.guests,
-        message: form.message,
+        message: finalMessage,
       };
 
       if (targetCompanyId) {
@@ -207,7 +247,7 @@ export default function PortalListingPage() {
       }
 
       // Generate instant automated response for customer's enquiry question
-      const autoReply = getDefaultResponseForQuestion(form.message, {
+      const autoReply = getDefaultResponseForQuestion(finalMessage, {
         propertyName: data?.name || data?.title,
         customerName: form.name,
       });
@@ -223,7 +263,7 @@ export default function PortalListingPage() {
               enquiry_id: insertedId,
               sender_type: "customer",
               sender_name: form.name,
-              body: form.message,
+              body: finalMessage,
             },
             {
               enquiry_id: insertedId,
@@ -244,7 +284,7 @@ export default function PortalListingPage() {
           customerName: form.name,
           propertyName: data?.name || data?.title,
           enquiryId: insertedId,
-          question: form.message,
+          question: finalMessage,
           response: autoReply,
           companyName: data?.company_name || "Paimbabook",
         });
@@ -498,74 +538,163 @@ export default function PortalListingPage() {
               <ArrowLeft size={12} /> Back to Direct Booking
             </button>
           )}
-          <h3 className="font-bold text-gray-900 dark:text-white text-lg">{isHosp ? "Book a Room" : "Enquire Now"}</h3>
-          <input placeholder="Your name *" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
-          <input placeholder="Email address *" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
-          <input placeholder="Phone number" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
-          {isHosp && (
-            <>
-              <div className="grid grid-cols-2 gap-2">
-                <div><label className="text-xs font-medium text-gray-600 dark:text-slate-400 mb-1 flex items-center gap-1"><Calendar size={11}/>Check-in</label><input type="date" value={form.check_in} onChange={e=>setForm({...form,check_in:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/></div>
-                <div><label className="text-xs font-medium text-gray-600 dark:text-slate-400 mb-1 flex items-center gap-1"><Calendar size={11}/>Check-out</label><input type="date" value={form.check_out} onChange={e=>setForm({...form,check_out:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/></div>
-              </div>
-              <div className="flex items-center gap-2"><Users size={15} className="text-gray-400"/><input type="number" min={1} value={form.guests} onChange={e=>setForm({...form,guests:Number(e.target.value)})} className="w-20 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/><span className="text-sm text-gray-500 dark:text-slate-400">Guests</span></div>
-            </>
-          )}
-
-          {/* Common default questions selector */}
-          <div>
-            <label className="text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-              <HelpCircle size={14} className="text-blue-600 dark:text-blue-400" />
-              Common Questions
-            </label>
-            <select
-              value={selectedQuestionId}
-              onChange={(e) => {
-                const qId = e.target.value;
-                setSelectedQuestionId(qId);
-                const found = DEFAULT_ENQUIRY_QUESTIONS.find((q) => q.id === qId);
-                if (found) {
-                  setForm((prev) => ({ ...prev, message: found.question }));
-                }
-              }}
-              className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500 mb-2 cursor-pointer"
-            >
-              <option value="">-- Choose a frequent question or write below --</option>
-              {DEFAULT_ENQUIRY_QUESTIONS.map((q) => (
-                <option key={q.id} value={q.id}>
-                  {q.shortLabel}: {q.question}
-                </option>
-              ))}
-            </select>
-
-            <div className="flex flex-wrap gap-1 mb-2">
-              {DEFAULT_ENQUIRY_QUESTIONS.slice(0, 4).map((q) => (
-                <button
-                  key={q.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedQuestionId(q.id);
-                    setForm((prev) => ({ ...prev, message: q.question }));
-                  }}
-                  className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium transition ${
-                    selectedQuestionId === q.id
-                      ? "bg-blue-50 border-blue-400 text-blue-700 dark:bg-blue-950/50 dark:border-blue-500 dark:text-blue-300"
-                      : "border-gray-200 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-800/50 text-gray-600 dark:text-slate-300 hover:border-blue-300"
-                  }`}
-                >
-                  {q.shortLabel}
+          {isHosp && bookingMode === 'select' ? (
+            <div className="space-y-3 mt-2">
+              <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-4">How would you like to proceed?</h3>
+              <div className="grid gap-3">
+                <button onClick={() => setBookingMode('instant')} className="text-left rounded-2xl border-2 border-blue-500 bg-blue-50 dark:bg-blue-950/30 p-4 hover:border-blue-600 transition">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-blue-500/20 p-2.5"><CalendarCheck size={22} className="text-blue-600" /></div>
+                    <div>
+                      <p className="font-bold text-gray-900 dark:text-white">Book & Pay Online</p>
+                      <p className="text-xs text-gray-500 dark:text-slate-400">Confirm your room instantly with secure online payment</p>
+                    </div>
+                  </div>
                 </button>
-              ))}
+                <button onClick={() => setBookingMode('reserve')} className="text-left rounded-2xl border-2 border-purple-400 bg-purple-50 dark:bg-purple-950/30 p-4 hover:border-purple-500 transition">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-purple-500/20 p-2.5"><CalendarPlus size={22} className="text-purple-600" /></div>
+                    <div>
+                      <p className="font-bold text-gray-900 dark:text-white">Reserve (Hold Room)</p>
+                      <p className="text-xs text-gray-500 dark:text-slate-400">Hold your room for free - pay on arrival or later</p>
+                    </div>
+                  </div>
+                </button>
+                <button onClick={() => setBookingMode('enquiry')} className="text-left rounded-2xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 p-4 hover:border-gray-300 transition">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-gray-200 dark:bg-slate-700 p-2.5"><MessageSquare size={22} className="text-gray-600 dark:text-slate-300" /></div>
+                    <div>
+                      <p className="font-bold text-gray-900 dark:text-white">Send an Enquiry</p>
+                      <p className="text-xs text-gray-500 dark:text-slate-400">Ask a question - we'll reply by email</p>
+                    </div>
+                  </div>
+                </button>
+              </div>
             </div>
-          </div>
+          ) : isHosp && (bookingMode === 'instant' || bookingMode === 'reserve') ? (
+            <div className="space-y-3">
+              <button onClick={() => setBookingMode('select')} className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-gray-700 dark:text-slate-400 hover:underline mb-2">
+                <ArrowLeft size={12} /> Back
+              </button>
+              <h3 className="font-bold text-gray-900 dark:text-white text-lg">{bookingMode === 'instant' ? 'Complete Your Booking' : 'Reserve Your Room'}</h3>
+              
+              <input placeholder="Your name *" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
+              <input placeholder="Email address *" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
+              <input placeholder="Phone number" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
+              
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="text-xs font-medium text-gray-600 dark:text-slate-400 mb-1 flex items-center gap-1"><Calendar size={11}/>Check-in *</label><input type="date" min={new Date().toISOString().slice(0, 10)} value={form.check_in} onChange={e=>setForm({...form,check_in:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/></div>
+                <div><label className="text-xs font-medium text-gray-600 dark:text-slate-400 mb-1 flex items-center gap-1"><Calendar size={11}/>Check-out *</label><input type="date" min={form.check_in ? new Date(new Date(form.check_in).getTime() + 86400000).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)} value={form.check_out} onChange={e=>setForm({...form,check_out:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/></div>
+              </div>
+              <div className="flex items-center gap-2"><Users size={15} className="text-gray-400"/><input type="number" min={1} value={form.guests} onChange={e=>setForm({...form,guests:Number(e.target.value)})} className="w-20 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/><span className="text-sm text-gray-500 dark:text-slate-400">Adults</span></div>
+              
+              {hasUnavailableDatesInRange && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 flex items-start gap-2">
+                  <CalendarX size={16} className="shrink-0 mt-0.5"/>
+                  <span>This date is unavailable for the selected room type. Your request will be sent as an enquiry instead.</span>
+                </div>
+              )}
 
-          <div>
-            <label className="text-xs font-medium text-gray-600 dark:text-slate-400 mb-1 block">Your Enquiry / Message *</label>
-            <textarea rows={3} placeholder="Type your question or choose one of the common questions above..." value={form.message} onChange={e=>{ setForm({...form,message:e.target.value}); setSelectedQuestionId(""); }} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500 resize-none"/>
-          </div>
+              {form.check_in && form.check_out && !hasUnavailableDatesInRange && (
+                <div className="rounded-xl bg-blue-50 dark:bg-slate-800/50 p-3 text-xs text-blue-900 dark:text-blue-100">
+                  <p className="font-semibold flex justify-between">
+                    <span>Stay duration:</span>
+                    <span>{Math.max(1, Math.ceil((new Date(form.check_out).getTime() - new Date(form.check_in).getTime()) / (1000 * 3600 * 24)))} nights</span>
+                  </p>
+                  <p className="font-semibold flex justify-between mt-1">
+                    <span>Total estimated:</span>
+                    <span>NAD {(effectivePrice * Math.max(1, Math.ceil((new Date(form.check_out).getTime() - new Date(form.check_in).getTime()) / (1000 * 3600 * 24)))).toLocaleString()}</span>
+                  </p>
+                </div>
+              )}
+              
+              <button onClick={() => {
+                const nights = form.check_in && form.check_out ? Math.max(1, Math.ceil((new Date(form.check_out).getTime() - new Date(form.check_in).getTime()) / (1000 * 3600 * 24))) : 0;
+                const msg = bookingMode === 'instant' 
+                  ? `Instant booking request: ${nights} nights, Check-in: ${form.check_in}, Check-out: ${form.check_out}, Adults: ${form.guests}` 
+                  : `Room reservation request (no payment): ${nights} nights, Check-in: ${form.check_in}, Check-out: ${form.check_out}, Adults: ${form.guests}`;
+                void submitEnquiry(msg);
+              }} disabled={submitting || !form.check_in || !form.check_out} className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-xs">
+                <Send size={15}/>{submitting ? "Processing..." : bookingMode === 'instant' ? "Confirm & Pay Online" : "Reserve Room (No Payment Now)"}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {isHosp && (
+                <button onClick={() => setBookingMode('select')} className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-gray-700 dark:text-slate-400 hover:underline mb-2">
+                  <ArrowLeft size={12} /> Back
+                </button>
+              )}
+              <h3 className="font-bold text-gray-900 dark:text-white text-lg">{isHosp ? "Send an Enquiry" : "Enquire Now"}</h3>
+              <input placeholder="Your name *" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
+              <input placeholder="Email address *" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
+              <input placeholder="Phone number" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
+              {isHosp && (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><label className="text-xs font-medium text-gray-600 dark:text-slate-400 mb-1 flex items-center gap-1"><Calendar size={11}/>Check-in</label><input type="date" value={form.check_in} onChange={e=>setForm({...form,check_in:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/></div>
+                    <div><label className="text-xs font-medium text-gray-600 dark:text-slate-400 mb-1 flex items-center gap-1"><Calendar size={11}/>Check-out</label><input type="date" value={form.check_out} onChange={e=>setForm({...form,check_out:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/></div>
+                  </div>
+                  <div className="flex items-center gap-2"><Users size={15} className="text-gray-400"/><input type="number" min={1} value={form.guests} onChange={e=>setForm({...form,guests:Number(e.target.value)})} className="w-20 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/><span className="text-sm text-gray-500 dark:text-slate-400">Guests</span></div>
+                </>
+              )}
 
-          <button onClick={submitEnquiry} disabled={submitting || !form.message.trim()} className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-xs"><Send size={15}/>{submitting?"Sending...": isHosp ? "Send Booking Request" : "Send Enquiry"}</button>
-          <p className="text-[11px] text-center text-gray-400 dark:text-slate-500">Instant response sent to your email. You can reply anytime in Customer Portal.</p>
+              {/* Common default questions selector */}
+              <div>
+                <label className="text-xs font-bold text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <HelpCircle size={14} className="text-blue-600 dark:text-blue-400" />
+                  Common Questions
+                </label>
+                <select
+                  value={selectedQuestionId}
+                  onChange={(e) => {
+                    const qId = e.target.value;
+                    setSelectedQuestionId(qId);
+                    const found = DEFAULT_ENQUIRY_QUESTIONS.find((q) => q.id === qId);
+                    if (found) {
+                      setForm((prev) => ({ ...prev, message: found.question }));
+                    }
+                  }}
+                  className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500 mb-2 cursor-pointer"
+                >
+                  <option value="">-- Choose a frequent question or write below --</option>
+                  {DEFAULT_ENQUIRY_QUESTIONS.map((q) => (
+                    <option key={q.id} value={q.id}>
+                      {q.shortLabel}: {q.question}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {DEFAULT_ENQUIRY_QUESTIONS.slice(0, 4).map((q) => (
+                    <button
+                      key={q.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedQuestionId(q.id);
+                        setForm((prev) => ({ ...prev, message: q.question }));
+                      }}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium transition ${
+                        selectedQuestionId === q.id
+                          ? "bg-blue-50 border-blue-400 text-blue-700 dark:bg-blue-950/50 dark:border-blue-500 dark:text-blue-300"
+                          : "border-gray-200 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-800/50 text-gray-600 dark:text-slate-300 hover:border-blue-300"
+                      }`}
+                    >
+                      {q.shortLabel}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-gray-600 dark:text-slate-400 mb-1 block">Your Enquiry / Message *</label>
+                <textarea rows={3} placeholder="Type your question or choose one of the common questions above..." value={form.message} onChange={e=>{ setForm({...form,message:e.target.value}); setSelectedQuestionId(""); }} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500 resize-none"/>
+              </div>
+
+              <button onClick={() => void submitEnquiry()} disabled={submitting || !form.message.trim()} className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-xs"><Send size={15}/>{submitting?"Sending...": isHosp ? "Send Booking Request" : "Send Enquiry"}</button>
+              <p className="text-[11px] text-center text-gray-400 dark:text-slate-500">Instant response sent to your email. You can reply anytime in Customer Portal.</p>
+            </div>
+          )}
         </>
       )}
     </>
