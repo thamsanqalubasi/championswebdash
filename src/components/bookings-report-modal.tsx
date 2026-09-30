@@ -1,4 +1,4 @@
-﻿import { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import {
   X,
   Calendar,
@@ -44,6 +44,7 @@ interface BookingsReportModalProps {
 }
 
 type PeriodOption =
+  | "2h"
   | "24h"
   | "2d"
   | "3d"
@@ -57,6 +58,7 @@ type PeriodOption =
   | "custom";
 
 const PERIODS: { id: PeriodOption; label: string; days?: number }[] = [
+  { id: "2h", label: "Past 2 Hours", days: 2 / 24 },
   { id: "24h", label: "Past 24 Hours", days: 1 },
   { id: "2d", label: "Past 2 Days", days: 2 },
   { id: "3d", label: "Past 3 Days", days: 3 },

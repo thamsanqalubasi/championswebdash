@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { X, Send, ShieldAlert, Mail, User, AlertTriangle, CheckCircle2, Loader2, Sparkles, ArrowUpRight } from "lucide-react";
 import { sendEmailViaApi } from "@/lib/notifications";
 import { useAuth } from "@/lib/auth";

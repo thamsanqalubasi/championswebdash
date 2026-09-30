@@ -29,6 +29,12 @@ import {
   ChevronUp,
   X,
   Send,
+  Printer,
+  Download,
+  CheckSquare,
+  Square,
+  Lock,
+  RefreshCw,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -48,6 +54,8 @@ import {
   buildFolioHtml,
   buildCheckinEmailTemplates,
 } from "@/lib/booking-folio";
+import { openBookingPdfInNewTab, openMultiBookingPdfInNewTab } from "@/lib/booking-pdf-export";
+import { ReportEmailDialog } from "@/components/reports/report-email-dialog";
 import { CheckoutCountdown, getCheckoutDelta } from "@/components/checkout-countdown";
 import { ExpressCheckoutModal } from "@/components/express-checkout-modal";
 import { CheckoutConfirmModal } from "@/components/checkout-confirm-modal";
@@ -62,6 +70,7 @@ export default function CommercialBookingsPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("all");
   const [bookingsReportOpen, setBookingsReportOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -74,9 +83,26 @@ export default function CommercialBookingsPage() {
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
+
+  // Response email verification states
   const [responseEmail, setResponseEmail] = useState("");
+  const [responseEmailVerified, setResponseEmailVerified] = useState(false);
   const [showResponseEmailSetting, setShowResponseEmailSetting] = useState(false);
   const [responseEmailInput, setResponseEmailInput] = useState("");
+  const [verificationStep, setVerificationStep] = useState<"input" | "verify">("input");
+  const [verificationCodeInput, setVerificationCodeInput] = useState("");
+  const [sentVerificationCode, setSentVerificationCode] = useState("");
+  const [verifyingEmail, setVerifyingEmail] = useState(false);
+  const [verificationError, setVerificationError] = useState("");
+
+  // Enquiry conversation messages map
+  const [enquiryMessagesMap, setEnquiryMessagesMap] = useState<Record<string, any[]>>({});
+  const [loadingMessagesId, setLoadingMessagesId] = useState<string | null>(null);
+
+  // Row selection states for batch download/print/email
+  const [selectedBookingIds, setSelectedBookingIds] = useState<Set<string>>(new Set());
+  const [selectedReservationIds, setSelectedReservationIds] = useState<Set<string>>(new Set());
+  const [selectedRowsEmailOpen, setSelectedRowsEmailOpen] = useState(false);
 
   // Modals state
   const [checkinOpen, setCheckinOpen] = useState(false);
@@ -213,6 +239,214 @@ export default function CommercialBookingsPage() {
     }
   };
 
+  const currencySymbol = currentCompany?.currency === "USD" ? "$" : currentCompany?.currency === "EUR" ? "€" : currentCompany?.currency || "R";
+
+  useEffect(() => {
+    const saved = localStorage.getItem(`paimbabook_verified_response_email_${currentCompany.id}`);
+    if (saved) {
+      setResponseEmail(saved);
+      setResponseEmailVerified(true);
+    }
+  }, [currentCompany.id]);
+
+  const isWithinPeriod = (dateStr: string | undefined | null, period: string) => {
+    if (!dateStr || period === "all") return true;
+    const t = new Date(dateStr).getTime();
+    const now = Date.now();
+    let maxDiff = Infinity;
+    if (period === "2h") maxDiff = 2 * 3600 * 1000;
+    else if (period === "24h") maxDiff = 24 * 3600 * 1000;
+    else if (period === "3d") maxDiff = 3 * 24 * 3600 * 1000;
+    else if (period === "1w") maxDiff = 7 * 24 * 3600 * 1000;
+    else if (period === "1m") maxDiff = 30 * 24 * 3600 * 1000;
+    else if (period === "3m") maxDiff = 90 * 24 * 3600 * 1000;
+    else if (period === "1y") maxDiff = 365 * 24 * 3600 * 1000;
+    return now - t <= maxDiff;
+  };
+
+  const loadEnquiryMessages = async (enquiryId: string) => {
+    setLoadingMessagesId(enquiryId);
+    try {
+      const { data } = await supabase
+        .from('enquiry_messages')
+        .select('*')
+        .eq('enquiry_id', enquiryId)
+        .order('created_at', { ascending: true });
+      if (data) {
+        setEnquiryMessagesMap((prev) => ({ ...prev, [enquiryId]: data }));
+      }
+    } catch (err) {
+      console.warn("Could not load enquiry messages:", err);
+    } finally {
+      setLoadingMessagesId(null);
+    }
+  };
+
+  const handleCloseTicket = async (enquiryId: string) => {
+    try {
+      const actorName = currentCompanyUser?.fullName || 'Staff';
+      await supabase.from('enquiries').update({
+        status: 'resolved',
+        resolved_by_name: actorName,
+        resolved_at: new Date().toISOString()
+      }).eq('id', enquiryId);
+
+      await supabase.from('audit_logs').insert([{
+        company_id: currentCompany.id,
+        action: 'closed_enquiry_ticket',
+        target_entity: 'enquiry',
+        target_id: enquiryId,
+        performed_by_name: actorName,
+        details: {}
+      }]);
+
+      setBookingEnquiries((prev) =>
+        prev.map((item) =>
+          item.id === enquiryId
+            ? { ...item, status: 'resolved', resolved_by_name: actorName, resolved_at: new Date().toISOString() }
+            : item
+        )
+      );
+    } catch (err: any) {
+      alert("Failed to close ticket: " + (err.message || String(err)));
+    }
+  };
+
+  const handleReopenTicket = async (enquiryId: string) => {
+    try {
+      const actorName = currentCompanyUser?.fullName || 'Staff';
+      await supabase.from('enquiries').update({
+        status: 'open',
+        resolved_by_name: null,
+        resolved_at: null
+      }).eq('id', enquiryId);
+
+      await supabase.from('audit_logs').insert([{
+        company_id: currentCompany.id,
+        action: 'reopened_enquiry_ticket',
+        target_entity: 'enquiry',
+        target_id: enquiryId,
+        performed_by_name: actorName,
+        details: {}
+      }]);
+
+      setBookingEnquiries((prev) =>
+        prev.map((item) =>
+          item.id === enquiryId
+            ? { ...item, status: 'open', resolved_by_name: null, resolved_at: null }
+            : item
+        )
+      );
+    } catch (err: any) {
+      alert("Failed to reopen ticket: " + (err.message || String(err)));
+    }
+  };
+
+  const handleSendVerificationCode = async () => {
+    setVerificationError("");
+    const email = responseEmailInput.trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      setVerificationError("Please enter a valid email address.");
+      return;
+    }
+    setVerifyingEmail(true);
+    try {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      setSentVerificationCode(code);
+
+      const { sendEmailViaApi } = await import("@/lib/notifications");
+      await sendEmailViaApi({
+        to: email,
+        subject: `[Verification Code] Front Desk Response Email: ${code}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; max-width: 550px; margin: 0 auto;">
+            <h2 style="color: #2563eb; margin-top: 0;">Verify Front Desk Response Email</h2>
+            <p style="color: #334155; font-size: 14px;">You requested to set <strong>${email}</strong> as the official front desk response email address for <strong>${currentCompany.name}</strong>.</p>
+            <p style="color: #334155; font-size: 14px;">To avoid unauthorized email spoofing, enter the 6-digit confirmation code below:</p>
+            <div style="margin: 24px 0; padding: 16px; background: #eff6ff; border: 1px dashed #3b82f6; border-radius: 8px; font-size: 28px; font-weight: 900; letter-spacing: 6px; color: #1d4ed8; text-align: center;">
+              ${code}
+            </div>
+            <p style="font-size: 12px; color: #64748b; margin-bottom: 0;">If you did not request this verification, please disregard this email.</p>
+          </div>
+        `,
+      });
+
+      setVerificationStep("verify");
+    } catch (err: any) {
+      setVerificationError(err?.message || "Failed to dispatch verification code. Please check email address.");
+    } finally {
+      setVerifyingEmail(false);
+    }
+  };
+
+  const handleConfirmVerificationCode = async () => {
+    setVerificationError("");
+    if (verificationCodeInput.trim() !== sentVerificationCode.trim()) {
+      setVerificationError("Incorrect verification code. Please check your inbox and enter the 6 digits sent to you.");
+      return;
+    }
+
+    const verifiedEmail = responseEmailInput.trim().toLowerCase();
+    setResponseEmail(verifiedEmail);
+    setResponseEmailVerified(true);
+    localStorage.setItem(`paimbabook_verified_response_email_${currentCompany.id}`, verifiedEmail);
+
+    try {
+      await supabase.from("companies").update({ email: verifiedEmail }).eq("id", currentCompany.id);
+      const actorName = currentCompanyUser?.fullName || "Staff";
+      await supabase.from("audit_logs").insert([{
+        company_id: currentCompany.id,
+        action: "verified_response_email",
+        target_entity: "company_settings",
+        target_id: currentCompany.id,
+        performed_by_name: actorName,
+        details: { verified_email: verifiedEmail }
+      }]);
+    } catch (err) {
+      console.warn("Could not save to Supabase companies:", err);
+    }
+
+    setShowResponseEmailSetting(false);
+    setVerificationStep("input");
+    setVerificationCodeInput("");
+    alert(`Email successfully verified! All booking replies will now display from ${verifiedEmail}.`);
+  };
+
+  // Selection helpers
+  const toggleSelectBooking = (id: string) => {
+    setSelectedBookingIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllBookings = (currentRows: CommercialBooking[]) => {
+    if (selectedBookingIds.size === currentRows.length) {
+      setSelectedBookingIds(new Set());
+    } else {
+      setSelectedBookingIds(new Set(currentRows.map((b) => b.id)));
+    }
+  };
+
+  const toggleSelectReservation = (id: string) => {
+    setSelectedReservationIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllReservations = (currentRows: CommercialBooking[]) => {
+    if (selectedReservationIds.size === currentRows.length) {
+      setSelectedReservationIds(new Set());
+    } else {
+      setSelectedReservationIds(new Set(currentRows.map((b) => b.id)));
+    }
+  };
+
   const filteredBookings = useMemo(() => {
     return bookings.filter((b) => {
       const matchesSearch =
@@ -224,9 +458,33 @@ export default function CommercialBookingsPage() {
       const matchesStatus =
         statusFilter === "all" || b.bookingStatus === statusFilter;
 
-      return matchesSearch && matchesStatus;
+      const matchesPeriod = isWithinPeriod(b.createdAt || b.checkInDate, selectedPeriod);
+
+      return matchesSearch && matchesStatus && matchesPeriod;
     });
-  }, [bookings, searchQuery, statusFilter]);
+  }, [bookings, searchQuery, statusFilter, selectedPeriod]);
+
+  const filteredReservations = useMemo(() => {
+    return reservations.filter((b) => {
+      const matchesSearch =
+        !searchQuery ||
+        b.guestName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        b.bookingCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (b.roomNumber && b.roomNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        b.guestPhone.includes(searchQuery);
+
+      const matchesPeriod = isWithinPeriod(b.createdAt || b.checkInDate, selectedPeriod);
+      return matchesSearch && matchesPeriod;
+    });
+  }, [reservations, searchQuery, selectedPeriod]);
+
+  const selectedBookingsList = useMemo(() => {
+    return bookings.filter((b) => selectedBookingIds.has(b.id));
+  }, [bookings, selectedBookingIds]);
+
+  const selectedReservationsList = useMemo(() => {
+    return reservations.filter((b) => selectedReservationIds.has(b.id));
+  }, [reservations, selectedReservationIds]);
 
   const itemsPerPage = 10;
   const totalPages = Math.ceil(filteredBookings.length / itemsPerPage);
@@ -419,22 +677,90 @@ export default function CommercialBookingsPage() {
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-muted">Status:</span>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs font-semibold text-foreground focus:border-blue-600 focus:outline-none"
-          >
-            <option value="all">All Bookings</option>
-            <option value="checked_in">Checked In</option>
-            <option value="extended">Stay Extended</option>
-            <option value="confirmed">Confirmed / Upcoming</option>
-            <option value="reserved">Reserved</option>
-            <option value="checked_out">Checked Out</option>
-          </select>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-muted">Period:</span>
+            <select
+              value={selectedPeriod}
+              onChange={(e) => setSelectedPeriod(e.target.value)}
+              className="rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs font-bold text-foreground focus:border-blue-600 focus:outline-none"
+            >
+              <option value="all">All Time</option>
+              <option value="2h">Past 2 Hours</option>
+              <option value="24h">Past 24 Hours</option>
+              <option value="3d">Past 3 Days</option>
+              <option value="1w">Past 1 Week</option>
+              <option value="1m">Past 1 Month</option>
+              <option value="3m">Past 3 Months</option>
+              <option value="1y">Past 1 Year</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-muted">Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs font-bold text-foreground focus:border-blue-600 focus:outline-none"
+            >
+              <option value="all">All Bookings</option>
+              <option value="checked_in">Checked In</option>
+              <option value="extended">Stay Extended</option>
+              <option value="confirmed">Confirmed / Upcoming</option>
+              <option value="reserved">Reserved</option>
+              <option value="checked_out">Checked Out</option>
+            </select>
+          </div>
         </div>
       </div>
+
+      {/* Batch Actions Bar */}
+      {selectedBookingIds.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-500/30 bg-blue-50/80 dark:bg-blue-950/40 p-3 shadow-xs">
+          <div className="flex items-center gap-2">
+            <CheckSquare size={16} className="text-blue-600" />
+            <span className="text-xs font-bold text-foreground">
+              {selectedBookingIds.size} Booking{selectedBookingIds.size > 1 ? "s" : ""} Selected
+            </span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => openMultiBookingPdfInNewTab(selectedBookingsList, currentCompany.name, currencySymbol, "Active Bookings Ledger", selectedPeriod)}
+              className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition"
+              title="Download & View PDF in New Tab"
+            >
+              <Download size={13} />
+              <span>View & Download PDF ({selectedBookingIds.size})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openMultiBookingPdfInNewTab(selectedBookingsList, currentCompany.name, currencySymbol, "Active Bookings Ledger", selectedPeriod)}
+              className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-elevated transition shadow-xs"
+              title="Print Selected Bookings"
+            >
+              <Printer size={13} />
+              <span>Print Selected</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedRowsEmailOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-elevated transition shadow-xs"
+              title="Email Selected Bookings to Staff or Custom Email"
+            >
+              <Mail size={13} className="text-blue-600" />
+              <span>Email to Staff / Custom</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedBookingIds(new Set())}
+              className="text-xs font-semibold text-muted hover:text-foreground underline ml-1"
+            >
+              Deselect All
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Bookings List Table */}
       <div className="overflow-hidden rounded-2xl border border-border-color bg-surface shadow-sm">
@@ -442,6 +768,15 @@ export default function CommercialBookingsPage() {
           <table className="w-full text-left text-sm">
             <thead className="border-b border-border-color bg-surface-elevated/70 text-[11px] font-bold uppercase tracking-wider text-muted">
               <tr>
+                <th className="w-10 px-4 py-3.5 text-center">
+                  <input
+                    type="checkbox"
+                    checked={paginatedBookings.length > 0 && selectedBookingIds.size === paginatedBookings.length}
+                    onChange={() => selectAllBookings(paginatedBookings)}
+                    className="h-4 w-4 rounded border-border-color text-blue-600 focus:ring-blue-600 cursor-pointer"
+                    title="Select All on this Page"
+                  />
+                </th>
                 <th className="px-4 py-3.5">Booking Code</th>
                 <th className="px-4 py-3.5">Guest Details</th>
                 <th className="px-4 py-3.5">Room & Property</th>
@@ -454,14 +789,14 @@ export default function CommercialBookingsPage() {
             <tbody className="divide-y divide-border-color text-foreground">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted">
+                  <td colSpan={8} className="p-8 text-center text-muted">
                     Loading commercial bookings...
                   </td>
                 </tr>
               ) : filteredBookings.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted">
-                    No bookings found matching your search.
+                  <td colSpan={8} className="p-8 text-center text-muted">
+                    No bookings found matching your search and timeframe filter.
                   </td>
                 </tr>
               ) : (
@@ -473,6 +808,14 @@ export default function CommercialBookingsPage() {
                       onClick={() => setDetailModalBooking(b)}
                       className="hover:bg-surface-elevated/70 transition cursor-pointer group"
                     >
+                      <td className="w-10 px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedBookingIds.has(b.id)}
+                          onChange={() => toggleSelectBooking(b.id)}
+                          className="h-4 w-4 rounded border-border-color text-blue-600 focus:ring-blue-600 cursor-pointer"
+                        />
+                      </td>
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-xs font-extrabold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-md group-hover:bg-blue-600 group-hover:text-white transition">
@@ -621,12 +964,13 @@ export default function CommercialBookingsPage() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setFolioBooking(b);
+                              openBookingPdfInNewTab(b, currentCompany.name, currencySymbol);
                             }}
-                            className="rounded-lg border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted hover:text-foreground"
-                            title="View Folio / Receipt"
+                            className="flex items-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-xs font-bold text-blue-600 hover:bg-blue-500/20 transition"
+                            title="View & Download PDF Folio in New Tab"
                           >
                             <FileText size={13} />
+                            <span>PDF</span>
                           </button>
                         </div>
                       </td>
@@ -654,106 +998,214 @@ export default function CommercialBookingsPage() {
       )}
 
       {activeTab === 'reservations' && (
-        <div className="overflow-hidden rounded-2xl border border-border-color bg-surface shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-border-color bg-surface-elevated/70 text-[11px] font-bold uppercase tracking-wider text-muted">
-                <tr>
-                  <th className="px-4 py-3.5">Booking Code</th>
-                  <th className="px-4 py-3.5">Guest Details</th>
-                  <th className="px-4 py-3.5">Room & Property</th>
-                  <th className="px-4 py-3.5">Stay Dates</th>
-                  <th className="px-4 py-3.5">Financials</th>
-                  <th className="px-4 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-color text-foreground">
-                {reservations.length === 0 ? (
+        <div className="space-y-6">
+          {/* Search and Filters */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-border-color bg-surface p-4">
+            <div className="relative flex-1">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+              <input
+                type="search"
+                placeholder="Search reservations by Guest Name, Booking Code, Room # or Phone..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-xl border border-border-color bg-surface-elevated pl-9 pr-4 py-2 text-sm text-foreground outline-none focus:border-indigo-600"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-muted">Period:</span>
+              <select
+                value={selectedPeriod}
+                onChange={(e) => setSelectedPeriod(e.target.value)}
+                className="rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-xs font-bold text-foreground focus:border-indigo-600 focus:outline-none"
+              >
+                <option value="all">All Time</option>
+                <option value="2h">Past 2 Hours</option>
+                <option value="24h">Past 24 Hours</option>
+                <option value="3d">Past 3 Days</option>
+                <option value="1w">Past 1 Week</option>
+                <option value="1m">Past 1 Month</option>
+                <option value="3m">Past 3 Months</option>
+                <option value="1y">Past 1 Year</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Batch Actions Bar for Reservations */}
+          {selectedReservationIds.size > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-500/30 bg-indigo-50/80 dark:bg-indigo-950/40 p-3 shadow-xs">
+              <div className="flex items-center gap-2">
+                <CheckSquare size={16} className="text-indigo-600" />
+                <span className="text-xs font-bold text-foreground">
+                  {selectedReservationIds.size} Reservation{selectedReservationIds.size > 1 ? "s" : ""} Selected
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => openMultiBookingPdfInNewTab(selectedReservationsList, currentCompany.name, currencySymbol, "Pending Reservations Ledger", selectedPeriod)}
+                  className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 transition"
+                  title="Download & View PDF in New Tab"
+                >
+                  <Download size={13} />
+                  <span>View & Download PDF ({selectedReservationIds.size})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openMultiBookingPdfInNewTab(selectedReservationsList, currentCompany.name, currencySymbol, "Pending Reservations Ledger", selectedPeriod)}
+                  className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-elevated transition shadow-xs"
+                  title="Print Selected Reservations"
+                >
+                  <Printer size={13} />
+                  <span>Print Selected</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRowsEmailOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-elevated transition shadow-xs"
+                  title="Email Selected to Staff or Custom Email"
+                >
+                  <Mail size={13} className="text-indigo-600" />
+                  <span>Email to Staff / Custom</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedReservationIds(new Set())}
+                  className="text-xs font-semibold text-muted hover:text-foreground underline ml-1"
+                >
+                  Deselect All
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="overflow-hidden rounded-2xl border border-border-color bg-surface shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-border-color bg-surface-elevated/70 text-[11px] font-bold uppercase tracking-wider text-muted">
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-muted">
-                      <div className="flex flex-col items-center justify-center">
-                        <CalendarRange size={32} className="mb-2 text-indigo-400" />
-                        <p>No pending reservations</p>
-                      </div>
-                    </td>
+                    <th className="w-10 px-4 py-3.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={filteredReservations.length > 0 && selectedReservationIds.size === filteredReservations.length}
+                        onChange={() => selectAllReservations(filteredReservations)}
+                        className="h-4 w-4 rounded border-border-color text-indigo-600 focus:ring-indigo-600 cursor-pointer"
+                        title="Select All Reservations"
+                      />
+                    </th>
+                    <th className="px-4 py-3.5">Booking Code</th>
+                    <th className="px-4 py-3.5">Guest Details</th>
+                    <th className="px-4 py-3.5">Room & Property</th>
+                    <th className="px-4 py-3.5">Stay Dates</th>
+                    <th className="px-4 py-3.5">Financials</th>
+                    <th className="px-4 py-3.5 text-right">Actions</th>
                   </tr>
-                ) : (
-                  reservations.map((b) => (
-                    <tr key={b.id} className="hover:bg-surface-elevated/70 transition">
-                      <td className="px-4 py-3.5">
-                        <span className="font-mono text-xs font-extrabold text-indigo-600 bg-indigo-500/10 px-2.5 py-1 rounded-md">
-                          {b.bookingCode}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <p className="font-bold text-foreground">{b.guestName}</p>
-                        <div className="flex items-center gap-2 text-xs text-muted mt-0.5">
-                          <Phone size={12} />
-                          <span>{b.guestPhone}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <p className="font-bold text-foreground">{b.roomNumber}</p>
-                        <p className="text-xs text-muted">{b.propertyName}</p>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-1.5 text-xs text-foreground">
-                          <Calendar size={13} className="text-muted" />
-                          <span>
-                            {new Date(b.checkInDate).toLocaleDateString()} →{" "}
-                            {new Date(b.checkOutDate).toLocaleDateString()}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <p className="font-extrabold text-foreground">R{b.totalAmount.toLocaleString()}</p>
-                      </td>
-                      <td className="px-4 py-3.5 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setDetailModalBooking(b)}
-                            className="flex items-center gap-1 rounded-lg border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted hover:text-blue-600 hover:border-blue-500/40 transition"
-                          >
-                            <Eye size={13} />
-                            <span className="hidden sm:inline">Details</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                const actorName = currentCompanyUser?.fullName || currentCompanyUser?.jobTitle || "Staff";
-                                await checkinCommercialBooking(b.id, actorName);
-                                loadData();
-                              } catch (err: any) {
-                                alert("Check-in failed: " + (err.message || JSON.stringify(err)));
-                              }
-                            }}
-                            className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-600 hover:bg-emerald-500/20"
-                          >
-                            <UserCheck size={13} />
-                            <span>Check In</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (window.confirm('Cancel this reservation?')) {
-                                await supabase.from('commercial_bookings').update({ booking_status: 'cancelled' }).eq('id', b.id);
-                                loadData();
-                              }
-                            }}
-                            className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-500/20"
-                          >
-                            <LogOut size={13} />
-                            <span>Cancel</span>
-                          </button>
+                </thead>
+                <tbody className="divide-y divide-border-color text-foreground">
+                  {filteredReservations.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-muted">
+                        <div className="flex flex-col items-center justify-center">
+                          <CalendarRange size={32} className="mb-2 text-indigo-400" />
+                          <p>No pending reservations found for the selected timeframe</p>
                         </div>
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    filteredReservations.map((b) => (
+                      <tr key={b.id} className="hover:bg-surface-elevated/70 transition">
+                        <td className="w-10 px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedReservationIds.has(b.id)}
+                            onChange={() => toggleSelectReservation(b.id)}
+                            className="h-4 w-4 rounded border-border-color text-indigo-600 focus:ring-indigo-600 cursor-pointer"
+                          />
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="font-mono text-xs font-extrabold text-indigo-600 bg-indigo-500/10 px-2.5 py-1 rounded-md">
+                            {b.bookingCode}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <p className="font-bold text-foreground">{b.guestName}</p>
+                          <div className="flex items-center gap-2 text-xs text-muted mt-0.5">
+                            <Phone size={12} />
+                            <span>{b.guestPhone}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <p className="font-bold text-foreground">{b.roomNumber}</p>
+                          <p className="text-xs text-muted">{b.propertyName}</p>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-1.5 text-xs text-foreground">
+                            <Calendar size={13} className="text-muted" />
+                            <span>
+                              {new Date(b.checkInDate).toLocaleDateString()} →{" "}
+                              {new Date(b.checkOutDate).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <p className="font-extrabold text-foreground">{currencySymbol}{b.totalAmount.toLocaleString()}</p>
+                        </td>
+                        <td className="px-4 py-3.5 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openBookingPdfInNewTab(b, currentCompany.name, currencySymbol)}
+                              className="flex items-center gap-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2 py-1 text-xs font-bold text-indigo-600 hover:bg-indigo-500/20 transition"
+                              title="View & Download PDF Folio in New Tab"
+                            >
+                              <FileText size={13} />
+                              <span className="hidden sm:inline">PDF</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDetailModalBooking(b)}
+                              className="flex items-center gap-1 rounded-lg border border-border-color bg-surface-elevated px-2 py-1 text-xs text-muted hover:text-blue-600 hover:border-blue-500/40 transition"
+                            >
+                              <Eye size={13} />
+                              <span className="hidden sm:inline">Details</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const actorName = currentCompanyUser?.fullName || currentCompanyUser?.jobTitle || "Staff";
+                                  await checkinCommercialBooking(b.id, actorName);
+                                  loadData();
+                                } catch (err: any) {
+                                  alert("Check-in failed: " + (err.message || JSON.stringify(err)));
+                                }
+                              }}
+                              className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-600 hover:bg-emerald-500/20"
+                            >
+                              <UserCheck size={13} />
+                              <span>Check In</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (window.confirm('Cancel this reservation?')) {
+                                  await supabase.from('commercial_bookings').update({ booking_status: 'cancelled' }).eq('id', b.id);
+                                  loadData();
+                                }
+                              }}
+                              className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-500/20"
+                            >
+                              <LogOut size={13} />
+                              <span>Cancel</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -761,57 +1213,165 @@ export default function CommercialBookingsPage() {
       {activeTab === 'enquiries' && (
         <div className="space-y-4">
           {/* Response Email Setting Bar */}
-          <div className="flex items-center gap-3 rounded-xl border border-border-color bg-surface p-3">
-            <Mail size={15} className="text-muted shrink-0" />
-            <div className="flex-1">
-              <span className="text-xs font-medium text-muted">Response From Email: </span>
-              {responseEmail ? (
-                <span className="text-xs font-bold text-foreground">{responseEmail}</span>
+          <div className="flex items-center gap-3 rounded-2xl border border-border-color bg-surface p-4 shadow-xs">
+            <Mail size={16} className="text-muted shrink-0" />
+            <div className="flex-1 flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold text-muted">Response From Email:</span>
+              {responseEmail && responseEmailVerified ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-xs font-bold text-emerald-600">
+                  <CheckCircle2 size={13} />
+                  <span>{responseEmail} (Verified Ownership)</span>
+                </span>
               ) : (
-                <span className="text-xs text-amber-600 font-medium">Not set - replies will use system default</span>
+                <span className="inline-flex items-center gap-1.5 text-xs text-amber-600 font-semibold bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-full">
+                  <Lock size={12} />
+                  <span>Not set - replies use system default (Verification Required)</span>
+                </span>
               )}
             </div>
             <button
               type="button"
               onClick={() => {
                 setResponseEmailInput(responseEmail);
+                setVerificationStep("input");
+                setVerificationError("");
                 setShowResponseEmailSetting(true);
               }}
-              className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated/80 transition"
+              className="flex items-center gap-1.5 rounded-xl border border-border-color bg-surface-elevated px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-elevated/80 transition shadow-xs"
             >
               <Pencil size={13} />
-              Set Response Email
+              <span>{responseEmailVerified ? "Change Response Email" : "Set & Verify Response Email"}</span>
             </button>
           </div>
 
-          {/* Response Email Setting Modal */}
+          {/* Response Email Verification Modal */}
           {showResponseEmailSetting && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-              <div className="w-full max-w-md rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-4">
-                <h3 className="text-base font-bold text-foreground">Set Response Email Address</h3>
-                <p className="text-xs text-muted">Emails sent from the Booking Enquiries tab will appear to come from this address. Make sure it's a monitored inbox.</p>
-                <input
-                  type="email"
-                  placeholder="e.g. reservations@yourproperty.com"
-                  value={responseEmailInput}
-                  onChange={(e) => setResponseEmailInput(e.target.value)}
-                  className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground outline-none focus:border-blue-600"
-                />
-                <div className="flex justify-end gap-2">
-                  <button type="button" onClick={() => setShowResponseEmailSetting(false)} className="rounded-lg border border-border-color px-4 py-2 text-xs font-medium text-muted hover:bg-surface-elevated">
-                    Cancel
-                  </button>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-150">
+              <div className="w-full max-w-md rounded-3xl border border-border-color bg-surface p-6 shadow-2xl space-y-4">
+                <div className="flex items-center justify-between border-b border-border-color pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="rounded-xl bg-blue-600/10 p-2 text-blue-600">
+                      <ShieldCheck size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-foreground">Verify Response Email</h3>
+                      <p className="text-[11px] text-muted">Confirm ownership via 6-digit code to avoid unauthorized from emails</p>
+                    </div>
+                  </div>
                   <button
-                    type="button"
                     onClick={() => {
-                      setResponseEmail(responseEmailInput.trim());
                       setShowResponseEmailSetting(false);
+                      setVerificationStep("input");
+                      setVerificationError("");
                     }}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700"
+                    className="rounded-lg p-1.5 text-muted hover:bg-surface-elevated"
                   >
-                    Save Email
+                    <X size={18} />
                   </button>
                 </div>
+
+                {verificationError && (
+                  <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-600 font-medium">
+                    {verificationError}
+                  </div>
+                )}
+
+                {verificationStep === "input" ? (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs font-bold text-foreground block mb-1">
+                        Monitored Email Address *
+                      </label>
+                      <input
+                        type="email"
+                        placeholder="e.g. reservations@yourproperty.com"
+                        value={responseEmailInput}
+                        onChange={(e) => setResponseEmailInput(e.target.value)}
+                        className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2.5 text-sm text-foreground outline-none focus:border-blue-600"
+                      />
+                      <p className="text-[11px] text-muted mt-1.5">
+                        We will send a 6-digit confirmation code to this inbox. You must enter it to prove ownership before this email can be used as a sender.
+                      </p>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowResponseEmailSetting(false)}
+                        className="rounded-xl border border-border-color px-4 py-2 text-xs font-medium text-muted hover:bg-surface-elevated"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={verifyingEmail || !responseEmailInput.trim()}
+                        onClick={handleSendVerificationCode}
+                        className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-xs"
+                      >
+                        {verifyingEmail ? (
+                          <>
+                            <RefreshCw size={13} className="animate-spin" />
+                            <span>Sending Code...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send size={13} />
+                            <span>Send Verification Code</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-3 text-xs text-blue-700 dark:text-blue-300">
+                      We sent a 6-digit verification code to <strong>{responseEmailInput}</strong>. Please enter it below:
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-foreground block mb-1">
+                        6-Digit Verification Code *
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={6}
+                        placeholder="e.g. 123456"
+                        value={verificationCodeInput}
+                        onChange={(e) => setVerificationCodeInput(e.target.value.replace(/[^0-9]/g, ''))}
+                        className="w-full text-center tracking-widest text-lg font-mono font-bold rounded-xl border border-border-color bg-surface-elevated px-3 py-2.5 text-foreground outline-none focus:border-blue-600"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2">
+                      <button
+                        type="button"
+                        onClick={handleSendVerificationCode}
+                        disabled={verifyingEmail}
+                        className="text-xs text-blue-600 hover:underline disabled:opacity-50 font-semibold"
+                      >
+                        {verifyingEmail ? "Resending..." : "Resend Code"}
+                      </button>
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setVerificationStep("input")}
+                          className="rounded-xl border border-border-color px-3 py-2 text-xs font-medium text-muted hover:bg-surface-elevated"
+                        >
+                          Back
+                        </button>
+                        <button
+                          type="button"
+                          disabled={verificationCodeInput.length !== 6}
+                          onClick={handleConfirmVerificationCode}
+                          className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 transition shadow-xs"
+                        >
+                          Verify &amp; Activate
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -819,10 +1379,10 @@ export default function CommercialBookingsPage() {
           {/* Email Compose Modal */}
           {emailModalEnquiry && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-              <div className="w-full max-w-lg rounded-2xl border border-border-color bg-surface p-6 shadow-2xl space-y-4">
+              <div className="w-full max-w-lg rounded-3xl border border-border-color bg-surface p-6 shadow-2xl space-y-4">
                 <div className="flex items-center justify-between border-b border-border-color pb-3">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Compose Email Response</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Compose Ticket Response</p>
                     <h3 className="text-base font-bold text-foreground">To: {emailModalEnquiry.customer_name}</h3>
                   </div>
                   <button onClick={() => setEmailModalEnquiry(null)} className="rounded-lg p-1.5 text-muted hover:bg-surface-elevated">
@@ -832,19 +1392,24 @@ export default function CommercialBookingsPage() {
 
                 <div className="space-y-3">
                   <div>
-                    <label className="text-xs font-medium text-muted block mb-1">From</label>
-                    <div className="rounded-xl border border-border-color bg-surface-elevated/50 px-3 py-2 text-sm text-muted">
-                      {responseEmail || 'system@paimbabook.com'}
+                    <label className="text-xs font-semibold text-muted block mb-1">From Email Address</label>
+                    <div className="rounded-xl border border-border-color bg-surface-elevated/50 px-3 py-2 text-sm text-foreground flex items-center justify-between">
+                      <span>{responseEmail || 'system@paimbabook.com'}</span>
+                      {responseEmailVerified && (
+                        <span className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-full">
+                          Verified
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-muted block mb-1">To</label>
+                    <label className="text-xs font-semibold text-muted block mb-1">To Customer</label>
                     <div className="rounded-xl border border-border-color bg-surface-elevated/50 px-3 py-2 text-sm text-foreground">
                       {emailModalEnquiry.customer_email}
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-muted block mb-1">Subject</label>
+                    <label className="text-xs font-semibold text-muted block mb-1">Subject</label>
                     <input
                       type="text"
                       value={emailSubject}
@@ -853,19 +1418,19 @@ export default function CommercialBookingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-muted block mb-1">Message</label>
+                    <label className="text-xs font-semibold text-muted block mb-1">Response Message *</label>
                     <textarea
                       rows={6}
                       value={emailBody}
                       onChange={(e) => setEmailBody(e.target.value)}
-                      placeholder="Type your response here..."
+                      placeholder="Type your response here. This will be emailed to the client and saved in the ticket audit trail..."
                       className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-sm text-foreground outline-none focus:border-blue-600 resize-none"
                     />
                   </div>
                 </div>
 
                 <div className="flex justify-end gap-2 pt-1">
-                  <button type="button" onClick={() => setEmailModalEnquiry(null)} className="rounded-lg border border-border-color px-4 py-2 text-xs font-medium text-muted hover:bg-surface-elevated">
+                  <button type="button" onClick={() => setEmailModalEnquiry(null)} className="rounded-xl border border-border-color px-4 py-2 text-xs font-medium text-muted hover:bg-surface-elevated">
                     Cancel
                   </button>
                   <button
@@ -874,18 +1439,29 @@ export default function CommercialBookingsPage() {
                     onClick={async () => {
                       setSendingEmail(true);
                       try {
+                        const actorName = currentCompanyUser?.fullName || currentCompanyUser?.jobTitle || 'Front Desk Staff';
+
+                        // 1. Send the email response
                         const { sendEnquiryResponseEmail } = await import('@/lib/enquiry-templates');
                         await sendEnquiryResponseEmail({
                           toEmail: emailModalEnquiry.customer_email,
                           customerName: emailModalEnquiry.customer_name,
-                          propertyName: undefined,
+                          propertyName: emailModalEnquiry.property_name,
                           enquiryId: emailModalEnquiry.id,
                           question: emailModalEnquiry.message,
                           response: emailBody,
                           companyName: currentCompany.name,
                         });
-                        // Log to audit trail
-                        const actorName = currentCompanyUser?.fullName || 'Staff';
+
+                        // 2. Insert into enquiry_messages table
+                        await supabase.from('enquiry_messages').insert({
+                          enquiry_id: emailModalEnquiry.id,
+                          sender_type: 'staff',
+                          sender_name: actorName,
+                          body: emailBody.trim(),
+                        });
+
+                        // 3. Log to audit trail
                         await supabase.from('audit_logs').insert([{
                           company_id: currentCompany.id,
                           action: 'sent_email_response',
@@ -894,23 +1470,45 @@ export default function CommercialBookingsPage() {
                           performed_by_name: actorName,
                           details: { subject: emailSubject, to: emailModalEnquiry.customer_email }
                         }]);
-                        // Mark as in_progress
-                        await supabase.from('enquiries').update({ status: 'in_progress' }).eq('id', emailModalEnquiry.id);
+
+                        // 4. Mark enquiry as in_progress
+                        await supabase.from('enquiries').update({
+                          status: 'in_progress',
+                          resolved_by_name: actorName,
+                          resolved_at: new Date().toISOString()
+                        }).eq('id', emailModalEnquiry.id);
+
+                        // 5. Update local thread
+                        setEnquiryMessagesMap((prev) => ({
+                          ...prev,
+                          [emailModalEnquiry.id]: [
+                            ...(prev[emailModalEnquiry.id] || []),
+                            {
+                              id: Date.now().toString(),
+                              enquiry_id: emailModalEnquiry.id,
+                              sender_type: 'staff',
+                              sender_name: actorName,
+                              body: emailBody.trim(),
+                              created_at: new Date().toISOString(),
+                            },
+                          ],
+                        }));
+
                         loadData();
                         setEmailModalEnquiry(null);
                         setEmailSubject('');
                         setEmailBody('');
-                        alert('Email response sent successfully.');
+                        alert('Email response dispatched and logged into ticket thread successfully.');
                       } catch (err: any) {
                         alert('Failed to send email: ' + (err.message || String(err)));
                       } finally {
                         setSendingEmail(false);
                       }
                     }}
-                    className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+                    className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-xs"
                   >
                     <Send size={13} />
-                    {sendingEmail ? 'Sending...' : 'Send Email'}
+                    {sendingEmail ? 'Sending...' : 'Send Email & Post to Chat'}
                   </button>
                 </div>
               </div>
@@ -926,7 +1524,7 @@ export default function CommercialBookingsPage() {
                     <th className="px-4 py-3.5">Customer</th>
                     <th className="px-4 py-3.5">Enquiry Type</th>
                     <th className="px-4 py-3.5">Dates / Guests</th>
-                    <th className="px-4 py-3.5">Message</th>
+                    <th className="px-4 py-3.5">Message Preview</th>
                     <th className="px-4 py-3.5">Received / Status</th>
                     <th className="px-4 py-3.5 text-right">Actions</th>
                   </tr>
@@ -937,211 +1535,320 @@ export default function CommercialBookingsPage() {
                       <td colSpan={7} className="p-8 text-center text-muted">
                         <div className="flex flex-col items-center justify-center">
                           <MessageSquare size={32} className="mb-2 text-purple-400" />
-                          <p>No booking enquiries yet</p>
+                          <p>No booking enquiries found</p>
                         </div>
                       </td>
                     </tr>
                   ) : (
-                    bookingEnquiries.map((e) => (
-                      <>
-                        <tr key={e.id} className="hover:bg-surface-elevated/50 transition cursor-pointer" onClick={() => setExpandedEnquiryId(expandedEnquiryId === e.id ? null : e.id)}>
-                          <td className="px-4 py-3.5">
-                            <button type="button" className="text-muted hover:text-foreground transition">
-                              {expandedEnquiryId === e.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                            </button>
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <p className="font-bold text-foreground">{e.customer_name}</p>
-                            <div className="flex items-center gap-1.5 text-xs text-muted mt-0.5">
-                              <Mail size={11} />
-                              <span className="truncate max-w-[160px]">{e.customer_email}</span>
-                            </div>
-                            {e.customer_phone && (
+                    bookingEnquiries.map((e) => {
+                      const is24hOldInactive =
+                        e.status === 'in_progress' &&
+                        e.resolved_at &&
+                        (Date.now() - new Date(e.resolved_at).getTime()) / (3600 * 1000) >= 24;
+
+                      const messages = enquiryMessagesMap[e.id] || [];
+
+                      return (
+                        <>
+                          <tr
+                            key={e.id}
+                            className="hover:bg-surface-elevated/50 transition cursor-pointer"
+                            onClick={() => {
+                              const next = expandedEnquiryId === e.id ? null : e.id;
+                              setExpandedEnquiryId(next);
+                              if (next && !enquiryMessagesMap[next]) {
+                                void loadEnquiryMessages(next);
+                              }
+                            }}
+                          >
+                            <td className="px-4 py-3.5">
+                              <button type="button" className="text-muted hover:text-foreground transition">
+                                {expandedEnquiryId === e.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                              </button>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <p className="font-bold text-foreground">{e.customer_name}</p>
                               <div className="flex items-center gap-1.5 text-xs text-muted mt-0.5">
-                                <Phone size={11} />
-                                <span>{e.customer_phone}</span>
+                                <Mail size={11} />
+                                <span className="truncate max-w-[160px]">{e.customer_email}</span>
                               </div>
-                            )}
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                              e.type === 'room_booking' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-                            }`}>
-                              {e.type === 'room_booking' ? 'Room Booking' : 'Rental Enquiry'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3.5 text-xs">
-                            {e.check_in_date && (
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <Calendar size={12} className="text-muted" />
-                                <span>{new Date(e.check_in_date).toLocaleDateString()}{e.check_out_date && ` → ${new Date(e.check_out_date).toLocaleDateString()}`}</span>
-                              </div>
-                            )}
-                            {e.guests && <div className="text-muted">{e.guests} guests</div>}
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <p className="text-xs text-muted max-w-[200px] truncate">{e.message}</p>
-                          </td>
-                          <td className="px-4 py-3.5 text-xs">
-                            <p className="text-muted mb-1">{new Date(e.created_at).toLocaleDateString()}</p>
-                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                              e.status === 'open' ? 'bg-orange-100 text-orange-700' :
-                              e.status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-green-100 text-green-700'
-                            }`}>
-                              {e.status.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3.5 text-right" onClick={(ev) => ev.stopPropagation()}>
-                            <div className="flex items-center justify-end gap-1.5">
-                              {e.status !== 'resolved' && e.status !== 'in_progress' ? (
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    const actorName = currentCompanyUser?.fullName || 'Staff';
-                                    await supabase.from('enquiries').update({
-                                      status: 'in_progress',
-                                      resolved_by_name: actorName,
-                                      resolved_at: new Date().toISOString()
-                                    }).eq('id', e.id);
-                                    await supabase.from('audit_logs').insert([{
-                                      company_id: currentCompany.id,
-                                      action: 'attended_booking_enquiry',
-                                      target_entity: 'enquiry',
-                                      target_id: e.id,
-                                      performed_by_name: actorName,
-                                      details: { enquiry_type: e.type, customer_name: e.customer_name }
-                                    }]);
-                                    loadData();
-                                  }}
-                                  className="flex items-center gap-1 rounded-lg border border-purple-500/30 bg-purple-500/10 px-2.5 py-1 text-xs font-semibold text-purple-600 hover:bg-purple-500/20"
-                                >
-                                  <CheckCircle2 size={13} />
-                                  <span>Attend</span>
-                                </button>
+                              {e.customer_phone && (
+                                <div className="flex items-center gap-1.5 text-xs text-muted mt-0.5">
+                                  <Phone size={11} />
+                                  <span>{e.customer_phone}</span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                                e.type === 'room_booking'
+                                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+                                  : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                              }`}>
+                                {e.type === 'room_booking' ? 'Room Booking' : 'Rental Enquiry'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3.5 text-xs">
+                              {e.check_in_date && (
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <Calendar size={12} className="text-muted" />
+                                  <span>{new Date(e.check_in_date).toLocaleDateString()}{e.check_out_date && ` → ${new Date(e.check_out_date).toLocaleDateString()}`}</span>
+                                </div>
+                              )}
+                              {e.guests && <div className="text-muted">{e.guests} guests</div>}
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <p className="text-xs text-muted max-w-[200px] truncate">{e.message}</p>
+                            </td>
+                            <td className="px-4 py-3.5 text-xs">
+                              <p className="text-muted mb-1">{new Date(e.created_at).toLocaleDateString()}</p>
+                              {is24hOldInactive ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 px-2 py-0.5 text-[10px] font-bold uppercase">
+                                  Auto-Closed (24h Inactive)
+                                </span>
                               ) : (
-                                <span className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-50/50 px-2.5 py-1 text-xs font-semibold text-emerald-600">
-                                  <CheckCircle2 size={13} />
-                                  Attended
+                                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                  e.status === 'open' ? 'bg-orange-100 text-orange-700' :
+                                  e.status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-green-100 text-green-700'
+                                }`}>
+                                  {e.status.replace('_', ' ')}
                                 </span>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEmailModalEnquiry(e);
-                                  setEmailSubject(`Re: Your Booking Enquiry - ${currentCompany.name}`);
-                                  setEmailBody('');
-                                }}
-                                className="flex items-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-500/20"
-                                title="Reply by email within the system"
-                              >
-                                <Mail size={13} />
-                                <span>Reply</span>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                        {/* Expanded row */}
-                        {expandedEnquiryId === e.id && (
-                          <tr key={`${e.id}-expanded`}>
-                            <td colSpan={7} className="px-6 pb-5 pt-0 bg-surface-elevated/30">
-                              <div className="rounded-xl border border-border-color bg-surface p-4 space-y-4">
-                                <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Full Enquiry Details</p>
-                                
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                  <div>
-                                    <span className="text-[11px] font-bold uppercase text-muted block mb-1">Customer Name</span>
-                                    <p className="text-sm font-bold text-foreground">{e.customer_name}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-[11px] font-bold uppercase text-muted block mb-1">Email Address</span>
-                                    <div className="flex items-center gap-2">
-                                      <p className="text-sm text-foreground">{e.customer_email}</p>
-                                      <button
-                                        type="button"
-                                        onClick={() => copyToClipboard(e.customer_email, `email-${e.id}`)}
-                                        className="flex items-center gap-1 rounded-md bg-surface-elevated border border-border-color px-2 py-0.5 text-[11px] text-muted hover:text-foreground transition"
-                                        title="Copy email"
-                                      >
-                                        {copiedField === `email-${e.id}` ? <CheckCircle2 size={12} className="text-emerald-600" /> : <Copy size={12} />}
-                                        {copiedField === `email-${e.id}` ? 'Copied' : 'Copy'}
-                                      </button>
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <span className="text-[11px] font-bold uppercase text-muted block mb-1">Phone Number</span>
-                                    <div className="flex items-center gap-2">
-                                      <p className="text-sm text-foreground">{e.customer_phone || 'Not provided'}</p>
-                                      {e.customer_phone && (
-                                        <button
-                                          type="button"
-                                          onClick={() => copyToClipboard(e.customer_phone, `phone-${e.id}`)}
-                                          className="flex items-center gap-1 rounded-md bg-surface-elevated border border-border-color px-2 py-0.5 text-[11px] text-muted hover:text-foreground transition"
-                                          title="Copy phone"
-                                        >
-                                          {copiedField === `phone-${e.id}` ? <CheckCircle2 size={12} className="text-emerald-600" /> : <Copy size={12} />}
-                                          {copiedField === `phone-${e.id}` ? 'Copied' : 'Copy'}
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {(e.check_in_date || e.guests) && (
-                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                    {e.check_in_date && (
-                                      <div>
-                                        <span className="text-[11px] font-bold uppercase text-muted block mb-1">Check-in Date</span>
-                                        <p className="text-sm text-foreground">{new Date(e.check_in_date).toLocaleDateString()}</p>
-                                      </div>
-                                    )}
-                                    {e.check_out_date && (
-                                      <div>
-                                        <span className="text-[11px] font-bold uppercase text-muted block mb-1">Check-out Date</span>
-                                        <p className="text-sm text-foreground">{new Date(e.check_out_date).toLocaleDateString()}</p>
-                                      </div>
-                                    )}
-                                    {e.guests && (
-                                      <div>
-                                        <span className="text-[11px] font-bold uppercase text-muted block mb-1">Guests</span>
-                                        <p className="text-sm text-foreground">{e.guests}</p>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-
-                                <div>
-                                  <span className="text-[11px] font-bold uppercase text-muted block mb-1">Full Message</span>
-                                  <p className="text-sm text-foreground whitespace-pre-wrap rounded-xl bg-surface-elevated/50 border border-border-color p-3">{e.message}</p>
-                                </div>
-
-                                {e.resolved_by_name && (
-                                  <div className="flex items-center gap-2 text-xs text-emerald-600">
-                                    <CheckCircle2 size={13} />
-                                    <span>Attended by {e.resolved_by_name} on {e.resolved_at ? new Date(e.resolved_at).toLocaleString() : 'N/A'}</span>
-                                  </div>
-                                )}
-
-                                <div className="flex gap-2 pt-1">
+                            </td>
+                            <td className="px-4 py-3.5 text-right" onClick={(ev) => ev.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1.5">
+                                {e.status !== 'resolved' && (
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      setEmailModalEnquiry(e);
-                                      setEmailSubject(`Re: Your Booking Enquiry - ${currentCompany.name}`);
-                                      setEmailBody('');
-                                    }}
-                                    className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 transition"
+                                    onClick={() => handleCloseTicket(e.id)}
+                                    className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-600 hover:bg-emerald-500/20"
+                                    title="Close or resolve this ticket"
                                   >
-                                    <Mail size={13} />
-                                    Reply by Email
+                                    <CheckCircle2 size={13} />
+                                    <span>Resolve</span>
                                   </button>
-                                </div>
+                                )}
+                                {e.status === 'resolved' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleReopenTicket(e.id)}
+                                    className="flex items-center gap-1 rounded-lg border border-orange-500/30 bg-orange-500/10 px-2.5 py-1 text-xs font-semibold text-orange-600 hover:bg-orange-500/20"
+                                    title="Reopen ticket"
+                                  >
+                                    <RefreshCw size={12} />
+                                    <span>Reopen</span>
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEmailModalEnquiry(e);
+                                    setEmailSubject(`Re: Your Booking Enquiry - ${currentCompany.name}`);
+                                    setEmailBody('');
+                                  }}
+                                  className="flex items-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-500/20"
+                                  title="Reply by email & in-system chat"
+                                >
+                                  <Mail size={13} />
+                                  <span>Reply</span>
+                                </button>
                               </div>
                             </td>
                           </tr>
-                        )}
-                      </>
-                    ))
+
+                          {/* Expanded row with full communication trail */}
+                          {expandedEnquiryId === e.id && (
+                            <tr key={`${e.id}-expanded`}>
+                              <td colSpan={7} className="px-6 pb-5 pt-0 bg-surface-elevated/30">
+                                <div className="rounded-2xl border border-border-color bg-surface p-5 space-y-5">
+                                  <div className="flex items-center justify-between border-b border-border-color pb-3">
+                                    <div>
+                                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Ticket #{e.id.slice(0, 8)}</p>
+                                      <h4 className="text-sm font-extrabold text-foreground">Enquiry &amp; Support Audit Trail</h4>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {e.status !== 'resolved' ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCloseTicket(e.id)}
+                                          className="flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-600 hover:bg-emerald-500/20"
+                                        >
+                                          <CheckCircle2 size={13} />
+                                          <span>Close Ticket</span>
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleReopenTicket(e.id)}
+                                          className="flex items-center gap-1.5 rounded-xl border border-orange-500/30 bg-orange-500/10 px-3 py-1 text-xs font-bold text-orange-600 hover:bg-orange-500/20"
+                                        >
+                                          <RefreshCw size={12} />
+                                          <span>Reopen Ticket</span>
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEmailModalEnquiry(e);
+                                          setEmailSubject(`Re: Your Booking Enquiry - ${currentCompany.name}`);
+                                          setEmailBody('');
+                                        }}
+                                        className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-1 text-xs font-bold text-white hover:bg-blue-700 transition shadow-xs"
+                                      >
+                                        <Mail size={13} />
+                                        <span>Reply</span>
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-surface-elevated/40 p-4 rounded-xl border border-border-color">
+                                    <div>
+                                      <span className="text-[10px] font-bold uppercase text-muted block mb-1">Customer Name</span>
+                                      <p className="text-sm font-bold text-foreground">{e.customer_name}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-[10px] font-bold uppercase text-muted block mb-1">Email Address</span>
+                                      <div className="flex items-center gap-2">
+                                        <p className="text-sm text-foreground truncate">{e.customer_email}</p>
+                                        <button
+                                          type="button"
+                                          onClick={() => copyToClipboard(e.customer_email, `email-${e.id}`)}
+                                          className="flex items-center gap-1 rounded-md bg-surface border border-border-color px-2 py-0.5 text-[10px] font-semibold text-muted hover:text-foreground transition"
+                                          title="Copy email"
+                                        >
+                                          {copiedField === `email-${e.id}` ? <CheckCircle2 size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                                          {copiedField === `email-${e.id}` ? 'Copied' : 'Copy'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <span className="text-[10px] font-bold uppercase text-muted block mb-1">Phone Number</span>
+                                      <div className="flex items-center gap-2">
+                                        <p className="text-sm text-foreground">{e.customer_phone || 'Not provided'}</p>
+                                        {e.customer_phone && (
+                                          <button
+                                            type="button"
+                                            onClick={() => copyToClipboard(e.customer_phone, `phone-${e.id}`)}
+                                            className="flex items-center gap-1 rounded-md bg-surface border border-border-color px-2 py-0.5 text-[10px] font-semibold text-muted hover:text-foreground transition"
+                                            title="Copy phone"
+                                          >
+                                            {copiedField === `phone-${e.id}` ? <CheckCircle2 size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                                            {copiedField === `phone-${e.id}` ? 'Copied' : 'Copy'}
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {(e.check_in_date || e.guests) && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                      {e.check_in_date && (
+                                        <div>
+                                          <span className="text-[10px] font-bold uppercase text-muted block mb-1">Check-in Date</span>
+                                          <p className="text-xs font-bold text-foreground">{new Date(e.check_in_date).toLocaleDateString()}</p>
+                                        </div>
+                                      )}
+                                      {e.check_out_date && (
+                                        <div>
+                                          <span className="text-[10px] font-bold uppercase text-muted block mb-1">Check-out Date</span>
+                                          <p className="text-xs font-bold text-foreground">{new Date(e.check_out_date).toLocaleDateString()}</p>
+                                        </div>
+                                      )}
+                                      {e.guests && (
+                                        <div>
+                                          <span className="text-[10px] font-bold uppercase text-muted block mb-1">Guests</span>
+                                          <p className="text-xs font-bold text-foreground">{e.guests}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Conversation Trail */}
+                                  <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[11px] font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
+                                        <MessageSquare size={13} className="text-blue-600" />
+                                        <span>Communication &amp; Audit Trail ({messages.length + 1})</span>
+                                      </span>
+                                      {loadingMessagesId === e.id && (
+                                        <span className="text-[11px] text-muted flex items-center gap-1">
+                                          <RefreshCw size={11} className="animate-spin" />
+                                          <span>Refreshing trail...</span>
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Initial Question from customer */}
+                                    <div className="rounded-xl border border-border-color bg-surface-elevated/40 p-4 space-y-1.5">
+                                      <div className="flex items-center justify-between">
+                                        <span className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                                          <User size={13} className="text-muted" />
+                                          <span>{e.customer_name}</span>
+                                          <span className="rounded-full bg-slate-200 dark:bg-slate-700 px-2 py-0.2 text-[10px] text-muted font-bold uppercase">Customer Inquiry</span>
+                                        </span>
+                                        <span className="text-[10px] text-muted">
+                                          {new Date(e.created_at).toLocaleString()}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-foreground/90 whitespace-pre-wrap pl-4 leading-relaxed">{e.message}</p>
+                                    </div>
+
+                                    {/* Thread messages from enquiry_messages */}
+                                    {messages.map((m: any) => {
+                                      const isStaff = m.sender_type === 'staff';
+                                      return (
+                                        <div
+                                          key={m.id}
+                                          className={`rounded-xl border p-4 space-y-1.5 ${
+                                            isStaff
+                                              ? 'border-blue-500/30 bg-blue-50/60 dark:bg-blue-950/30 ml-4'
+                                              : 'border-border-color bg-surface-elevated/60 mr-4'
+                                          }`}
+                                        >
+                                          <div className="flex items-center justify-between">
+                                            <span className="flex items-center gap-1.5 text-xs font-bold">
+                                              {isStaff ? (
+                                                <>
+                                                  <ShieldCheck size={14} className="text-blue-600" />
+                                                  <span className="text-blue-700 dark:text-blue-300">{m.sender_name || 'Staff Member'}</span>
+                                                  <span className="rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-2 py-0.2 text-[10px] font-bold">
+                                                    Email Dispatched &amp; Logged
+                                                  </span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <User size={14} className="text-muted" />
+                                                  <span className="text-foreground">{m.sender_name || 'Customer'}</span>
+                                                  <span className="rounded-full bg-slate-200 dark:bg-slate-700 px-2 py-0.2 text-[10px] text-muted font-bold uppercase">
+                                                    Customer Reply
+                                                  </span>
+                                                </>
+                                              )}
+                                            </span>
+                                            <span className="text-[10px] text-muted">
+                                              {new Date(m.created_at).toLocaleString()}
+                                            </span>
+                                          </div>
+                                          <p className="text-xs text-foreground/90 whitespace-pre-wrap pl-5 leading-relaxed">{m.body}</p>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+
+                                  {e.resolved_by_name && (
+                                    <div className="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-500/5 border border-emerald-500/20 p-2.5 rounded-xl">
+                                      <CheckCircle2 size={14} />
+                                      <span>Attended / resolved by <strong>{e.resolved_by_name}</strong> on {e.resolved_at ? new Date(e.resolved_at).toLocaleString() : 'N/A'}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1318,6 +2025,50 @@ export default function CommercialBookingsPage() {
         rooms={rooms}
         companyName={currentCompany.name}
       />
+
+      {/* Email Selected Bookings / Reservations Modal */}
+      {selectedRowsEmailOpen && (
+        <ReportEmailDialog
+          isOpen={selectedRowsEmailOpen}
+          onClose={() => setSelectedRowsEmailOpen(false)}
+          reportTitle={`${currentCompany.name} - Selected Bookings / Reservations Ledger (${activeTab === 'reservations' ? selectedReservationsList.length : selectedBookingsList.length} Records)`}
+          reportHtml={`
+            <p><strong>Company:</strong> ${currentCompany.name}</p>
+            <p><strong>Period Filter:</strong> ${selectedPeriod}</p>
+            <p><strong>Selected Records:</strong> ${activeTab === 'reservations' ? selectedReservationsList.length : selectedBookingsList.length}</p>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px;">
+              <thead>
+                <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
+                  <th style="padding: 8px; text-align: left;">Code</th>
+                  <th style="padding: 8px; text-align: left;">Guest</th>
+                  <th style="padding: 8px; text-align: left;">Room</th>
+                  <th style="padding: 8px; text-align: left;">Dates</th>
+                  <th style="padding: 8px; text-align: right;">Total</th>
+                  <th style="padding: 8px; text-align: right;">Paid</th>
+                  <th style="padding: 8px; text-align: center;">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${(activeTab === 'reservations' ? selectedReservationsList : selectedBookingsList).map((b) => `
+                  <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 8px; font-family: monospace; font-weight: bold;">#${b.bookingCode}</td>
+                    <td style="padding: 8px;">${b.guestName} (${b.guestPhone || ''})</td>
+                    <td style="padding: 8px;">Room ${b.roomNumber} - ${b.propertyName}</td>
+                    <td style="padding: 8px;">${b.checkInDate ? b.checkInDate.slice(0, 10) : ''} to ${b.checkOutDate ? b.checkOutDate.slice(0, 10) : ''}</td>
+                    <td style="padding: 8px; text-align: right; font-weight: bold;">${currencySymbol}${(b.totalAmount || 0).toLocaleString()}</td>
+                    <td style="padding: 8px; text-align: right; color: #16a34a;">${currencySymbol}${(b.amountPaid || 0).toLocaleString()}</td>
+                    <td style="padding: 8px; text-align: center; font-size: 11px; text-transform: uppercase;">${b.bookingStatus}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `}
+          onSuccess={() => {
+            setSelectedBookingIds(new Set());
+            setSelectedReservationIds(new Set());
+          }}
+        />
+      )}
     </div>
   );
 }
