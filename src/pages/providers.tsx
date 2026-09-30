@@ -24,28 +24,8 @@ import {
 } from "lucide-react";
 import { DataTableHeader, TableRowActions, TableActionButton } from "@/components/data-table";
 
-export const COUNTRY_DIAL_CODES = [
-  { code: "+264", label: "Namibia (+264)" },
-  { code: "+27", label: "South Africa (+27)" },
-  { code: "+260", label: "Zambia (+260)" },
-  { code: "+263", label: "Zimbabwe (+263)" },
-  { code: "+267", label: "Botswana (+267)" },
-  { code: "+254", label: "Kenya (+254)" },
-  { code: "+255", label: "Tanzania (+255)" },
-  { code: "+256", label: "Uganda (+256)" },
-  { code: "+234", label: "Nigeria (+234)" },
-  { code: "+233", label: "Ghana (+233)" },
-  { code: "+250", label: "Rwanda (+250)" },
-  { code: "+258", label: "Mozambique (+258)" },
-  { code: "+244", label: "Angola (+244)" },
-  { code: "+44", label: "United Kingdom (+44)" },
-  { code: "+1", label: "USA / Canada (+1)" },
-  { code: "+971", label: "UAE (+971)" },
-  { code: "+49", label: "Germany (+49)" },
-  { code: "+61", label: "Australia (+61)" },
-  { code: "+91", label: "India (+91)" },
-  { code: "+86", label: "China (+86)" },
-];
+import { ALL_COUNTRY_DIAL_CODES } from "@/lib/country-dial-codes";
+export const COUNTRY_DIAL_CODES = ALL_COUNTRY_DIAL_CODES;
 
 export const DEFAULT_TRADE_SPECIALIZATIONS = [
   "General",
@@ -425,8 +405,8 @@ export default function ProvidersPage() {
                   className="rounded-lg border border-border-color bg-surface-elevated px-2 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-foreground/5 max-w-[120px]"
                 >
                   {COUNTRY_DIAL_CODES.map((item) => (
-                    <option key={item.code} value={item.code}>
-                      {item.code} ({item.label.split(" ")[0]})
+                    <option key={`${item.iso}-${item.code}`} value={item.code}>
+                      {item.code} ({item.name})
                     </option>
                   ))}
                 </select>

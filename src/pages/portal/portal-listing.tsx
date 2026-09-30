@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { getCustomerSession } from "@/lib/auth";
+import { ALL_COUNTRY_DIAL_CODES } from "@/lib/country-dial-codes";
 import { ImageSlider } from "@/components/image-slider";
 import { MapPin, BedDouble, Star, Send, ArrowLeft, CheckCircle, Users, Calendar, Baby, Wifi, Tv, Wind, Coffee, Bath, Dumbbell, ParkingCircle, Utensils, Globe, MessageSquareQuote, HelpCircle, MessageSquare, ExternalLink, Sparkles, Loader2, CalendarCheck, CalendarPlus, CalendarX } from "lucide-react";
 import { Modal } from "@/components/modal";
@@ -8,28 +10,7 @@ import { DEFAULT_ENQUIRY_QUESTIONS, getDefaultResponseForQuestion, sendEnquiryRe
 
 const AMENITY_ICONS: Record<string, any> = { wifi: Wifi, tv: Tv, ac: Wind, coffee: Coffee, bath: Bath, gym: Dumbbell, parking: ParkingCircle, breakfast: Utensils, balcony: Globe };
 
-const PHONE_COUNTRY_CODES = [
-  { code: "+27", label: "ZA +27" },
-  { code: "+264", label: "NA +264" },
-  { code: "+263", label: "ZW +263" },
-  { code: "+267", label: "BW +267" },
-  { code: "+260", label: "ZM +260" },
-  { code: "+254", label: "KE +254" },
-  { code: "+255", label: "TZ +255" },
-  { code: "+256", label: "UG +256" },
-  { code: "+250", label: "RW +250" },
-  { code: "+258", label: "MZ +258" },
-  { code: "+234", label: "NG +234" },
-  { code: "+233", label: "GH +233" },
-  { code: "+244", label: "AO +244" },
-  { code: "+61", label: "AU +61" },
-  { code: "+1", label: "US +1" },
-  { code: "+44", label: "UK +44" },
-  { code: "+49", label: "DE +49" },
-  { code: "+33", label: "FR +33" },
-  { code: "+971", label: "AE +971" },
-  { code: "+91", label: "IN +91" },
-];
+const PHONE_COUNTRY_CODES = ALL_COUNTRY_DIAL_CODES;
 const AMENITY_LABELS: Record<string, string> = { wifi: "Free Wi-Fi", tv: "Smart TV", ac: "Air Con", coffee: "Coffee Maker", bath: "Bathtub", gym: "Gym Access", parking: "Parking", breakfast: "Breakfast", balcony: "Balcony" };
 
 type Review = { id: string; customer_name: string; rating: number; title: string; body: string; created_at: string; };
@@ -69,6 +50,19 @@ export default function PortalListingPage() {
   const [form, setForm] = useState({ name: "", email: "", phone: "", message: "", check_in: "", check_out: "", guests: 1 });
   const [phoneCountryCode, setPhoneCountryCode] = useState("+27");
   const [phoneLocalNumber, setPhoneLocalNumber] = useState("");
+
+  useEffect(() => {
+    try {
+      const cust = getCustomerSession();
+      if (cust) {
+        setForm(prev => ({
+          ...prev,
+          name: prev.name || cust.name || "",
+          email: prev.email || cust.email || "",
+        }));
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     setForm(prev => ({
@@ -239,7 +233,14 @@ export default function PortalListingPage() {
   const avgRating = reviews.length > 0 ? reviews.reduce((s,r) => s+r.rating, 0) / reviews.length : 0;
 
   const submitEnquiry = async (overrideMessage?: string) => {
-    if (!form.name || !form.email) { alert("Please enter your name and email."); return; }
+    if (!form.name.trim() || !form.email.trim()) {
+      alert("Please enter your name and email.");
+      return;
+    }
+    if (!form.email.includes("@") || !form.email.includes(".")) {
+      alert("Please enter a valid email address (e.g. name@example.com).");
+      return;
+    }
     const finalMessage = overrideMessage || form.message;
     if (!finalMessage.trim()) { alert("Please enter a question or select one from the common questions list."); return; }
     setSubmitting(true);
@@ -612,14 +613,15 @@ export default function PortalListingPage() {
               <h3 className="font-bold text-gray-900 dark:text-white text-lg">{bookingMode === 'instant' ? 'Complete Your Booking' : 'Reserve Your Room'}</h3>
               
               <input placeholder="Your name *" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
+              <input placeholder="Email address *" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500"/>
               <div className="flex rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden focus-within:border-blue-500 transition">
                 <select
                   value={phoneCountryCode}
                   onChange={(e) => setPhoneCountryCode(e.target.value)}
-                  className="border-r border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/60 px-2.5 py-2 text-xs font-semibold text-gray-700 dark:text-slate-200 outline-none cursor-pointer shrink-0"
+                  className="border-r border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/60 px-2.5 py-2 text-xs font-semibold text-gray-700 dark:text-slate-200 outline-none cursor-pointer shrink-0 max-w-[140px] sm:max-w-[160px] truncate"
                 >
                   {PHONE_COUNTRY_CODES.map((c) => (
-                    <option key={c.code} value={c.code}>{c.label}</option>
+                    <option key={`${c.iso}-${c.code}`} value={c.code}>{c.label}</option>
                   ))}
                 </select>
                 <input
@@ -663,7 +665,7 @@ export default function PortalListingPage() {
                   ? `Instant booking request: ${nights} nights, Check-in: ${form.check_in}, Check-out: ${form.check_out}, Adults: ${form.guests}` 
                   : `Room reservation request (no payment): ${nights} nights, Check-in: ${form.check_in}, Check-out: ${form.check_out}, Adults: ${form.guests}`;
                 void submitEnquiry(msg);
-              }} disabled={submitting || !form.check_in || !form.check_out} className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-xs">
+              }} disabled={submitting || !form.name.trim() || !form.email.trim() || !form.check_in || !form.check_out} className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-xs">
                 <Send size={15}/>{submitting ? "Processing..." : bookingMode === 'instant' ? "Confirm & Pay Online" : "Reserve Room (No Payment Now)"}
               </button>
             </div>
@@ -681,10 +683,10 @@ export default function PortalListingPage() {
                 <select
                   value={phoneCountryCode}
                   onChange={(e) => setPhoneCountryCode(e.target.value)}
-                  className="border-r border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/60 px-2.5 py-2 text-xs font-semibold text-gray-700 dark:text-slate-200 outline-none cursor-pointer shrink-0"
+                  className="border-r border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/60 px-2.5 py-2 text-xs font-semibold text-gray-700 dark:text-slate-200 outline-none cursor-pointer shrink-0 max-w-[140px] sm:max-w-[160px] truncate"
                 >
                   {PHONE_COUNTRY_CODES.map((c) => (
-                    <option key={c.code} value={c.code}>{c.label}</option>
+                    <option key={`${c.iso}-${c.code}`} value={c.code}>{c.label}</option>
                   ))}
                 </select>
                 <input
@@ -757,7 +759,7 @@ export default function PortalListingPage() {
                 <textarea rows={3} placeholder="Type your question or choose one of the common questions above..." value={form.message} onChange={e=>{ setForm({...form,message:e.target.value}); setSelectedQuestionId(""); }} className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-gray-900 dark:text-slate-100 outline-none focus:border-blue-500 resize-none"/>
               </div>
 
-              <button onClick={() => void submitEnquiry()} disabled={submitting || !form.message.trim()} className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-xs"><Send size={15}/>{submitting?"Sending...": isHosp ? "Send Booking Request" : "Send Enquiry"}</button>
+              <button onClick={() => void submitEnquiry()} disabled={submitting || !form.name.trim() || !form.email.trim() || !form.message.trim()} className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-xs"><Send size={15}/>{submitting?"Sending...": isHosp ? "Send Booking Request" : "Send Enquiry"}</button>
               <p className="text-[11px] text-center text-gray-400 dark:text-slate-500">Instant response sent to your email. You can reply anytime in Customer Portal.</p>
             </div>
           )}
