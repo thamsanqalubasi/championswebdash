@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { X, Send, ShieldAlert, Mail, User, AlertTriangle, CheckCircle2, Loader2, Sparkles, ArrowUpRight } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, Send, ShieldAlert, Mail, User, AlertTriangle, CheckCircle2, Loader2, Sparkles, ArrowUpRight, Users } from "lucide-react";
 import { sendEmailViaApi } from "@/lib/notifications";
 import { useAuth } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 import { getCompanySubscription, SUBSCRIPTION_PACKAGES } from "@/lib/packages";
 import { PackageSwitcherModal } from "../package-switcher-modal";
 
@@ -32,6 +33,42 @@ export function ReportEmailDialog({
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [packageModalOpen, setPackageModalOpen] = useState(false);
+  const [staffMembers, setStaffMembers] = useState<Array<{ id: string; fullName: string; email: string; role: string; jobTitle?: string }>>([]);
+  const [selectedStaffId, setSelectedStaffId] = useState("");
+
+  useEffect(() => {
+    async function loadStaff() {
+      if (!currentCompany?.id) return;
+      try {
+        const { data } = await supabase
+          .from("company_users")
+          .select("id, full_name, email, role, job_title")
+          .eq("company_id", currentCompany.id);
+        if (data) {
+          setStaffMembers(data.map((u: any) => ({
+            id: u.id,
+            fullName: u.full_name || u.email,
+            email: u.email,
+            role: u.role || "staff",
+            jobTitle: u.job_title || ""
+          })));
+        }
+      } catch (err) {
+        console.warn("Could not load staff list:", err);
+      }
+    }
+    void loadStaff();
+  }, [currentCompany?.id]);
+
+  const handleStaffSelect = (staffId: string) => {
+    setSelectedStaffId(staffId);
+    if (!staffId) return;
+    const found = staffMembers.find((s) => s.id === staffId);
+    if (found) {
+      setRecipientName(found.fullName);
+      setRecipientEmail(found.email);
+    }
+  };
 
   const sub = getCompanySubscription(currentCompany?.id || "default");
   const plan = SUBSCRIPTION_PACKAGES[sub.packageId] || SUBSCRIPTION_PACKAGES.starter;
@@ -144,6 +181,27 @@ export function ReportEmailDialog({
               Review and confirm the exact name and email address of the authorized recipient.
             </p>
           </div>
+
+          {staffMembers.length > 0 && (
+            <div className="space-y-1.5">
+              <label className="font-bold text-foreground block flex items-center gap-1.5">
+                <Users size={14} className="text-blue-600" />
+                <span>Select Staff Recipient (or enter custom below)</span>
+              </label>
+              <select
+                value={selectedStaffId}
+                onChange={(e) => handleStaffSelect(e.target.value)}
+                className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground focus:border-blue-600 focus:outline-none"
+              >
+                <option value="">-- Choose from Company Staff --</option>
+                {staffMembers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.fullName} ({s.jobTitle || s.role}) — {s.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <label className="font-bold text-foreground block">Recipient Full Name *</label>
