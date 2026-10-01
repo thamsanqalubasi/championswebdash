@@ -74,6 +74,7 @@ export default function PortalListingPage() {
   const [review, setReview] = useState({ name: "", email: "", rating: 5, title: "", body: "" });
   const [automatedResponse, setAutomatedResponse] = useState<string>("");
   const [createdTicketId, setCreatedTicketId] = useState<string>("");
+  const [createdBookingCode, setCreatedBookingCode] = useState<string>("");
   const [selectedQuestionId, setSelectedQuestionId] = useState<string>("");
   const [bookingMode, setBookingMode] = useState<'select' | 'instant' | 'reserve' | 'enquiry'>('select');
   const [reservationSuccess, setReservationSuccess] = useState<{bookingCode: string; email: string} | null>(null);
@@ -141,13 +142,15 @@ export default function PortalListingPage() {
         // Try room_type_listings
         const { data: roomData } = await supabase
           .from("room_type_listings")
-          .select("*, properties(booking_mode, external_booking_url, discount_percentage)")
+          .select("*, properties(id, company_id, name, booking_mode, external_booking_url, discount_percentage)")
           .eq("id", pid)
           .maybeSingle();
         if (roomData) {
           const parentProps = (roomData as any).properties;
           const merged = {
             ...roomData,
+            company_id: roomData.company_id || parentProps?.company_id,
+            property_id: roomData.property_id || parentProps?.id,
             booking_mode: roomData.booking_mode || parentProps?.booking_mode || "platform",
             external_booking_url: roomData.external_booking_url || parentProps?.external_booking_url || "",
             discount_percentage: Number(roomData.discount_percentage || parentProps?.discount_percentage || 0),
@@ -246,6 +249,113 @@ export default function PortalListingPage() {
     setSubmitting(true);
     try {
       const targetCompanyId = data?.company_id || data?.companyId || null;
+      const targetPropId = listingType === "room_listing" ? data?.property_id : data?.id;
+
+      let generatedBookingCode = "";
+      let createdCommercialBookingId: string | null = null;
+      if (bookingMode === 'instant' || bookingMode === 'reserve') {
+        let compId = targetCompanyId;
+        if (!compId && targetPropId) {
+          const { data: propRow } = await supabase.from("properties").select("company_id").eq("id", targetPropId).maybeSingle();
+          if (propRow?.company_id) compId = propRow.company_id;
+        }
+        if (!compId) compId = "a0000000-0000-0000-0000-000000000001";
+
+        if (targetPropId) {
+          generatedBookingCode = `RES-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+          // Find or create assigned room in commercial_rooms
+          let assignedRoomId: string | null = null;
+
+          if (listingType === "room_listing" && data?.type_key) {
+            const { data: typedRooms } = await supabase
+              .from("commercial_rooms")
+              .select("id, status")
+              .eq("property_id", targetPropId)
+              .eq("room_type", data.type_key)
+              .order("room_number");
+            if (typedRooms && typedRooms.length > 0) {
+              const avail = typedRooms.find((r: any) => r.status === "available") || typedRooms[0];
+              assignedRoomId = avail.id;
+            }
+          }
+
+          if (!assignedRoomId) {
+            const { data: anyRooms } = await supabase
+              .from("commercial_rooms")
+              .select("id, status")
+              .eq("property_id", targetPropId)
+              .order("room_number");
+            if (anyRooms && anyRooms.length > 0) {
+              const avail = anyRooms.find((r: any) => r.status === "available") || anyRooms[0];
+              assignedRoomId = avail.id;
+            }
+          }
+
+          if (!assignedRoomId) {
+            const { data: createdRoom } = await supabase
+              .from("commercial_rooms")
+              .insert({
+                company_id: compId,
+                property_id: targetPropId,
+                room_number: "Room 101",
+                room_type: data?.type_key || "standard",
+                status: "available",
+                price_per_night: effectivePrice,
+              })
+              .select("id")
+              .maybeSingle();
+            if (createdRoom) assignedRoomId = createdRoom.id;
+          }
+
+          if (assignedRoomId) {
+            const nights = form.check_in && form.check_out 
+              ? Math.max(1, Math.ceil((new Date(form.check_out).getTime() - new Date(form.check_in).getTime()) / (1000 * 3600 * 24)))
+              : 1;
+            const totalAmt = effectivePrice * nights;
+
+            const bookingPayload: any = {
+              company_id: compId,
+              property_id: targetPropId,
+              room_id: assignedRoomId,
+              booking_code: generatedBookingCode,
+              guest_name: form.name.trim(),
+              guest_email: form.email.trim(),
+              guest_phone: form.phone || "",
+              guest_id_number: "Online Reservation",
+              check_in_date: form.check_in.includes("T") ? form.check_in : `${form.check_in}T14:00:00Z`,
+              check_out_date: form.check_out.includes("T") ? form.check_out : `${form.check_out}T10:00:00Z`,
+              meal_plan: "room_only",
+              nights: nights,
+              rate_per_night: effectivePrice,
+              total_amount: totalAmt,
+              deposit_amount: 0,
+              amount_paid: 0,
+              payment_method: bookingMode === 'instant' ? "online" : "card",
+              payment_status: "pending",
+              booking_status: "confirmed",
+              notes: `${bookingMode === 'instant' ? 'Instant Online Booking' : 'Online Room Reservation'}: ${nights} nights (${form.check_in} to ${form.check_out}). Guests: ${form.guests}. Rate: R${effectivePrice}/night.`,
+            };
+
+            const { data: insBookingData, error: insBookingErr } = await supabase
+              .from("commercial_bookings")
+              .insert(bookingPayload)
+              .select("id")
+              .maybeSingle();
+            if (insBookingData) {
+              createdCommercialBookingId = insBookingData.id;
+            } else if (insBookingErr) {
+              console.warn("Could not insert commercial_bookings reservation:", insBookingErr);
+              const fb = { ...bookingPayload };
+              delete fb.notes;
+              const { data: fbData } = await supabase.from("commercial_bookings").insert(fb).select("id").maybeSingle();
+              if (fbData) createdCommercialBookingId = fbData.id;
+            }
+          }
+        }
+      }
+      setCreatedBookingCode(generatedBookingCode);
+
       const payload: any = {
         customer_name: form.name,
         customer_email: form.email,
@@ -254,8 +364,12 @@ export default function PortalListingPage() {
         check_in_date: form.check_in || null,
         check_out_date: form.check_out || null,
         guests: form.guests,
-        message: finalMessage,
+        message: generatedBookingCode ? `[Booking Code: ${generatedBookingCode}] ${finalMessage}` : finalMessage,
       };
+
+      if (createdCommercialBookingId) {
+        payload.booking_id = createdCommercialBookingId;
+      }
 
       if (targetCompanyId) {
         payload.company_id = targetCompanyId;
@@ -505,18 +619,44 @@ export default function PortalListingPage() {
       ) : enquirySent ? (
         <div className="py-4 space-y-4">
           <div className="text-center">
-            <div className="h-12 w-12 rounded-2xl bg-green-100 dark:bg-green-950/60 text-green-600 dark:text-green-400 mx-auto flex items-center justify-center mb-3 shadow-xs">
-              <CheckCircle size={28} />
+            <div className={`h-12 w-12 rounded-2xl ${createdBookingCode ? "bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400" : "bg-green-100 text-green-600 dark:bg-green-950/60 dark:text-green-400"} mx-auto flex items-center justify-center mb-3 shadow-xs`}>
+              {createdBookingCode ? <CalendarCheck size={28} /> : <CheckCircle size={28} />}
             </div>
-            <h3 className="font-bold text-gray-900 dark:text-white text-lg">Enquiry Submitted!</h3>
-            {createdTicketId && (
+            <h3 className="font-bold text-gray-900 dark:text-white text-lg">
+              {createdBookingCode ? "Room Reservation Confirmed!" : "Enquiry Submitted!"}
+            </h3>
+            {createdBookingCode ? (
+              <div className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 px-4 py-2">
+                <span className="text-xs font-semibold text-muted">Booking Reference:</span>
+                <span className="font-mono text-sm font-extrabold text-indigo-600 dark:text-indigo-400">{createdBookingCode}</span>
+              </div>
+            ) : createdTicketId ? (
               <span className="inline-block mt-1 text-[11px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 px-2.5 py-0.5 rounded-md border border-blue-200 dark:border-blue-800">
                 Ticket #{createdTicketId.slice(0, 8).toUpperCase()}
               </span>
-            )}
+            ) : null}
           </div>
 
-          {automatedResponse && (
+          {createdBookingCode && (
+            <div className="rounded-xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-slate-800/80 p-3.5 text-xs space-y-2">
+              <div className="flex justify-between font-medium">
+                <span className="text-muted">Status:</span>
+                <span className="font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Reserved · Awaiting Check-In</span>
+              </div>
+              {form.check_in && form.check_out && (
+                <div className="flex justify-between">
+                  <span className="text-muted">Stay Dates:</span>
+                  <span className="font-bold text-foreground">{form.check_in} → {form.check_out}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-muted">Guests:</span>
+                <span className="font-bold text-foreground">{form.guests} Guest(s)</span>
+              </div>
+            </div>
+          )}
+
+          {automatedResponse && !createdBookingCode && (
             <div className="rounded-xl border border-blue-100 dark:border-blue-900/40 bg-blue-50/50 dark:bg-slate-800/80 p-3.5 text-xs text-blue-950 dark:text-blue-100 space-y-2">
               <div className="flex items-center gap-1.5 font-bold text-blue-700 dark:text-blue-300">
                 <MessageSquare size={14} />
@@ -534,10 +674,12 @@ export default function PortalListingPage() {
               Sent to {form.email}
             </p>
             <p>
-              A full copy of this response has been sent to your email. You can log in to your Customer Portal to view your ticket, upload documents, and reply.
+              {createdBookingCode
+                ? `Your room is held. Payment is collected at the front desk upon arrival. Please present your booking code ${createdBookingCode} at check-in.`
+                : "A full copy of this response has been sent to your email. You can log in to your Customer Portal to view your ticket, upload documents, and reply."}
             </p>
             <p className="text-[11px] text-emerald-700 dark:text-emerald-300 pt-1 font-semibold border-t border-emerald-200/60 dark:border-emerald-800/40">
-              If this ticket is ever resolved or closed, replying from your portal will automatically re-open it at any time.
+              You can log in to your Customer Portal at any time to view, track, or manage this booking.
             </p>
           </div>
 
@@ -546,18 +688,19 @@ export default function PortalListingPage() {
               to="/portal/login"
               className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 shadow-xs transition"
             >
-              Log In to Customer Portal &amp; Reply &rarr;
+              Log In to Customer Portal &rarr;
             </Link>
             <button
               onClick={() => {
                 setEnquirySent(false);
                 setAutomatedResponse("");
                 setCreatedTicketId("");
+                setCreatedBookingCode("");
                 setForm(prev => ({ ...prev, message: "" }));
               }}
               className="w-full text-center text-xs font-semibold text-gray-500 hover:text-gray-800 dark:text-slate-400 dark:hover:text-slate-200 py-1"
             >
-              Ask Another Question
+              {createdBookingCode ? "Make Another Booking / Reservation" : "Ask Another Question"}
             </button>
           </div>
         </div>

@@ -150,44 +150,53 @@ export default function CommercialBookingsPage() {
       .from('commercial_bookings')
       .select('*, properties(name), commercial_rooms(room_number, room_type)')
       .eq('company_id', currentCompany.id)
-      .eq('booking_status', 'reserved')
+      .in('booking_status', ['confirmed', 'reserved'])
+      .is('actual_check_in', null)
       .order('created_at', { ascending: false });
       
-    if (reservData) {
-      setReservations(reservData.map((b: any) => ({
-        id: b.id,
-        companyId: b.company_id,
-        propertyId: b.property_id,
-        propertyName: b.properties?.name || "Lodge Property",
-        roomId: b.room_id,
-        roomNumber: b.commercial_rooms?.room_number || "Room",
-        roomType: b.commercial_rooms?.room_type || "standard",
-        bookingCode: b.booking_code,
-        guestName: b.guest_name,
-        guestPhone: b.guest_phone,
-        guestEmail: b.guest_email,
-        guestIdNumber: b.guest_id_number,
-        checkInDate: b.check_in_date,
-        checkOutDate: b.check_out_date,
-        actualCheckIn: b.actual_check_in,
-        actualCheckOut: b.actual_check_out,
-        mealPlan: b.meal_plan,
-        nights: b.nights,
-        ratePerNight: Number(b.rate_per_night),
-        totalAmount: Number(b.total_amount),
-        depositAmount: Number(b.deposit_amount),
-        amountPaid: Number(b.amount_paid),
-        paymentMethod: b.payment_method,
-        paymentStatus: b.payment_status,
-        bookingStatus: b.booking_status,
-        isExtended: b.is_extended,
-        extensionHistory: b.extension_history || [],
-        checkedInByName: b.checked_in_by_name,
-        checkedOutByName: b.checked_out_by_name || b.checked_out_by || undefined,
-        notes: b.notes,
-        createdAt: b.created_at,
-      })));
-    }
+    const mappedReservs: CommercialBooking[] = reservData ? reservData.map((b: any) => ({
+      id: b.id,
+      companyId: b.company_id,
+      propertyId: b.property_id,
+      propertyName: b.properties?.name || "Lodge Property",
+      roomId: b.room_id,
+      roomNumber: b.commercial_rooms?.room_number || "Room",
+      roomType: b.commercial_rooms?.room_type || "standard",
+      bookingCode: b.booking_code,
+      guestName: b.guest_name,
+      guestPhone: b.guest_phone,
+      guestEmail: b.guest_email,
+      guestIdNumber: b.guest_id_number,
+      checkInDate: b.check_in_date,
+      checkOutDate: b.check_out_date,
+      actualCheckIn: b.actual_check_in,
+      actualCheckOut: b.actual_check_out,
+      mealPlan: b.meal_plan,
+      nights: b.nights,
+      ratePerNight: Number(b.rate_per_night),
+      totalAmount: Number(b.total_amount),
+      depositAmount: Number(b.deposit_amount),
+      amountPaid: Number(b.amount_paid),
+      paymentMethod: b.payment_method,
+      paymentStatus: b.payment_status,
+      bookingStatus: b.booking_status,
+      isExtended: b.is_extended,
+      extensionHistory: b.extension_history || [],
+      checkedInByName: b.checked_in_by_name,
+      checkedOutByName: b.checked_out_by_name || b.checked_out_by || undefined,
+      notes: b.notes,
+      createdAt: b.created_at,
+    })) : [];
+
+    // Also include any confirmed bookings from bks that have not yet checked in
+    const confirmedFromBks = bks.filter(b => (b.bookingStatus === 'confirmed' || (b.bookingStatus as string) === 'reserved') && !b.actualCheckIn);
+    const combinedReservs = [...mappedReservs];
+    confirmedFromBks.forEach(cb => {
+      if (!combinedReservs.some(r => r.id === cb.id)) {
+        combinedReservs.push(cb);
+      }
+    });
+    setReservations(combinedReservs);
 
     const { data: enqData } = await supabase
       .from('enquiries')
@@ -236,6 +245,64 @@ export default function CommercialBookingsPage() {
       alert("Checkout failed: " + (err.message || err));
     } finally {
       setIsCheckingOut(false);
+    }
+  };
+
+  const handleConvertEnquiryToReservation = async (enquiry: any) => {
+    try {
+      let targetRoom = rooms.find((r) => r.status === "available") || rooms[0];
+      if (!targetRoom && rooms.length > 0) targetRoom = rooms[0];
+
+      const nights = enquiry.check_in_date && enquiry.check_out_date
+        ? Math.max(1, Math.ceil((new Date(enquiry.check_out_date).getTime() - new Date(enquiry.check_in_date).getTime()) / (1000 * 3600 * 24)))
+        : 1;
+      const rate = targetRoom?.pricePerNight || 1000;
+      const totalAmt = rate * nights;
+      const code = `RES-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+      const bookingPayload = {
+        company_id: currentCompany.id,
+        property_id: targetRoom?.propertyId || enquiry.property_id,
+        room_id: targetRoom?.id,
+        booking_code: code,
+        guest_name: enquiry.customer_name,
+        guest_email: enquiry.customer_email,
+        guest_phone: enquiry.customer_phone || "",
+        guest_id_number: "Online Reservation",
+        check_in_date: enquiry.check_in_date ? (enquiry.check_in_date.includes("T") ? enquiry.check_in_date : `${enquiry.check_in_date}T14:00:00Z`) : new Date().toISOString(),
+        check_out_date: enquiry.check_out_date ? (enquiry.check_out_date.includes("T") ? enquiry.check_out_date : `${enquiry.check_out_date}T10:00:00Z`) : new Date(Date.now() + 86400000).toISOString(),
+        meal_plan: "room_only",
+        nights: nights,
+        rate_per_night: rate,
+        total_amount: totalAmt,
+        deposit_amount: 0,
+        amount_paid: 0,
+        payment_method: "card",
+        payment_status: "pending",
+        booking_status: "confirmed",
+        notes: `Converted from Booking Enquiry #${enquiry.id.slice(0, 8)}. Message: ${enquiry.message || ""}`,
+      };
+
+      const { data: insBooking, error: insErr } = await supabase.from('commercial_bookings').insert(bookingPayload).select().single();
+      if (insErr) throw insErr;
+
+      await supabase.from('enquiries').update({ booking_id: insBooking.id, status: 'in_progress' }).eq('id', enquiry.id);
+      
+      const actorName = currentCompanyUser?.fullName || 'Staff';
+      await supabase.from('audit_logs').insert([{
+        company_id: currentCompany.id,
+        action: 'converted_enquiry_to_reservation',
+        target_entity: 'commercial_booking',
+        target_id: insBooking.id,
+        performed_by_name: actorName,
+        details: { booking_code: code, enquiry_id: enquiry.id }
+      }]);
+
+      await loadData();
+      setActiveTab('reservations');
+      alert(`Reservation ${code} confirmed! Room assigned: ${targetRoom?.roomNumber || 'Room'}.`);
+    } catch (err: any) {
+      alert("Failed to confirm reservation: " + (err.message || String(err)));
     }
   };
 
@@ -1618,6 +1685,17 @@ export default function CommercialBookingsPage() {
                             </td>
                             <td className="px-4 py-3.5 text-right" onClick={(ev) => ev.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1.5">
+                                {e.type === 'room_booking' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleConvertEnquiryToReservation(e)}
+                                    className="flex items-center gap-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-600 hover:bg-indigo-500/20"
+                                    title="Confirm & Convert to Pending Reservation"
+                                  >
+                                    <CalendarRange size={13} />
+                                    <span>Accept</span>
+                                  </button>
+                                )}
                                 {e.status !== 'resolved' && (
                                   <button
                                     type="button"
@@ -1668,6 +1746,16 @@ export default function CommercialBookingsPage() {
                                       <h4 className="text-sm font-extrabold text-foreground">Enquiry &amp; Support Audit Trail</h4>
                                     </div>
                                     <div className="flex items-center gap-2">
+                                      {e.type === 'room_booking' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleConvertEnquiryToReservation(e)}
+                                          className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3.5 py-1 text-xs font-bold text-indigo-600 hover:bg-indigo-500/20 transition shadow-xs"
+                                        >
+                                          <CalendarRange size={13} />
+                                          <span>Accept &amp; Assign Room</span>
+                                        </button>
+                                      )}
                                       {e.status !== 'resolved' ? (
                                         <button
                                           type="button"
