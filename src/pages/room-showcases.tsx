@@ -7,14 +7,22 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { uploadFileToBucket } from "@/lib/storage";
 import { useCurrency } from "@/lib/currency";
-import type { RoomTypeListing, PropertyRow } from "@/lib/types";
+import { fetchCommercialRooms } from "@/lib/data";
+import type { RoomTypeListing, PropertyRow, CommercialRoom } from "@/lib/types";
 import { DataTableHeader, TableRowActions, TableActionButton } from "@/components/data-table";
 import {
   Plus, Pencil, Trash2, BedDouble, Users, Baby, Image as ImageIcon, Upload,
   Loader2, X, ChevronLeft, ChevronRight, Building2, Layers, Star, Wifi,
   Tv, Wind, Coffee, Bath, Dumbbell, ParkingCircle, Utensils, Globe, AlertCircle,
-  Eye, EyeOff, Home, MapPin, DollarSign, Calendar
+  Eye, EyeOff, Home, MapPin, DollarSign, Calendar, Check, CheckSquare, Square,
+  Search, Filter, Sparkles, ArrowRight
 } from "lucide-react";
+
+const DEFAULT_ROOM_FALLBACK_PHOTOS = [
+  "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1566665797739-1674de7a421a?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=800&q=80",
+];
 
 const ROOM_TYPE_OPTIONS = [
   { key: "standard", label: "Standard Room", adults: 2, kids: 0 },
@@ -93,6 +101,14 @@ export default function ShowcasePage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalTab, setModalTab] = useState<"existing" | "scratch">("existing");
+  const [existingRooms, setExistingRooms] = useState<CommercialRoom[]>([]);
+  const [loadingExistingRooms, setLoadingExistingRooms] = useState(false);
+  const [selectedRoomIds, setSelectedRoomIds] = useState<Set<string>>(new Set());
+  const [existingSearch, setExistingSearch] = useState("");
+  const [existingPropertyFilter, setExistingPropertyFilter] = useState<string>("all");
+  const [existingShowcaseFilter, setExistingShowcaseFilter] = useState<"all" | "unshowcased" | "showcased">("all");
+  const [importingRooms, setImportingRooms] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<typeof emptyForm>({ ...emptyForm });
   const [formPhotos, setFormPhotos] = useState<string[]>([]);
@@ -159,10 +175,46 @@ export default function ShowcasePage() {
           setListings([]);
         }
       } catch { setListings([]); }
+      try {
+        const rooms = await fetchCommercialRooms(currentCompany.id);
+        setExistingRooms(rooms || []);
+      } catch {}
       setLoading(false);
     }
     void load();
   }, [currentCompany.id]);
+
+  const loadCommercialRooms = async () => {
+    setLoadingExistingRooms(true);
+    try {
+      const data = await fetchCommercialRooms(currentCompany.id);
+      setExistingRooms(data || []);
+    } catch (err) {
+      console.warn("Could not load existing commercial rooms", err);
+    } finally {
+      setLoadingExistingRooms(false);
+    }
+  };
+
+  const formatRoomTypeName = (key: string) => {
+    const match = ROOM_TYPE_OPTIONS.find(o => o.key.toLowerCase() === (key || "").toLowerCase());
+    if (match) return match.label;
+    return key ? key.charAt(0).toUpperCase() + key.slice(1) : "Standard Room";
+  };
+
+  const getRoomShowcaseStatus = (room: CommercialRoom) => {
+    const exact = listings.find(l =>
+      l.propertyId === room.propertyId &&
+      l.displayName.toLowerCase().includes((room.roomNumber || "").toLowerCase())
+    );
+    if (exact) return { status: "exact" as const, label: "In Showcase", listing: exact };
+    const typeMatch = listings.find(l =>
+      l.propertyId === room.propertyId &&
+      l.typeKey.toLowerCase() === (room.roomType || "").toLowerCase()
+    );
+    if (typeMatch) return { status: "type" as const, label: "Type Listed", listing: typeMatch };
+    return { status: "none" as const, label: "Ready to Add", listing: null };
+  };
 
   useEffect(() => {
     if (!form.property_id) { setPropertyRoomTypes([]); return; }
@@ -201,6 +253,7 @@ export default function ShowcasePage() {
       return;
     }
     setEditingId(null);
+    setModalTab("existing");
     setForm({
       ...emptyForm,
       property_id: hospProps.length > 0 ? hospProps[0].id : "",
@@ -208,10 +261,17 @@ export default function ShowcasePage() {
     setFormPhotos([]);
     setErrors({});
     setPropertyRoomTypes([]);
+    setSelectedRoomIds(new Set());
+    setExistingSearch("");
+    setExistingPropertyFilter("all");
+    setExistingShowcaseFilter("all");
+    void loadCommercialRooms();
     setModalOpen(true);
   };
+
   const openEdit = (r: RoomTypeListing) => {
     setEditingId(r.id);
+    setModalTab("scratch");
     setForm({
       property_id: r.propertyId,
       type_key: r.typeKey,
@@ -232,6 +292,170 @@ export default function ShowcasePage() {
     setFormPhotos(r.photos);
     setErrors({});
     setModalOpen(true);
+  };
+
+  const handleCustomizeRoom = (room: CommercialRoom) => {
+    const prop = properties.find(p => p.id === room.propertyId);
+    let safePhotos = (room.photos || []).filter(Boolean);
+    if (safePhotos.length < 2 && prop?.photos) {
+      for (const p of prop.photos.filter(Boolean)) {
+        if (!safePhotos.includes(p)) safePhotos.push(p);
+        if (safePhotos.length >= 2) break;
+      }
+    }
+    if (safePhotos.length < 2) {
+      for (const fb of DEFAULT_ROOM_FALLBACK_PHOTOS) {
+        if (!safePhotos.includes(fb)) safePhotos.push(fb);
+        if (safePhotos.length >= 2) break;
+      }
+    }
+
+    const typeLabel = formatRoomTypeName(room.roomType);
+    const displayName = `${typeLabel} - ${room.roomNumber}`;
+
+    setEditingId(null);
+    setForm({
+      property_id: room.propertyId,
+      type_key: room.roomType,
+      display_name: displayName,
+      adults_capacity: room.capacityAdults || 2,
+      kids_capacity: room.capacityChildren || 0,
+      total_rooms_of_type: 1,
+      price_room_only: room.pricePerNight > 0 ? room.pricePerNight : (prop?.defaultRoomPrice || 1000),
+      price_bed_breakfast: room.priceBedBreakfast > 0 ? room.priceBedBreakfast : (prop?.defaultBedBreakfast || ""),
+      price_full_board: room.priceFullBoard > 0 ? room.priceFullBoard : (prop?.defaultFullBoard || ""),
+      description: room.notes ? room.notes.trim() : `Comfortable and elegant ${room.roomType} room (${room.roomNumber}) on ${room.floor || "main floor"} at ${prop?.name || "our property"}.`,
+      amenities: (room.amenities && room.amenities.length > 0) ? room.amenities : ["wifi", "tv", "ac"],
+      sort_order: listings.length,
+      is_active: true,
+      booking_mode: room.bookingMode || "platform",
+      external_booking_url: room.externalBookingUrl || "",
+    });
+    setFormPhotos(safePhotos);
+    setErrors({});
+    setModalTab("scratch");
+  };
+
+  const toggleSelectRoom = (roomId: string) => {
+    setSelectedRoomIds(prev => {
+      const next = new Set(prev);
+      if (next.has(roomId)) {
+        next.delete(roomId);
+      } else {
+        next.add(roomId);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkAddExistingRooms = async () => {
+    if (selectedRoomIds.size === 0) return;
+    setImportingRooms(true);
+    try {
+      const selectedList = existingRooms.filter(r => selectedRoomIds.has(r.id));
+      const newItems: RoomTypeListing[] = [];
+
+      for (let i = 0; i < selectedList.length; i++) {
+        const room = selectedList[i];
+        const prop = properties.find(p => p.id === room.propertyId);
+
+        let safePhotos = (room.photos || []).filter(Boolean);
+        if (safePhotos.length < 2 && prop?.photos) {
+          for (const p of prop.photos.filter(Boolean)) {
+            if (!safePhotos.includes(p)) safePhotos.push(p);
+            if (safePhotos.length >= 2) break;
+          }
+        }
+        if (safePhotos.length < 2) {
+          for (const fb of DEFAULT_ROOM_FALLBACK_PHOTOS) {
+            if (!safePhotos.includes(fb)) safePhotos.push(fb);
+            if (safePhotos.length >= 2) break;
+          }
+        }
+
+        const metaTag = `\n<!--ROOM_META:${JSON.stringify({
+          bookingMode: room.bookingMode || "platform",
+          externalBookingUrl: (room.externalBookingUrl || "").trim(),
+        })}-->`;
+        const cleanDesc = room.notes ? room.notes.trim() : `Comfortable and elegant ${room.roomType} room (${room.roomNumber}) on ${room.floor || "main floor"} at ${prop?.name || "our property"}.`;
+        const fullDescription = `${cleanDesc}${metaTag}`;
+
+        const priceRoomOnly = room.pricePerNight > 0 ? room.pricePerNight : (prop?.defaultRoomPrice || 1000);
+        const priceBedBreakfast = room.priceBedBreakfast > 0 ? room.priceBedBreakfast : (prop?.defaultBedBreakfast || 0);
+        const priceFullBoard = room.priceFullBoard > 0 ? room.priceFullBoard : (prop?.defaultFullBoard || 0);
+
+        const typeLabel = formatRoomTypeName(room.roomType);
+        const displayName = `${typeLabel} - ${room.roomNumber}`;
+
+        const payload: any = {
+          company_id: currentCompany.id,
+          property_id: room.propertyId,
+          property_name: prop?.name || room.propertyName || "",
+          type_key: room.roomType,
+          display_name: displayName,
+          adults_capacity: room.capacityAdults || 2,
+          kids_capacity: room.capacityChildren || 0,
+          total_rooms_of_type: 1,
+          price_room_only: priceRoomOnly,
+          price_bed_breakfast: priceBedBreakfast,
+          price_full_board: priceFullBoard,
+          description: fullDescription,
+          amenities: (room.amenities && room.amenities.length > 0) ? room.amenities : ["wifi", "tv", "ac"],
+          photos: safePhotos,
+          sort_order: listings.length + i,
+          is_active: true,
+          booking_mode: room.bookingMode || "platform",
+          external_booking_url: room.bookingMode === "external" ? (room.externalBookingUrl || "").trim() : null,
+        };
+
+        let insertRes = await supabase.from("room_type_listings").insert(payload).select().single();
+        if (insertRes.error) {
+          const { booking_mode, external_booking_url, ...fallbackPayload } = payload;
+          insertRes = await supabase.from("room_type_listings").insert(fallbackPayload).select().single();
+          if (insertRes.error) {
+            console.warn(`Could not insert room ${room.roomNumber}`, insertRes.error);
+            continue;
+          }
+        }
+
+        if (insertRes.data) {
+          const d = insertRes.data;
+          newItems.push({
+            id: d.id,
+            companyId: currentCompany.id,
+            propertyId: payload.property_id,
+            propertyName: payload.property_name,
+            typeKey: payload.type_key,
+            displayName: payload.display_name,
+            adultsCapacity: payload.adults_capacity,
+            kidsCapacity: payload.kids_capacity,
+            totalRoomsOfType: payload.total_rooms_of_type,
+            priceRoomOnly: payload.price_room_only,
+            priceBedBreakfast: payload.price_bed_breakfast,
+            priceFullBoard: payload.price_full_board,
+            description: cleanDesc,
+            amenities: payload.amenities,
+            photos: safePhotos,
+            isActive: true,
+            sortOrder: payload.sort_order,
+            bookingMode: payload.booking_mode,
+            externalBookingUrl: payload.external_booking_url || "",
+          });
+        }
+      }
+
+      if (newItems.length > 0) {
+        setListings(prev => [...prev, ...newItems]);
+        setSelectedRoomIds(new Set());
+        setModalOpen(false);
+      } else {
+        alert("No rooms could be added. Please verify room details.");
+      }
+    } catch (err: any) {
+      alert("Error adding rooms: " + (err.message || String(err)));
+    } finally {
+      setImportingRooms(false);
+    }
   };
 
   const toggleBookingVisibility = async (r: RoomTypeListing) => {
@@ -418,6 +642,28 @@ export default function ShowcasePage() {
 
   const filteredListings = listings.filter(r => !searchQuery || r.displayName.toLowerCase().includes(searchQuery.toLowerCase()) || (r.propertyName||"").toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredRentals = rentalProperties.filter((p: any) => !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || (p.city||"").toLowerCase().includes(searchQuery.toLowerCase()));
+
+  const filteredExistingRooms = existingRooms.filter(r => {
+    if (existingPropertyFilter !== "all" && r.propertyId !== existingPropertyFilter) {
+      return false;
+    }
+    if (existingSearch.trim()) {
+      const q = existingSearch.toLowerCase();
+      const matchNumber = (r.roomNumber || "").toLowerCase().includes(q);
+      const matchType = (r.roomType || "").toLowerCase().includes(q);
+      const matchProp = (r.propertyName || "").toLowerCase().includes(q);
+      const matchFloor = (r.floor || "").toLowerCase().includes(q);
+      if (!matchNumber && !matchType && !matchProp && !matchFloor) return false;
+    }
+    const showcaseInfo = getRoomShowcaseStatus(r);
+    if (existingShowcaseFilter === "unshowcased" && showcaseInfo.status !== "none") {
+      return false;
+    }
+    if (existingShowcaseFilter === "showcased" && showcaseInfo.status === "none") {
+      return false;
+    }
+    return true;
+  });
 
   return (
     <ModulePage title="Showcase" description="Manage what shows on the public portal - rooms for booking and properties for rent.">
@@ -615,174 +861,449 @@ export default function ShowcasePage() {
       )}
 
       {/* ── Modal: Add/Edit Booking Room ── */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? "Edit Room Type" : "Add Room Type"}>
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editingId ? "Edit Room Type" : (modalTab === "existing" ? "Add Existing Rooms to Showcase" : "Create Room Type from Scratch")}
+        maxWidthClassName="max-w-3xl"
+      >
         <div className="space-y-4 text-xs">
-          {/* Modal Accommodation Property Requirement Banner */}
-          <div
-            className={`rounded-xl border p-3 flex items-start gap-2.5 text-xs ${
-              hospProps.length === 0
-                ? "border-amber-400 bg-amber-500/10 text-amber-900 dark:text-amber-200"
-                : "border-purple-200 dark:border-purple-900/40 bg-purple-50/70 dark:bg-purple-950/30 text-purple-900 dark:text-purple-200"
-            }`}
-          >
-            <Building2
-              size={16}
-              className={`shrink-0 mt-0.5 ${
-                hospProps.length === 0 ? "text-amber-600" : "text-purple-600"
-              }`}
-            />
-            <div>
-              <p className="font-bold">
-                {hospProps.length === 0
-                  ? "Accommodation Property Required"
-                  : "Accommodation Property Assignment"}
-              </p>
-              <p className="text-[11px] opacity-90 mt-0.5">
-                All rooms and showcase listings must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial). Without selecting a property, room listings cannot be saved.
-              </p>
+          {/* Tab switcher: Existing Rooms vs From Scratch (only when adding new) */}
+          {!editingId && (
+            <div className="flex items-center gap-2 border-b border-border-color pb-3">
+              <button
+                type="button"
+                onClick={() => setModalTab("existing")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
+                  modalTab === "existing"
+                    ? "bg-purple-600 text-white shadow-sm ring-1 ring-purple-600"
+                    : "border border-border-color bg-surface-elevated text-muted hover:text-foreground"
+                }`}
+              >
+                <Building2 size={14} />
+                <span>Select Existing Rooms</span>
+                <span className={`ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                  modalTab === "existing" ? "bg-white/20 text-white" : "bg-muted/10 text-muted"
+                }`}>
+                  {existingRooms.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalTab("scratch")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
+                  modalTab === "scratch"
+                    ? "bg-purple-600 text-white shadow-sm ring-1 ring-purple-600"
+                    : "border border-border-color bg-surface-elevated text-muted hover:text-foreground"
+                }`}
+              >
+                <Plus size={14} />
+                <span>Create from Scratch</span>
+              </button>
             </div>
-          </div>
+          )}
 
-          <div>
-            <label className="mb-1 block font-semibold text-foreground">Property <span className="text-red-500">*</span></label>
-            <select value={form.property_id} onChange={e => { setForm(f=>({...f,property_id:e.target.value,type_key:"",display_name:""})); setErrors(v=>({...v,property_id:""})); }} className={inputCls("property_id")}>
-              <option value="">- Select a hospitality property -</option>
-              {hospProps.map(p => <option key={p.id} value={p.id}>{p.name} ({p.type.replace(/_/g," ")})</option>)}
-            </select>
-            {errors.property_id && <p className="mt-1 flex items-center gap-1 text-red-500 text-[11px]"><AlertCircle size={11}/>{errors.property_id}</p>}
-          </div>
-          <div>
-            <label className="mb-1 block font-semibold text-foreground">Room Type <span className="text-red-500">*</span></label>
-            <select value={form.type_key} onChange={e => { const opt = ROOM_TYPE_OPTIONS.find(o=>o.key===e.target.value); setForm(f=>({...f,type_key:e.target.value,display_name:opt?opt.label:f.display_name,adults_capacity:opt?opt.adults:f.adults_capacity,kids_capacity:opt?opt.kids:f.kids_capacity})); setErrors(v=>({...v,type_key:""})); }} disabled={!form.property_id} className={`${inputCls("type_key")} ${!form.property_id?"opacity-50 cursor-not-allowed":""}`}>
-              <option value="">{form.property_id?"- Select room type -":"- Select a property first -"}</option>
-              {availableTypeOptions.map(o => <option key={o.key} value={o.key}>{o.label} · {o.adults} Adults, {o.kids} Kids</option>)}
-            </select>
-            {errors.type_key && <p className="mt-1 flex items-center gap-1 text-red-500 text-[11px]"><AlertCircle size={11}/>{errors.type_key}</p>}
-          </div>
-          <div>
-            <label className="mb-1 block font-semibold text-foreground">Display Name <span className="text-red-500">*</span></label>
-            <input value={form.display_name} onChange={e=>{setForm({...form,display_name:e.target.value});setErrors(v=>({...v,display_name:""}));}} placeholder="e.g. Family Safari Suite" className={inputCls("display_name")}/>
-            {errors.display_name && <p className="mt-1 flex items-center gap-1 text-red-500 text-[11px]"><AlertCircle size={11}/>{errors.display_name}</p>}
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div><label className="mb-1 block font-semibold text-foreground">Adults</label><input type="text" inputMode="numeric" value={form.adults_capacity} onChange={e=>setForm({...form,adults_capacity:Number(e.target.value.replace(/\D/g,""))||0})} className={inputCls("")}/></div>
-            <div><label className="mb-1 block font-semibold text-foreground">Kids</label><input type="text" inputMode="numeric" value={form.kids_capacity} onChange={e=>setForm({...form,kids_capacity:Number(e.target.value.replace(/\D/g,""))||0})} className={inputCls("")}/></div>
-            <div><label className="mb-1 block font-semibold text-foreground">Total Rooms</label><input type="text" inputMode="numeric" value={form.total_rooms_of_type} onChange={e=>setForm({...form,total_rooms_of_type:Number(e.target.value.replace(/\D/g,""))||1})} className={inputCls("")}/></div>
-          </div>
-          <div className={`rounded-xl border p-3 space-y-2 ${errors.price?"border-red-400 bg-red-50/10":"border-border-color"}`}>
-            <label className="font-bold text-foreground flex items-center gap-1.5"><Star size={12} className="text-yellow-500"/>Pricing per night <span className="text-red-500 text-[10px] font-normal ml-1">(at least one required)</span></label>
-            <div className="grid grid-cols-3 gap-2">
-              <div><label className="mb-1 block text-muted/70">Room Only</label><input type="text" inputMode="decimal" value={form.price_room_only} placeholder="e.g. 1200" onChange={e=>{setForm({...form,price_room_only:e.target.value});setErrors(v=>({...v,price:""}));}} className="w-full rounded-lg border border-border-color bg-surface px-2 py-1.5 text-foreground outline-none focus:border-purple-600 text-xs"/></div>
-              <div><label className="mb-1 block text-muted/70">Bed & Breakfast</label><input type="text" inputMode="decimal" value={form.price_bed_breakfast} placeholder="e.g. 1600" onChange={e=>{setForm({...form,price_bed_breakfast:e.target.value});setErrors(v=>({...v,price:""}));}} className="w-full rounded-lg border border-border-color bg-surface px-2 py-1.5 text-foreground outline-none focus:border-purple-600 text-xs"/></div>
-              <div><label className="mb-1 block text-muted/70">Full Board</label><input type="text" inputMode="decimal" value={form.price_full_board} placeholder="e.g. 2100" onChange={e=>{setForm({...form,price_full_board:e.target.value});setErrors(v=>({...v,price:""}));}} className="w-full rounded-lg border border-border-color bg-surface px-2 py-1.5 text-foreground outline-none focus:border-purple-600 text-xs"/></div>
-            </div>
-            {errors.price && <p className="flex items-center gap-1 text-red-500 text-[11px]"><AlertCircle size={11}/>{errors.price}</p>}
-          </div>
-          <div><label className="mb-1 block font-semibold text-foreground">Description</label><textarea rows={2} value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Describe this room type..." className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-purple-600 resize-none text-xs"/></div>
-          <div>
-            <label className="mb-2 block font-semibold text-foreground">Amenities</label>
-            <div className="flex flex-wrap gap-2">
-              {AMENITY_OPTIONS.map(opt => { const Icon = opt.icon; const active = form.amenities.includes(opt.key); return (<button key={opt.key} type="button" onClick={()=>setForm(f=>({...f,amenities:f.amenities.includes(opt.key)?f.amenities.filter(a=>a!==opt.key):[...f.amenities,opt.key]}))} className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${active?"border-purple-600 bg-purple-50 text-purple-700":"border-border-color text-muted hover:border-purple-400"}`}><Icon size={11}/>{opt.label}</button>); })}
-            </div>
-          </div>
-          <div className={`rounded-xl border p-3 space-y-2 ${errors.photos?"border-red-400 bg-red-50/10":"border-border-color"}`}>
-            <div className="flex items-center justify-between">
-              <label className="font-bold text-foreground flex items-center gap-1.5"><ImageIcon size={13} className="text-purple-600"/>Photos ({formPhotos.length}/min 2) <span className="text-red-500 ml-1">*</span></label>
-              <div><input type="file" ref={fileInputRef} onChange={handlePhotoUpload} accept="image/*" multiple className="hidden" id="room-photo-upload"/><label htmlFor="room-photo-upload" className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-[11px] font-semibold hover:bg-surface-elevated ${uploadingPhoto?"opacity-50 pointer-events-none":""}`}>{uploadingPhoto?<Loader2 size={11} className="animate-spin"/>:<Upload size={11}/>}{uploadingPhoto?"Uploading...":"Upload Photos"}</label></div>
-            </div>
-            {errors.photos && <p className="flex items-center gap-1 text-red-500 text-[11px]"><AlertCircle size={11}/>{errors.photos}</p>}
-            {formPhotos.length === 0
-              ? <p className="text-[11px] text-muted italic">Upload at least 2 high-quality room photos.</p>
-              : <div className="grid grid-cols-4 gap-2">{formPhotos.map((url,idx)=>(<div key={idx} className="group relative aspect-video rounded-lg overflow-hidden border border-border-color"><img src={url} alt={`room-${idx}`} className="h-full w-full object-cover"/><button type="button" onClick={()=>setFormPhotos(prev=>prev.filter((_,i)=>i!==idx))} className="absolute top-1 right-1 rounded-md bg-black/70 p-1 text-white opacity-0 group-hover:opacity-100 transition hover:bg-red-600"><X size={10}/></button></div>))}</div>}
-          </div>
-          {/* Booking & Reservation Method Setting */}
-          <div className="rounded-xl border border-border-color p-3 space-y-2.5 bg-surface-elevated/40">
-            <div className="flex items-center justify-between">
-              <label className="font-bold text-foreground flex items-center gap-1.5">
-                <Globe size={13} className="text-blue-500" />
-                Booking &amp; Reservation Method *
-              </label>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                form.booking_mode === "external"
-                  ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300"
-                  : "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300"
-              }`}>
-                {form.booking_mode === "external" ? "Custom Link" : "Paimbabook Native"}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setForm(f => ({ ...f, booking_mode: "platform" }))}
-                className={`rounded-xl border p-2.5 text-left transition ${
-                  form.booking_mode === "platform"
-                    ? "border-purple-600 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-bold ring-1 ring-purple-600"
-                    : "border-border-color bg-surface text-muted hover:border-foreground/30"
-                }`}
-              >
-                <p className="text-xs font-bold flex items-center gap-1">
-                  <BedDouble size={12} /> Via Paimbabook
-                </p>
-                <p className="text-[10px] opacity-75 mt-0.5">Direct instant book &amp; hold reservations on website</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => setForm(f => ({ ...f, booking_mode: "external" }))}
-                className={`rounded-xl border p-2.5 text-left transition ${
-                  form.booking_mode === "external"
-                    ? "border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-bold ring-1 ring-blue-600"
-                    : "border-border-color bg-surface text-muted hover:border-foreground/30"
-                }`}
-              >
-                <p className="text-xs font-bold flex items-center gap-1">
-                  <Globe size={12} /> Custom Link / External
-                </p>
-                <p className="text-[10px] opacity-75 mt-0.5">Redirect guests to custom booking or partner link</p>
-              </button>
-            </div>
-            {form.booking_mode === "external" && (
-              <div className="pt-1.5 space-y-1">
-                <label className="block font-semibold text-foreground text-[11px]">
-                  Custom Booking URL / External Link <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="url"
-                  value={form.external_booking_url}
-                  onChange={e => {
-                    setForm(f => ({ ...f, external_booking_url: e.target.value }));
-                    setErrors(prev => ({ ...prev, external_booking_url: "" }));
-                  }}
-                  placeholder="https://booking.com/your-hotel or https://mysite.com/reserve"
-                  className={inputCls("external_booking_url")}
-                />
-                {errors.external_booking_url && (
-                  <p className="flex items-center gap-1 text-red-500 text-[11px]">
-                    <AlertCircle size={11} />
-                    {errors.external_booking_url}
-                  </p>
+          {/* ══════ TAB 1: EXISTING ROOMS ══════ */}
+          {!editingId && modalTab === "existing" && (
+            <div className="space-y-3">
+              {/* Filter Toolbar */}
+              <div className="flex flex-wrap items-center gap-2 bg-surface-elevated/40 p-2.5 rounded-xl border border-border-color">
+                <div className="relative flex-1 min-w-[180px]">
+                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+                  <input
+                    value={existingSearch}
+                    onChange={e => setExistingSearch(e.target.value)}
+                    placeholder="Search room #, type, floor..."
+                    className="w-full rounded-lg border border-border-color bg-surface pl-7 pr-7 py-1.5 text-xs text-foreground outline-none focus:border-purple-600"
+                  />
+                  {existingSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setExistingSearch("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+
+                {hospProps.length > 1 && (
+                  <select
+                    value={existingPropertyFilter}
+                    onChange={e => setExistingPropertyFilter(e.target.value)}
+                    className="rounded-lg border border-border-color bg-surface px-2 py-1.5 text-xs text-foreground outline-none focus:border-purple-600"
+                  >
+                    <option value="all">All Properties</option>
+                    {hospProps.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
                 )}
-                <p className="text-[10px] text-muted">
-                  When visitors click Book or Reserve on this room, they will be redirected to this custom link.
-                </p>
-              </div>
-            )}
-          </div>
 
-          <label className="flex items-center gap-2 cursor-pointer">
-            <div onClick={()=>setForm(f=>({...f,is_active:!f.is_active}))} className={`relative h-5 w-9 rounded-full transition-colors ${form.is_active?"bg-purple-600":"bg-gray-300"}`}><div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${form.is_active?"translate-x-4":"translate-x-0.5"}`}/></div>
-            <span className="font-medium text-foreground text-xs">{form.is_active?"Visible on portal":"Hidden from portal"}</span>
-          </label>
-          <div className="flex justify-end gap-2 pt-2 border-t border-border-color">
-            <button type="button" onClick={()=>setModalOpen(false)} className="rounded-xl border border-border-color px-4 py-2 text-sm text-muted hover:bg-surface-elevated">Cancel</button>
-            <button
-              type="button"
-              onClick={onSave}
-              disabled={saving || hospProps.length === 0 || !form.property_id}
-              className="rounded-xl bg-purple-600 px-5 py-2 text-sm font-bold text-white shadow-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {saving ? "Saving..." : editingId ? "Save Changes" : "Create Room Type"}
-            </button>
-          </div>
+                <select
+                  value={existingShowcaseFilter}
+                  onChange={e => setExistingShowcaseFilter(e.target.value as any)}
+                  className="rounded-lg border border-border-color bg-surface px-2 py-1.5 text-xs text-foreground outline-none focus:border-purple-600"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="unshowcased">Ready to Add (Unlisted)</option>
+                  <option value="showcased">Already Showcased</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedRoomIds.size === filteredExistingRooms.length && filteredExistingRooms.length > 0) {
+                      setSelectedRoomIds(new Set());
+                    } else {
+                      setSelectedRoomIds(new Set(filteredExistingRooms.map(r => r.id)));
+                    }
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-border-color bg-surface px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-elevated transition shrink-0"
+                >
+                  {selectedRoomIds.size === filteredExistingRooms.length && filteredExistingRooms.length > 0 ? (
+                    <CheckSquare size={13} className="text-purple-600" />
+                  ) : (
+                    <Square size={13} className="text-muted" />
+                  )}
+                  <span>
+                    {selectedRoomIds.size === filteredExistingRooms.length && filteredExistingRooms.length > 0
+                      ? "Deselect All"
+                      : "Select All"}
+                  </span>
+                </button>
+              </div>
+
+              {/* Scrollable Room List */}
+              <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
+                {loadingExistingRooms ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-muted gap-2">
+                    <Loader2 size={24} className="animate-spin text-purple-600" />
+                    <p className="text-xs">Loading commercial rooms...</p>
+                  </div>
+                ) : filteredExistingRooms.length === 0 ? (
+                  <div className="py-12 text-center text-muted rounded-xl border border-dashed border-border-color bg-surface-elevated/20">
+                    <BedDouble size={32} className="mx-auto mb-2 text-muted/40" />
+                    <p className="text-sm font-semibold text-foreground">No matching rooms found</p>
+                    <p className="text-xs text-muted mt-1 max-w-sm mx-auto">
+                      {existingRooms.length === 0
+                        ? "No commercial rooms found in the system. You can create showcase rooms from scratch using the tab above, or add physical rooms in the Rooms module."
+                        : "Try clearing search or filters to see all available rooms."}
+                    </p>
+                  </div>
+                ) : (
+                  filteredExistingRooms.map((r) => {
+                    const isSelected = selectedRoomIds.has(r.id);
+                    const statusInfo = getRoomShowcaseStatus(r);
+                    const prop = properties.find(p => p.id === r.propertyId);
+                    const thumbUrl = (r.photos || []).find(Boolean) || (prop?.photos || []).find(Boolean);
+
+                    return (
+                      <div
+                        key={r.id}
+                        onClick={() => toggleSelectRoom(r.id)}
+                        className={`group flex items-center justify-between gap-3 p-3 rounded-xl border transition cursor-pointer select-none ${
+                          isSelected
+                            ? "border-purple-600 bg-purple-500/10 shadow-xs"
+                            : "border-border-color bg-surface-elevated/40 hover:bg-surface-elevated hover:border-purple-300 dark:hover:border-purple-800"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {/* Checkbox */}
+                          <div
+                            onClick={(e) => { e.stopPropagation(); toggleSelectRoom(r.id); }}
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition ${
+                              isSelected
+                                ? "border-purple-600 bg-purple-600 text-white"
+                                : "border-border-color bg-surface text-transparent group-hover:border-purple-400"
+                            }`}
+                          >
+                            <Check size={12} strokeWidth={3} className={isSelected ? "block" : "hidden"} />
+                          </div>
+
+                          {/* Thumbnail */}
+                          <div className="relative h-12 w-16 sm:h-14 sm:w-20 shrink-0 overflow-hidden rounded-lg border border-border-color bg-surface-elevated">
+                            {thumbUrl ? (
+                              <img src={thumbUrl} alt={r.roomNumber} className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center bg-purple-500/10 text-purple-600">
+                                <BedDouble size={20} />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Info */}
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-bold text-sm text-foreground">{r.roomNumber}</span>
+                              <span className="rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+                                {formatRoomTypeName(r.roomType)}
+                              </span>
+                              {r.floor && (
+                                <span className="text-[11px] text-muted hidden sm:inline">
+                                  · {r.floor}
+                                </span>
+                              )}
+                              {/* Showcase status badge */}
+                              {statusInfo.status === "exact" ? (
+                                <span className="rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 px-2 py-0.5 text-[10px] font-semibold flex items-center gap-1">
+                                  <Check size={10} /> In Showcase
+                                </span>
+                              ) : statusInfo.status === "type" ? (
+                                <span className="rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 px-2 py-0.5 text-[10px] font-semibold">
+                                  Type Showcased
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 px-2 py-0.5 text-[10px] font-medium">
+                                  Ready to Add
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted">
+                              <span className="flex items-center gap-1">
+                                <Building2 size={11} className="text-muted shrink-0" />
+                                <span className="truncate max-w-[130px]">{prop?.name || r.propertyName || "Accommodation"}</span>
+                              </span>
+                              <span className="flex items-center gap-1 hidden sm:flex">
+                                <Users size={11} className="text-muted shrink-0" />
+                                <span>{r.capacityAdults} adults{r.capacityChildren ? `, ${r.capacityChildren} kids` : ""}</span>
+                              </span>
+                              <span className="font-bold text-foreground">
+                                {formatCurrency(r.pricePerNight || prop?.defaultRoomPrice || 0)} <span className="font-normal text-muted">/ night</span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right Quick Action: Customize */}
+                        <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => handleCustomizeRoom(r)}
+                            className="flex items-center gap-1 rounded-lg border border-purple-300 dark:border-purple-800 bg-surface px-2.5 py-1.5 text-xs font-semibold text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition"
+                            title="Customize room details and preview before adding"
+                          >
+                            <span className="hidden sm:inline">Customize &amp;</span>
+                            <span>Add</span>
+                            <ArrowRight size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Bottom Sticky Action Bar */}
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-border-color">
+                <div className="flex items-center gap-2 text-xs text-muted">
+                  <span className="font-bold text-foreground">
+                    {selectedRoomIds.size} room{selectedRoomIds.size === 1 ? "" : "s"} selected
+                  </span>
+                  {selectedRoomIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRoomIds(new Set())}
+                      className="text-xs text-purple-600 hover:underline font-semibold"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setModalOpen(false)}
+                    className="rounded-xl border border-border-color px-4 py-2 text-xs font-semibold text-muted hover:bg-surface-elevated"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBulkAddExistingRooms}
+                    disabled={selectedRoomIds.size === 0 || importingRooms}
+                    className="flex items-center gap-1.5 rounded-xl bg-purple-600 px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  >
+                    {importingRooms ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                    <span>{importingRooms ? "Adding to Showcase..." : `Add ${selectedRoomIds.size > 0 ? selectedRoomIds.size : ""} Selected to Showcase`}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ══════ TAB 2: CREATE FROM SCRATCH / EDIT ══════ */}
+          {(editingId || modalTab === "scratch") && (
+            <div className="space-y-4">
+              {/* Modal Accommodation Property Requirement Banner */}
+              <div
+                className={`rounded-xl border p-3 flex items-start gap-2.5 text-xs ${
+                  hospProps.length === 0
+                    ? "border-amber-400 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+                    : "border-purple-200 dark:border-purple-900/40 bg-purple-50/70 dark:bg-purple-950/30 text-purple-900 dark:text-purple-200"
+                }`}
+              >
+                <Building2
+                  size={16}
+                  className={`shrink-0 mt-0.5 ${
+                    hospProps.length === 0 ? "text-amber-600" : "text-purple-600"
+                  }`}
+                />
+                <div>
+                  <p className="font-bold">
+                    {hospProps.length === 0
+                      ? "Accommodation Property Required"
+                      : "Accommodation Property Assignment"}
+                  </p>
+                  <p className="text-[11px] opacity-90 mt-0.5">
+                    All rooms and showcase listings must belong to an accommodation property (Hotel, Motel, Lodge, Guest House, Commercial). Without selecting a property, room listings cannot be saved.
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block font-semibold text-foreground">Property <span className="text-red-500">*</span></label>
+                <select value={form.property_id} onChange={e => { setForm(f=>({...f,property_id:e.target.value,type_key:"",display_name:""})); setErrors(v=>({...v,property_id:""})); }} className={inputCls("property_id")}>
+                  <option value="">- Select a hospitality property -</option>
+                  {hospProps.map(p => <option key={p.id} value={p.id}>{p.name} ({p.type.replace(/_/g," ")})</option>)}
+                </select>
+                {errors.property_id && <p className="mt-1 flex items-center gap-1 text-red-500 text-[11px]"><AlertCircle size={11}/>{errors.property_id}</p>}
+              </div>
+              <div>
+                <label className="mb-1 block font-semibold text-foreground">Room Type <span className="text-red-500">*</span></label>
+                <select value={form.type_key} onChange={e => { const opt = ROOM_TYPE_OPTIONS.find(o=>o.key===e.target.value); setForm(f=>({...f,type_key:e.target.value,display_name:opt?opt.label:f.display_name,adults_capacity:opt?opt.adults:f.adults_capacity,kids_capacity:opt?opt.kids:f.kids_capacity})); setErrors(v=>({...v,type_key:""})); }} disabled={!form.property_id} className={`${inputCls("type_key")} ${!form.property_id?"opacity-50 cursor-not-allowed":""}`}>
+                  <option value="">{form.property_id?"- Select room type -":"- Select a property first -"}</option>
+                  {availableTypeOptions.map(o => <option key={o.key} value={o.key}>{o.label} · {o.adults} Adults, {o.kids} Kids</option>)}
+                </select>
+                {errors.type_key && <p className="mt-1 flex items-center gap-1 text-red-500 text-[11px]"><AlertCircle size={11}/>{errors.type_key}</p>}
+              </div>
+              <div>
+                <label className="mb-1 block font-semibold text-foreground">Display Name <span className="text-red-500">*</span></label>
+                <input value={form.display_name} onChange={e=>{setForm({...form,display_name:e.target.value});setErrors(v=>({...v,display_name:""}));}} placeholder="e.g. Family Safari Suite" className={inputCls("display_name")}/>
+                {errors.display_name && <p className="mt-1 flex items-center gap-1 text-red-500 text-[11px]"><AlertCircle size={11}/>{errors.display_name}</p>}
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div><label className="mb-1 block font-semibold text-foreground">Adults</label><input type="text" inputMode="numeric" value={form.adults_capacity} onChange={e=>setForm({...form,adults_capacity:Number(e.target.value.replace(/\D/g,""))||0})} className={inputCls("")}/></div>
+                <div><label className="mb-1 block font-semibold text-foreground">Kids</label><input type="text" inputMode="numeric" value={form.kids_capacity} onChange={e=>setForm({...form,kids_capacity:Number(e.target.value.replace(/\D/g,""))||0})} className={inputCls("")}/></div>
+                <div><label className="mb-1 block font-semibold text-foreground">Total Rooms</label><input type="text" inputMode="numeric" value={form.total_rooms_of_type} onChange={e=>setForm({...form,total_rooms_of_type:Number(e.target.value.replace(/\D/g,""))||1})} className={inputCls("")}/></div>
+              </div>
+              <div className={`rounded-xl border p-3 space-y-2 ${errors.price?"border-red-400 bg-red-50/10":"border-border-color"}`}>
+                <label className="font-bold text-foreground flex items-center gap-1.5"><Star size={12} className="text-yellow-500"/>Pricing per night <span className="text-red-500 text-[10px] font-normal ml-1">(at least one required)</span></label>
+                <div className="grid grid-cols-3 gap-2">
+                  <div><label className="mb-1 block text-muted/70">Room Only</label><input type="text" inputMode="decimal" value={form.price_room_only} placeholder="e.g. 1200" onChange={e=>{setForm({...form,price_room_only:e.target.value});setErrors(v=>({...v,price:""}));}} className="w-full rounded-lg border border-border-color bg-surface px-2 py-1.5 text-foreground outline-none focus:border-purple-600 text-xs"/></div>
+                  <div><label className="mb-1 block text-muted/70">Bed & Breakfast</label><input type="text" inputMode="decimal" value={form.price_bed_breakfast} placeholder="e.g. 1600" onChange={e=>{setForm({...form,price_bed_breakfast:e.target.value});setErrors(v=>({...v,price:""}));}} className="w-full rounded-lg border border-border-color bg-surface px-2 py-1.5 text-foreground outline-none focus:border-purple-600 text-xs"/></div>
+                  <div><label className="mb-1 block text-muted/70">Full Board</label><input type="text" inputMode="decimal" value={form.price_full_board} placeholder="e.g. 2100" onChange={e=>{setForm({...form,price_full_board:e.target.value});setErrors(v=>({...v,price:""}));}} className="w-full rounded-lg border border-border-color bg-surface px-2 py-1.5 text-foreground outline-none focus:border-purple-600 text-xs"/></div>
+                </div>
+                {errors.price && <p className="flex items-center gap-1 text-red-500 text-[11px]"><AlertCircle size={11}/>{errors.price}</p>}
+              </div>
+              <div><label className="mb-1 block font-semibold text-foreground">Description</label><textarea rows={2} value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Describe this room type..." className="w-full rounded-xl border border-border-color bg-surface-elevated px-3 py-2 text-foreground outline-none focus:border-purple-600 resize-none text-xs"/></div>
+              <div>
+                <label className="mb-2 block font-semibold text-foreground">Amenities</label>
+                <div className="flex flex-wrap gap-2">
+                  {AMENITY_OPTIONS.map(opt => { const Icon = opt.icon; const active = form.amenities.includes(opt.key); return (<button key={opt.key} type="button" onClick={()=>setForm(f=>({...f,amenities:f.amenities.includes(opt.key)?f.amenities.filter(a=>a!==opt.key):[...f.amenities,opt.key]}))} className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${active?"border-purple-600 bg-purple-50 text-purple-700":"border-border-color text-muted hover:border-purple-400"}`}><Icon size={11}/>{opt.label}</button>); })}
+                </div>
+              </div>
+              <div className={`rounded-xl border p-3 space-y-2 ${errors.photos?"border-red-400 bg-red-50/10":"border-border-color"}`}>
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-foreground flex items-center gap-1.5"><ImageIcon size={13} className="text-purple-600"/>Photos ({formPhotos.length}/min 2) <span className="text-red-500 ml-1">*</span></label>
+                  <div><input type="file" ref={fileInputRef} onChange={handlePhotoUpload} accept="image/*" multiple className="hidden" id="room-photo-upload"/><label htmlFor="room-photo-upload" className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border-color bg-surface px-3 py-1.5 text-[11px] font-semibold hover:bg-surface-elevated ${uploadingPhoto?"opacity-50 pointer-events-none":""}`}>{uploadingPhoto?<Loader2 size={11} className="animate-spin"/>:<Upload size={11}/>}{uploadingPhoto?"Uploading...":"Upload Photos"}</label></div>
+                </div>
+                {errors.photos && <p className="flex items-center gap-1 text-red-500 text-[11px]"><AlertCircle size={11}/>{errors.photos}</p>}
+                {formPhotos.length === 0
+                  ? <p className="text-[11px] text-muted italic">Upload at least 2 high-quality room photos.</p>
+                  : <div className="grid grid-cols-4 gap-2">{formPhotos.map((url,idx)=>(<div key={idx} className="group relative aspect-video rounded-lg overflow-hidden border border-border-color"><img src={url} alt={`room-${idx}`} className="h-full w-full object-cover"/><button type="button" onClick={()=>setFormPhotos(prev=>prev.filter((_,i)=>i!==idx))} className="absolute top-1 right-1 rounded-md bg-black/70 p-1 text-white opacity-0 group-hover:opacity-100 transition hover:bg-red-600"><X size={10}/></button></div>))}</div>}
+              </div>
+              {/* Booking & Reservation Method Setting */}
+              <div className="rounded-xl border border-border-color p-3 space-y-2.5 bg-surface-elevated/40">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-foreground flex items-center gap-1.5">
+                    <Globe size={13} className="text-blue-500" />
+                    Booking &amp; Reservation Method *
+                  </label>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    form.booking_mode === "external"
+                      ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300"
+                      : "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300"
+                  }`}>
+                    {form.booking_mode === "external" ? "Custom Link" : "Paimbabook Native"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, booking_mode: "platform" }))}
+                    className={`rounded-xl border p-2.5 text-left transition ${
+                      form.booking_mode === "platform"
+                        ? "border-purple-600 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-bold ring-1 ring-purple-600"
+                        : "border-border-color bg-surface text-muted hover:border-foreground/30"
+                    }`}
+                  >
+                    <p className="text-xs font-bold flex items-center gap-1">
+                      <BedDouble size={12} /> Via Paimbabook
+                    </p>
+                    <p className="text-[10px] opacity-75 mt-0.5">Direct instant book &amp; hold reservations on website</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, booking_mode: "external" }))}
+                    className={`rounded-xl border p-2.5 text-left transition ${
+                      form.booking_mode === "external"
+                        ? "border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-bold ring-1 ring-blue-600"
+                        : "border-border-color bg-surface text-muted hover:border-foreground/30"
+                    }`}
+                  >
+                    <p className="text-xs font-bold flex items-center gap-1">
+                      <Globe size={12} /> Custom Link / External
+                    </p>
+                    <p className="text-[10px] opacity-75 mt-0.5">Redirect guests to custom booking or partner link</p>
+                  </button>
+                </div>
+                {form.booking_mode === "external" && (
+                  <div className="pt-1.5 space-y-1">
+                    <label className="block font-semibold text-foreground text-[11px]">
+                      Custom Booking URL / External Link <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="url"
+                      value={form.external_booking_url}
+                      onChange={e => {
+                        setForm(f => ({ ...f, external_booking_url: e.target.value }));
+                        setErrors(prev => ({ ...prev, external_booking_url: "" }));
+                      }}
+                      placeholder="https://booking.com/your-hotel or https://mysite.com/reserve"
+                      className={inputCls("external_booking_url")}
+                    />
+                    {errors.external_booking_url && (
+                      <p className="flex items-center gap-1 text-red-500 text-[11px]">
+                        <AlertCircle size={11} />
+                        {errors.external_booking_url}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-muted">
+                      When visitors click Book or Reserve on this room, they will be redirected to this custom link.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <div onClick={()=>setForm(f=>({...f,is_active:!f.is_active}))} className={`relative h-5 w-9 rounded-full transition-colors ${form.is_active?"bg-purple-600":"bg-gray-300"}`}><div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${form.is_active?"translate-x-4":"translate-x-0.5"}`}/></div>
+                <span className="font-medium text-foreground text-xs">{form.is_active?"Visible on portal":"Hidden from portal"}</span>
+              </label>
+              <div className="flex justify-end gap-2 pt-2 border-t border-border-color">
+                <button type="button" onClick={()=>setModalOpen(false)} className="rounded-xl border border-border-color px-4 py-2 text-sm text-muted hover:bg-surface-elevated">Cancel</button>
+                <button
+                  type="button"
+                  onClick={onSave}
+                  disabled={saving || hospProps.length === 0 || !form.property_id}
+                  className="rounded-xl bg-purple-600 px-5 py-2 text-sm font-bold text-white shadow-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {saving ? "Saving..." : editingId ? "Save Changes" : "Create Room Type"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
 
