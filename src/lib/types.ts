@@ -60,6 +60,8 @@ export type RoomTypeListing = {
   discountPercentage?: number;
   discountStartDate?: string;
   discountEndDate?: string;
+  bookingMode?: "platform" | "external";
+  externalBookingUrl?: string;
 };
 
 export type Company = {

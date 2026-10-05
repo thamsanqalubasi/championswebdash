@@ -3,22 +3,29 @@ import { Outlet, Link, useLocation } from "react-router-dom";
 import { Home, LogIn, Building2, Shield, Menu, X } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { supabase } from "@/lib/supabase";
+import { getCustomerSession } from "@/lib/auth";
 
 export default function PortalLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
-  const [session, setSession] = useState<any>(null);
+  const [customerSession, setCustomerSession] = useState(() => getCustomerSession());
 
-  // Track auth session for smart nav
+  // Track customer auth session strictly for customer portal
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+    const syncSession = () => {
+      setCustomerSession(getCustomerSession());
+    };
+    syncSession();
+
+    window.addEventListener("storage", syncSession);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      syncSession();
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
-      setSession(sess);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      window.removeEventListener("storage", syncSession);
+      subscription.unsubscribe();
+    };
+  }, [location.pathname]);
 
   // Close mobile menu on page navigation
   useEffect(() => {
@@ -37,10 +44,10 @@ export default function PortalLayout() {
     };
   }, [mobileMenuOpen]);
 
-  const userInitial = session?.user?.user_metadata?.full_name
-    ? session.user.user_metadata.full_name.charAt(0).toUpperCase()
-    : session?.user?.email
-    ? session.user.email.charAt(0).toUpperCase()
+  const userInitial = customerSession?.name
+    ? customerSession.name.charAt(0).toUpperCase()
+    : customerSession?.email
+    ? customerSession.email.charAt(0).toUpperCase()
     : "?";
 
   return (
@@ -51,9 +58,13 @@ export default function PortalLayout() {
             {/* Brand Logo */}
             <Link
               to="/"
-              className="flex items-center gap-2 font-black text-xl text-blue-600 dark:text-blue-400 tracking-tight transition hover:opacity-90"
+              className="flex items-center gap-2.5 font-black text-xl text-blue-600 dark:text-blue-400 tracking-tight transition hover:opacity-90"
             >
-              <Building2 size={24} className="text-blue-600 dark:text-blue-400" />
+              <img
+                src="/iconlogo.png"
+                alt="Paimbabook Logo"
+                className="h-8 w-8 sm:h-9 sm:w-9 object-contain rounded-xl shadow-xs"
+              />
               <span>Paimbabook</span>
             </Link>
 
@@ -70,18 +81,18 @@ export default function PortalLayout() {
                 <Home size={16} /> <span>Listings</span>
               </Link>
 
-              {session ? (
+              {customerSession ? (
                 /* Logged in: show profile avatar linking to dashboard */
                 <Link
                   to="/portal/dashboard"
-                  title={session.user?.email || "My Account"}
+                  title={customerSession.email || "My Account"}
                   className="flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm font-semibold text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition"
                 >
                   <div className="h-7 w-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-black shrink-0">
                     {userInitial}
                   </div>
                   <span className="hidden lg:inline text-xs max-w-[120px] truncate">
-                    {session.user?.user_metadata?.full_name || session.user?.email?.split("@")[0]}
+                    {customerSession.name || customerSession.email.split("@")[0]}
                   </span>
                 </Link>
               ) : (
@@ -95,10 +106,10 @@ export default function PortalLayout() {
               )}
 
               <Link
-                to="/dashboard"
+                to={customerSession ? "/login?switch=staff" : "/dashboard"}
                 className="flex items-center gap-1.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-1.5 text-sm font-semibold text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700/60 shadow-xs transition"
               >
-                <Shield size={15} /> <span>Manager Login</span>
+                <Shield size={15} /> <span>Staff &amp; Manager Desk</span>
               </Link>
               <div className="ml-1 pl-2 border-l border-gray-200 dark:border-slate-800">
                 <ThemeToggle variant="compact" />
@@ -143,7 +154,7 @@ export default function PortalLayout() {
                 </div>
               </Link>
 
-              {session ? (
+              {customerSession ? (
                 <Link
                   to="/portal/dashboard"
                   onClick={() => setMobileMenuOpen(false)}
@@ -157,7 +168,7 @@ export default function PortalLayout() {
                     {userInitial}
                   </div>
                   <div>
-                    <div className="font-semibold">{session.user?.user_metadata?.full_name || session.user?.email?.split("@")[0] || "My Account"}</div>
+                    <div className="font-semibold">{customerSession.name || customerSession.email.split("@")[0] || "My Account"}</div>
                     <div className="text-xs text-gray-400 dark:text-slate-400">View your portal dashboard</div>
                   </div>
                 </Link>
@@ -179,7 +190,7 @@ export default function PortalLayout() {
 
               <div className="pt-2 pb-1 border-t border-gray-100 dark:border-slate-800">
                 <Link
-                  to="/dashboard"
+                  to={customerSession ? "/login?switch=staff" : "/dashboard"}
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition"
                 >
@@ -187,8 +198,8 @@ export default function PortalLayout() {
                     <Shield size={17} />
                   </div>
                   <div>
-                    <div className="font-semibold">Manager Login</div>
-                    <div className="text-xs text-gray-400 dark:text-slate-400">Staff &amp; Property Management Portal</div>
+                    <div className="font-semibold">Staff &amp; Manager Desk</div>
+                    <div className="text-xs text-gray-400 dark:text-slate-400">Staff &amp; Property Management Operations</div>
                   </div>
                 </Link>
               </div>
@@ -208,6 +219,10 @@ export default function PortalLayout() {
 
       {/* Footer */}
       <footer className="border-t border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-8 text-center text-sm text-gray-500 dark:text-slate-400 transition-colors">
+        <div className="flex items-center justify-center gap-2 mb-2">
+          <img src="/iconlogo.png" alt="Paimbabook" className="h-6 w-6 object-contain" />
+          <span className="font-bold text-gray-800 dark:text-slate-200">Paimbabook</span>
+        </div>
         <p className="font-semibold text-gray-700 dark:text-slate-300">&copy; {new Date().getFullYear()} Paimbabook. All rights reserved.</p>
         <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">Paimbabook Hospitality &amp; Property Management Platform</p>
       </footer>

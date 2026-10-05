@@ -247,7 +247,7 @@ export function htmlToStorableString(html: string): string {
  * invoices, contracts, receipts, and reports dynamically render with that
  * company's unique name, logo, address, and payment instructions.
  */
-export const DEFAULT_PAIMBABOOK_LOGO = "https://paimbabook.com/paimbabook-logo.svg";
+export const DEFAULT_PAIMBABOOK_LOGO = "https://paimbabook.com/iconlogo.png";
 
 function sanitizeCompanyInfo(info: {
   companyName?: string | null;

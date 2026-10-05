@@ -147,12 +147,25 @@ export default function PortalListingPage() {
           .maybeSingle();
         if (roomData) {
           const parentProps = (roomData as any).properties;
+          let rBookingMode = roomData.booking_mode || parentProps?.booking_mode || "platform";
+          let rExternalBookingUrl = roomData.external_booking_url || parentProps?.external_booking_url || "";
+          let rDesc = roomData.description || "";
+          if (rDesc.includes("<!--ROOM_META:")) {
+            try {
+              const metaStr = rDesc.split("<!--ROOM_META:")[1].split("-->")[0];
+              const meta = JSON.parse(metaStr);
+              if (meta.bookingMode) rBookingMode = meta.bookingMode;
+              if (meta.externalBookingUrl) rExternalBookingUrl = meta.externalBookingUrl;
+              rDesc = rDesc.split("<!--ROOM_META:")[0].trim();
+            } catch {}
+          }
           const merged = {
             ...roomData,
+            description: rDesc,
             company_id: roomData.company_id || parentProps?.company_id,
             property_id: roomData.property_id || parentProps?.id,
-            booking_mode: roomData.booking_mode || parentProps?.booking_mode || "platform",
-            external_booking_url: roomData.external_booking_url || parentProps?.external_booking_url || "",
+            booking_mode: rBookingMode,
+            external_booking_url: rExternalBookingUrl,
             discount_percentage: Number(roomData.discount_percentage || parentProps?.discount_percentage || 0),
           };
           setData(merged);

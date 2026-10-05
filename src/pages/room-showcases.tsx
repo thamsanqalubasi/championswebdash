@@ -56,6 +56,8 @@ const emptyForm = {
   amenities: [] as string[],
   sort_order: 0,
   is_active: true,
+  booking_mode: "platform" as "platform" | "external",
+  external_booking_url: "",
 };
 
 function PhotoCarousel({ photos }: { photos: string[] }) {
@@ -116,8 +118,46 @@ export default function ShowcasePage() {
       } catch {}
       try {
         const { data } = await supabase.from("room_type_listings").select("*").eq("company_id", currentCompany.id).order("sort_order").order("created_at");
-        if (data) setListings(data.map((r: any) => ({ id: r.id, companyId: r.company_id, propertyId: r.property_id, propertyName: r.property_name || "", typeKey: r.type_key, displayName: r.display_name, adultsCapacity: r.adults_capacity, kidsCapacity: r.kids_capacity, totalRoomsOfType: r.total_rooms_of_type, priceRoomOnly: r.price_room_only, priceBedBreakfast: r.price_bed_breakfast, priceFullBoard: r.price_full_board, photos: r.photos || [], description: r.description || "", amenities: r.amenities || [], isActive: r.is_active, sortOrder: r.sort_order, createdAt: r.created_at })));
-        else setListings([]);
+        if (data) {
+          setListings(data.map((r: any) => {
+            let bookingMode: "platform" | "external" = r.booking_mode || "platform";
+            let externalBookingUrl: string = r.external_booking_url || "";
+            let cleanDescription: string = r.description || "";
+            if (cleanDescription.includes("<!--ROOM_META:")) {
+              try {
+                const metaStr = cleanDescription.split("<!--ROOM_META:")[1].split("-->")[0];
+                const meta = JSON.parse(metaStr);
+                if (meta.bookingMode) bookingMode = meta.bookingMode;
+                if (meta.externalBookingUrl) externalBookingUrl = meta.externalBookingUrl;
+                cleanDescription = cleanDescription.split("<!--ROOM_META:")[0].trim();
+              } catch {}
+            }
+            return {
+              id: r.id,
+              companyId: r.company_id,
+              propertyId: r.property_id,
+              propertyName: r.property_name || "",
+              typeKey: r.type_key,
+              displayName: r.display_name,
+              adultsCapacity: r.adults_capacity,
+              kidsCapacity: r.kids_capacity,
+              totalRoomsOfType: r.total_rooms_of_type,
+              priceRoomOnly: r.price_room_only,
+              priceBedBreakfast: r.price_bed_breakfast,
+              priceFullBoard: r.price_full_board,
+              photos: r.photos || [],
+              description: cleanDescription,
+              amenities: r.amenities || [],
+              isActive: r.is_active,
+              sortOrder: r.sort_order,
+              createdAt: r.created_at,
+              bookingMode,
+              externalBookingUrl,
+            };
+          }));
+        } else {
+          setListings([]);
+        }
       } catch { setListings([]); }
       setLoading(false);
     }
@@ -148,6 +188,9 @@ export default function ShowcasePage() {
     if (!form.display_name.trim()) e.display_name = "Room name is required.";
     if ((Number(form.price_room_only)||0) <= 0 && (Number(form.price_bed_breakfast)||0) <= 0 && (Number(form.price_full_board)||0) <= 0) e.price = "At least one price must be greater than 0.";
     if (formPhotos.length < 2) e.photos = "Please upload at least 2 photos.";
+    if (form.booking_mode === "external" && !form.external_booking_url.trim()) {
+      e.external_booking_url = "Custom booking / reservation link is required for external booking mode.";
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -167,7 +210,29 @@ export default function ShowcasePage() {
     setPropertyRoomTypes([]);
     setModalOpen(true);
   };
-  const openEdit = (r: RoomTypeListing) => { setEditingId(r.id); setForm({ property_id: r.propertyId, type_key: r.typeKey, display_name: r.displayName, adults_capacity: r.adultsCapacity, kids_capacity: r.kidsCapacity, total_rooms_of_type: r.totalRoomsOfType, price_room_only: r.priceRoomOnly || "", price_bed_breakfast: r.priceBedBreakfast || "", price_full_board: r.priceFullBoard || "", description: r.description, amenities: r.amenities, sort_order: r.sortOrder, is_active: r.isActive }); setFormPhotos(r.photos); setErrors({}); setModalOpen(true); };
+  const openEdit = (r: RoomTypeListing) => {
+    setEditingId(r.id);
+    setForm({
+      property_id: r.propertyId,
+      type_key: r.typeKey,
+      display_name: r.displayName,
+      adults_capacity: r.adultsCapacity,
+      kids_capacity: r.kidsCapacity,
+      total_rooms_of_type: r.totalRoomsOfType,
+      price_room_only: r.priceRoomOnly || "",
+      price_bed_breakfast: r.priceBedBreakfast || "",
+      price_full_board: r.priceFullBoard || "",
+      description: r.description,
+      amenities: r.amenities,
+      sort_order: r.sortOrder,
+      is_active: r.isActive,
+      booking_mode: r.bookingMode || "platform",
+      external_booking_url: r.externalBookingUrl || "",
+    });
+    setFormPhotos(r.photos);
+    setErrors({});
+    setModalOpen(true);
+  };
 
   const toggleBookingVisibility = async (r: RoomTypeListing) => {
     const next = !r.isActive;
@@ -248,15 +313,94 @@ export default function ShowcasePage() {
     setSaving(true);
     try {
       const prop = properties.find(p => p.id === form.property_id);
-      const payload: any = { company_id: currentCompany.id, property_id: form.property_id, property_name: prop?.name || "", type_key: form.type_key, display_name: form.display_name.trim(), adults_capacity: form.adults_capacity, kids_capacity: form.kids_capacity, total_rooms_of_type: form.total_rooms_of_type, price_room_only: Number(form.price_room_only)||0, price_bed_breakfast: Number(form.price_bed_breakfast)||0, price_full_board: Number(form.price_full_board)||0, description: form.description, amenities: form.amenities, photos: formPhotos, sort_order: form.sort_order, is_active: form.is_active };
+      const cleanDesc = form.description.split("<!--ROOM_META:")[0].trim();
+      const metaTag = `\n<!--ROOM_META:${JSON.stringify({
+        bookingMode: form.booking_mode,
+        externalBookingUrl: form.external_booking_url.trim(),
+      })}-->`;
+      const fullDescription = `${cleanDesc}${metaTag}`;
+
+      const payload: any = {
+        company_id: currentCompany.id,
+        property_id: form.property_id,
+        property_name: prop?.name || "",
+        type_key: form.type_key,
+        display_name: form.display_name.trim(),
+        adults_capacity: form.adults_capacity,
+        kids_capacity: form.kids_capacity,
+        total_rooms_of_type: form.total_rooms_of_type,
+        price_room_only: Number(form.price_room_only) || 0,
+        price_bed_breakfast: Number(form.price_bed_breakfast) || 0,
+        price_full_board: Number(form.price_full_board) || 0,
+        description: fullDescription,
+        amenities: form.amenities,
+        photos: formPhotos,
+        sort_order: form.sort_order,
+        is_active: form.is_active,
+        booking_mode: form.booking_mode,
+        external_booking_url: form.booking_mode === "external" ? form.external_booking_url.trim() : null,
+      };
+
       if (editingId) {
-        const { error } = await supabase.from("room_type_listings").update(payload).eq("id", editingId);
-        if (error) throw error;
-        setListings(prev => prev.map(r => r.id === editingId ? { ...r, ...payload, id: editingId, companyId: currentCompany.id, propertyId: form.property_id, propertyName: prop?.name || "", typeKey: form.type_key, displayName: form.display_name, adultsCapacity: form.adults_capacity, kidsCapacity: form.kids_capacity, totalRoomsOfType: form.total_rooms_of_type, priceRoomOnly: payload.price_room_only, priceBedBreakfast: payload.price_bed_breakfast, priceFullBoard: payload.price_full_board, isActive: form.is_active, sortOrder: form.sort_order, photos: formPhotos } : r));
+        let updateRes = await supabase.from("room_type_listings").update(payload).eq("id", editingId);
+        if (updateRes.error) {
+          const { booking_mode, external_booking_url, ...fallbackPayload } = payload;
+          const fallbackRes = await supabase.from("room_type_listings").update(fallbackPayload).eq("id", editingId);
+          if (fallbackRes.error) throw fallbackRes.error;
+        }
+        setListings(prev => prev.map(r => r.id === editingId ? {
+          ...r,
+          ...payload,
+          id: editingId,
+          companyId: currentCompany.id,
+          propertyId: form.property_id,
+          propertyName: prop?.name || "",
+          typeKey: form.type_key,
+          displayName: form.display_name,
+          adultsCapacity: form.adults_capacity,
+          kidsCapacity: form.kids_capacity,
+          totalRoomsOfType: form.total_rooms_of_type,
+          priceRoomOnly: payload.price_room_only,
+          priceBedBreakfast: payload.price_bed_breakfast,
+          priceFullBoard: payload.price_full_board,
+          description: cleanDesc,
+          isActive: form.is_active,
+          sortOrder: form.sort_order,
+          photos: formPhotos,
+          bookingMode: form.booking_mode,
+          externalBookingUrl: form.booking_mode === "external" ? form.external_booking_url.trim() : "",
+        } : r));
       } else {
-        const { data, error } = await supabase.from("room_type_listings").insert(payload).select().single();
-        if (error) throw error;
-        if (data) setListings(prev => [...prev, { id: data.id, companyId: currentCompany.id, propertyId: form.property_id, propertyName: prop?.name || "", typeKey: form.type_key, displayName: form.display_name, adultsCapacity: form.adults_capacity, kidsCapacity: form.kids_capacity, totalRoomsOfType: form.total_rooms_of_type, priceRoomOnly: payload.price_room_only, priceBedBreakfast: payload.price_bed_breakfast, priceFullBoard: payload.price_full_board, description: form.description, amenities: form.amenities, photos: formPhotos, isActive: form.is_active, sortOrder: form.sort_order }]);
+        let insertRes = await supabase.from("room_type_listings").insert(payload).select().single();
+        if (insertRes.error) {
+          const { booking_mode, external_booking_url, ...fallbackPayload } = payload;
+          insertRes = await supabase.from("room_type_listings").insert(fallbackPayload).select().single();
+          if (insertRes.error) throw insertRes.error;
+        }
+        const data = insertRes.data;
+        if (data) {
+          setListings(prev => [...prev, {
+            id: data.id,
+            companyId: currentCompany.id,
+            propertyId: form.property_id,
+            propertyName: prop?.name || "",
+            typeKey: form.type_key,
+            displayName: form.display_name,
+            adultsCapacity: form.adults_capacity,
+            kidsCapacity: form.kids_capacity,
+            totalRoomsOfType: form.total_rooms_of_type,
+            priceRoomOnly: payload.price_room_only,
+            priceBedBreakfast: payload.price_bed_breakfast,
+            priceFullBoard: payload.price_full_board,
+            description: cleanDesc,
+            amenities: form.amenities,
+            photos: formPhotos,
+            isActive: form.is_active,
+            sortOrder: form.sort_order,
+            bookingMode: form.booking_mode,
+            externalBookingUrl: form.booking_mode === "external" ? form.external_booking_url.trim() : "",
+          }]);
+        }
       }
       setModalOpen(false);
     } catch (e: any) { alert(e.message || "Save failed"); }
@@ -381,7 +525,18 @@ export default function ShowcasePage() {
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-2 mb-1">
                         <h4 className="font-bold text-foreground">{r.displayName}</h4>
-                        <span className="shrink-0 rounded-full bg-surface px-2 py-0.5 border border-border-color text-[10px] capitalize">{r.typeKey}</span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {r.bookingMode === "external" ? (
+                            <span className="rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 px-2 py-0.5 text-[10px] font-bold" title={r.externalBookingUrl}>
+                              Custom Link
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 px-2 py-0.5 text-[10px] font-bold">
+                              Paimbabook
+                            </span>
+                          )}
+                          <span className="rounded-full bg-surface px-2 py-0.5 border border-border-color text-[10px] capitalize">{r.typeKey}</span>
+                        </div>
                       </div>
                       <p className="text-xs text-muted mb-2 flex items-center gap-1"><Building2 size={10}/>{r.propertyName}</p>
                       <div className="flex items-center gap-3 text-xs text-muted mb-3">
@@ -540,6 +695,79 @@ export default function ShowcasePage() {
               ? <p className="text-[11px] text-muted italic">Upload at least 2 high-quality room photos.</p>
               : <div className="grid grid-cols-4 gap-2">{formPhotos.map((url,idx)=>(<div key={idx} className="group relative aspect-video rounded-lg overflow-hidden border border-border-color"><img src={url} alt={`room-${idx}`} className="h-full w-full object-cover"/><button type="button" onClick={()=>setFormPhotos(prev=>prev.filter((_,i)=>i!==idx))} className="absolute top-1 right-1 rounded-md bg-black/70 p-1 text-white opacity-0 group-hover:opacity-100 transition hover:bg-red-600"><X size={10}/></button></div>))}</div>}
           </div>
+          {/* Booking & Reservation Method Setting */}
+          <div className="rounded-xl border border-border-color p-3 space-y-2.5 bg-surface-elevated/40">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-foreground flex items-center gap-1.5">
+                <Globe size={13} className="text-blue-500" />
+                Booking &amp; Reservation Method *
+              </label>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                form.booking_mode === "external"
+                  ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300"
+                  : "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300"
+              }`}>
+                {form.booking_mode === "external" ? "Custom Link" : "Paimbabook Native"}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setForm(f => ({ ...f, booking_mode: "platform" }))}
+                className={`rounded-xl border p-2.5 text-left transition ${
+                  form.booking_mode === "platform"
+                    ? "border-purple-600 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-bold ring-1 ring-purple-600"
+                    : "border-border-color bg-surface text-muted hover:border-foreground/30"
+                }`}
+              >
+                <p className="text-xs font-bold flex items-center gap-1">
+                  <BedDouble size={12} /> Via Paimbabook
+                </p>
+                <p className="text-[10px] opacity-75 mt-0.5">Direct instant book &amp; hold reservations on website</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm(f => ({ ...f, booking_mode: "external" }))}
+                className={`rounded-xl border p-2.5 text-left transition ${
+                  form.booking_mode === "external"
+                    ? "border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-bold ring-1 ring-blue-600"
+                    : "border-border-color bg-surface text-muted hover:border-foreground/30"
+                }`}
+              >
+                <p className="text-xs font-bold flex items-center gap-1">
+                  <Globe size={12} /> Custom Link / External
+                </p>
+                <p className="text-[10px] opacity-75 mt-0.5">Redirect guests to custom booking or partner link</p>
+              </button>
+            </div>
+            {form.booking_mode === "external" && (
+              <div className="pt-1.5 space-y-1">
+                <label className="block font-semibold text-foreground text-[11px]">
+                  Custom Booking URL / External Link <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="url"
+                  value={form.external_booking_url}
+                  onChange={e => {
+                    setForm(f => ({ ...f, external_booking_url: e.target.value }));
+                    setErrors(prev => ({ ...prev, external_booking_url: "" }));
+                  }}
+                  placeholder="https://booking.com/your-hotel or https://mysite.com/reserve"
+                  className={inputCls("external_booking_url")}
+                />
+                {errors.external_booking_url && (
+                  <p className="flex items-center gap-1 text-red-500 text-[11px]">
+                    <AlertCircle size={11} />
+                    {errors.external_booking_url}
+                  </p>
+                )}
+                <p className="text-[10px] text-muted">
+                  When visitors click Book or Reserve on this room, they will be redirected to this custom link.
+                </p>
+              </div>
+            )}
+          </div>
+
           <label className="flex items-center gap-2 cursor-pointer">
             <div onClick={()=>setForm(f=>({...f,is_active:!f.is_active}))} className={`relative h-5 w-9 rounded-full transition-colors ${form.is_active?"bg-purple-600":"bg-gray-300"}`}><div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${form.is_active?"translate-x-4":"translate-x-0.5"}`}/></div>
             <span className="font-medium text-foreground text-xs">{form.is_active?"Visible on portal":"Hidden from portal"}</span>

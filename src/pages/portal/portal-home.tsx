@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { getAllCountries, getCitiesForCountry } from "@/lib/geo-data";
-import { MapPin, BedDouble, Home, Search, ChevronLeft, ChevronRight, Users, Baby, Star, DollarSign, Phone, X, Calendar, Flame, Megaphone, Sparkles, ExternalLink } from "lucide-react";
+import { MapPin, BedDouble, Home, Search, ChevronLeft, ChevronRight, Users, Baby, Star, DollarSign, Phone, X, Calendar, Flame, Megaphone, Sparkles, ExternalLink, Globe } from "lucide-react";
 
 type RentalProp = {
   id: string;
@@ -19,6 +19,7 @@ type RentalProp = {
   discount_start_date?: string;
   discount_end_date?: string;
   booking_mode?: string;
+  external_booking_url?: string;
 };
 
 type RoomListing = {
@@ -41,6 +42,7 @@ type RoomListing = {
   discount_start_date?: string;
   discount_end_date?: string;
   booking_mode?: string;
+  external_booking_url?: string;
 };
 
 type AgentListing = {
@@ -151,15 +153,28 @@ export default function PortalHomePage() {
             setRoomListings(mapped as RoomListing[]);
           }
         } else if (data) {
-          const mapped = data.map((r: any) => ({
-            ...r,
-            city: r.properties?.city || "",
-            country: r.properties?.country || "",
-            discount_percentage: r.discount_percentage ?? r.properties?.discount_percentage,
-            discount_start_date: r.discount_start_date ?? r.properties?.discount_start_date,
-            discount_end_date: r.discount_end_date ?? r.properties?.discount_end_date,
-            booking_mode: r.booking_mode ?? r.properties?.booking_mode,
-          }));
+          const mapped = data.map((r: any) => {
+            let bMode = r.booking_mode ?? r.properties?.booking_mode ?? "platform";
+            let extUrl = r.external_booking_url ?? r.properties?.external_booking_url ?? "";
+            if (r.description && r.description.includes("<!--ROOM_META:")) {
+              try {
+                const metaStr = r.description.split("<!--ROOM_META:")[1].split("-->")[0];
+                const meta = JSON.parse(metaStr);
+                if (meta.bookingMode) bMode = meta.bookingMode;
+                if (meta.externalBookingUrl) extUrl = meta.externalBookingUrl;
+              } catch {}
+            }
+            return {
+              ...r,
+              city: r.properties?.city || "",
+              country: r.properties?.country || "",
+              discount_percentage: r.discount_percentage ?? r.properties?.discount_percentage,
+              discount_start_date: r.discount_start_date ?? r.properties?.discount_start_date,
+              discount_end_date: r.discount_end_date ?? r.properties?.discount_end_date,
+              booking_mode: bMode,
+              external_booking_url: extUrl,
+            };
+          });
           setRoomListings(mapped as RoomListing[]);
         }
       } catch { setRoomListings([]); }
@@ -761,7 +776,13 @@ export default function PortalHomePage() {
                             <div><span className="text-xl font-bold text-purple-600 dark:text-purple-400">R{originalPrice.toLocaleString()}</span><span className="text-sm text-gray-400 dark:text-slate-500">/night</span></div>
                           )}
                         </div>
-                        <span className="rounded-full bg-green-100 dark:bg-green-950/80 px-2.5 py-1 text-xs font-semibold text-green-700 dark:text-green-300">Available</span>
+                        {r.booking_mode === "external" && r.external_booking_url ? (
+                          <span className="rounded-full bg-blue-100 dark:bg-blue-950/80 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:text-blue-300 flex items-center gap-1">
+                            <Globe size={11} /> Partner Booking ↗
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-green-100 dark:bg-green-950/80 px-2.5 py-1 text-xs font-semibold text-green-700 dark:text-green-300">Available</span>
+                        )}
                       </div>
                     </div>
                   </Link>

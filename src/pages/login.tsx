@@ -100,19 +100,24 @@ export default function LoginPage() {
               />
             </div>
           ) : (
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600/10 text-blue-600 shadow-inner">
-              {company ? (
-                <span className="text-2xl font-black">{company.name.charAt(0)}</span>
-              ) : (
-                <Building2 size={28} />
-              )}
+            <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-border-color bg-surface-elevated p-1.5 shadow-sm">
+              <img
+                src="/iconlogo.png"
+                alt="Paimbabook Logo"
+                className="h-full w-full object-contain"
+              />
             </div>
           )}
 
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            {company ? company.name : "Sign In"}
+            {company ? company.name : "Staff & Manager Desk"}
           </h1>
           <p className="mt-1 text-xs text-muted">{portalSubtitle}</p>
+          {searchParams.get("switch") === "staff" && (
+            <div className="mt-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 px-3 py-2 text-xs font-semibold text-blue-600 dark:text-blue-400">
+              Account switched: Please sign in with your staff or management credentials.
+            </div>
+          )}
           {companySlug && (
             <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-blue-600">
               <Globe size={10} />

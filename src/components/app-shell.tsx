@@ -387,8 +387,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                       <img src={currentCompany.logoUrl} alt={currentCompany.name} className="h-full w-full object-contain"/>
                     </div>
                   ) : (
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white font-black text-xs">
-                      {currentCompany.name ? currentCompany.name.charAt(0) : <Building2 size={16}/>}
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-color bg-surface-elevated p-0.5 shadow-sm">
+                      <img src="/iconlogo.png" alt="Paimbabook Logo" className="h-full w-full object-contain"/>
                     </div>
                   )}
                   <div className="min-w-0">
@@ -402,10 +402,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           {/* Collapsed: just avatar */}
           {sidebarCollapsed && (
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white font-black text-xs">
-              {currentCompany.logoUrl
-                ? <img src={currentCompany.logoUrl} alt="" className="h-full w-full object-contain rounded-lg"/>
-                : currentCompany.name?.charAt(0) || <Building2 size={14}/>}
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-color bg-surface-elevated p-0.5 shadow-sm">
+              <img
+                src={currentCompany.logoUrl || "/iconlogo.png"}
+                alt="Paimbabook"
+                className="h-full w-full object-contain"
+              />
             </div>
           )}
 
@@ -779,6 +781,21 @@ export function AppShell({ children }: { children: ReactNode }) {
                         <span>Settings</span>
                       </Link>
 
+                      {/* Switch to Customer Portal / Account (Requires clean customer login) */}
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setProfileMenuOpen(false);
+                          await onSignOut();
+                          navigate("/portal/login?switch=customer");
+                        }}
+                        className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-xl font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 transition cursor-pointer text-left"
+                        title="Switch to customer portal (will require logging in as customer)"
+                      >
+                        <Globe size={15} className="text-blue-500 shrink-0" />
+                        <span>Switch to Customer Desk</span>
+                      </button>
+
                       {/* Sign Out */}
                       <button
                         type="button"
@@ -786,7 +803,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                           setProfileMenuOpen(false);
                           onSignOut();
                         }}
-                        className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-xl font-medium text-red-500 hover:bg-red-500/10 transition cursor-pointer"
+                        className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-xl font-medium text-red-500 hover:bg-red-500/10 transition cursor-pointer text-left"
                       >
                         <LogOut size={15} />
                         <span>{t("header_sign_out")}</span>
@@ -1029,12 +1046,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="flex items-center justify-between border-b border-border-color px-4 py-3">
               <div className="flex items-center gap-2.5 min-w-0">
                 {currentCompany.logoUrl ? (
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-color bg-surface-elevated p-0.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-color bg-surface-elevated p-0.5 shadow-sm">
                     <img src={currentCompany.logoUrl} alt={currentCompany.name} className="h-full w-full object-contain"/>
                   </div>
                 ) : (
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white font-black text-xs">
-                    {currentCompany.name ? currentCompany.name.charAt(0) : <Building2 size={16}/>}
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-color bg-surface-elevated p-0.5 shadow-sm">
+                    <img src="/iconlogo.png" alt="Paimbabook Logo" className="h-full w-full object-contain"/>
                   </div>
                 )}
                 <div className="min-w-0">

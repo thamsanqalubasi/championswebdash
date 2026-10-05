@@ -516,11 +516,13 @@ export default function CommercialBookingsPage() {
 
   const filteredBookings = useMemo(() => {
     return bookings.filter((b) => {
+      const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
-        b.guestName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        b.bookingCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (b.roomNumber && b.roomNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        b.guestPhone.includes(searchQuery);
+        !q ||
+        (b.guestName || "").toLowerCase().includes(q) ||
+        (b.bookingCode || "").toLowerCase().includes(q) ||
+        (b.roomNumber || "").toLowerCase().includes(q) ||
+        (b.guestPhone || "").toLowerCase().includes(q);
 
       const matchesStatus =
         statusFilter === "all" || b.bookingStatus === statusFilter;
@@ -533,12 +535,13 @@ export default function CommercialBookingsPage() {
 
   const filteredReservations = useMemo(() => {
     return reservations.filter((b) => {
+      const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
-        !searchQuery ||
-        b.guestName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        b.bookingCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (b.roomNumber && b.roomNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        b.guestPhone.includes(searchQuery);
+        !q ||
+        (b.guestName || "").toLowerCase().includes(q) ||
+        (b.bookingCode || "").toLowerCase().includes(q) ||
+        (b.roomNumber || "").toLowerCase().includes(q) ||
+        (b.guestPhone || "").toLowerCase().includes(q);
 
       const matchesPeriod = isWithinPeriod(b.createdAt || b.checkInDate, selectedPeriod);
       return matchesSearch && matchesPeriod;

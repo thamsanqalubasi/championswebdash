@@ -197,9 +197,16 @@ export default function PortalLoginPage() {
           )}
 
           <div className="text-center mb-8">
-            <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white mb-4 shadow-xs">{mode === "login" ? <LogIn size={24}/> : <UserPlus size={24}/>}</div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{mode === "login" ? "Welcome Back" : "Create Tenant & Customer Account"}</h1>
-            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">{mode === "login" ? "Sign in to access your lease, enquiries and bookings" : "Join to access your tenancy, contracts and bookings"}</p>
+            <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-gray-200 dark:border-slate-700 bg-surface-elevated p-1.5 shadow-sm">
+              <img src="/iconlogo.png" alt="Paimbabook Logo" className="h-full w-full object-contain" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{mode === "login" ? "Customer & Guest Portal" : "Create Tenant & Customer Account"}</h1>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">{mode === "login" ? "Sign in to access your bookings, tickets and tenancy" : "Join to access your tenancy, contracts and bookings"}</p>
+            {searchParams.get("switch") === "customer" && (
+              <div className="mt-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/50 px-3 py-2 text-xs font-semibold text-blue-700 dark:text-blue-300">
+                Account switched: Please sign in with your customer account credentials.
+              </div>
+            )}
             {mode === "login" && <p className="text-xs text-blue-600 dark:text-blue-400 mt-2 font-semibold">Sign in below ↓</p>}
           </div>
 

@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   ExternalLink,
   ShieldCheck,
+  Shield,
   Star,
   BedDouble,
   FileSignature,
@@ -530,6 +531,11 @@ export default function CustomerDashboardPage() {
       if (inserted) {
         setPropertyChatMessages((prev) => [...prev, inserted]);
         setPropertyChatText("");
+        // Reopen enquiry ticket when customer responds
+        await supabase
+          .from("enquiries")
+          .update({ status: "open" })
+          .eq("id", propertyChatEnquiry.id);
       }
     } catch (err) {
       console.warn("Could not send message:", err);
@@ -861,6 +867,11 @@ export default function CustomerDashboardPage() {
       if (inserted) {
         setBookingChatMessages((prev) => [...prev, inserted]);
         setBookingChatText("");
+        // Reopen enquiry ticket when customer responds
+        await supabase
+          .from("enquiries")
+          .update({ status: "open" })
+          .eq("id", bookingChatEnquiry.id);
       }
     } catch (err) {
       alert("Could not send booking chat: " + (err instanceof Error ? err.message : String(err)));
@@ -1088,6 +1099,21 @@ export default function CustomerDashboardPage() {
           >
             <Home size={14} /> Main Site
           </Link>
+          <button
+            type="button"
+            onClick={async () => {
+              clearCustomerSession();
+              try {
+                await supabase.auth.signOut();
+              } catch {}
+              navigate("/login?switch=staff");
+            }}
+            className="flex items-center gap-1.5 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/60 dark:bg-blue-950/40 px-3.5 py-2 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition shadow-xs"
+            title="Switch to Staff & Manager portal (requires staff credentials login)"
+          >
+            <Shield size={14} className="text-blue-600 dark:text-blue-400" />
+            <span>Switch to Staff Desk</span>
+          </button>
           <button
             onClick={handleSignOut}
             className="flex items-center gap-1.5 rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3.5 py-2 text-xs font-semibold text-gray-700 dark:text-slate-200 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/20 transition"

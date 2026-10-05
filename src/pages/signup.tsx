@@ -32,7 +32,7 @@ const COUNTRY_PRESETS = [
 ];
 
 export default function SignupPage() {
-  const { signUpCompany, user } = useAuth();
+  const { signUpCompany, user, isStaffAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   // Organization Info
@@ -61,12 +61,12 @@ export default function SignupPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  // If already logged in
+  // If already logged in as staff
   useEffect(() => {
-    if (user) {
+    if (user && isStaffAuthenticated) {
       navigate("/dashboard", { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, isStaffAuthenticated, navigate]);
 
   // Auto-generate slug from company name if user hasn't typed custom slug
   const handleCompanyNameChange = (val: string) => {
@@ -197,8 +197,8 @@ export default function SignupPage() {
       <div className="w-full max-w-2xl space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600/10 text-blue-600 shadow-inner">
-            <Building2 size={32} />
+          <div className="mx-auto flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-border-color bg-surface-elevated p-1.5 shadow-sm">
+            <img src="/iconlogo.png" alt="Paimbabook Logo" className="h-full w-full object-contain" />
           </div>
           <h1 className="text-3xl font-black tracking-tight text-foreground">
             Create Your Company Organization

@@ -26,7 +26,7 @@ export function wrapDocumentInEmailHtml(opts: {
     ? "Paimbabook Hospitality & Properties"
     : companyName.trim();
   const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
-    ? "https://paimbabook.com/paimbabook-logo.svg"
+    ? "https://paimbabook.com/iconlogo.png"
     : companyLogo;
   const year = new Date().getFullYear();
 
@@ -113,7 +113,7 @@ export function wrapSignupWelcomeEmailHtml(opts: {
     ? "Paimbabook Hospitality & Properties"
     : companyName.trim();
   const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
-    ? "https://paimbabook.com/paimbabook-logo.svg"
+    ? "https://paimbabook.com/iconlogo.png"
     : companyLogo;
 
   return `<!DOCTYPE html>
@@ -226,7 +226,7 @@ export function wrapPasswordChangeConfirmationEmailHtml(opts: {
     ? "Paimbabook Hospitality & Properties"
     : companyName.trim();
   const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
-    ? "https://paimbabook.com/paimbabook-logo.svg"
+    ? "https://paimbabook.com/iconlogo.png"
     : companyLogo;
   const year = new Date().getFullYear();
   const timestamp = new Date().toUTCString();
@@ -341,7 +341,7 @@ export function wrapStaffInvitationEmailHtml(opts: {
     ? "Paimbabook Hospitality & Properties"
     : companyName.trim();
   const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
-    ? "https://paimbabook.com/paimbabook-logo.svg"
+    ? "https://paimbabook.com/iconlogo.png"
     : companyLogo;
   const year = new Date().getFullYear();
 
@@ -438,7 +438,7 @@ export function wrapStaffPasswordResetEmailHtml(opts: {
     ? "Paimbabook Hospitality & Properties"
     : companyName.trim();
   const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
-    ? "https://paimbabook.com/paimbabook-logo.svg"
+    ? "https://paimbabook.com/iconlogo.png"
     : companyLogo;
   const year = new Date().getFullYear();
 
@@ -512,7 +512,7 @@ export function wrapCustomerWelcomeEmailHtml(opts: {
 }): string {
   const { customerName, customerEmail, portalUrl, companyLogo } = opts;
   const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
-    ? "https://paimbabook.com/paimbabook-logo.svg"
+    ? "https://paimbabook.com/iconlogo.png"
     : companyLogo;
   const year = new Date().getFullYear();
 
@@ -598,7 +598,7 @@ export function wrapTenantInvitationEmailHtml(opts: {
     ? "Paimbabook Hospitality & Properties"
     : companyName.trim();
   const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
-    ? "https://paimbabook.com/paimbabook-logo.svg"
+    ? "https://paimbabook.com/iconlogo.png"
     : companyLogo;
   const year = new Date().getFullYear();
 
@@ -700,7 +700,7 @@ export function wrapStaffDeregistrationNoticeEmailHtml(opts: {
     ? "Paimbabook Hospitality & Properties"
     : tenantCompanyName.trim();
   const logo = (!companyLogo || companyLogo.toLowerCase().includes("champions"))
-    ? "https://paimbabook.com/paimbabook-logo.svg"
+    ? "https://paimbabook.com/iconlogo.png"
     : companyLogo;
   const year = new Date().getFullYear();
 
